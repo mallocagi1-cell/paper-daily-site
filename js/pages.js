@@ -1,9 +1,11 @@
 (function () {
-  const TRACKS = ["retrieval", "personalization", "generative", "agentic", "infra"];
-  const TRACK_LABELS = {
-    retrieval: "Retrieval",
+  // Display order everywhere on the static site (user preference). data.json "tracks"
+  // (written by the builder in the same order) overrides this at boot.
+  let TRACKS = ["personalization", "generative", "retrieval", "agentic", "infra"];
+  let TRACK_LABELS = {
     personalization: "Personalization",
     generative: "Generative",
+    retrieval: "Retrieval",
     agentic: "Agentic",
     infra: "Infra",
   };
@@ -118,18 +120,23 @@
   }
 
 
+  // Routes (all render the native-style report view; "#/" = latest day, default track):
+  //   #/  |  #/reports  |  #/view/<date>/<track>  |  #/view/<date>  |  #/<date>/<track>
+  //   #/reports/<date>[/<track>]  (native-style alias)
   function parseRoute() {
-    const raw = (location.hash || "#/").replace(/^#/, "") || "/";
+    const raw = (location.hash || "#/").replace(/^#/, "").split("?")[0] || "/";
     const parts = raw.split("/").filter(Boolean);
-    if (parts[0] === "view" && parts[1] && parts[2]) {
-      return { view: "viewer", date: parts[1], track: parts[2] };
+    const isDate = function (s) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(s || "");
+    };
+    if ((parts[0] === "view" || parts[0] === "reports") && isDate(parts[1])) {
+      return { date: parts[1], track: parts[2] || null };
     }
-    if (parts.length === 2 && /^\d{4}-\d{2}-\d{2}$/.test(parts[0])) {
-      return { view: "viewer", date: parts[0], track: parts[1] };
+    if (isDate(parts[0])) {
+      return { date: parts[0], track: parts[1] || null };
     }
-    return { view: "list" };
+    return { date: null, track: null };
   }
-
   function reportDataHref(date, track) {
     return "reports/" + date + "/" + track + "/report_data.json";
   }
@@ -376,132 +383,130 @@
     );
   }
 
-  function renderList() {
-    const main = document.getElementById("main");
-    main.classList.remove("viewer-mode");
-    const latest = DATA.latest_date || (DATA.days[0] && DATA.days[0].date) || "";
-    const generated = DATA.generated_at
-      ? DATA.generated_at.replace("T", " ").slice(0, 16)
-      : "";
+  // ---------- Native-style report view (date navigator + track tabs) ----------
+  // Mirrors web/static/index.html "Reports (merged list + detail)": ‹ date (周X) ▼ › with a
+  // dropdown (date input + Go, list of report dates with track badges), then track tabs.
 
-    const cards = DATA.days
-      .map(function (day) {
-        const isLatest = day.date === latest;
-        const chips = TRACKS.map(function (t) {
-          if (day.tracks.indexOf(t) !== -1) {
-            return (
-              '<a class="track-chip" href="' +
-              viewHash(day.date, t) +
-              '">' +
-              escapeHtml(TRACK_LABELS[t]) +
-              "</a>"
-            );
-          }
-          return (
-            '<span class="track-chip missing" title="No report">' +
-            escapeHtml(TRACK_LABELS[t]) +
-            "</span>"
-          );
-        }).join("");
+  const state = { date: null, track: null, pickerOpen: false, notice: "" };
 
-        return (
-          '<article class="day-card' +
-          (isLatest ? " is-latest" : "") +
-          '">' +
-          '<div class="day-date-block">' +
-          '<h2 class="day-date">' +
-          escapeHtml(day.date) +
-          "</h2>" +
-          '<div class="day-weekday">' +
-          escapeHtml(weekdayChinese(day.date)) +
-          "</div>" +
-          (isLatest ? '<span class="day-latest-tag">Latest</span>' : "") +
-          "</div>" +
-          '<div class="track-chips">' +
-          chips +
-          "</div>" +
-          "</article>"
-        );
-      })
-      .join("");
-
-    main.innerHTML =
-      '<div class="pages-hero">' +
-      "<h1>Reports</h1>" +
-      "<p>每日论文追踪 · Retrieval / Personalization / Generative / Agentic / Infra</p>" +
-      '<p class="pages-meta">共 <strong>' +
-      DATA.day_count +
-      "</strong> 天 · 最新 <strong>" +
-      escapeHtml(latest) +
-      "</strong>" +
-      (generated ? " · 生成于 " + escapeHtml(generated) : "") +
-      "</p>" +
-      (DATA.deep_reading_entries
-        ? '<p class="pages-meta"><a class="pages-dr-link" href="deep-readings/index.html">&#128214; 深度解读 ' +
-          DATA.deep_reading_entries +
-          " 篇 · 按日期浏览 &#8594;</a></p>"
-        : "") +
-      "</div>" +
-      (DATA.days.length
-        ? '<section class="day-list" aria-label="日报列表">' + cards + "</section>"
-        : '<div class="empty-state"><span class="icon">📰</span><h3>No reports yet</h3><p>No report_data.json files found.</p></div>') +
-      '<footer class="pages-footer">Static GitHub Pages preview · native-style cards from report_data.json</footer>';
+  function orderTracks(list) {
+    return (list || []).slice().sort(function (a, b) {
+      const ia = TRACKS.indexOf(a), ib = TRACKS.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
   }
 
-  function renderViewerShell(date, track, bodyHtml) {
-    const main = document.getElementById("main");
-    main.classList.add("viewer-mode");
-    const day = DATA.days.find(function (d) {
-      return d.date === date;
-    });
-    const available = day ? day.tracks : [];
-    const safeTrack = available.indexOf(track) !== -1 ? track : available[0] || track;
+  function trackLabel(t) {
+    return TRACK_LABELS[t] || t;
+  }
 
-    const tabs = TRACKS.map(function (t) {
-      const has = available.indexOf(t) !== -1;
-      if (!has) {
-        return (
-          '<button class="track-tab missing" type="button" disabled>' +
-          escapeHtml(TRACK_LABELS[t]) +
-          "</button>"
-        );
+  function dayIndex(date) {
+    for (let i = 0; i < DATA.days.length; i++) if (DATA.days[i].date === date) return i;
+    return -1;
+  }
+
+  function nearestDayIndex(date) {
+    const target = new Date(date + "T00:00:00").getTime();
+    if (Number.isNaN(target)) return 0;
+    let best = 0, bestDiff = Infinity;
+    DATA.days.forEach(function (d, i) {
+      const diff = Math.abs(new Date(d.date + "T00:00:00").getTime() - target);
+      if (diff < bestDiff) { bestDiff = diff; best = i; }
+    });
+    return best;
+  }
+
+  // Resolve a (possibly partial / stale) route to an existing date + track.
+  function resolve(route) {
+    let idx = 0, notice = "";
+    if (route.date) {
+      idx = dayIndex(route.date);
+      if (idx < 0) {
+        idx = nearestDayIndex(route.date);
+        notice = route.date + " 没有日报，已显示最近的 " + DATA.days[idx].date;
       }
+    }
+    const day = DATA.days[idx];
+    const tracks = orderTracks(day.tracks);
+    let track = tracks[0] || "";
+    if (route.track) {
+      if (tracks.indexOf(route.track) !== -1) track = route.track;
+      else if (!notice) notice = day.date + " 没有 " + trackLabel(route.track) + " 日报，已显示 " + trackLabel(track);
+    }
+    return { idx: idx, date: day.date, tracks: tracks, track: track, notice: notice };
+  }
+
+  function go(date, track) {
+    const h = viewHash(date, track);
+    if (location.hash === h) render();
+    else location.hash = h; // pushes history entry -> hashchange -> render (no reload)
+  }
+
+  function renderDateNav(r) {
+    const n = DATA.days.length;
+    const oldest = DATA.days[n - 1].date;
+    const latest = DATA.days[0].date;
+    const items = DATA.days.map(function (d) {
+      const badges = orderTracks(d.tracks)
+        .map(function (t) {
+          return '<span class="dp-track-badge">' + escapeHtml(trackLabel(t)) + "</span>";
+        })
+        .join("");
       return (
-        '<a class="track-tab' +
-        (t === safeTrack ? " active" : "") +
-        '" href="' +
-        viewHash(date, t) +
-        '">' +
-        escapeHtml(TRACK_LABELS[t]) +
-        "</a>"
+        '<li class="date-picker-item' + (d.date === r.date ? " active" : "") +
+        '" data-date="' + escapeHtml(d.date) + '" tabindex="0" role="option">' +
+        '<span class="dp-date">' + escapeHtml(d.date) + "</span>" +
+        '<span class="dp-weekday">' + escapeHtml(weekdayChinese(d.date)) + "</span>" +
+        '<span class="dp-tracks">' + badges + "</span></li>"
       );
     }).join("");
+    return (
+      '<div class="date-nav" id="date-nav">' +
+      '<button class="date-nav-btn" type="button" data-date-prev title="前一天 (更早)"' +
+      (r.idx >= n - 1 ? " disabled" : "") + ">&#8249;</button>" +
+      '<div class="date-label" id="date-label" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="' +
+      (state.pickerOpen ? "true" : "false") + '" title="选择日期">' +
+      "<span>" + escapeHtml(r.date) + "</span>" +
+      '<span class="date-weekday">(' + escapeHtml(weekdayChinese(r.date)) + ")</span>" +
+      '<span class="date-caret' + (state.pickerOpen ? " open" : "") + '">&#9660;</span>' +
+      (r.idx === 0 ? '<span class="date-latest-tag">最新</span>' : "") +
+      "</div>" +
+      '<button class="date-nav-btn" type="button" data-date-next title="后一天 (更新)"' +
+      (r.idx <= 0 ? " disabled" : "") + ">&#8250;</button>" +
+      '<div class="date-picker-dropdown" id="date-picker"' + (state.pickerOpen ? "" : " hidden") + ">" +
+      '<div class="date-picker-jump">' +
+      '<input type="date" id="date-jump" value="' + escapeHtml(r.date) + '" min="' + escapeHtml(oldest) +
+      '" max="' + escapeHtml(latest) + '">' +
+      '<button type="button" data-date-go>Go</button></div>' +
+      '<div class="date-picker-count">' + n + " 天有日报</div>" +
+      '<ul class="date-picker-list" role="listbox">' + items + "</ul></div>" +
+      "</div>"
+    );
+  }
 
-    const raw = reportHtmlHref(date, safeTrack);
+  function renderShell(r) {
+    const main = document.getElementById("main");
+    main.classList.add("viewer-mode");
+    const tabs = r.tracks.map(function (t) {
+      return (
+        '<a class="track-tab' + (t === r.track ? " active" : "") + '" href="' +
+        viewHash(r.date, t) + '">' + escapeHtml(trackLabel(t)) + "</a>"
+      );
+    }).join("");
     main.innerHTML =
       '<div class="viewer-shell">' +
       '<div class="viewer-toolbar">' +
-      '<a class="viewer-back" href="#/">‹ Back to Reports</a>' +
-      '<div class="date-nav">' +
-      '<div class="date-label">' +
-      escapeHtml(date) +
-      '<span class="date-weekday">(' +
-      escapeHtml(weekdayChinese(date)) +
-      ")</span>" +
-      "</div>" +
-      "</div>" +
-      '<div class="track-tabs">' +
-      tabs +
-      "</div>" +
-      '<div style="text-align:center;margin:-8px 0 12px">' +
-      '<a class="open-raw" href="' +
-      raw +
-      '" target="_blank" rel="noopener">Open standalone report.html ↗</a>' +
-      "</div>" +
+      renderDateNav(r) +
+      '<div class="track-tabs">' + tabs + "</div>" +
+      (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       "</div>" +
       '<div class="viewer-report-body" id="report-body">' +
-      bodyHtml +
+      '<div class="empty-state"><span class="spinner"></span></div>' +
       "</div>" +
+      '<div class="viewer-foot"><a class="open-raw" href="' + reportHtmlHref(r.date, r.track) +
+      '" target="_blank" rel="noopener">Open standalone report.html ↗</a>' +
+      '<a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读' +
+      (DATA.deep_reading_entries ? " " + DATA.deep_reading_entries + " 篇" : "") + " →</a></div>" +
       "</div>";
   }
 
@@ -519,53 +524,67 @@
     });
   }
 
-  function renderViewer(date, track) {
-    const day = DATA.days.find(function (d) {
-      return d.date === date;
-    });
-    const available = day ? day.tracks : [];
-    const safeTrack = available.indexOf(track) !== -1 ? track : available[0] || track;
-
-    renderViewerShell(
-      date,
-      safeTrack,
-      '<div class="empty-state"><span class="spinner"></span></div>'
-    );
-
-    loadReport(date, safeTrack)
-      .then(function (report) {
-        // Ensure route still matches (user may have switched tabs quickly)
-        const route = parseRoute();
-        if (route.view !== "viewer" || route.date !== date) return;
-        const curTrack =
-          DATA.days.find(function (d) {
-            return d.date === date;
-          }) || day;
-        const avail = curTrack ? curTrack.tracks : available;
-        const still =
-          avail.indexOf(route.track) !== -1 ? route.track : safeTrack;
-        if (still !== safeTrack) return;
-        renderViewerShell(date, safeTrack, renderReportBody(report));
-      })
-      .catch(function (err) {
-        renderViewerShell(
-          date,
-          safeTrack,
-          '<div class="empty-state"><h3>Failed to load report</h3><p>' +
-            escapeHtml(String(err)) +
-            "</p><p><a class=\"open-raw\" href=\"" +
-            escapeHtml(reportHtmlHref(date, safeTrack)) +
-            '">Try standalone report.html</a></p></div>'
-        );
-      });
-  }
-
+  let renderSeq = 0;
   function render() {
-    const route = parseRoute();
     const nav = document.getElementById("nav-reports");
     if (nav) nav.classList.add("active");
-    if (route.view === "viewer") renderViewer(route.date, route.track);
-    else renderList();
+    if (!DATA.days.length) {
+      document.getElementById("main").innerHTML =
+        '<div class="empty-state"><span class="icon">📰</span><h3>No reports yet</h3><p>No report_data.json files found.</p></div>';
+      return;
+    }
+    const r = resolve(parseRoute());
+    state.date = r.date;
+    state.track = r.track;
+    state.pickerOpen = false;
+    renderShell(r);
+    const seq = ++renderSeq;
+    loadReport(r.date, r.track)
+      .then(function (report) {
+        if (seq !== renderSeq) return; // user switched again meanwhile
+        document.getElementById("report-body").innerHTML = renderReportBody(report);
+      })
+      .catch(function (err) {
+        if (seq !== renderSeq) return;
+        document.getElementById("report-body").innerHTML =
+          '<div class="empty-state"><h3>Failed to load report</h3><p>' +
+          escapeHtml(String(err)) +
+          '</p><p><a class="open-raw" href="' +
+          escapeHtml(reportHtmlHref(r.date, r.track)) +
+          '">Try standalone report.html</a></p></div>';
+      });
+    // Warm the cache for the neighbouring (older) day so prev-clicks feel instant.
+    const older = DATA.days[r.idx + 1];
+    if (older) loadReport(older.date, orderTracks(older.tracks)[0]).catch(function () {});
+  }
+
+  function setPicker(open) {
+    state.pickerOpen = open;
+    const dd = document.getElementById("date-picker");
+    const label = document.getElementById("date-label");
+    if (!dd || !label) return;
+    dd.hidden = !open;
+    label.setAttribute("aria-expanded", open ? "true" : "false");
+    const caret = label.querySelector(".date-caret");
+    if (caret) caret.classList.toggle("open", open);
+    if (open) {
+      const active = dd.querySelector(".date-picker-item.active");
+      if (active) dd.scrollTop = Math.max(0, active.offsetTop - dd.clientHeight / 2);
+    }
+  }
+
+  function goToDayIndex(i) {
+    const d = DATA.days[i];
+    if (!d) return;
+    // Keep the current track if the target day has it, else its first track (native resets to first).
+    const tracks = orderTracks(d.tracks);
+    go(d.date, tracks.indexOf(state.track) !== -1 ? state.track : tracks[0]);
+  }
+
+  function jumpTo(value) {
+    if (!value) return;
+    const i = dayIndex(value);
+    goToDayIndex(i >= 0 ? i : nearestDayIndex(value));
   }
 
   function boot() {
@@ -576,9 +595,12 @@
       })
       .then(function (json) {
         DATA = json;
+        DATA.days = DATA.days || [];
+        if (Array.isArray(DATA.tracks) && DATA.tracks.length) TRACKS = DATA.tracks.slice();
+        if (DATA.track_labels) TRACK_LABELS = Object.assign({}, TRACK_LABELS, DATA.track_labels);
         const badge = document.getElementById("pages-badge");
         if (badge && DATA.latest_date) {
-          badge.textContent = "Static · " + DATA.latest_date;
+          badge.textContent = "Static · 最新 " + DATA.latest_date;
         }
         render();
         window.addEventListener("hashchange", render);
@@ -602,6 +624,38 @@
     const collapse = t.closest("[data-deep-collapse]");
     if (collapse) {
       setDeepReadExpanded(collapse.closest("[data-deep-read]"), false);
+      return;
+    }
+    const ol = t.closest('a.outline-paper[href^="#paper-"]');
+    if (ol) {
+      // In-page anchor: scroll without touching the route hash.
+      ev.preventDefault();
+      const el = document.getElementById(decodeURIComponent(ol.getAttribute("href").slice(1)));
+      if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: "smooth" });
+      return;
+    }
+    if (t.closest("[data-date-prev]")) { goToDayIndex(dayIndex(state.date) + 1); return; }
+    if (t.closest("[data-date-next]")) { goToDayIndex(dayIndex(state.date) - 1); return; }
+    if (t.closest("#date-label")) { setPicker(!state.pickerOpen); return; }
+    if (t.closest("[data-date-go]")) {
+      const inp = document.getElementById("date-jump");
+      jumpTo(inp && inp.value);
+      return;
+    }
+    const item = t.closest(".date-picker-item");
+    if (item) { jumpTo(item.getAttribute("data-date")); return; }
+    if (state.pickerOpen && !t.closest("#date-picker")) setPicker(false);
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    const t = ev.target;
+    if (ev.key === "Escape" && state.pickerOpen) { setPicker(false); return; }
+    if (t && t.id === "date-jump" && ev.key === "Enter") { jumpTo(t.value); return; }
+    if (t && t.classList && (t.classList.contains("date-picker-item") || t.id === "date-label") &&
+        (ev.key === "Enter" || ev.key === " ")) {
+      ev.preventDefault();
+      if (t.id === "date-label") setPicker(!state.pickerOpen);
+      else jumpTo(t.getAttribute("data-date"));
     }
   });
 
