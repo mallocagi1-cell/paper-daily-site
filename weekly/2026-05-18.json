@@ -1,0 +1,1904 @@
+{
+ "week_start": "2026-05-18",
+ "week_end": "2026-05-24",
+ "iso_year": 2026,
+ "iso_week": 21,
+ "days": [
+  "2026-05-18",
+  "2026-05-19",
+  "2026-05-20",
+  "2026-05-21",
+  "2026-05-22"
+ ],
+ "top_n": 10,
+ "rule": "adjusted_score desc, total_score desc; dedupe by arXiv id / URL / id / title",
+ "tracks": {
+  "personalization": {
+   "raw_count": 34,
+   "unique_count": 34,
+   "days": [
+    "2026-05-18",
+    "2026-05-19",
+    "2026-05-20",
+    "2026-05-21",
+    "2026-05-22"
+   ],
+   "papers": [
+    {
+     "id": "arxiv:oai:arXiv.org:2605.16344",
+     "title": "A Production-Ready RL Framework for Personalized Utility Tuning with Pareto Sweeping in Pinterest Recommender Systems",
+     "url": "https://arxiv.org/abs/2605.16344",
+     "source": "arxiv",
+     "company": [
+      "Pinterest"
+     ],
+     "published": "2026-05-19",
+     "authors": "Yichu Zhou, Mehdi Ben Ayed, Lin Yang, Jiacong He, Andreanne Lemay, Jiaye Wang, Jaewon Yang, Josie Zeng, Dhruvil Deven Ba...",
+     "total_score": 4.4,
+     "adjusted_score": 4.6,
+     "preference_bonus": 0.2,
+     "rank_score": 4.6,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "大规模推荐系统把多目标 trade-off 编码成一个 utility 打分，用它对 ranker 的多个预测做加权融合，但权重通常靠人工全局调、对环境变化反应慢、难治理。论文提出 PRL-PUTS：一个生产可用、与 ranker 解耦的强化学习框架，把 utility 权重调优建模成单步 value-based RL——给定请求上下文，agent 输出一组 utility 权重向量重加权 ranker 预测，以最大化请求级 engagement 奖励。推理期再用一个标量化参数做 Pareto 前沿扫描，生成一族策略，决策者可即时切换线上工作点。",
+     "key_insight": "把多目标融合权重从「人工全局常数」升级为「按请求上下文个性化、可即时换挡的 RL 策略」，且与排序模型解耦——这正是社区搜索/推荐多目标融合(相关性+CTR+时长)长期痛点。值得借鉴的两点：(1) utility 层独立于 ranker 单独用一步 RL 调参，部署风险低、可灰度；(2) 推理期 Pareto 扫描让产品/运营在一条已训练好的策略族上直接选业务工作点，省去反复重训。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2605.16344",
+       "total_score": 4.4,
+       "adjusted_score": 4.6
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.16344",
+      "slug": "2605.16344",
+      "content_html": "<h1>PRL-PUTS 深度解读：Pinterest 生产级个性化效用权重 RL 调优 + 推理期 Pareto 扫描</h1>\n<h2>1. 问题与动机</h2>\n<p>大规模推荐系统普遍采用「多预测头 + 线性加权融合成单一 utility 分」的架构：ranker 输出 repin、p2p 等多个 engagement 预测，再用一组 utility 权重线性组合成最终排序分。论文指出这一 utility 层的权重调优存在严重的工程与产品痛点，并给出定性证据：(1) 权重「typically selected through ad hoc offline analyses and repeated online experiments」，从想法到上线「often taking weeks to months」，且「hard to reproduce, and difficult to revisit」；(2) 全局权重对异质上下文施加同一 trade-off，无法个性化，作者称「personalization at scale is intractable」；(3) ranker 频繁迭代后，旧权重相对新 ranker 会「stale」，但缺乏「clear visibility into the set of feasible trade-offs」。</p>\n<p>这个问题对社区搜索/推荐特别关键：相关性、CTR、停留时长、多样性等目标的融合权重长期靠人工拍 + 反复 A/B，既慢又难治理，且不同 query/用户场景下最优 trade-off 本应不同。论文的核心主张是：utility 层可以独立于 ranker 单独优化，把「调权重」变成一个可学习、可个性化、可即时换挡的策略问题。</p>\n<h2>2. 方法详解</h2>\n<p><strong>RL 形式化（单步 contextual bandit）。</strong> 论文把 utility 调优建模为 γ=0 的单步 MDP：每个请求是一次决策。State s 为服务期上下文特征——user embedding、最近 N 个用户行为序列（带 engagement 时间戳）、context 特征（设备、surface、请求时间）。Action a 是施加到 ranker 预测上的 utility 权重向量。具体实例化只控制两个权重并离散化：repin 权重在 [10,200] 离散成 K=7 档，p2p impression 权重在 [1,30] 离散成 K=7 档，动作空间 7×7=49，其余 utility 权重固定为生产值。Reward 为向量值且做 clip 二值化：r_repin = min(n_repin,1)，r_p2p = min(n_p2p,1)，clip 的目的是「reduce the influence of rare heavy-tail events and stabilize offline estimation」。</p>\n<p><strong>Pareto 扫描（推理期标量化）。</strong> 这是该工作最关键的设计。训练得到双头 Q 网络后，推理时用一个标量化参数 α∈[0,1] 在线动作选择：a* = arg max_a ( α·Q_θ^p2p(s,a) + (1−α)·Q_θ^repin(s,a) )。在有限网格 G⊂[0,1] 上扫 α 即得到一族策略 {π_α}，对应不同的 objective trade-off，构成经验 Pareto 前沿。切换线上工作点「requires only setting α via configuration; no model retraining is needed」——这把「换 trade-off」从重训模型降级成改一个配置项。</p>\n<p><strong>模型结构。</strong> 双头 value 网络：State Module 把类别特征 embedding、序列特征用 Transformer 编码 + 平均池化、与 user embedding 拼接过 MLP；Action Encoding 对权重做 min-max 归一化后过单层 MLP embedding；Backbone 是三层共享 MLP（BN→Linear→ReLU）；输出两个单层 MLP + sigmoid 头，Q_θ^repin、Q_θ^p2p 均 bound 到 [0,1]。损失为 MSE：L(θ)=1/N Σ (Q^p2p−r^p2p)² + (Q^repin−r^repin)²。</p>\n<p><strong>训练设置。</strong> 用 14 天探索日志训练、7 天不相交 hold-out 评估。关键是探索策略：对「capped 1.25% of requests」用均匀随机 logging policy μ(a|s)=1/|A|，49 个动作等倾向性采样——这保证了无偏 off-policy 评估。离线评估用 hit-based OPE（Reward@HIT）：V̂_hit = Σ 1[a_i<em>=a_i]·r_i / Σ 1[a_i</em>=a_i]，并在 |G|=25 个 α 上做网格扫描。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>Ranker 无关的形式化</strong>：action 是施加到 ranker 预测上的权重向量，使 utility 控制器与排序模型解耦，可在请求期做上下文相关控制，且 ranker 例行迭代时 PRL-PUTS「remains stable...as long as serving contract is preserved」，仅当 contract 实质变化才需重训。相比把多目标揉进 ranker 端到端训练，这种「外挂控制层」工程风险与迭代成本低一个量级。</p>\n<p>(2) <strong>推理期 Pareto 扫描</strong>：用单个训练好的模型 + 标量化 α 诱导出一族策略并构建经验 Pareto 前沿。价值在于「单次训练、配置即换挡」，决策者能在已知 trade-off 谱上直接选业务工作点，把过去需要数周的多次 A/B 压缩成改配置。</p>\n<p>(3) <strong>生产集成与零延迟</strong>：RL agent pathway 与核心排序并行运行，「adds no measurable end-to-end serving latency」，并设固定推理预算，超时/缺特征/推理失败时 fallback 到生产静态权重——这是它敢称 production-ready 的关键。</p>\n<p>(4) <strong>增益归因证据</strong>：通过对照实验证明收益来自「context-dependent weight selection」即个性化，而非全局权重平移。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>线上 A/B（2 周，每臂 1% 流量）。</strong> Table 1 三个全局工作点：Repin-leaning（α=0.17）线上 Repin +2.26%、P2P −0.21%、SS −0.09%；Balanced（α=0.21）Repin +1.35%、P2P −0.04%；P2P-leaning（α=0.24）Repin +0.66%、P2P +0.30%、SS +0.13%。清晰展示了 α 调出的 trade-off 谱。<strong>离线-线上相关性极高</strong>：Repin 0.999、P2P 0.986，说明 hit-based OPE 在该问题上是可信的离线代理——这点对工程团队尤为重要，意味着可以离线选 α 再上线验证。</p>\n<p><strong>个性化 vs 全局调参（Table 3）</strong>：匹配的静态权重变体线上 Repin −0.24%、P2P +0.07%、SS +0.02%（中性偏负），而 PRL-PUTS 为 Repin +0.12%、P2P +0.21%、SS +0.11%（三指标全正）。作者结论：「improvements are driven by context-dependent weight selection rather than a single globally retuned weight vector」——即收益本质来自个性化而非重调全局权重。Table 2 的 cohort 条件策略中，CASUAL cohort 的 Repin-leaning 达 +7.62% Repin，离线-线上相关 0.996，说明分人群施加不同 α 收益更大。</p>\n<p>整体证据质量：双数据集口径（线上多指标 + 离线 OPE）、相关性分析、个性化消融、cohort 切片，证据链完整，但缺硬件/规模细节。</p>\n<h2>5. 局限与未来方向（作者陈述）</h2>\n<p>作者明确列出：(1) 单步 contextual bandit「does not explicitly capture longer-horizon effects such as future engagement or retention」——只优化请求级即时收益，不含留存等长程效应；(2) 实例化只控制两个目标，「does not directly address cases with three or more goals」；(3) 离散紧凑动作集「reduces expressivity and may miss fine-grained operating policies」；(4) clip 二值奖励「discards information about engagement intensity beyond the first event」，可能限制对长尾上界的优化；(5) OPE 估计的可靠性与方差依赖 hit 事件数。这些都是诚实且关键的边界——尤其「不建模留存」与「≥3 目标未解」对实际多目标系统是真实约束。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/推荐团队，这是一份高可操作性的蓝图。<strong>应采纳</strong>：把多目标融合权重层从 ranker 中解耦、用单步 RL + 上下文做个性化调权，是比「人工全局权重 + 反复 A/B」更系统、风险更低的范式；并行旁路 + 超时 fallback 到静态权重的工程契约值得照搬，能让 RL 控制层安全灰度。<strong>应尝试</strong>：推理期 α 扫描构建 Pareto 前沿，让产品/运营在已训练策略族上直接选工作点；对低活/新用户等 cohort 施加不同 α（论文 cohort 实验已验证收益更大）。<strong>应警惕</strong>：单步 bandit 不建模留存，社区场景若强依赖长期留存需补长程信号或叠加约束；二值 clip 奖励会丢失强度信息，时长类目标慎用；OPE 可信的前提是有足量均匀探索流量（论文用 1.25% 等倾向性探索），探索预算不足时离线选 α 不可靠。部署上几乎零额外延迟、配置即换挡，是其相对端到端多目标方案最大的落地优势。</p>"
+     },
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.17863",
+     "title": "DADF: A Distribution-Aware Debiasing Framework for Watch-Time Regression in Recommender Systems",
+     "url": "https://arxiv.org/abs/2605.17863",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "（作者见 arXiv 页面）",
+     "total_score": 4.35,
+     "adjusted_score": 4.55,
+     "preference_bonus": 0.2,
+     "rank_score": 4.55,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "短视频推荐中观看时长回归的标签高度长尾，残差误差在不同时长区间系统性偏移：模型整体看似 calibrated，实际同时高估短播放、低估长播放，因正负误差在聚合时相互抵消。已有方法多在第一阶段时长预测器上改进，残差分布偏差仍未充分纠正。DADF 不替换已部署预测器，而是在其之上做第二阶段乘性残差校正，由三部分组成：动态分布感知变换稳定长尾校正目标、debias-factor-aware 模块用推理期信息建模异质残差模式，以及配套的分布感知监督。",
+     "key_insight": "「全局 calibrated 但分区间互相抵消」是所有回归型排序目标(时长、停留、转化)的共性陷阱，社区搜索的 dwell-time 排序同样适用。最大工程价值在于 DADF 是挂在已上线预测器之上的二阶段乘性残差校正，不动主模型即可纠偏——上线风险极低、可作为旁路插件灰度，比重训第一阶段预测器现实得多。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 2,
+       "id": "arxiv:oai:arXiv.org:2605.17863",
+       "total_score": 4.35,
+       "adjusted_score": 4.55
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.17863",
+      "slug": "2605.17863",
+      "content_html": "<h1>DADF 深度解读：短视频时长回归的分布感知二阶段去偏框架</h1>\n<h2>1. 问题与动机</h2>\n<p>观看时长预测是短视频推荐的核心回归任务，但标签高度长尾——「most impressions correspond to short views or quick skips, while only a small fraction lead to long consumption」。论文指出一个被长期忽视的「伪平衡（pseudo-balance）」陷阱：模型可能整体 calibrated（全局 y/ŷ 比值≈1.0），但同时<strong>系统性高估短播放、低估长播放</strong>，因为正负残差在聚合时相互抵消。Figure 1(a) 给出定量证据：已部署预测器在各 watch-time 桶上「consistently overestimates short views and underestimates long views」，而全局比值仍接近 1.0。更深一层的根因是：乘性 bias factor b=y/ŷ 继承了原始时长分布的长尾性（Appendix A.1 给出理论刻画），导致直接对 b 做回归不稳定。</p>\n<p>这一陷阱对任何回归型排序目标（时长、停留、转化时长）都成立，社区搜索的 dwell-time 排序同样会「整体校准但分区间互相抵消」。已有方法多在第一阶段时长预测器上改进，残差分布偏差仍未被充分纠正——这正是 DADF 切入点：不动主模型，在其之上挂一个分布感知的二阶段乘性残差校正。</p>\n<h2>2. 方法详解</h2>\n<p><strong>二阶段乘性校正框架。</strong> 设冻结的一阶段预测为 ŷ₀，校正标签 b=y/(sg(ŷ₀)+ε)（sg 为 stop-gradient），最终预测 ŷ=ŷ₀·b̂=ŷ₀·T_λg⁻¹(F_θ(x, ℓ₀, π(d), ha))。即学习一个对 b 的校正而非替换 ŷ₀。三大组件：</p>\n<p><strong>A. 动态分布感知模块。</strong> 对乘性校正因子做分组 Box–Cox 变换：T_λg(b)={(b+ε)^λg−1}/λg（λg≠0），log(b+ε)（λg=0），其中 λg 是每个时长分组可学习的变换参数；推理时用解析逆变换 T_λg⁻¹ 还原。作用是把长尾、异方差的校正目标拉成更接近正态、可稳定回归的空间——这是全框架最关键的设计（消融显示移除它 MAE 退化最大）。</p>\n<p><strong>B. Debias-factor-aware 模块。</strong> 硬路由：每个样本按时长分组 g=π(d) 选择专家网络 E_g，融合信号 h=Fusion(x, ℓ₀, g, ha)，预测变换空间校正量 ẑ=E_g(h)。理论依据用全方差定律证明分组后 oracle 风险满足 R<em>_G ≤ R</em>₀，即按时长分桶建模能降低不可约不确定性。</p>\n<p><strong>C. Multi-label-aware 模块。</strong> 三路辅助信息：context 分支 hc=MLP([ℓ_play, xc])；logit 注意力 h_ℓ=SelfAttention(Φ₁(ℓ₁),…,Φ_M(ℓ_M))；tower 表示 hr=TokenMixer(r₁,…,r_M)，拼接成 ha=MLP([hc,h_ℓ,hr])。即复用多任务 engagement 头的 logits 与表示作为去偏辅助信号。</p>\n<p><strong>训练目标。</strong> L_DADF=α·L_trans+β·L_abs+η·L_reg，其中 L_trans 是变换空间 MSE、L_abs 是原空间 Huber、L_reg 对每个时长分组的均值/方差/偏度做正则；超参 α=1.0、β=0.8、η=0.10。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>不替换已部署预测器的分布感知二阶段去偏</strong>：直接建模乘性 bias factor，是对现有时长预测管线的「model-agnostic plug-in」，落地侵入性极低。</p>\n<p>(2) <strong>分组条件建模</strong>：用时长分桶 + 专家硬路由把异质残差模式拆开，并以全方差定律给出 oracle 风险下界证明（R<em>_G≤R</em>₀），让「分桶」有理论支撑而非纯工程经验。</p>\n<p>(3) <strong>异质变换设计</strong>：每个时长 regime 学独立 Box–Cox 参数 λg，针对短/中/长播放的不同残差分布分别拉正态。</p>\n<p>(4) <strong>多任务辅助信号融合</strong>：把 engagement 头的 logit 与 tower 表示引入去偏，复用既有多任务结构而非额外造特征。</p>\n<p>(5) <strong>理论刻画</strong>：附录证明 bias factor 的长尾继承性与分组降风险，是该工作区别于纯经验去偏的亮点。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>离线（Table 1）。</strong> 跨 7 个 backbone（VR/WLR/TPM/D2Q/CREAD/D2CO/EGMN）× 2 数据集（KuaiRec/WeChat21）一致提升。KuaiRec 上 WLR：MAE 4.414→4.172、XAUC 0.5941→0.6227；D2CO：MAE 4.613→4.168、XAUC 0.5687→0.6233（提升幅度最大的一档）。WeChat21 上 VR：MAE 18.681→17.912、XAUC 0.6766→0.6902。<strong>平均「reduces MAE by 4.33% and improves XAUC by 4.01%」覆盖所有 backbone-数据集组合</strong>，说明它是 backbone 无关的通用增益层。</p>\n<p><strong>线上 A/B（Table 2，快手 Kwai 平台）。</strong> App 总时长 +0.356%、单设备人均时长 +0.347%、单设备播放数 +0.120%、7 日留存 +0.054%、完播率 +0.215%、有效播放率 +0.312%、长播率 +0.351%、短播率 −0.273%，全部 p&lt;0.05；生产离线 WUAUC +1.88pp、MAE 降 12.57%。短播率下降 + 长播率上升的方向，正好印证它纠正了「高估短播、低估长播」的伪平衡。</p>\n<p><strong>消融（Table 3, WLR）。</strong> 移除分布模块（w/o Dist.）KuaiRec MAE 4.1723→4.1901 退化最大；移除辅助模块（w/o Aux.）对 XAUC 冲击最大（WeChat21 XAUC 0.6934→0.6920）。<strong>分桶分析（RQ4）</strong>最有说服力：分时长桶 MAE 降幅 [0,20)s 5.5%、[20,40)s 7.0%、中长桶 &gt;15%、[180,200) 峰值 23.8%、[200,+) 18.2%；尾部切片 Tail-10% MAE 降 10.43%、XAUC 升 7.98%——证明收益主要来自长尾/长播放区间，恰是伪平衡受害最重的地方。桶数 K 在 2~8 范围稳定。证据质量很高（多 backbone、多数据集、线上多指标显著、细粒度偏差分析）。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者<strong>未显式设置 limitations 章节</strong>（这是该论文的一个不足）。从方法可推出的隐含约束：(1) 依赖推理期可观测的 duration 作为 debias factor，若 duration 不可得则路由失效；(2) 冻结一阶段预测器假设，无法与主预测器联合自适应；(3) 分组变换需每组足够样本，长尾极稀疏分组的 λg 估计可能不稳；(4) 依赖多任务 engagement 头的 logits/表示作为辅助信号，单任务时长模型无法直接套用。这些边界在迁移到社区 dwell-time 场景时需逐一核对，尤其辅助信号依赖会限制无多任务结构系统的复用。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/推荐团队，DADF 的最大价值是<strong>几乎零侵入的纠偏旁路</strong>。<strong>应采纳</strong>：「整体校准但分区间互相抵消」是 dwell-time/转化时长排序的通病，先用 DADF 的分桶残差诊断（按目标值分桶看 y/ŷ 是否系统性偏移）做体检，再决定是否上二阶段乘性校正——这套诊断方法本身就值得纳入排序模型上线 checklist。<strong>应尝试</strong>：在已上线时长/停留预测器之上挂二阶段乘性校正（不动主模型），按目标值分 3~4 桶 + 分组 Box–Cox，线上以旁路插件灰度，风险远低于重训第一阶段预测器；快手线上 7 日留存 +0.054%、长播率 +0.351% 且全显著，收益方向明确。<strong>应警惕</strong>：辅助模块强依赖多任务 engagement 头，单塔系统需先补多任务结构或裁剪该模块（消融显示去掉 Aux. 主要损 XAUC、MAE 影响小，可接受降级）；分组需足量样本，极稀疏长尾桶要合并；线上分桶建议用「historical traffic statistics and production experience」定固定边界而非等频，避免线上线下桶不一致。部署上仅需 ranking 特征 x、duration d、原始时长输出 ℓ₀、辅助表示 ha，无显式额外延迟，属轻量级改造。</p>"
+     },
+     "weekly_rank": 2
+    },
+    {
+     "id": "arxiv:2605.15905",
+     "title": "Generative Long-term User Interest Modeling for Click-Through Rate Prediction",
+     "url": "https://arxiv.org/abs/2605.15905",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "",
+     "total_score": 4.0,
+     "adjusted_score": 4.3,
+     "preference_bonus": 0.3,
+     "rank_score": 4.3,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "针对超长用户行为序列下 CTR 预估的两阶段框架 (GSU 检索 top-k 行为 + ESU 注意力建模) 的两个痛点——以目标 item 为中心的 GSU 会漏掉其它潜在兴趣、且基于 pairwise 相似度的匹配检索随行为增长而耗时，论文提出生成式长期兴趣模型 GenLI。GenLI 由兴趣生成模块 IGM、行为检索模块 BRM、兴趣融合模块 IFM 组成：IGM 生成多个目标无关的兴趣分布、显式编码行为间交互信息以保证兴趣完整多样；BRM 用一次 lookup 选取相关行为，把逐行为加权的时间复杂度降到 O(1)；IFM 用门控机制生成最终兴趣特征。整体在精度与在线服务效率间取得更好平衡。",
+     "key_insight": "把 GSU 的「目标-行为匹配检索」范式改造为「目标无关的兴趣分布生成 + O(1) 行为查表」，是对工业界 SIM/ETA/TWIN 系列长序列建模的一次范式级简化：既绕开了在线 pairwise 打分随序列膨胀的延迟瓶颈，又通过多兴趣分布缓解了 target-centered 检索的兴趣偏置。对社区 feed/搜索排序中长行为建模的启示是——兴趣表征可前置生成、与目标解耦，从而把昂贵的检索退化为可缓存的查表操作。",
+     "best_date": "2026-05-19",
+     "appearances": [
+      {
+       "date": "2026-05-19",
+       "rank": 1,
+       "id": "arxiv:2605.15905",
+       "total_score": 4.0,
+       "adjusted_score": 4.3
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.15905",
+      "slug": "2605.15905",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>GenLI 针对工业级 CTR 预估中超长用户行为序列建模的两阶段范式 (GSU 检索 top-k 行为 → ESU 注意力建模) 提出三个具体失效模式。第一，target-centered 的 GSU 只检索与目标 item 相关的行为，&quot;ignore other latent user interests&quot;，导致兴趣特征不完整且有偏。第二，基于 pairwise 相似度的匹配检索需要把目标 item 与每条历史行为逐一打分，随着行为序列增长 (工业数据集序列长达 1000) 在线服务计算开销不可承受。第三，pairwise 架构&quot;overlook the interaction information among user behaviors&quot;，丢失行为间交互信号。论文用 Meituan 广告系统的生产规模佐证问题严重性：240M 用户、1.1B 样本、序列长度达 1000，TWIN 这类 SOTA 在该规模下检索延迟成为瓶颈。这使得&quot;如何在不牺牲精度的前提下把长序列检索复杂度降下来&quot;成为亟待解决的工业问题。</p>\n<h2>2. 方法详解</h2>\n<p>GenLI 由三个模块组成。<strong>兴趣生成模块 IGM</strong>：从近期行为 (l=10~100) 生成三个目标无关的兴趣分布。显式兴趣 p^E 直接拟合用户点击，损失 ℒ_explicit = -∑ 𝕀_{y=1} log s(t_i, p^E)；隐式兴趣 p^I 建模平台曝光但无反馈的 item，损失 ℒ_implicit = -∑ log s(t_i, p^I)；相对兴趣 p^R = softmax(p^E − p^I) 编码点击与曝光的差异、刻画决策动态。生成过程用多头注意力 h = MHA(Q_G, K_G, V_G)，其中 Q_G=[e_1, e_q] (当前行为 + 可学习 query)，K_G=V_G 为近期行为序列，再 p = softmax(MLP(h))，输出维度 N=4096。<strong>行为检索模块 BRM</strong>：用一次查表实现 O(1) 打分，s(b_i, p) = LOOKUP(b_i, p) = p_{ID(b_i) % N}，对每个分布取 top-20，三分布共 K=60 条行为 (与基线对齐)。<strong>兴趣融合模块 IFM</strong>：对每类兴趣分别用 MHA 聚合 z^I = MHA_F(e_t, 选中行为, 选中行为)，再门控融合 g=σ(MLP(z^F))，x_l=(g⊗z^F)W^g，z^F=concat(z^I,z^E,z^R)。端到端训练 ℒ = ℒ_ctr + α·ℒ_implicit + β·ℒ_explicit (α=β=1.0)，Adam lr=0.001，batch 256，正负 1:1，整体复杂度 O(L + (l+K)d_h) ≈ O(L)。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 首个把生成式方法引入 CTR 长期兴趣建模的工作——用&quot;生成目标无关兴趣分布&quot;替代&quot;目标-行为匹配检索&quot;，从范式上消除了在线 pairwise 打分。(2) 把逐行为打分复杂度从 O(d_h) 降到 O(1)：BRM 的模哈希查表把昂贵的相似度计算退化为可缓存的索引操作，这是延迟收益的根本来源。(3) 三类兴趣分布 (显式/隐式/相对) 显式建模&quot;点击 vs 曝光&quot;差异，缓解 target-centered 检索的兴趣偏置，消融显示移除 p^E 在 Amazon 掉 2.17%、TaoBao 掉 1.88%，是贡献最大的分布。(4) 可插拔设计：x_l 与短期特征、side info、目标 embedding 拼接进下游 MLP，无需重训下游即可替换现有 GSU/ESU。</p>\n<h2>4. 实验结果分析</h2>\n<p>三数据集：Amazon (75K 用户/100 序列)、TaoBao (988K/500)、Industrial (240M/1000)。离线 AUC：GenLI 在 Amazon 0.7564 (vs TWIN 0.7503，+0.61%)、TaoBao 0.9552 (vs 0.9449，+1.03%)、工业集 0.7463 (vs TWIN 0.7441，+0.22%)。消融：移除 p^E 影响最大 (−2.17%/−1.88%)，p^I 次之 (−1.31%/−1.46%)，p^R 最小 (−0.42%/−0.27%)，验证三分布层级贡献。检索数 K 敏感性揭示关键现象——K=15 时 GenLI 比 TWIN +1.65%，K=75 时仅 +0.88%，说明 GenLI 在检索预算受限时优势最大 (恰是在线场景)。推理效率：每 8192 样本 GenLI 4.6ms，TWIN 7.9ms，SIM-soft 6.8ms，比 TWIN 快 41%。在线 A/B (6 天、30% 流量) CTR +0.776%、RPM +1.567%，带来显著营收增长。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确承认的局限：(1) 开放数据集 (Amazon/TaoBao) 缺曝光日志，用&quot;序列中采样一个相近 item&quot;近似曝光 item 来训练 p^I，是 p^I 训练的噪声源。(2) 分布维度 N=4096 是碰撞概率与计算开销的折中，超过该值性能饱和。(3) IGM 依赖近期行为 (l=10~100) 生成分布，超过 ~100 条收益边际、成本上升。(4) 三类兴趣是领域特定设计，迁移到其它场景需重新设计。(5) 模哈希 (ID % N) 缺乏哈希碰撞对检索质量影响的形式化分析——这是最值得后续补强的理论缺口。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜推从业者最直接的可借鉴点：把&quot;目标-行为匹配检索&quot;重构为&quot;目标无关兴趣分布生成 + O(1) 查表&quot;，在序列长达千级时把检索延迟降 41%，且越是在线检索预算受限 (K 小) 收益越大——这正契合社区 feed/搜索排序的长行为建模痛点。已在 Meituan 广告系统生产部署 (240M 用户、1.1B 日样本)，模块可插拔、不需重训下游，落地复杂度低。在线 RPM +1.567% 对 CPC 计费模型直接转化为广告营收，CTR +0.776% 可迁移到内容点击场景。需注意的部署权衡：O(1) 查表牺牲了哈希碰撞的可解释性换取延迟，生产系统中可接受；隐式兴趣 p^I 依赖曝光日志，若平台无完整曝光埋点需先补数据基建。建议先在离线/长尾场景验证三分布设计，再灰度替换现有 SIM/TWIN 检索链路。</p>"
+     },
+     "weekly_rank": 3
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.17788",
+     "title": "Uncertainty-Calibrated Recommendations for Low-Active Users",
+     "url": "https://arxiv.org/abs/2605.17788",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "（作者见 arXiv 页面）",
+     "total_score": 4.1,
+     "adjusted_score": 4.27,
+     "preference_bonus": 0.17,
+     "rank_score": 4.27,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "推荐系统的一个根本矛盾：低活用户(LAU)要可靠、高活用户(HAU)要多样，平衡点在于量化模型不确定性——它近似预测出错风险、揭示模型当前知识边界。在大规模短视频/直播平台上，模型不确定性既能预警可能导致 LAU 流失的低质推荐，也能为 HAU 找到内容多样化机会。论文提出统一、可生产的框架，用 calibrated 不确定性驱动差异化策略：对 LAU 用基于模型不确定性的风险厌恶 deboosting 抑制不可靠推荐，对 HAU 用风险偏好的 UCB 策略鼓励探索，已在某大平台验证。",
+     "key_insight": "把「不确定性」做成可校准的可执行信号，并按用户活跃度分桶施加相反策略(LAU 风险厌恶 deboost / HAU 风险偏好 UCB)，是冷启动与新用户留存的实用范式。社区搜索同样有大量低活/新用户，召回不可靠时主动降权而非硬推，比单纯加新用户兜底规则更有理论依据，且 UCB 探索可直接复用到老用户内容多样性优化。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 3,
+       "id": "arxiv:oai:arXiv.org:2605.17788",
+       "total_score": 4.1,
+       "adjusted_score": 4.27
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 4
+    },
+    {
+     "id": "arxiv:2605.15299",
+     "title": "Fortress: A Case Study in Stabilizing Search Recommendations via Temporal Data Augmentation and Feature Pruning",
+     "url": "https://arxiv.org/abs/2605.15299",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "",
+     "total_score": 4.0,
+     "adjusted_score": 4.23,
+     "preference_bonus": 0.23,
+     "rank_score": 4.23,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 3,
+      "practicality": 5,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "搜索与推荐的预测模型常因部分输入特征带来分数波动而出现「时间维度不稳定」，在多阶段系统中会因上下游分数不一致而损害可靠性与体验。论文提出通用框架 Fortress，通过定位并裁剪导致分数随时间不一致的特征来提升模型稳定性与精度，遵循四步流程：(1) 采集历史快照、按时间切分数据集以捕获同一实体跨周期的分数波动；(2) 识别预测不稳定的样本；(3) 隔离并移除引发不稳定的特征；(4) 仅用稳定特征重训模型。论文还指出来自 LLM/BERT 的语义特征虽利于泛化但可能引入不稳定，需要纳入该裁剪流程评估。",
+     "key_insight": "把「特征稳定性」当成一个可量化、可裁剪的工程目标，而非泛泛追求精度——这对多阶段搜索/推荐链路（召回→粗排→精排）尤其关键，因为上游分数抖动会被下游放大。可直接借鉴的设计是用时间切分的历史快照构造「同实体跨周期分数波动」数据集来定位不稳定特征，并对引入语义噪声的 LLM/BERT 特征保持警惕：泛化收益与线上稳定性需要联合权衡。",
+     "best_date": "2026-05-19",
+     "appearances": [
+      {
+       "date": "2026-05-19",
+       "rank": 2,
+       "id": "arxiv:2605.15299",
+       "total_score": 4.0,
+       "adjusted_score": 4.23
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.15299",
+      "slug": "2605.15299",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>Fortress 针对搜索与推荐预测模型的&quot;时间维度不稳定&quot;问题：同一 query-app 对在不同时间得到差异显著的相关性分数，导致结果在&quot;可见/不可见&quot;间反复横跳 (flip-flop)，在多阶段系统中上游分数抖动会被下游放大、损害可靠性与体验。论文用 app 应用市场场景给出量化证据：全特征模型 PR-AUC 达 0.9572，但分数的变异系数 (CV) 高达 0.5462——精度高却极不稳定。权衡被明确点出：基于用户互动 (engagement) 的特征能提升精度但&quot;tend to introduce temporal instability&quot;；来自 LLM/DistilBERT 的语义特征更稳定但覆盖率仅 ~80%。如何在保留 engagement 预测力的同时压制其波动，是多阶段检索/排序系统的真实工程痛点。</p>\n<h2>2. 方法详解</h2>\n<p>Fortress 是一个四步通用框架。<strong>第一步 采集历史快照</strong>：按时间把数据切成连续区间 (daily snapshot)，对被多次打分的同一实体评估预测一致性。<strong>第二步 识别不稳定样本</strong>：取跨快照 CV 处于 75 分位 (最高变异) 的 query-app 对作为不稳定样本。<strong>第三步 隔离引发不稳定的特征</strong>：对高方差样本逐特征单独计算 CV，CV 最高的特征作为裁剪候选。<strong>第四步 仅用稳定特征重训</strong>：移除候选特征后重训。关键设计是贪心搜索 + 显著性门控——只有当移除某特征后在验证集上 PR-AUC 相对基线&quot;statistically significant improved&quot;才真正裁掉该特征，避免误删有预测力的特征。不稳定度量为 CV = 跨时间快照预测分数的标准差 ÷ 均值。数据结构：70/15/15 切分，~40% 样本标 BAD，其余 60% 均分 ACCEPTABLE/GOOD/EXCELLENT，daily 快照粒度。模型选 XGBoost (因其速度与抗噪)。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 框架可泛化：不限于本案例，适用于任何&quot;同一实体被多次打分&quot;的场景。(2) 时间稳定性分析视角：揭示&quot;单快照有益的特征可能跨时间退化&quot;，多快照视角暴露此前隐藏的不稳定性——这是方法论层面的核心洞见。(3) 实用权衡求解：engagement 信号有预测力但波动、语义特征稳定但覆盖不全，Fortress 在抑制波动的同时保留预测价值。(4) 系统级收益：不止模型指标，还带来下游推荐一致性的真实改善 (flip-flop 率下降)，证明特征稳定性是可量化、可裁剪的工程目标。</p>\n<h2>4. 实验结果分析</h2>\n<p>数据集为某大型商业应用市场的 query-to-app 相关性分类，含 ~25 个每日多次刷新的 engagement 特征 + LLM/DistilBERT 语义特征。四方法对比 (Table I)：仅语义特征 (SR) PR-AUC 0.9367 / CV 0.4744；全特征 0.9572 / 0.5462；多快照全特征 0.9593 / 0.5283；Fortress 0.9595 / 0.5274。即 Fortress 相对多快照基线再降 CV 3.44%、PR-AUC 绝对 +0.24%——在不牺牲 (甚至略升) 精度下显著降波动。系统级 (Table II flip-flop 率下降)：Region 1 降 14.7%、Region 4 降 49.6%、全局降 25.8%，区域差异大说明效果与地域/数据分布相关。值得注意：仅用 SR 特征虽 CV 最低 (0.4744) 但 PR-AUC 最低 (0.9367)，印证&quot;稳定但覆盖不全&quot;，Fortress 在两者间取得更优折中。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者未显式列举局限，但隐含承认：(1) 语义特征覆盖率仅 ~80%，存在覆盖缺口。(2) flip-flop 改善区域差异巨大 (14.7%~49.6%)，方法有效性可能依赖地域/数据分布。(3) 结论来自单一领域 ~25 个 engagement 特征，跨特征集/跨领域泛化未验证。此外论文未讨论延迟开销，多快照重训需历史数据采集与时间切分，更偏批处理而非实时特征工程——这是落地需补充评估的部分。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜推从业者最可直接借鉴的是把&quot;特征稳定性&quot;当成可量化、可裁剪的工程目标，而非泛泛追求精度。具体做法：用 daily 时间快照构造&quot;同实体跨周期分数波动&quot;数据集，按 CV 定位不稳定特征，并用&quot;移除后验证集 PR-AUC 显著提升&quot;作为裁剪门控，避免误删有效特征。这在召回→粗排→精排的级联架构中尤其关键——论文明确指出&quot;in multistage retrieval and ranking systems, volatility in production scores can lead to undesirable shifts in system dynamics&quot;，上游抖动会向下游传播。对引入 LLM/BERT 语义特征要警惕：泛化收益与线上稳定性需联合权衡，覆盖率不足时不宜全量替换 engagement 特征。部署上 XGBoost 因速度与抗噪被选用，多快照重训属离线批处理，适合作为定期特征体检流程嵌入模型迭代。社区搜索场景可直接套用：对 query-内容相关性模型做特征稳定性审计，裁掉抖动大的实时互动特征，换取结果排序的跨时间一致性、减少用户感知的&quot;结果忽隐忽现&quot;。</p>"
+     },
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.19651",
+     "title": "Divergence Meets Consensus: A Multi-Source Negative Sampling Framework for Sequential Recommendation",
+     "url": "https://arxiv.org/abs/2605.19651",
+     "source": "arxiv",
+     "company": [
+      "RUC"
+     ],
+     "published": "2026-05-20",
+     "authors": "Yuanzi Li, Lingjie Wang, Jingyu Zhao, Zihang Tian, Yuhan Wang, Lei Wang, Xu Chen",
+     "total_score": 4.1,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.1,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "序列推荐隐式反馈下的负采样长期被 self-guided hard negative 主导：模型用当前参数挑硬负，结果是采样和模型互相强化、被困局部最优。论文提出 MDCNS（Multi-source Divergence-Consensus），借鉴 Vygotsky 最近发展区理论搭建 Teacher-Peer-Self 三源打分框架：用辅助模型扩大采样空间、引入分歧度过滤、再用共识投票决定最终负样本。在多个公开数据集上 Recall@10 与 NDCG@10 显著优于 DNS、SRNS 等基线。",
+     "key_insight": "核心创新是把负采样从“单模型自洽”改成“多模型分歧 + 共识”——分歧扩展搜索空间避免坍缩，共识抑制噪声。对搜推系统的启示是：硬负样本不必依赖在线全库打分，可以蒸馏出 teacher/peer 离线打分缓存，再用 voting threshold 控制 precision-recall trade-off，工程上比 in-batch hard negative + ANN 召回更可控。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2605.19651",
+       "total_score": 4.1,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:oai:arXiv.org:2605.19651",
+      "slug": "2605.19651",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>序列推荐 (Sequential Recommendation, SR) 在隐式反馈下训练时，几乎所有 hard negative sampling 都属于&quot;self-guided&quot;范式——以模型当前打分为依据从候选池里挑硬负样本（如 DNS、SRNS、MixGCF）。作者将这一族方法归为&quot;L1 级别 self-learning&quot;，并指出三个被忽视的固有失效模式：(1) <strong>negative self-reinforcement loop</strong>：采样策略与模型当前状态紧耦合，模型一旦挑到坏负样本，下一轮的梯度反过来污染判别能力，循环把模型困在局部最优；(2) <strong>restricted sampling diversity</strong>：负样本只在模型当前关注的 item 子空间内搜索，采样分布逐步坍缩，泛化能力被严重抑制；(3) <strong>inefficient resource allocation</strong>：为挑一个 hard negative 必须对整个候选池打分，绝大多数分数被丢弃，computational cost 与 information gain 不匹配。论文借鉴 Vygotsky 的 Zone of Proximal Development (ZPD) 理论，把单模型自学习扩展为 Teacher-Peer-Self 三方协作，用 divergence 拓展边界、用 consensus 巩固知识，提出 MDCNS (Multi-source Divergence-Consensus for Negative Sampling)。论文已被 SIGIR&#x27;26 接收。</p>\n<h2>2. 方法详解</h2>\n<p>MDCNS 主要由三个模块组成，整套流程是 model-agnostic 的，可即插即用接入任何 SR backbone。</p>\n<p><strong>(1) Multi-source Scoring (3.1)</strong>：对每个用户序列 $S_u$，先从未观测物品空间均匀采样得到候选集 $C_N$（排除历史和 ground-truth 正样本）。随后两个对等的 student 模型——self 和 peer（如 self=SASRec、peer=Mamba4Rec），分别对 $C_N$ 打分，dot product 形式为 $s_{u,v}^<em> = h_u^</em> \\cdot e_v$。teacher 模型不是独立训练的网络，而是把两位 student 的打分直接相加：$s^{teacher} = s^{self} + s^{peer}$。这种 additive teacher 极大降低了部署成本，因为它没有第三个参数。</p>\n<p><strong>(2) Divergence Re-ranking (3.2)</strong>：对每个候选 item 计算 divergence score $d_{u,v} = |s^{self} - s^{peer}|$，再把它叠加到原始打分上得到 divergence-aware score $\\tilde{s}_{u,v}^<em> = s_{u,v}^</em> + d_{u,v}$。然后对 self/peer/teacher 三个视角分别取 top-M，再在 top-M 池里<strong>均匀采样一个负样本</strong>——既保证 hard 又引入随机性以缓解 false negative。对应损失 $L_{rec} = \\alpha L_{self} + \\beta L_{peer} + \\gamma L_{teacher}$ 是三个负样本视角的 BPR/BCE 加权之和。</p>\n<p><strong>(3) Consensus Distillation (3.3)</strong>：先前对 $C_N$ 计算出的全套分数本来只用了一两个 token，作者把 teacher 的全候选打分作为 soft target，最小化 self 与 teacher 在 $C_N$ 上的 KL 散度 $L_{dis}$。总目标变为 $L_{rec} + \\mu L_{dis}$，几乎免费地利用了已有的 forward 计算。</p>\n<p>训练算法见论文 Algorithm 1：每个 epoch 对每条 sequence 走一遍&quot;候选采样 → 多源打分 → divergence 重排 → 三视角负采样 → 共识蒸馏 → 反传更新&quot;。<strong>实验默认 backbone 是 SASRec</strong>，loss 使用 BCE 或 BPR，candidate 大小 N、top-M、$\\alpha\\beta\\gamma\\mu$ 视数据集略调。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：用 peer 模型打破自强化循环</strong>。引入异构 peer（SASRec ↔ Mamba4Rec），让 peer 的归纳偏置主动暴露 self 模型从未关注过的负样本子空间，从根上解掉 self-guided 采样的退化问题——这比 SRNS 用单模型 + uncertainty 估计更稳健，因为后者本质仍是 self-loop。</p>\n<p><strong>贡献 2：以 prediction divergence 量化&quot;有信息量&quot;的硬负样本</strong>。divergence 高意味着两个 student 对该 item 看法不一致，对模型学习的边际信息最大。把 divergence 当作 ranking signal 显式加进打分，比 SRNS、AdaSIR 那种基于 uncertainty 的隐式重赋权更直观、训练曲线更稳定（Figure 3）。</p>\n<p><strong>贡献 3：免费的 teacher 蒸馏</strong>。teacher 是 self + peer 的 additive 组合而非独立大模型，KL 蒸馏复用 multi-source 阶段已经算好的全候选分数，几乎不增加 forward 成本，把原本被丢弃的打分转化为额外梯度。</p>\n<p><strong>贡献 4：model-agnostic + loss-agnostic</strong>。在 SASRec、GRU4Rec、FMLP4Rec、LinRec、Mamba4Rec 五种主流 backbone 上，无论 BPR 还是 BCE 损失都能跑通且持续胜过 baseline，证明它不是 backbone-specific trick。</p>\n<h2>4. 实验结果分析</h2>\n<p>实验覆盖六个公开数据集：Amazon 系列的 Beauty / Toys / Sports / Health（5-core 过滤）、Kuaishou 的 KuaiRand（含随机曝光日志）、LastFM（音乐艺人推荐）。划分 70/20/10，指标 Recall@K、NDCG@K (K ∈ {5,10,20})，paired t-test 显著性 p&lt;0.05。</p>\n<p><strong>主表 (Table 3, SASRec + BPR)</strong>：MDCNS Recall@5 全面领先，相对最强基线提升幅度为 Beauty +39.49%、Sports +23.31%、Toys +16.06%、Health +25.81%、LastFM +15.02%、KuaiRand +12.59%；NDCG@5 提升幅度 11.65%–39.56%。值得注意的是，在最稀疏的 Sports 与 Toys 上提升幅度最大，说明 multi-source 采样确实把模型从局部最优拽了出来。在工业级别的 KuaiRand 上提升相对温和（约 7–13%），符合工业数据噪声多、行为更密集的特征。</p>\n<p><strong>Cross-backbone (Table 4–5)</strong>：在 SASRec / LinRec / FMLP4Rec / GRU4Rec / Mamba4Rec 上 MDCNS 都是 SOTA，证明非 backbone-specific。值得注意 LinRec 与 FMLP4Rec 这种轻量化架构同样受益，意味着 MDCNS 的收益主要来自采样质量而非容量补偿。</p>\n<p><strong>Ablation (Table 6)</strong>：依次剥离 CD → CD+DR → CD+DR+MS 性能阶梯式下降，三者均不可替代。<strong>移除 multi-source scoring (MS) 退化最大</strong>，与作者关于&quot;打破自强化循环是最关键&quot;的假设一致；<strong>移除 consensus distillation (CD)</strong> 影响次之，说明 teacher 蒸馏不仅省算力也确实在传递可用知识。</p>\n<p><strong>Training Dynamics (Figure 3)</strong>：值得玩味的反直觉发现是——常规蒸馏会让 student 与 teacher 损失 gap 不断收敛，但 MDCNS 的 KD loss gap 反而长期维持或扩大。作者解释这正是 divergence re-ranking 在主动阻止 teacher 与 self 表征同质化，从而让 teacher 持续提供有效梯度。这条曲线对调参（增大 μ 是否会导致同质化）是个很有用的诊断信号。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在 Conclusion 中明确承认两个局限：(1) <strong>训练成本</strong>——multi-source 架构需要同时维护并 forward self + peer 两个 backbone，训练阶段开销大约翻倍；(2) <strong>效率优化未深入</strong>——目前候选池 $C_N$ 仍是 uniform 采样，未探索更聪明的 candidate pool 构造（如基于流行度或 cluster）。作者明确表态未来会探索&quot;lighter and more efficient alternatives&quot;。</p>\n<p>另外一些隐含的局限没有在 paper 中讨论：(a) peer 模型架构如何选择——SASRec + Mamba4Rec 这种 transformer + SSM 组合在 inductive bias 上差异较大，但若两者过于相似 divergence 将退化；(b) 推断阶段只用 self 模型，因此论文报告的延迟与原始 backbone 相同；(c) 没有报告 online A/B test，工业线上效果待验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索 / 推荐工程团队的核心可借鉴点：</p>\n<p><strong>(1) 不必上线 peer 网络</strong>：MDCNS 的核心 cost 在训练阶段，<strong>线上推断只跑 self 模型</strong>，部署成本与 baseline 完全一致——这是最关键的工业友好属性，意味着可以在不改造 serving 链路的前提下拿到 15–40% 的离线指标提升。</p>\n<p><strong>(2) Peer 模型选择有讲究</strong>：建议选与现有线上 backbone 不同 inductive bias 的架构（线上是 SASRec/Transformer，可以挑 Mamba4Rec 做 peer；线上是 GBDT/MLP，可以挑序列化 Transformer），避免 divergence 退化。Peer 不需要追求强精度，反而需要&quot;看世界的方式不同&quot;。</p>\n<p><strong>(3) 复用算力做蒸馏</strong>：consensus distillation 几乎不增加 forward 成本，是把&quot;原本要丢的全候选打分&quot;转化为正则信号的一种通用技巧。对 CTR/CVR 排序场景，可以直接借鉴：每个 mini-batch 算 in-batch all-pair score 时，把 teacher（如双塔模型 + 协同过滤召回的混合）打分作为 soft target 蒸进单塔 ranker，既稳泛化又不额外费 GPU。</p>\n<p><strong>(4) 多 gate 负采样替代单一硬负</strong>：直接把&quot;top-M 内均匀采样&quot; + &quot;三视角负样本加权&quot;的范式搬到曝光未点击负样本里——可以缓解工业数据中 false negative 高发的痛点（曝光未点击不一定 = 真不喜欢）。</p>\n<p><strong>(5) 监控指标</strong>：上线时可以加一个 divergence loss gap 监控曲线，若发现 gap 持续收缩，说明 peer 与 self 出现同质化，需要调整 peer 架构或重启 peer 训练——这是论文 Training Dynamics Analysis 提供的额外运维 insight。</p>\n<p><strong>部署考量</strong>：训练阶段 GPU/时间近似翻倍，但若在 A/B 上能拿到 5–10% 的 nDCG 提升，对大体量推荐场景仍然 ROI 显著；KuaiRand 上 +12% Recall@5 的工业实证给了一个相对保守的预期参考。</p>"
+     },
+     "weekly_rank": 6
+    },
+    {
+     "id": "arxiv:2602.18283",
+     "title": "HyTRec: A Hybrid Temporal-Aware Attention Architecture for Long Behavior Sequential Recommendation",
+     "url": "https://arxiv.org/abs/2602.18283",
+     "source": "web_search",
+     "company": [],
+     "published": "2026-02-20",
+     "authors": "Lei Xin, Yuhao Zheng, Ke Cheng, Changjiang Jiang, Zifan Zhang, Fanhu Zeng",
+     "total_score": 3.8,
+     "adjusted_score": 4.02,
+     "preference_bonus": 0.22,
+     "rank_score": 4.02,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 2
+     },
+     "summary": "长用户行为序列建模面临两难：线性注意力高效但状态容量有限、检索精度差；softmax 注意力精确但算力开销不可承受。HyTRec 用混合注意力架构显式解耦长期稳定偏好与短期意图尖峰——把海量历史序列交给线性注意力分支，为近期交互保留一条专门的 softmax 分支，从而在万级交互的工业规模上下文里恢复精确检索能力。再设计 Temporal-Aware Delta Network (TADN) 动态加权新鲜行为信号、抑制历史噪声。工业规模数据上 HyTRec 保持线性推理速度，对超长序列用户的 Hit Rate 提升超过 8%。",
+     "key_insight": "「长期偏好走线性注意力、短期意图走 softmax」的分支解耦是长序列用户建模在延迟约束下的务实折中，对社区搜索的终身行为序列(收藏/搜索/点击历史)建模直接可借。TADN 用时间衰减动态压制历史噪声、抬升新鲜信号，解决了线性注意力对兴趣漂移反应迟钝的老问题；超长序列用户 +8% Hit Rate 且推理仍是线性，工业落地性强。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 4,
+       "id": "arxiv:2602.18283",
+       "total_score": 3.8,
+       "adjusted_score": 4.02
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.16825",
+     "title": "Echoes in Filter Bubble: Diagnosing and Curing Popularity Bias in Generative Recommenders",
+     "url": "https://arxiv.org/abs/2605.16825",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "（作者见 arXiv 页面）",
+     "total_score": 3.75,
+     "adjusted_score": 3.98,
+     "preference_bonus": 0.23,
+     "rank_score": 3.98,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "生成式推荐(GR)以端到端统一框架展现出改变推荐范式的潜力，但仍受长期存在的流行度偏置困扰；少数把传统去偏方法迁移到 GR 的尝试效果有限，且 GR 为何受流行度偏置影响的根因未被探明。论文聚焦 GR 的两个核心面：生成框架的优化与基于语义索引的 item tokenization，通过理论分析识别出严重流行度偏置源自 token 级优化缺陷与 item tokenization 的无差别性两者的合流，并据此提出一种新的生成式去偏方法在 token 级与索引层同时纠偏。",
+     "key_insight": "把 GR 流行度偏置的根因归到「token 级优化缺陷 + 语义 ID 无差别分配」两点并给出理论刻画，是少见的从机制而非现象层面分析 GR 偏置的工作。对正在评估生成式召回/语义 ID 的团队有直接价值：上语义 ID 体系前需评估 tokenization 是否会放大头部内容，社区 UGC 头部聚集效应尤其敏感，去偏要在 token 优化目标里做、而非事后重排补丁。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 5,
+       "id": "arxiv:oai:arXiv.org:2605.16825",
+       "total_score": 3.75,
+       "adjusted_score": 3.98
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2510.08932",
+     "title": "MATT-CTR: Unleashing a Model-Agnostic Test-Time Paradigm for CTR Prediction with Confidence-Guided Inference Paths",
+     "url": "https://arxiv.org/abs/2510.08932",
+     "source": "web_search",
+     "company": [
+      "Alibaba"
+     ],
+     "published": "2025-10-10",
+     "authors": "Moyu Zhang, Yun Chen, Yujun Jin, Jinxin Hu, Yu Zhang, Xiaoyi Zeng",
+     "total_score": 3.9,
+     "adjusted_score": 3.95,
+     "preference_bonus": 0.05,
+     "rank_score": 3.95,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 1
+     },
+     "summary": "论文指出低频特征组合会显著拖累 CTR 预估精度，且这一问题被现有训练期方法忽视。MATT 提出首个面向 CTR 的模型无关测试期 (model-agnostic test-time) 范式：用分层概率哈希 (hierarchical probabilistic hashing) 估计不同阶特征组合的出现频次，作为该组合的置信度分数；再以置信度作为采样概率，在推理阶段迭代构造多条不同的推理路径，最终聚合多路径预测以削弱低置信特征的影响。该方法可叠加在已有 SOTA CTR 模型之上，离线实验与阿里线上 A/B 共同验证有效，线上 CTR 提升约 5.3%。",
+     "key_insight": "把“特征组合出现频次”量化成置信度并用作推理期采样概率，是一个无需重训练、可外挂在现有精排模型上的增益手段，部署成本低于改训练流程，适合社区搜索这类特征稀疏、长尾 query/UGC 组合多的场景。代价是测试期需要跑多条推理路径，需在多路径数量与线上时延间做权衡（论文 2 表/4 图规模较小，建议先在离线评估路径数对 nDCG/CTR 与 RT 的边际曲线）。分层概率哈希本身也可复用为特征质量诊断工具。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 1,
+       "id": "arxiv:2510.08932",
+       "total_score": 3.9,
+       "adjusted_score": 3.95
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "arxiv:2605.21066",
+     "title": "Robust Personalized Recommendation under Hidden Confounding in MNAR",
+     "url": "https://arxiv.org/abs/2605.21066",
+     "source": "web_search",
+     "company": [],
+     "published": "2026-05-20",
+     "authors": "Zongyu Li, Wanting Su, Tianyu Xia",
+     "total_score": 3.9,
+     "adjusted_score": 3.9,
+     "preference_bonus": 0.15,
+     "rank_score": 3.9,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "推荐系统的 MNAR（非随机缺失）交互数据带来选择偏差。IPW 与双稳健（DR）估计只能处理可观测混淆，遇到隐藏混淆即失效；RCT 数据昂贵，而全局敏感性分析假设未观测混淆对倾向得分的影响一致有界，忽略了用户-物品之间的异质性。论文提出 PUID，在用户-物品粒度估计敏感性边界并用对抗优化放松同质假设；BPUID 进一步引入预训练模型作为稳定参照。在 3 个真实数据集上，隐藏混淆场景下显著优于全局方法，且不需要 RCT 数据。",
+     "key_insight": "把\"敏感性边界\"从全局常数下放到用户-物品个性化粒度，是处理隐藏混淆的关键，对 CTR/CVR 去偏有直接借鉴：线上点击数据普遍 MNAR，统一的 IPS 截断上界往往过松或过紧。BPUID 用预训练模型当锚点稳定对抗训练，提示去偏可与现有 embedding 模型协同，而不必依赖代价高昂的随机流量实验。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 1,
+       "id": "arxiv:2605.21066",
+       "total_score": 3.9,
+       "adjusted_score": 3.9
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
+  "generative": {
+   "raw_count": 29,
+   "unique_count": 29,
+   "days": [
+    "2026-05-18",
+    "2026-05-19",
+    "2026-05-20",
+    "2026-05-21",
+    "2026-05-22"
+   ],
+   "papers": [
+    {
+     "id": "arxiv:2605.14434",
+     "title": "Efficient Generative Retrieval for E-commerce Search with Semantic Cluster IDs and Expert-Guided RL",
+     "url": "https://arxiv.org/abs/2605.14434",
+     "source": "web_search",
+     "company": [],
+     "published": "2026-05-14",
+     "authors": "Jianbo Zhu, Xing Fang, Jing Wang, Mingmin Jin, Bokang Wang, Guangxin Song, Zhenyu Xie, Junjie Bai",
+     "total_score": 4.9,
+     "adjusted_score": 4.9,
+     "preference_bonus": 0.25,
+     "rank_score": 4.9,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 4
+     },
+     "summary": "针对生成式检索在大规模电商搜索中难以落地的问题，论文把它定位为召回阶段的增量通道，不替换原有多级检索。CQ-SID 结合类目感知与 query-item 对比学习，叠加 Residual Quantized VAE，压缩 beam search 复杂度；EG-GRPO 用稀疏奖励让生成式检索对齐下游排序目标。离线语义点击 hitrate 相对提升最高 26.76%、个性化点击 hitrate 提升 11.11%，beam size 减半；线上 A/B GMV +1.15%、UCTCVR +0.40%；生产环境中生成式召回通道贡献 50.25% 曝光、58.96% 点击、72.63% 成交。",
+     "key_insight": "生成式检索落地的关键不是整链路替换，而是作为召回增量通道并用 RL 对齐下游排序：CQ-SID 的类目感知聚类 ID + RQ-VAE 把 beam 规模砍半解决延迟瓶颈，EG-GRPO 用专家引导的稀疏奖励把生成目标与排序 nDCG/CTR 对齐。对社区 UGC 短文本搜索可直接借鉴：在现有倒排/向量召回外挂一路生成式语义召回，用 query-item 对比学习注入相关性信号，72.63% 成交占比说明语义召回能显著补充长尾覆盖。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 1,
+       "id": "arxiv:2605.14434",
+       "total_score": 4.9,
+       "adjusted_score": 4.9
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.14434",
+      "slug": "2605.14434",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>论文针对生成式检索在大规模电商搜索中难以直接落地的三个障碍展开。其一，端到端从数亿量级商品库中生成，存在覆盖率、延迟与马太效应（Matthew effect）问题；其二，one-item-one-ID 的 Semantic ID 映射需要海量训练数据和很大的 beam size，与线上延迟约束冲突；其三，仅用点击信号训练的召回模型与下游排序目标不对齐，召回出的候选不一定是下游愿意曝光的高质量候选。基于此，作者明确把生成式检索定位为召回阶段的增量通道（recall-stage supplement），而不是整链路替换，从而把问题约束在&quot;可控延迟下补充长尾语义召回&quot;这一可部署的范围内。这一动机来自真实生产约束：论文最终在天猫 App（TmallApp）上以 200 QPS / 8 GPU、~40ms 端到端延迟、99.9% 可用性部署，说明问题设定是从工程可行性反推的。</p>\n<h2>2. 方法详解</h2>\n<p>方法由 CQ-SID（语义聚类 ID 构造）+ 渐进式 Query-to-SID 训练 + EG-GRPO（排序对齐 RL）三段组成。</p>\n<p>CQ-SID 把 Semantic ID 当作聚类标识而非物品唯一 ID，遵循三原则：语义聚合（相似物品映射到同一 SID）、簇间可区分、层次结构（共享前缀便于 beam search 剪枝）。骨干是三层 RQ-VAE，码本规模 K1×K2×K3 = 2048×1024×1024。第一层用类目引导残差量化（Category-Guided Residual Quantization）：第一层码本被约束到 1711 个有效类目 ID，已知物品直接用类目 ID 索引第一层码本，其余走最近邻量化；码本用 EMA 更新（衰减因子 λ∈(0,1)）并配 codebook restart 防坍缩。第二个组件是 query-item 对比学习，对高置信 query-item 对施加双向 InfoNCE 损失（cosine 相似度、温度 τ），无关联 query 的物品做 mask。联合目标 L = L_recon + β·L_commit + γ·L_InfoNCE，超参 β=1.0、γ=0.001、τ=0.1、对比 batch=128。SID 后处理（Algorithm 1）用 T_max=50、G_max=100：簇大小超过 T_max 时随机切成 G 组并拼接组后缀，缓解大簇内不可区分。</p>\n<p>渐进式训练用 Qwen2.5-0.5B，分四阶段：Stage1 Item-to-SID（物品标题，batch 128，LR 1e-4，2k steps）；Stage2 Query-to-SID（query + N=3 采样 SID，90.3M 样本，batch 256，LR 4e-5，2.5k steps）；Stage3 个性化 UQ2SID（用户特征 + query + 近期点击，73.7M 样本，batch 64，LR 4e-5，5k steps）；Stage4 排序对齐用 EG-GRPO（rollout batch 512，group size 8）。CQ-SID 训练数据共 37.5M（21.1M 含 query-item 对，16.4M 仅物品）。</p>\n<p>EG-GRPO 的奖励分层（Eq.8）：购买 1.0、点击 1.0、曝光 0.5、合法 SID 0.1、其余 0.0；优势用 GRPO 标准的组内归一化 A(oi)=[R(oi)-mean]/[std+ε]。关键创新是专家注入（Algorithm 2）：从 P_clk∪P_exp 采样 K 个 ground-truth SID 作为伪生成输出注入组内，扩展组 G=G_sampled∪G_expert 共同参与奖励与梯度，在稀疏奖励下提供稳定高质量信号，避免标准 GRPO 的 mode concentration（过度集中到高置信 SID 而坍缩探索）。超参 K=2 或 4、group size 8、KL 权重 1.0、LR 1e-6、1k steps。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，CQ-SID 用语义聚类 ID 替代 one-item-one-ID，配合类目引导量化与 query-item 对比学习，把 beam search 复杂度显著降低——这是它能在 ~40ms 延迟内服务的根因，机制在于层次前缀让 beam search 可早剪枝，且聚类降低了需要区分的目标空间。第二，四阶段渐进式 SFT 把 query→SID 映射从物品语义对齐逐步细化到个性化，解决了直接训练个性化生成数据需求过大的问题。第三，EG-GRPO 通过注入 ground-truth 样本稳定稀疏奖励优化，并用分层奖励同时平衡点击与曝光两个目标；相比标准 GRPO（K=0）在 clk@10/pvr@10 上反而下降，EG-GRPO 在 clk/exp/pvr 全指标一致正向。第四，完整的线上 A/B 与生产占比数据，验证了该范式作为召回增量通道的真实业务价值。</p>\n<h2>4. 实验结果分析</h2>\n<p>语义召回（同 beam，Table 1）：CQ-SID 在 beam@1 达 0.0758，相对 RQ-VAE 0.0598 提升 26.76%，beam@10/@100 分别 +22.57%/+18.89%；消融显示去掉类目（w/o Cate）提升降到 +13.71%，去掉 query-item（w/o QI）在 beam@1 甚至 -0.33%，说明 query-item 对比对低 beam 预算最关键。效率（Table 2）：CQ-SID 在 beam@30 取得 0.4422，超过 RQ-VAE 在 beam@65 的 0.4275，等价 beam 数减少约 53.85%。个性化召回（Table 3）：同 beam 下 beam@1 0.1510（+11.11%）、beam@100 0.7431（+7.51%）；top-1K 截断下 CQ-SID 在 beam@160 达 0.7984，优于 RQ-VAE beam@195 的 0.7607（beam 数 -17.95%）。EG-GRPO 对齐效果（Table 4）：标准 GRPO（K=0）出现 mode concentration——clk@1 升但 clk@10、pvr@10 降；EG-GRPO（K=2/4）在 clk@1/clk@10/exp@1/exp@10/pvr@10 全部正向。线上：天猫 App 两周 A/B，GMV +1.15%、UCTCVR +0.40%；生产中该通道贡献 50.25% 曝光、58.96% 点击、72.63% 成交，成交占比远高于曝光占比，说明语义召回带来的候选转化质量高。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出 EG-GRPO 增益幅度有限，原因是 SFT 已把模型带到接近局部最优，RL 提升空间被压缩；且 hitrate 是二值指标，一旦目标 SID 已在 beam 内便无法进一步体现增益，低估了 RL 的实际作用。作者也强调点击与曝光之间的权衡是&quot;真实而尖锐&quot;的，EG-GRPO 是在 Pareto 前沿上导航而非单目标最大化，这意味着收益依赖业务对两目标的相对偏好。此外方法显式限定为多级漏斗中的召回增量通道，top-1K 截断把数亿库压到 21M，未覆盖端到端排序-生成统一；聚类 ID 的随机分组后缀对极大簇仍是近似手段，簇内可区分性是潜在天花板。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 短文本搜索，最直接的借鉴是把生成式语义召回作为现有倒排/向量召回旁挂的一路增量通道，而非替换主链路——72.63% 成交占比说明它能补足长尾语义覆盖且转化质量高。具体可落地的设计：用类目（或社区话题/标签体系）引导第一层码本，使 SID 天然带业务先验并支持 beam 早剪枝；用高置信 query-item 点击对做双向 InfoNCE，把相关性信号注入 tokenizer；用聚类 ID 而非物品唯一 ID 控制 beam 规模，是 ~40ms / 200QPS / 8GPU 可服务的关键。EG-GRPO 的专家注入对稀疏奖励场景（社区搜索点击/互动稀疏）尤其有用，可缓解 GRPO 的 mode concentration；奖励分层（互动&gt;点击&gt;曝光&gt;合法）可直接映射到社区的点赞/收藏/点击/曝光分层。部署要点：动态 beam [20,50,100]、层次 SID 剪枝、top-1K 截断控制候选规模，是延迟可控的工程前提。</p>"
+     },
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.18792",
+     "title": "Trust or Abstain? A Self-Aware RAG Approach",
+     "url": "https://arxiv.org/abs/2605.18792",
+     "source": "arxiv",
+     "company": [
+      "Rutgers"
+     ],
+     "published": "2026-05-20",
+     "authors": "Xi Zhu, Ziqi Wang, Kai Mei, Wujiang Xu, Minghao Guo, Bangji Yang, Jiajun Fan, Dimitris N. Metaxas",
+     "total_score": 4.0,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.0,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "RAG 在外部证据 (CK) 与模型参数知识 (PK) 冲突或两者都不可靠时容易产生错误。作者基于五个冲突 QA 数据集，针对每个 LLM backbone 构造了约 69K 条 query-context 实例的 ground-truth-aligned 冲突基准，量化测得 PK-only 与 CK-conditioned 两条答案路径的可靠性。在此基础上提出 SABER：一个无需微调 LLM 的 Self-Aware Belief Estimator，将 self-prior 与 PK/CK 两侧条件概率组合后再决定是回答 (Trust) 还是拒答 (Abstain)，在 5 个数据集上拒答-准确率 Pareto 优于纯一致性投票与置信度阈值方法。",
+     "key_insight": "面向社区 UGC 搜索的 RAG/问答场景，召回到的帖子、评论本身就经常存在事实冲突或低质，单纯靠语义相似度排序生成回答容易自信地胡说。SABER 给出可落地的范式：对同一 query 同时构造 \"只用参数知识\" 和 \"以检索证据为条件\" 两条生成路径，再用自洽性 + 证据条件似然估计置信度，从而把 \"拒答\" 做成一等公民。该思路无需训练，适合先验证业务收益再扩展到精排或答案改写。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2605.18792",
+       "total_score": 4.0,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:oai:arXiv.org:2605.18792",
+      "slug": "2605.18792",
+      "content_html": "<h1>Trust or Abstain? A Self-Aware RAG Approach — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>RAG 已成为缓解 LLM 幻觉的主流范式，但作者指出已有方法在面对 <strong>知识冲突</strong> 时只做了 &quot;二选一&quot; 的路由：要么相信模型的参数知识 (Parametric Knowledge, PK)，要么相信检索到的上下文知识 (Contextual Knowledge, CK)，几乎没有方法显式地问 &quot;这两条路径都不可靠时该怎么办&quot;。作者用 &quot;考试 + 教科书&quot; 的类比刻画该 gap：一个学生既有记忆 (PK) 又有可能错误的参考书 (CK)，理性策略是 &quot;两者都不可靠时拒答&quot;，而当前 RAG 系统经常被迫给出 confident hallucination（参数知识被高估、忽视纠正性证据）或 context over-reliance（被错误检索片段误导，丢弃正确内部知识）。</p>\n<p>为量化这个问题，作者基于 5 个冲突 QA 数据集 (ConFiQA QA/MR/MC、ConflictQA-PopQA、ConflictBank、TriviaQA、Natural Questions) 在 4 个 backbone (Qwen-2.5-3B/7B-Instruct、Llama-3.2-3B、Llama-3.1-8B) 上构造了约 68,872 / backbone 的 PK 路径 vs. CK 路径 ground-truth-aligned 实例，发现在 ConflictBank 上当前最好的 inference-time 路由 TPC 的 Macro Faithfulness Score 仅 64.3%，远低于本文 SABER 的 92.5%——也就是说在两条路径冲突时，主流方法有近 1/3 的样本选错了知识源。</p>\n<h2>2. 方法详解</h2>\n<p>SABER 的核心是把 &quot;Trust or Abstain&quot; 建模为四象限决策：用 self-prior 表征模型对问题本身的把握，用 PK-条件 / CK-条件表征对每条答案路径的事后可靠度，再用两个轻量分类器输出 PK / CK 的可靠概率，最后落到四象限规则。</p>\n<p><strong>(a) Self-Prior 表征</strong>：只输入 query，不带任何检索内容，做一次前向，把第 ℓₚ 层 hidden state 抽出来作为 &quot;考前直觉&quot;，反映模型对问题本身是否有把握。</p>\n<p><strong>(b) PK-条件推理表征</strong>：让模型按 &quot;假设我的参数知识正确&quot; 生成 K = 3 条 chain-of-thought rollout（temperature = 0.9 采样保证多样性），对每条 rollout 再做一次 self-evaluation 前向，把第 ℓc 层 hidden state 抽出，对 3 条 trace 做 mean pooling 得到 PK 侧 robust 表征。</p>\n<p><strong>(c) CK-条件推理表征</strong>：同样的 K=3 rollout，但前缀里强制 &quot;假设检索文档可靠并包含必要事实&quot;，按同样方式抽 hidden state 并 mean pool。</p>\n<p><strong>(d) 信念分类器</strong>：把 self-prior 分别与 PK 侧、CK 侧条件表征拼接，喂给两个独立的小型 MLP (256→128，ReLU + dropout 0.2)，输出 p̂_pk 与 p̂_ck。训练只用 BCE 在 PK / CK 是否能给出正确答案的标签上，AdamW lr = 1e-3，weight decay 1e-4，batch 256，最多 50 epoch 在验证集 AUROC 上 early-stop，patience 8。注意 backbone 全程冻结，只训 MLP，所以单条样本的全部训练成本只是抽几次 hidden state 加 256-128 MLP。</p>\n<p><strong>(e) 四象限决策</strong>：阈值 τ = 0.5，把 (p̂_pk &gt; τ, p̂_ck &gt; τ) 划成 4 个 cell。两侧都可靠取置信度更高的；只一侧可靠就走那侧；都不可靠则 abstain (在部署模式下也可以走 fallback)。τ 可以离线扫 [0.05, 0.95] 调风险-覆盖，无需重训。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：知识冲突基准化</strong>。作者第一次把 &quot;PK-only vs. CK-conditioned&quot; 两条答案路径在 5 个冲突 QA 数据集上系统对齐，对每个 backbone 生成 ~69K 条标注实例，按 80/10/10 切分 (55,097 / 6,889 / 6,886)。这套基准本身就是后续做 self-aware RAG 工作的基础设施，比此前 ConFiQA 等单点评测覆盖更广。</p>\n<p><strong>贡献 2：Self-Prior + 条件 hidden state 的解耦表征</strong>。不同于 Implicit-SCR 等只读单一隐状态的方法，SABER 显式建模 &quot;对问题本身的先验&quot; 与 &quot;走某条路径后的事后可靠度&quot; 两类信号。消融显示只用 prior 会比完整 SABER 在 Acc 上低 3-5%，只用条件信号也有 +2.8% Acc / +13.4% MFS 的提升，验证了 &quot;条件化 hidden state 比 prior 携带更多可靠性信息&quot; 的判断。</p>\n<p><strong>贡献 3：多 trace mean pooling 的鲁棒性</strong>。K = 3 比 K = 1 在 Qwen-2.5-3B 上拿到 +3.2% MFS，对小模型增益最大；并且层扫描显示 mid-to-late layer 40%-70% 处都属于高准 plateau，超过 33% 网格点能进入 90 分位，方法对层选择不敏感。</p>\n<p><strong>贡献 4：无需 fine-tune 即可比肩 DPO</strong>。在 Llama-3.2-3B / Qwen-2.5-3B 上 SABER 与 CR-DPO 持平甚至领先，证明冻结 backbone + 轻量分类器可以替代代价更高的 RLHF / DPO 训练。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>端到端准确率与忠实度 (Table 1-2)</strong>：</p>\n<ul>\n<li>Llama-3.1-8B / ConflictBank：SABER Acc 80.2% vs. TPC 69.6%（+10.6 pp），MFS 92.5% vs. 64.3%（+28.2 pp）。</li>\n<li>Llama-3.1-8B / ConflictQA：MFS 91.0% vs. 63.7%（+27.3 pp）。</li>\n<li>跨所有 20 个 backbone × dataset 平均：+3.4 pp Acc、+15.4 pp MFS over best inference-time 方法。</li>\n</ul>\n<p><strong>选择性预测 / 拒答 (Table 3)</strong>：在默认 τ=0.5 下，</p>\n<table><thead><tr><th>Backbone</th><th>SABER Score</th><th>最强基线 (Implicit-SCR)</th><th>Δ Score</th><th>SABER F1</th></tr></thead><tbody><tr><td>Llama-3.1-8B</td><td>43.9%</td><td>25.4%</td><td>+18.5</td><td>72.5%</td></tr><tr><td>Qwen-2.5-7B</td><td>43.4%</td><td>18.8%</td><td>+24.6</td><td>78.0%</td></tr><tr><td>Llama-3.2-3B</td><td>38.5%</td><td>11.4%</td><td>+27.1</td><td>76.8%</td></tr><tr><td>Qwen-2.5-3B</td><td>39.6%</td><td>7.6%</td><td>+32.0</td><td>76.6%</td></tr></tbody></table>\n<p>风险-覆盖曲线 (Figure 3) 在 4 个 backbone 上都 Pareto 支配 prompt-based baseline，在与 Implicit-SCR 同覆盖率下 risk-on-answered 相对降低 19%-53%。</p>\n<p><strong>消融 (Figure 4)</strong> 验证：(1) prior-only ≈ 4 pp Acc 落后完整方法；(2) 单侧条件表征已能带来 ~13 pp MFS；(3) K=3 vs. K=1 对 3B 小模型的增益显著 (+3.2 pp MFS)，对 7-8B 中型模型增益逐步收窄，可作为推理预算与精度的 trade-off 设计依据。</p>\n<p><strong>层敏感性 (Figure 5)</strong> 显示选层是平台型问题：在中层至深层都能拿到接近最优，工程上不必对每个 backbone 单独网格调参。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在 Appendix G 自述三点局限：(1) backbone 局限于 Llama-3.x / Qwen-2.5，未在 mixture-of-experts、reasoning-distilled 模型 (DeepSeek-R1、QwQ) 上验证；(2) 检索侧只用 top-1 passage，多 passage 聚合与不同检索质量 (recall@k) 的影响未研究；(3) 冲突基准是 &quot;静态构造&quot; 的，真实 RAG 中的分布漂移 (时间敏感事实、对抗性投毒) 没有覆盖。</p>\n<p>笔者补一条更隐性的：SABER 拒答标签 y_pk / y_ck 来自 &quot;模型回答与 gold 一致&quot;，对开放式生成（摘要、解释）天然不适用，泛化到开放生成需重设计标签。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索这种 &quot;召回内容质量高度参差&quot; 的场景，SABER 给出非常贴近上线的范式：</p>\n<p><strong>(1) 落地步骤</strong>。给现有 RAG 系统加 SABER 几乎不动 backbone：a. 选好层 ℓₚ / ℓc（中层 40-70% 即可，无需精调）；b. 离线在站内冲突 QA / 站内问答日志上构造 ~50K-100K PK / CK 标注样本；c. 训两个 MLP，单 GPU 跑数小时；d. 上线时只需 K=3 rollout + 2 次条件 self-evaluation 前向。</p>\n<p><strong>(2) 业务收益</strong>。最直接的是把 &quot;自信胡说&quot; 转化成 &quot;安全拒答&quot;，对应到产品就是 &quot;展示原帖让用户自己判断&quot; 的兜底逻辑，能显著降低 LLM 摘要在 UGC 噪声上的 risk-on-answered。Pareto 提升 19%-53% 的 risk 降幅意味着同样 coverage 下假阳显著减少。</p>\n<p><strong>(3) 部署成本</strong>。多 trace 在 7B 模型上单 query 需 ~6-8 次前向，是裸 RAG 的 2-3×，可以用 SGLang/vLLM 的 prefix sharing + speculative decoding (本日 Top-2 Graft 论文) 摊薄；阈值 τ 完全离线可调，所有 backbone 上 τ ∈ [0.40, 0.55] 范围内 MFS 波动 &lt; 0.9%，业务方调 coverage 时不必担心翻车。</p>\n<p><strong>(4) 风险与配套</strong>。需要为 abstain 设计 fallback UX（例如：&quot;我们暂时没有把握给出答案，请查看以下相关帖子&quot;），否则拒答率 &gt; 20% 时用户体验下降明显；同时 self-prior 容易被 prompt 注入污染，K=3 rollout 内若出现 prompt injection 鼓励 &quot;高自信&quot;，建议把 self-prior 抽取限制在系统 prompt 之上的固定查询模板。</p>"
+     },
+     "weekly_rank": 2
+    },
+    {
+     "id": "arxiv:2605.17267",
+     "title": "RAGR: Review-Augmented Generative Recommendation",
+     "url": "https://arxiv.org/abs/2605.17267",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "RAGR authors (arXiv:2605.17267)",
+     "total_score": 3.95,
+     "adjusted_score": 3.95,
+     "preference_bonus": 0.2,
+     "rank_score": 3.95,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "论文指出当前生成式推荐 (GR) 虽然引入了 semantic ID、自回归解码、统一 token 空间等新机制，但仍沿用「只建模 item 序列」的假设，无法捕捉用户为什么选择某个 item 的评价性因素。RAGR 提出 Review-Augmented User Sequence Modeling：把用户撰写的 review 反馈直接编入生成式用户序列，与 item token 交错排列，而不是作为辅助 side information。review 文本暴露的潜在评价维度被纳入自回归生成目标，使 GR 在序列推荐任务上同时建模「选了什么」与「为何选」。",
+     "key_insight": "评论/点评本身就是社区平台的核心 UGC 短文本，RAGR 把这类评价文本当作生成序列的一等公民而非附属特征，这一思路可直接迁移到「用户历史评论+互动」联合建模的社区推荐与搜索排序场景。对实践的启示是：在 semantic ID 体系里为 UGC 文本设计独立 token 通道并与行为 token 交错，比把文本压成静态 embedding 更能保留评价语义，值得在短文本召回/重排中验证 review token 注入对 nDCG 的增益。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 1,
+       "id": "arxiv:2605.17267",
+       "total_score": 3.95,
+       "adjusted_score": 3.95
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 3
+    },
+    {
+     "id": "arxiv:2605.18271",
+     "title": "From Volume to Value: Preference-Aligned Memory Construction for On-Device RAG (EPIC)",
+     "url": "https://arxiv.org/abs/2605.18271",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "EPIC authors (arXiv:2605.18271)",
+     "total_score": 3.9,
+     "adjusted_score": 3.9,
+     "preference_bonus": 0.1,
+     "rank_score": 3.9,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "面向端侧个人 AI agent 的 RAG，论文认为内存预算受限时真正的瓶颈是「该存什么」才能让检索与用户对齐。EPIC (Efficient Preference-aligned Index Construction) 把用户偏好作为紧凑且稳定的个人上下文形式，贯穿整条 RAG 管线：从原始数据中选择性保留与偏好相关的信息，并把检索引导向偏好对齐的上下文。在覆盖对话、辩论、解释、推荐四类任务的 4 个 benchmark 上，EPIC 把索引内存压缩 2,404 倍，同时提升偏好遵循能力。",
+     "key_insight": "「以用户偏好为索引压缩的核心信号」对社区搜索的个性化召回有借鉴价值：与其全量存储用户行为再检索，不如先抽取稳定偏好画像作为索引锚点。2,404 倍的内存压缩说明偏好导向的索引裁剪在不显著损失偏好遵循的前提下极其激进，可用于端侧/低成本个性化重排，以及对长期用户兴趣做稳定建模而非依赖近期行为噪声。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 2,
+       "id": "arxiv:2605.18271",
+       "total_score": 3.9,
+       "adjusted_score": 3.9
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 4
+    },
+    {
+     "id": "hf:2605.20104",
+     "title": "Draft Less, Retrieve More: Hybrid Tree Construction for Speculative Decoding",
+     "url": "https://huggingface.co/papers/2605.20104",
+     "source": "huggingface",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Yuhao Shen, Tianyu Liu, Xinyi Hu, Quan Kong, Baolin Zhang",
+     "total_score": 3.9,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 3.9,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 4
+     },
+     "summary": "投机解码 (Speculative Decoding) 通过 draft-then-verify 加速 LLM 推理，但密集 draft tree 的 VRAM 带宽和算力开销吃掉了端到端 speedup；动态剪枝又会丢候选导致接受率下降。作者提出 Graft：把剪枝和检索耦合成互补操作，先 prune 释放预算，再用 retrieval 从 n-gram/缓存中补回被剪掉的高质量候选，形成 prune-then-retrieve 的 hybrid tree。实验显示在保持/超过 dense tree 接受长度的同时显著降低 draft 阶段算力，端到端 throughput 优于 EAGLE 等基线。",
+     "key_insight": "搜推线上 LLM 部署（搜索摘要、对话推荐）最痛的是 P95 时延，而投机解码已成为主流加速手段。Graft 的关键观察是 draft tree 不必都来自参数模型，可以引入轻量级 retrieval-based draft 来弥补剪枝后的覆盖损失，这与搜索系统已有的 query log/n-gram 资产天然契合。对于 UGC 搜索，可以把站内热门 query 的延续、热门评论模板做成 draft 检索源，几乎零额外训练成本就能拿到接受率收益。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 2,
+       "id": "hf:2605.20104",
+       "total_score": 3.9,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2509.00303",
+     "title": "Access Paths for Efficient Ordering with Large Language Models",
+     "url": "https://arxiv.org/abs/2509.00303",
+     "source": "arxiv",
+     "company": [
+      "Snowflake",
+      "UChicago",
+      "UCLA",
+      "UCSB"
+     ],
+     "published": "2026-05-21",
+     "authors": "Fuheng Zhao, Jiayue Chen, Yiming Pan, et al.",
+     "total_score": 3.65,
+     "adjusted_score": 3.85,
+     "preference_bonus": 0.2,
+     "rank_score": 3.85,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 3,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 3
+     },
+     "summary": "把“用 LLM 按语义排序”抽象为 LLM ORDER BY 算子，系统研究其物理实现：逐项打分（O(N) 次调用）、成对比较、批量外部归并三类。提出语义感知的外部归并排序与带多数投票的快排，并用动态优化器（启发式规则 + LLM-as-Judge + Borda 计数）按数据集自动选最优算法。在 TREC DL20 上外部归并取得 0.719 nDCG@10、自一致优化器 0.724；SembenchMovie 上从逐项打分 0.862 提升到归并排序 0.921、LLM-as-Judge 达 0.924 且成本降 26%；NBA 身高排序成本较冒泡排序降 6×。注：本期为 v3 扩展版（原始版本 2025-09）。",
+     "key_insight": "论文证明“没有一种 LLM 排序算法在所有任务上最优”——事实型查询用逐项打分、推理型查询用成对比较，需按数据特征动态选路。对搜索排序的启示：用 LLM 做相关性重排时，与其无脑成对比较，不如引入归并/快排式的分治结构把调用次数从 O(N²) 降到 O(N log N)，并用成本模型预估开销（DL20 成本预估误差仅 ±0.02 美元）。LLM-as-Judge 自动选路的思路可直接迁移到重排链路的算法选择。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2509.00303",
+       "total_score": 3.65,
+       "adjusted_score": 3.85
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 6
+    },
+    {
+     "id": "s2:cf35c3e9664bb563adae98a3f11c5c00556d00b4",
+     "title": "LLM-based Conversational Recommendation Agents with Collaborative Verbalized Experience",
+     "url": "https://www.semanticscholar.org/paper/cf35c3e9664bb563adae98a3f11c5c00556d00b4",
+     "source": "semantic_scholar",
+     "company": [
+      "Netflix",
+      "UVA",
+      "Cornell"
+     ],
+     "published": "",
+     "authors": "Yaochen Zhu, Harald Steck, Dawen Liang, Yinhan He, Nathan Kallus",
+     "total_score": 3.75,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 3.75,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "现有 LLM-based 会话推荐 (CRS) 要么 retrieve few-shot 示例，要么抽全局规则，难以利用 implicit、偏好导向的历史经验。作者提出 CRAVE：先让 CRS agent 在历史 query 上跑 rollout，再基于用户反馈反思 agent 行为，构造 \"verbalized experience bank\"；再训一个 collaborative retriever，用 content-parameterized multinomial likelihood 在 query-item 对上微调，将经验向量与协同信号绑定。最后用 debater-critic agent (DCA) 在生成阶段对候选回复做对抗式自审，多个数据集上 Recall@K、Coverage 优于 LLM4CRS 与检索增强基线。",
+     "key_insight": "面向社区内容的对话式发现/搜索场景，CRAVE 给出一条 \"经验沉淀-协同检索-辩论审校\" 的完整链路。可借鉴的工程设计：(1) 把 agent 历史轨迹 + 用户点击/停留反馈做成 verbalized experience，本质上是把行为日志翻译成 LLM 可读的偏好规则；(2) 协同检索器用 multinomial likelihood 同时学语义相似度和协同信号，避免冷启动；(3) DCA 双 agent 自审等价于把 ranker 的 listwise pairwise 思路搬到生成阶段。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 3,
+       "id": "s2:cf35c3e9664bb563adae98a3f11c5c00556d00b4",
+       "total_score": 3.75,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "blog:amazon-surefire-scaling-law-2026",
+     "title": "Making LLMs faster without sacrificing accuracy (Surefire architectural scaling law)",
+     "url": "https://www.amazon.science/blog/making-llms-faster-without-sacrificing-accuracy",
+     "source": "blog_rss",
+     "company": [
+      "Amazon"
+     ],
+     "published": "2026-05-15",
+     "authors": "Amazon AWS AI Labs (ICLR 2026)",
+     "total_score": 3.7,
+     "adjusted_score": 3.7,
+     "preference_bonus": 0.3,
+     "rank_score": 3.7,
+     "scores": {
+      "business_relevance": 2,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "AWS AI Labs 在 Chinchilla scaling law 基础上引入三个架构因子（hidden size d_model、MLP-to-attention 比例、GQA），把架构选择直接纳入 loss 预测。发现 LLaMA-3.2 风格模型最优 MLP/attention 比约为 1.0，远低于现有开源权重（LLaMA-3.2-1B 为 4.8），即现有模型在 MLP 层过度分配参数。据此训练的 Surefire-1B 在 H200+SGLang 上吞吐提升 47% 且精度不降，Surefire-3B 提升 12–17%，结论在 A100/H200 与 vLLM/SGLang 上一致。ICLR 2026。",
+     "key_insight": "scaling law 不只决定参数量，架构比例本身可纳入 loss 预测来指导设计：MLP/attention 比从 4.8 降到 1.0 即换来 47% 吞吐。对搜索/推荐的实践启示：若用 LLM 做 query 理解、生成式召回或重排，backbone 的 MLP 膨胀系数与 GQA 配置直接决定线上延迟和单卡吞吐成本，按该 scaling law 重选架构比单纯堆参数更划算。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 2,
+       "id": "blog:amazon-surefire-scaling-law-2026",
+       "total_score": 3.7,
+       "adjusted_score": 3.7
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2605.16428",
+     "title": "The Impact of AI Search on the Online Content Ecosystem: Evidence from Google and Reddit",
+     "url": "https://arxiv.org/abs/2605.16428",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "AI Search Ecosystem authors (arXiv:2605.16428)",
+     "total_score": 3.7,
+     "adjusted_score": 3.7,
+     "preference_bonus": 0.05,
+     "rank_score": 3.7,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 2,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "研究生成式 AI 搜索（Google AI Overviews）对 UGC 社区平台（Reddit）的影响。识别策略利用 Google 内容审核政策的差异：SFW 社区会被 AI Overviews 引用，NSFW 社区虽被自然搜索索引但被禁止出现在 AI 摘要中，从而构成准实验。采用双重差分 (difference-in-differences) 设计发现：AI Overviews 使 SFW 社区参与度上升——日评论数相对 NSFW 社区提升 12.0%、评论用户数提升 12.3%，即生成式摘要并未单纯「截流」，反而为被引用社区带来回流。",
+     "key_insight": "这是少见的、用因果识别量化「生成式搜索 vs UGC 社区流量」关系的实证，与社区搜索业务高度相关。结论提示：被生成式答案引用的优质 UGC 社区会获得参与度增益（+12%），因此社区平台的策略不应是抵制 AI 摘要，而是优化内容被检索/被引用的可发现性（类似 Answer Engine Optimization）。对内部搜索而言，生成式摘要+可点击溯源链接的组合可能同时提升满意度与社区互动，值得做线上对照实验。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 3,
+       "id": "arxiv:2605.16428",
+       "total_score": 3.7,
+       "adjusted_score": 3.7
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "hf:2605.20035",
+     "title": "Stage-adaptive Token Selection for Efficient Omni-modal LLMs",
+     "url": "https://huggingface.co/papers/2605.20035",
+     "source": "huggingface",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Zijie Xin, Jie Yang, Ruixiang Zhao, Tianyi Wang, Fengyun Rao",
+     "total_score": 3.7,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 3.7,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "Omni-modal LLM (om-LLM) 把视频和音频编码成时间对齐的非文本 token，在 LLM 前向中处理这些密集 token 计算开销巨大。作者先做 layer-wise token dependency 分析，发现视觉/音频依赖呈 block-wise 模式且随深度衰减——晚期层很多非文本 token 在跨模态融合后变得冗余。基于此提出 SEATS：免训练、按 stage 自适应剪 token，前段保留较多多模态 token，深层激进剪枝；在多个 om-LLM benchmark 上以 30%-50% token 预算保留 ≥97% 任务精度，吞吐 1.6-2.1×。",
+     "key_insight": "短视频/图文社区的多模态搜索如果上 om-LLM，最大瓶颈就是非文本 token 数量。SEATS 揭示一条免训练优化路径：跨模态依赖是分块且随深度衰减的，剪枝策略必须分阶段而非全局固定比例。可在自己业务上先做同样的 layer-wise dependency 探针实验，验证 \"早保留-晚剪枝\" 假设是否仍成立，再决定按层动态调整 token budget 的具体曲线。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 4,
+       "id": "hf:2605.20035",
+       "total_score": 3.7,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
+  "retrieval": {
+   "raw_count": 42,
+   "unique_count": 42,
+   "days": [
+    "2026-05-18",
+    "2026-05-19",
+    "2026-05-20",
+    "2026-05-21",
+    "2026-05-22"
+   ],
+   "papers": [
+    {
+     "id": "arxiv:2605.16479",
+     "title": "Policy-Grounded Dynamic Facet Suggestions for Job Search",
+     "url": "https://arxiv.org/abs/2605.16479",
+     "source": "arxiv",
+     "company": [
+      "LinkedIn"
+     ],
+     "published": "2026-05-19",
+     "authors": "Dan Xu, Baofen Zheng, Qianqi Shen, Jianqiang Shen, Wenqiong Liu, et al.",
+     "total_score": 4.65,
+     "adjusted_score": 4.75,
+     "preference_bonus": 0.1,
+     "rank_score": 4.75,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "针对 LinkedIn 上超过 80% 的求职 query 仅含 3 个以内关键词、意图严重欠定义的问题，提出动态分面建议 (Dynamic Facet Suggestion, DFS)：在用户与 query 的联合上下文下实时推荐个性化语义属性，引导用户交互式澄清意图。框架是 policy-grounded、retrieval-augmented 的排序流水线，含离线 taxonomy 构建、embedding 召回 top-K 候选、蒸馏小模型 (SLM) 打分三段。线上服务用 pointwise 单 token 打分 + batching + prefix caching 实现实时延迟。离线评测显示分面相关性与意图覆盖显著优于基线。",
+     "key_insight": "短 query 意图澄清是社区/UGC 搜索的共性痛点，本文给出可落地范式：用 taxonomy 约束生成空间 (policy-grounded) 避免 LLM 自由发散，embedding 召回收窄候选，再用蒸馏 SLM 做单 token pointwise 打分压低延迟。社区搜索可借鉴这套「离线知识库 + 召回 + 小模型重排」三段式做查询补全/相关搜索词，prefix caching + batching 的工程手法对高 QPS 场景直接可用。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 1,
+       "id": "arxiv:2605.16479",
+       "total_score": 4.65,
+       "adjusted_score": 4.75
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.20683",
+     "title": "Layer-wise Token Compression for Efficient Document Reranking",
+     "url": "https://arxiv.org/abs/2605.20683",
+     "source": "arxiv",
+     "company": [
+      "Amazon"
+     ],
+     "published": "2026-05-21",
+     "authors": "Shengyao Zhuang, zhichao Xu, Ivano Lauriola",
+     "total_score": 4.7,
+     "adjusted_score": 4.7,
+     "preference_bonus": 0.05,
+     "rank_score": 4.7,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "针对 Transformer cross-encoder 重排序器推理成本高的问题，提出 Layer-wise Token Compression (LTC)，把自适应 token 池化放到中间层而非输入层。在 MS MARCO passage/document 排序上，中间层压缩在保持排序质量的同时把 QPS 最多提升 25%（passage）和 116%（document），并可直接扩展到 listwise LLM 重排，长上下文场景收益更大。",
+     "key_insight": "双塔检索常用的输入层 token 压缩对 cross-encoder 无效，把压缩挪到中间层是关键发现；更意外的是用短 passage 训练、压缩后的模型在长文档排序上反超未压缩版本，说明压缩起到了鼓励长度无关表征的正则作用。对线上重排降本与跨长度泛化都有借鉴价值。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2605.20683",
+       "total_score": 4.7,
+       "adjusted_score": 4.7
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:oai:arXiv.org:2605.20683",
+      "slug": "2605.20683",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>Transformer cross-encoder 重排序器是现代 IR 系统的核心组件，但要把 query 与 document 拼成长序列一起过 Transformer，推理成本高、QPS 受限。一个已知的提速思路是 token compression——在 embedding 层把相邻 token 聚合，减少有效 token 数。这一招在双塔（bi-encoder）检索器上被证明有效，但作者通过实验发现：直接搬到 cross-encoder 上会失效。证据很硬：沿用 Jasper 的 embedding 层压缩虽然带来 25% 的 QPS 提升，却让 nDCG@10 从基线 0.727 暴跌到 DL19 的 0.5832、DL20 从 0.665 跌到 0.4975，约 20% 的效果损失。</p>\n<p>作者给出的根因假设是：cross-encoder 的相关性信号来自 query/document token 之间细粒度的交互，而这些交互从最早的 Transformer 层就开始发生；在 embedding 层就把 token 压掉，等于在交互发生之前抹掉了信号。双塔则是独立编码、只在向量层比相似度，所以对 token 压缩不敏感。这个观察直接引出本文的设计动机：压缩不能在交互之前做，而要等交互充分进行之后再做。</p>\n<h2>2. 方法详解</h2>\n<p>LTC（Layer-wise Token Compression）的核心是把 1D 自适应平均池化从 embedding 层挪到中间 Transformer 层。形式化为 H_compressed^(l) = C(H^(l), r)，输出 token 数 n&#x27; = ⌊n·r⌋，压缩比 r ∈ (0,1]。具体实现：在目标层 l<em>∈{1,…,L} 之前的 1 到 l</em>-1 层处理完整序列；从 l<em> 层起，沿 token 维做自适应平均池化，把相邻 token 表征合并，同时更新 attention mask 与位置索引；l</em> 到 L 层在压缩后的短序列上计算。池化用「相邻 token 平均」而非丢弃，尽量保留语义结构。</p>\n<p>对 listwise reranker，作者额外引入 document mask M∈{0,1}^(n×k)，只允许文档内池化、禁止跨文档压缩，并保护 instruction prompt 与 query 不被压。</p>\n<p>训练设置很关键：pointwise 用 Qwen3-0.6B-Base（28 层 decoder + 分类头），在 MS MARCO passage（约 880 万 passage、50 万训练 query，用 Tevatron 取 hard negative）上训练，损失为 1 正 + 5 hard negative 的交叉熵，3 epoch、batch 32、lr 1e-5、AdamW，且压缩在训练阶段就施加以让模型适应。listwise 用 Mistral-7B-Instruct-v0.3（取首生成 token 的 logits），RankZephyr/FIRST 数据（每 query 20 篇 GPT-4 排序文档），语言建模 + ListMLE 联合损失、LoRA rank 16。QPS 在单张 NVIDIA L40S 上测。</p>\n<p>一个非常重要的非显然结论：压缩必须「compression-aware training」。把压缩只在推理时加到未经压缩训练的模型上会灾难性掉点——r=0.2、layer 2 时 nDCG@10 从 0.728 跌到 0.287（相对下降 60%），说明未经训练的中间层表征不具备对 token 缩减的鲁棒性。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，定位并解释了「embedding 层压缩对 cross-encoder 失效」这一现象，给出 token 交互时机的机理解释，纠正了从双塔直接迁移的错误直觉。第二，提出中间层自适应池化 LTC，把压缩点作为可调超参 l* 与压缩比 r 的二维设计空间，实验找到 layer 8–14 的「甜区」：既保排序质量又显著提速。第三，把方法无缝扩展到 listwise LLM reranker，用 document mask 实现文档内压缩、保护 prompt/query，长上下文 listwise 收益更大（27–73% QPS）。第四，意外发现压缩在长文档泛化上起到正则作用——用短 passage 训练、压缩后的模型迁移到长文档排序时反超未压缩版本。</p>\n<h2>4. 实验结果分析</h2>\n<p>Pointwise passage（Qwen3-0.6B，TREC DL19/DL20）：基线 DL19 nDCG@10=0.727、QPS=5.35。最优 LTC（r=0.4、layer 8）DL19 nDCG@10=0.7274 与基线持平，QPS 5.35→6.69，提速 25%。消融揭示规律：早层压缩伤害大（layer 2、r=0.2 跌到 0.638，降 12.2%，p&lt;0.001）；中层 8–14 中等压缩保质量且显著提速；后层 14–20 轻压缩（r=0.8）甚至略超基线（0.7314 vs 0.727，不显著），印证正则效应。</p>\n<p>Pointwise document（512 token 截断）：r=0.4、layer 20 在 DL19 上 nDCG@10=0.663，反超基线 0.651——压缩鼓励长度无关表征。文档排序因序列更长，QPS 提升最高可达 116%。</p>\n<p>BEIR 六数据集（NFCorpus、FiQA、ScIDocs、SciFact、TREC-COVID、ArguAna，BM25 top-100 重排）零样本：无压缩 avg nDCG@10=0.422；r=0.8/layer20 为 0.424（+9% QPS）；r=0.6/layer14 为 0.420（+18%）；r=0.4/layer8 为 0.416（+25%），最激进压缩也仅相对降 1.4%。Listwise（Mistral-7B）passage 在无显著掉点下获 27–73% QPS 提升，document 提速空间更大。</p>\n<p>最值得警惕的反面结果是 zero-shot 压缩的崩盘（0.728→0.287），它把「必须压缩感知训练」这条工程红线划得很清楚。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出的局限：(1) 目标层 l* 与压缩比 r 目前靠人工 sweep，未来可用 NAS 自动选择以降低部署成本；(2) 基线对比偏窄，主要对 Jasper，缺与 MRL-Reranker、prompt compression、KV-cache 压缩、early-exit 等的系统比较；(3) 激进压缩依赖压缩感知微调，完全 training-free 的变体仍开放；(4) 正则化假设还需表征级分析（隐状态范数、attention 稀疏度随长度变化）与 runtime 拆解来确证。除作者所述，评测主要在 MS MARCO/BEIR 学术集，缺真实线上 A/B 与多语种、短文本 UGC 场景验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索重排的直接启示：cross-encoder 想降本，不要在输入层砍 token，而应在中间层（经验上 8–14 层）做自适应池化，并务必在训练阶段就加入压缩。落地收益清晰——passage 重排 +25% QPS、长文档重排最高 +116% QPS，且质量基本无损；这对 query-document 序列偏长、重排算力吃紧的线上系统很有吸引力。压缩比 r 与压缩层 l* 构成「质量-时延」可调旋钮：要更激进提速就早压、要更稳就晚压且轻压。</p>\n<p>值得借鉴的还有两点：其一，「压缩即正则」的现象提示，用短文本训练、压缩部署，可能换来对长文档/长 query 更好的泛化，适合 UGC 长短文混合的检索场景；其二，listwise LLM reranker 用 document mask 做文档内压缩、保护 instruction 与 query，是把 LLM 重排搬上线时控成本的实用模式。部署注意：必须重训（compression-aware），不能对存量模型推理期直接加压；层/比例需离线 sweep 选定，建议结合自身延迟预算与 nDCG 容忍度确定甜区。</p>"
+     },
+     "weekly_rank": 2
+    },
+    {
+     "id": "arxiv:2605.18857",
+     "title": "The 99% Success Paradox: When Near-Perfect Retrieval Equals Random Selection",
+     "url": "https://arxiv.org/abs/2605.18857",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-20",
+     "authors": "Vyzantinos Repantis, Harshvardhan Singh, Tony Joseph, Cien Zhang 等",
+     "total_score": 4.65,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.65,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "论文指出传统 IR 评估按「人工最终过滤」假设设计，覆盖率/Top-K 命中率在 LLM 直接消费检索结果时严重失真。作者提出 Bits-over-Random (BoR) 这一基于超几何基线的「机会校正」选择性度量：BoR = log2(P_obs / P_rand)，其中 P_rand 来自命中规则下的随机基线。在 20 Newsgroups 上，BM25 与 SPLADE 在 K=100 的 coverage 都报告 >99% 成功率，但 BoR ≈ 0，说明这相对随机选择毫无信息增益。",
+     "key_insight": "对社区搜索/UGC RAG 系统的启示是：当下游是 LLM 而非人工时，Recall@K 这种「宽松命中」指标会高估检索器价值，导致离线评估与线上效果脱节。BoR 提供一个几乎零成本的诊断信号——只需现有 qrels 即可计算，特别适合短文本召回中「候选池大但相关文档稀少」的场景。可立即落地用于排序模型 A/B 评估的辅助指标，识别「看上去成功」的检索回路。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 1,
+       "id": "arxiv:2605.18857",
+       "total_score": 4.65,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.18857",
+      "slug": "2605.18857",
+      "content_html": "<h1>深度解读：The 99% Success Paradox</h1>\n<h2>1. 问题与动机</h2>\n<p>传统 IR 评估（Recall@K、Precision、F1、nDCG）的设计假设是&quot;人工读者最终过滤&quot;——人能扫描、跳过、忽略不相关结果，所以系统的目标是尽量把相关文档塞进 top-K 即可。但 LLM 作为消费者并不具备这种过滤能力：每一条候选都进入 token、注意力与生成损失，无关候选直接拖垮下游质量。论文用一个直观例子说明问题：在 1,000 文档、10 个相关项的语料下，馆员 A 取 20 项（命中 6 个），馆员 B 取 12 项（命中 4 个），传统 F1 偏好 A（40% vs 36%），但 B 用更小池子获得更高&quot;选择性&quot;，对 LLM 更友好。</p>\n<p>更尖锐的实证：在 20 Newsgroups 上，BM25 和 SPLADE 在 K=100 的 coverage 都报告 100% 成功率，但作者证明它们的&quot;机会校正后选择性&quot;BoR ≈ 0，意味着这套 99% 报表与&quot;随机抽 100 篇&quot;几乎没区别。这种现象在 BEIR/SciFact、MS MARCO 等通用基准上同样隐藏——只是被低 λ 值（候选/相关比例）掩盖。</p>\n<h2>2. 方法详解</h2>\n<p><strong>核心定义</strong> Bits-over-Random：</p>\n<pre><code>BoR = log2(P_obs / P_rand)</code></pre>\n<p>其中 P_obs 是观测成功率，P_rand 是同样命中规则下随机选取的成功率基线，用超几何分布给出：</p>\n<pre><code>P_rand(K; R_q) = 1 − C(N − R_q, K) / C(N, K)</code></pre>\n<p>N 为语料规模，R_q 为该 query 的相关文档数。BoR 单位是 bit：0 表示与随机持平，每多 1 bit 等价 2× 选择性提升，3 bit 即 8× 改进。理论上限：</p>\n<pre><code>BoR_max(K) = −log2(P̄_rand(K))</code></pre>\n<p><strong>坍塌边界 (selectivity collapse)</strong>：当 λ = K·R̄_q/N 足够大时，随机命中已接近 1，BoR 上限被压到 0 附近：</p>\n<ul>\n<li>λ ≈ 3 → 95% 随机命中 → BoR_max ≈ 0.074 bit</li>\n<li>λ ≈ 4.6 → 99% 随机命中 → BoR_max ≈ 0.014 bit</li>\n</ul>\n<p>20 Newsgroups 在 K=100、R̄_q≈572 下，λ≈5.1，正好落在 collapse 区，所以 100% 成功率根本不携带信息。</p>\n<p><strong>深度校准恒等式 (depth-calibrated identity)</strong>：BoR 随 K 变化可解析分解：</p>\n<pre><code>ΔBoR = log2(P2/P1) − log2(P̄_rand(K2)/P̄_rand(K1))</code></pre>\n<p>在 rare-hit regime（K·R̄_q/N ≪ 1）下近似为 <code>ΔBoR ≈ log2(P2/P1) − log2(K2/K1)</code>。直接给出工程结论：&quot;当 success 已经饱和，再翻倍 K 会损失约 1 bit 选择性。&quot;实验中预测 ΔBoR 与实际观测在多数系统/数据集上偏差 &lt;0.01 bit，公式有效。</p>\n<p>实验设置：在 BEIR/SciFact、MS MARCO（41 个公开系统）和 20 Newsgroups 三种&quot;相关密度光谱&quot;上覆盖低/中/高 R̄_q；并补充 RAG 下游验证（50 query、温度 0.0、instruction-tuned LLM）以及 LLM agent tool-selection 场景的代入分析。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>机会校正度量 BoR</strong>：把&quot;覆盖率/Recall&quot;从单调上升的&quot;假阳性偏好&quot;指标，转为与随机基线对比的对数选择性度量。它不奖励多召回——把 K 翻倍而 P 不变会立刻吃掉 1 bit。这一改写直接对齐了 LLM 消费者的成本结构。</li>\n</ol>\n<ol>\n<li><strong>解析的坍塌边界</strong>：明确给出 λ = K·R̄_q/N 这一无量纲量作为评估有效区/无效区的判据。一旦 λ ∈ [3, 5]，连完美检索器都无法区分有意义的选择性。这给出了&quot;什么时候 Recall@K 报表纯属噪声&quot;的代数答案，比经验阈值更通用。</li>\n</ol>\n<ol>\n<li><strong>深度校准恒等式</strong>：把 ΔBoR 拆成&quot;成功率增益&quot;与&quot;深度成本&quot;两项，可直接用来做&quot;再加 K 是否值得&quot;的离线决策。实验中 &lt;0.01 bit 的偏差表明这是接近精确的工程工具，而非仅理论装饰。</li>\n</ol>\n<ol>\n<li><strong>跨场景统一框架</strong>：同一个 λ-BoR 框架既覆盖文档检索（N 千～千万），又覆盖 LLM agent tool selection（N=50–500 工具）；后者天然容易坍塌（论文示例：N=58、R_q=4，把 58 个工具全塞进 prompt 时 BoR_max≈0.02 bit），解释了 agent 工具池膨胀后效果反而退化的实证现象。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p><strong>核心对比表（关键数字）：</strong></p>\n<table><thead><tr><th>数据集</th><th>N</th><th>R̄_q</th><th>系统</th><th>K</th><th>Success</th><th>BoR</th><th>Ceiling</th></tr></thead><tbody><tr><td>SciFact</td><td>5,185</td><td>1.1</td><td>BM25</td><td>100</td><td>89%</td><td>5.36 bit</td><td>5.52</td></tr><tr><td>SciFact</td><td>5,185</td><td>1.1</td><td>SPLADE</td><td>100</td><td>93%</td><td>5.41 bit</td><td>5.52</td></tr><tr><td>MS MARCO</td><td>8.84M</td><td>≈1</td><td>BM25</td><td>1000</td><td>85.7% Recall</td><td>12.89 bit</td><td>13.11</td></tr><tr><td>MS MARCO</td><td>8.84M</td><td>≈1</td><td>SimLM (SOTA)</td><td>1000</td><td>98.7% Recall</td><td>13.09 bit</td><td>13.11</td></tr><tr><td>20NG</td><td>11,314</td><td>572</td><td>BM25</td><td>100</td><td>100%</td><td>0.01 bit</td><td>0.01</td></tr><tr><td>20NG</td><td>11,314</td><td>572</td><td>SPLADE</td><td>100</td><td>100%</td><td>0.01 bit</td><td>0.01</td></tr></tbody></table>\n<p>关键发现：MS MARCO 上 BM25 与 SimLM 的 Recall 相差 13 个百分点，但 BoR 只相差 0.20 bit——因为大家都贴着 13.11 bit 的理论上限，所以&quot;SOTA 提升&quot;在选择性维度上几乎不存在；这与&quot;近几年 MS MARCO 的进展是否被 leaderboard 高估&quot;的业界质疑高度共振。</p>\n<p><strong>RAG 下游消融（20 Newsgroups，50 query，温度 0）：</strong></p>\n<table><thead><tr><th>系统</th><th>K=10 Accuracy</th><th>K=100 Accuracy</th><th>Success K=10→K=100</th></tr></thead><tbody><tr><td>BM25</td><td>66%</td><td>50%</td><td>94% → 100%</td></tr><tr><td>SPLADE</td><td>68%</td><td>58%</td><td>95% → 100%</td></tr></tbody></table>\n<p>把 K 从 10 提到 100，传统 Recall/Success 看上去&quot;无损升级&quot;，但 LLM 答案准确率反而掉 10–16 个百分点，token 成本 10×。这是直接的&quot;99% 成功率却让产品变差&quot;的下游证据。</p>\n<p><strong>Agent 工具选择代入</strong>：N=58 工具、R_q=4 时，展示 5 个工具 λ=0.34 → BoR_max≈1.7 bit（有意义），全部 58 个 λ=4.0 → BoR_max≈0.02 bit（坍塌）。论文引用业界数据：当前主流 agent harness 工具定义已占 50,000–134,000 token，说明该坍塌区在生产中很常见。</p>\n<p><strong>与传统指标对照</strong>：作者明确指出 Recall 单调随 K 上升、Precision 不感知任务难度、nDCG/MAP/RBP/ERR 只优化排序顺序而忽略 LLM 全读 K 项的 token 成本——这些都解释了为什么传统 leaderboard 与 LLM 实际下游性能之间出现脱节。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确声明的局限：</p>\n<ol>\n<li>当前主要讨论 m=1（coverage 命中规则），m≥2（要求至少 m 个相关）需要更复杂的超几何展开；</li>\n<li>关键近似（rare-hit regime, λ ≪ 1）在相关密度高时失效，baseline 饱和效应超过 m-bit 近似；</li>\n<li>RAG 下游验证只用了 50 个 query，仍属 &quot;preliminary&quot; 量级；</li>\n<li>给出 Recall@K 版本的 BoR（Eq.12）但未做大规模实验。</li>\n</ol>\n<p>未提到但工程上需要注意：BoR 对小语料（N&lt;1000）方差大，需要 bootstrap 置信区间；对长尾 query（R_q=0 或 1）的稳定估计也是开放问题。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索 / UGC RAG 团队的直接动作项：</p>\n<ol>\n<li><strong>新增离线指标</strong>：把 BoR@K 加入排序模型 A/B 评估。代码量极小——只需现有 qrels 即可计算。一旦发现某条链路 BoR_max &lt; 0.1 bit，就说明&quot;目前的 K 设置下评估已无意义&quot;，需要降 K 或换数据集。</li>\n</ol>\n<ol>\n<li><strong>K 选择的代数判据</strong>：依 λ = K·R̄_q/N 控制候选池大小。社区搜索短文本场景下 R̄_q 通常较大（同一帖与多个 query 相关），N 在百万级时 λ 仍可能接近坍塌，应主动收缩 K，把&quot;召回宽度&quot;从 KPI 中剔除。</li>\n</ol>\n<ol>\n<li><strong>LLM 摘要前重排刚需</strong>：实验表明 K 从 10→100 直接掉 10–16% 的下游准确率。任何&quot;召回到 LLM 直答&quot;的产品都必须有一个把 K 收回到个位数的精排或自适应阈值层（呼应 #6 的 Adaptive Table Retrieval）。</li>\n</ol>\n<ol>\n<li><strong>Agent 工具池治理</strong>：本论文对 LLM agent harness 设计给出了量化警告——工具数 N=50–500、相关工具 R_q≈3-5 时极易坍塌。社区搜索若要集成 agent（如复杂主题汇总），必须实现按 query 动态收敛工具集，而非把所有 skill 描述全部塞入 prompt。</li>\n</ol>\n<p>部署考量：BoR 计算开销 O(1) per query，可直接接到现有 offline pipeline；λ 监控可作为 dashboards 一行 SQL；唯一需要注意的是 R_q 估计——对没有充分人工标注的长尾意图，建议先用强 reranker 的高分文档做近似相关集再计算 BoR_max。</p>"
+     },
+     "weekly_rank": 3
+    },
+    {
+     "id": "arxiv:2601.21611",
+     "title": "Thinking Broad, Acting Fast: Latent Reasoning Distillation from Multi-Perspective Chain-of-Thought for E-Commerce Relevance",
+     "url": "https://arxiv.org/abs/2601.21611",
+     "source": "arxiv",
+     "company": [
+      "Alibaba"
+     ],
+     "published": "2026-01-29",
+     "authors": "Baopu Qiu, Hao Chen, Yuanrong Wu, Changtong Zan, Chao Wei, Weiru Zhang, Xiaoyi Zeng",
+     "total_score": 4.55,
+     "adjusted_score": 4.55,
+     "preference_bonus": 0.1,
+     "rank_score": 4.55,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 3,
+      "timeliness": 4
+     },
+     "summary": "针对电商搜索相关性建模，提出 Multi-Perspective CoT（MPCoT）让 LLM 从多个视角生成推理链，配合 SFT+DPO 训练教师模型；再用 Latent Reasoning Knowledge Distillation（LRKD）把推理能力蒸馏进一个推理抽取器，推理在隐空间完成、不在推理时展开显式 CoT，以此压低线上延迟。已在日活数千万的电商搜索广告平台离线与在线 A/B 验证，离线指标与线上商业、体验指标均有提升（摘要未给出具体百分比）。",
+     "key_insight": "把“多视角思考”与“快速执行”拆开：离线用多视角 CoT 喂饱教师，线上只跑隐式推理 extractor。对社区搜索短文本相关性的启示——当相关性判断需要常识与多角度推理时，可让大模型离线产出多视角推理标注，再蒸馏成隐推理小模型挂在精排前，避免线上跑显式 CoT 的延迟。MPCoT 的多视角覆盖比单一 CoT 更稳，DPO 专门用于纠正过度判正。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 1,
+       "id": "arxiv:2601.21611",
+       "total_score": 4.55,
+       "adjusted_score": 4.55
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2601.21611",
+      "slug": "2601.21611",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>电商搜索相关性中，传统判别式模型（如 BERT cross-encoder）能稳定处理 80–90% 的常规 query，但剩余 10%+ 的长尾、歧义 query 恰恰对应高意图、高转化的用户旅程，理解错误会直接拖垮满意度与相关性指标。论文指出现有 LLM+CoT 路线有两处具体缺陷：(a) 单视角推理无法覆盖电商相关性的多面性——用户意图、属性匹配、平台业务规则是三套不同判断逻辑；(b) 现有蒸馏在推理时丢弃 CoT 结构，把推理当作一次性辅助信号而非可持久化能力。作者用一个 oracle 实验量化了多视角的价值：三视角中“任一通过即算对”的多视角 oracle 准确率 77.52%，而单视角 User Intent 仅 64.61%、单视角 pass@3 也只有 72.59%——说明收益来自视角多样性本身，而非单纯多采几次。</p>\n<h2>2. 方法详解</h2>\n<p><strong>MPCoT 三视角</strong>：User Intent（模拟买家直觉，关注使用场景与功能需求）、Structured Analysis（逐属性系统比对 query 与商品）、Business Rule（用启发式规则裁决常见歧义）。</p>\n<p><strong>SFT 阶段</strong>：用基座 Qwen3-14B 为每个视角生成 CoT，做一致性过滤（仅保留预测标签=ground-truth 的样本），把三视角数据聚合后用标准 NLL 损失微调（3 epoch，lr=5e-5，batch=32）。</p>\n<p><strong>DPO 阶段</strong>：挑出“至少被一个视角判错”的冲突样本，构造跨视角偏好对——失败视角的错误 rationale 作 rejected，三视角 pass@5 中正确的 rationale 作 chosen，标准 DPO（3 epoch，lr=5e-6，batch=64）。消融显示：必须先有视角对齐的 SFT 基础，直接对单视角 SFT 套多视角 DPO 会一致掉点。</p>\n<p><strong>LRKD（隐推理蒸馏）</strong>：学生为 BERT-multilingual-base（168.15M）cross-encoder，输出 token 表示 H∈R^(L×d)；一个可训练的隐推理抽取器 R(·)（试了 MLP / Poly-Encoder / GAT 三种）把 H 映射成隐推理向量 r_qp∈R^d；教师 CoT 文本用冻结的 BGE-M3 编码成 e_cot。双损失训练：分类用交叉熵 L_cls，引导用 MSE 对齐 ||r_qp − e_cot||²₂，合成 L_total = L_cls + λL_guide（λ=0.1）。学生训练 5 epoch、lr=2e-6、batch=256、输入 128 token。教师 Qwen3-14B 用 LoRA。数据：AliExpress ~10万训练/2万测试（6 类），ESCI 10万训练/1万测试（4 类 Exact/Substitute/Complement/Irrelevant）。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>多视角 CoT 替代单视角</strong>：把电商相关性拆成意图/属性/业务规则三套推理，oracle 上限 77.52% vs 单视角 64.61% 证明了多样性增益；MPCoT 教师较最优单视角平均 +1.96 ACC、+3.5 F1。机制在于不同视角对同一难样本的失败模式互补。</p>\n<p>(2) <strong>跨视角偏好构造的 DPO</strong>：用“某视角错 rationale”对“另一视角对 rationale”组偏好对，把视角间的纠错信号显式喂给模型，比单纯加正样本更有针对性。</p>\n<p>(3) <strong>隐空间持久化推理（LRKD）</strong>：不在推理时展开 CoT，而是用一个非自回归抽取器把“推理”固化为 embedding 空间的一个向量，并用 MSE 向教师 CoF 嵌入对齐。probing 实验显示隐推理向量预测 CoT 关键词的 F1=0.403，远高于 [CLS] 的 0.221（相对 +81.8%，p&lt;0.05），证明推理信息确实被编码进了隐向量。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线（Table 1）：AliExpress 上 BERT 基线 ACC/F1 = 53.17/49.34，最优单视角 SFT+DPO 64.83/58.26，MPCoT 教师 68.36/65.90，LRKD-GAT 学生 57.36/52.29。ESCI-US 上 BERT 66.83/41.38，MPCoT 教师 70.23/51.85，LRKD-GAT 学生 68.73/45.83，且优于蒸馏基线 CED-KD（67.49/43.71）、MKD（68.34/42.45）。综合：LRKD-GAT 较 BERT 平均 +2.37 ACC/+3.91 F1，较 MKD +1.15/+2.49，较 CED-KD +0.98/+2.5。</p>\n<p>在线 A/B（AliExpress 搜索广告，10% 流量、7 天）：RPM +1.42%、CTR +0.48%、相关性满意度 RS +0.4%，均统计显著。</p>\n<p>效率（Table 2）：教师 14B 推理 46,800ms/批，BERT 基线 132.22ms，LRKD-Poly 132.68ms（仅 +0.46ms、+0.03M 参数），LRKD-GAT 148.76ms——学生较教师约快 315×。消融（Table 4）：去掉隐推理抽取器 -1.35~-1.49 ACC，去掉引导损失 -1.42~-1.98 ACC（引导损失影响更大），说明 LRKD 两个组件都不可省、且向 CoT 对齐的 MSE 是主要增益来源。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有专门的 Limitations 章节。从方法看，可见约束包括：(a) 视角只固定为三种，未分析换域时视角集合是否需重设计；(b) 一致性过滤依赖人工标注种子集，跨新域的泛化未验证；(c) 增益依赖具体抽取器结构——GAT 最优但延迟更高（148.76ms vs Poly 132.68ms），MLP/Poly 增益较小，存在精度-延迟权衡需按场景取舍。在线收益（RPM +1.42%）虽显著但量级温和，长尾难 query 占比小决定了天花板。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索（UGC 短文本）最值得借鉴的是三点。其一，把相关性判断显式拆成多视角（社区场景可对应：用户意图、内容属性/话题匹配、社区运营/安全规则），离线用多视角 CoT 喂教师，能把长尾难 query 的判别上限抬高十几个点。其二，LRKD 给出一条“线上不跑 CoT 也能保留推理”的可落地路径：非自回归抽取器仅在 embedding 空间加一个向量，Poly 变体几乎零延迟开销（+0.46ms），完全满足精排前毫秒级约束，相比线上直接调 14B（46,800ms/批）不可行。其三，引导损失用冻结 BGE-M3 编码教师 CoT 再做 MSE 对齐，工程上简单且即插即用，可直接套在现有 BERT cross-encoder 精排器上。落地注意：教师质量靠一致性过滤+跨视角 DPO 保证，社区需自建多视角标注与业务规则集；GAT 抽取器精度高但 +16ms，若精排预算紧建议先上 Poly 变体做 A/B，再按收益决定是否换 GAT。</p>"
+     },
+     "weekly_rank": 4
+    },
+    {
+     "id": "arxiv:2510.11056",
+     "title": "From Reasoning LLMs to BERT: A Two-Stage Distillation Framework for Search Relevance",
+     "url": "https://arxiv.org/abs/2510.11056",
+     "source": "arxiv",
+     "company": [
+      "Meituan",
+      "NUAA"
+     ],
+     "published": "2025-10-13",
+     "authors": "Runze Xia, Yupeng Ji, Yuxi Zhou, Haodong Liu, Teng Zhang, Piji Li",
+     "total_score": 4.45,
+     "adjusted_score": 4.45,
+     "preference_bonus": 0.1,
+     "rank_score": 4.45,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 3,
+      "timeliness": 3
+     },
+     "summary": "面向电商搜索相关性在毫秒级延迟约束下的落地，提出两阶段蒸馏：先用预训练+SFT+偏好优化构建领域自适应的推理教师 LLM，生成高质量相关性标签；再用 Contrastive Reasoning Self-Distillation 把推理决策内化进一个紧凑 BERT，学生在推理时无需显式推理路径。在美团搜索广告系统的离线评测与线上 A/B 上多项指标显著提升（摘要未给具体数字）。",
+     "key_insight": "核心是 Contrastive Reasoning Self-Distillation——允许教师与学生架构不同（生成式 LLM → 判别式 BERT），蒸馏的是“为什么相关”的对比信号而不仅是硬标签。社区搜索相关性同样卡在线上算力：可复用此路径，用推理 LLM 离线标注难样本与对比理由，再蒸馏进线上 BERT 精排，相比线上直接用 LLM 打分可省约 10–100 倍算力。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 2,
+       "id": "arxiv:2510.11056",
+       "total_score": 4.45,
+       "adjusted_score": 4.45
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:2504.05309",
+     "title": "IterQR: An Iterative Framework for LLM-based Query Rewrite in e-Commercial Search System",
+     "url": "https://arxiv.org/abs/2504.05309",
+     "source": "arxiv",
+     "company": [
+      "Meituan"
+     ],
+     "published": "2025-04-07",
+     "authors": "Shangyu Chen, Xinyu Jia, Yingfei Zhang, Shuai Zhang, Xiang Li, Wei Lin",
+     "total_score": 4.4,
+     "adjusted_score": 4.4,
+     "preference_bonus": 0.15,
+     "rank_score": 4.4,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 3,
+      "timeliness": 2
+     },
+     "summary": "针对电商搜索 query 含歧义与错字导致召回不准，提出 LLM query 改写的迭代框架：用 RAG 注入领域知识、用 CoT 做 query 理解生成改写；线上收集改写效果信号并自动更新正样本；再用多任务目标对 LLM 做 post-training，循环迭代自我提升。已部署于美团外卖搜索，带来显著提升。",
+     "key_insight": "价值不在单次改写质量，而在“生成—线上信号—回流再训练”可迭代的流程。社区搜索 query 同样短、口语化、易错：可借鉴用 RAG 把站内同义词/实体知识喂给改写 LLM，把线上点击/相关性反馈自动转成正改写样本做多任务微调；难点在正样本自动判定的噪声，需结合相关性模型过滤再回流。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 3,
+       "id": "arxiv:2504.05309",
+       "total_score": 4.4,
+       "adjusted_score": 4.4
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 6
+    },
+    {
+     "id": "arxiv:2503.09223",
+     "title": "LREF: A Novel LLM-based Relevance Framework for E-commerce Search",
+     "url": "https://arxiv.org/abs/2503.09223",
+     "source": "arxiv",
+     "company": [
+      "JD"
+     ],
+     "published": "2025-03-12",
+     "authors": "Tian Tang, Zhixing Tian, Zhenyu Zhu, Chenyang Wang, Haiqing Hu, Guoyu Tang, Lin Liu, Sulong Xu",
+     "total_score": 4.35,
+     "adjusted_score": 4.35,
+     "preference_bonus": 0.1,
+     "rank_score": 4.35,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 3,
+      "timeliness": 2
+     },
+     "summary": "针对 query-product 相关性预测，指出 BERT 类模型表达力不足、直接用 LLM 又有数据质量、推理优化与过度判正（over-recall）问题，提出三阶段框架：带数据筛选的 SFT、多条 Chain-of-Thought 微调、用 DPO 做去偏。已在知名电商应用部署，离线与在线指标显著提升并带来商业收益。",
+     "key_insight": "直接拿 LLM 做相关性最大的坑是“乐观偏置/过度判正”，LREF 用 DPO 专门纠偏值得借鉴。社区搜索相关性同样常见 LLM 倾向判“相关”导致精排放水：可引入偏好对（人工或规则产生的难负例）做 DPO，配合多 CoT 提升判别一致性；其经验是数据筛选阶段对训练稳定性影响最大。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 4,
+       "id": "arxiv:2503.09223",
+       "total_score": 4.35,
+       "adjusted_score": 4.35
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "arxiv:2605.18561",
+     "title": "Improving BM25 Code Retrieval Under Fixed Generic Tokenization: Adaptive q-Log Odds as a Drop-In BM25 Fix",
+     "url": "https://arxiv.org/abs/2605.18561",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "Santosh Kumar Radha, Oktay Goktas",
+     "total_score": 4.35,
+     "adjusted_score": 4.35,
+     "preference_bonus": 0.0,
+     "rank_score": 4.35,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "在分词器不可控 (frozen generic tokenization) 的检索系统里，BM25 的 log-RSJ-odds IDF 对区分函数名的「标识符长尾」分辨力不足，导致 RAG 编码场景相关文件频繁缺失。本文把 RSJ odds 外层的对数换成 q-对数：q=1 时由洛必达法则精确退化为标准 BM25，q<1 时等价于对 RSJ odds 做 λ=1−q 的 Box-Cox 变换。在 CoIR CodeSearchNet Go (182K 文档) 上，oracle 调参 NDCG@10 从 0.2575 提升到 0.4874 (绝对 +0.2299，相对 +89.3%；10000 次配对 bootstrap 零符号反转，p≤1e-4)，效果随 q 单调可控。",
+     "key_insight": "这是一个不需重训、不需改分词器的 drop-in 稀疏检索改进，对依赖既有 BM25 索引的社区短文本召回极具落地价值。核心洞察是标准 BM25 的对数 IDF 压扁了高区分度低频词 (UGC 中的实体名、口语词同理)，用 q-对数单参数即可重新拉开长尾词权重，且 q=1 可平滑回退保证安全上线。建议在短文本召回链路灰度一个 q 参数做 A/B，成本几乎为零。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 2,
+       "id": "arxiv:2605.18561",
+       "total_score": 4.35,
+       "adjusted_score": 4.35
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2605.18767",
+     "title": "DualView: Adaptive Local-Global Fusion for Multi-Hop Document Reranking",
+     "url": "https://arxiv.org/abs/2605.18767",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-20",
+     "authors": "Litong Zhang, Jiaxin Li, Kuo Zhao",
+     "total_score": 4.25,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.25,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "面向多跳问答的级联重排框架，作为 E5-base-v2 召回后的轻量级后处理阶段。包含两个评分器：Local Scorer 用堆叠交叉注意力做 query-doc 细粒度相关性打分；Global Scorer 用 Transformer 建模候选间依赖关系。两个视角通过一个由 query 语义条件化的 Adaptive Gate 动态融合。在固定候选集 + 离线 embedding 缓存的重排设置下，模型在 MuSiQue 等多跳基准上达到有竞争力的结果。",
+     "key_insight": "对社区搜索的实践启发：现有重排器多停留在「逐文档独立打分」，没有显式建模候选间冗余/互补关系；DualView 把「全局视角」参数化成 Transformer + 自适应门，是一种比 listwise 简单又能感知集合上下文的折中。Adaptive Gate 让模型在「单跳查询直接信赖 Local」和「多跳查询启用 Global」之间切换——这与社区搜索「事实型 vs 探索型」query 混合分布天然契合，可作为现有 BERT 重排上的可插拔升级路径。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 2,
+       "id": "arxiv:2605.18767",
+       "total_score": 4.25,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.20689",
+     "title": "DIVE: Embedding Compression via Self-Limiting Gradient Updates",
+     "url": "https://arxiv.org/abs/2605.20689",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-21",
+     "authors": "Dongfang Zhao",
+     "total_score": 4.15,
+     "adjusted_score": 4.15,
+     "preference_bonus": 0.05,
+     "rank_score": 4.15,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "LLM 高维 embedding 给向量检索带来存储与算力压力。已有压缩适配器（Matryoshka-Adaptor、Search-Adaptor、SMEC）在标注稀缺时严重过拟合，效果反低于冻结基线。DIVE 用自限制 hinge 三元组损失（满足 margin 后梯度归零，限制对预训练空间的扰动）加 head-wise NT-Xent 多视图对比损失，在 6 个 BEIR 数据集、所有压缩比上均超过三个基线适配器，实现仅 14M 参数且开源。",
+     "key_insight": "核心思路是“少改动”：自限制损失避免小数据上破坏预训练 embedding 分布，多视图对比损失补偿三元组信号稀疏。对需要给召回向量降维、又缺乏大量领域标注的搜索场景有直接价值——14M 适配器可挂在现成 embedding 上，无需重训基座。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 2,
+       "id": "arxiv:oai:arXiv.org:2605.20689",
+       "total_score": 4.15,
+       "adjusted_score": 4.15
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
+  "agentic": {
+   "raw_count": 47,
+   "unique_count": 47,
+   "days": [
+    "2026-05-18",
+    "2026-05-19",
+    "2026-05-20",
+    "2026-05-21",
+    "2026-05-22"
+   ],
+   "papers": [
+    {
+     "id": "arxiv:2605.16217",
+     "title": "Argus: Evidence Assembly for Scalable Deep Research Agents",
+     "url": "https://arxiv.org/abs/2605.16217",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Zhen Zhang, Liangcai Su, Zhuo Chen, Xiang Lin, Haotian Xu, Simon Shaolei Du, Kaiyu Yang, Bo An, Lidong Bing, Xinyu Wang",
+     "total_score": 4.35,
+     "adjusted_score": 4.6,
+     "preference_bonus": 0.25,
+     "rank_score": 4.6,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 5,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "针对 deep research agent 并行 rollout 重复采集证据、聚合上下文撑爆模型窗口的问题，提出 Argus：Searcher 以 ReAct 方式为子查询收集证据轨迹，Navigator 维护共享证据图（evidence graph），校验缺失片段、调度 Searcher 补全，并在完整图上推理生成可溯源答案。Navigator 用强化学习训练 verify/dispatch/synthesize，Searcher 保持标准 ReAct 独立训练。基于 35B-A3B MoE，单 Searcher 在 8 个 benchmark 平均 +5.5 分，8 路并行 +12.7 分，64 路并行在 BrowseComp 达 86.2，超过所有对比的闭源 agent，且 Navigator 推理上下文稳定在 21.5K token 以内。",
+     "key_insight": "把 deep research 建模为'拼图式证据补全'而非并行暴力枚举：Navigator 用证据图显式追踪'还缺哪块'，从根上解决并行 rollout 的冗余与上下文膨胀。Searcher 数量可在不重训的情况下从 1 扩到 64，工程上把推理时算力扩展和训练解耦。对社区搜索的启示：复杂多跳问答场景可借鉴'调度器+证据图'结构，用一个轻量协调策略管控召回去重与上下文预算，而不是单纯堆并发。",
+     "best_date": "2026-05-19",
+     "appearances": [
+      {
+       "date": "2026-05-19",
+       "rank": 1,
+       "id": "arxiv:2605.16217",
+       "total_score": 4.35,
+       "adjusted_score": 4.6
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.16217",
+      "slug": "2605.16217",
+      "content_html": "<h1>Argus: Evidence Assembly for Scalable Deep Research Agents — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>Deep research agent 的主流提效路径是测试时并行：跑 K 条独立轨迹再做 self-consistency / best-of-N / 学习式聚合。本文用一组硬数字戳破这条路径的天花板：单 Searcher（Qwen 35B-A3B）在 BrowseComp 上 55.0%，8 路多数投票只到 56.2%（+1.2），LLM 聚合 8 路也只有 56.5%（+1.5）。作者的诊断是：deep research 的答案由互补的证据碎片拼成，而并行 rollout 倾向于重复采集相同证据而非补全缺口——所有聚合方法都是事后（post-hoc）在已完成轨迹上操作，把轨迹当成&quot;扁平的线性 trace 集合&quot;，没有共享的&#x27;哪些证据已拿到、哪些互相支持/矛盾、哪些还缺&#x27;的表示。于是并行越多，边际收益越小，同时聚合上下文被推向模型窗口上限。这个问题此刻重要，是因为业界正用大量推理算力堆 deep research，但收益递减；需要的是把&quot;算力扩展&quot;转成&quot;证据补全&quot;而非&quot;答案投票&quot;。</p>\n<h2>2. 方法详解</h2>\n<p>Argus 把系统拆成两个角色。<strong>Searcher</strong>：无状态 ReAct agent，动作集 {search, visit, answer}，用 WebSailor-v2 pipeline 在约 10K 合成轨迹上 SFT，不做任何架构改动，因此对基线兼容。<strong>Navigator</strong>：维护一个有向无环证据图 𝒢=(E,C,𝒜)——E 是证据节点（带 source URL 的原始发现），C 是 claim 节点（暂定/最终断言），𝒜⊆(E∪C)×C×{+1,−1} 是带 support(+1)/contradict(−1) 标签的边。</p>\n<p>三阶段流程：(I) Search——Navigator 把输入问题改写成多个子查询（solo 模式 1 个，parallel 模式 K 个），各自派给独立 Searcher；(II) Verify &amp; Dispatch——把返回轨迹解析成证据/claim 节点并按 source URL 去重，由策略（而非固定规则）把每个 claim 标为 supported / contradicted / unverified，识别三类缺口（未验证 claim 需独立佐证、矛盾 claim 需权威源消解、问题维度未覆盖需定向子查询），把缺口批量打包成验证查询 𝒱 再派新 Searcher，循环 observe-verify 直到学到的终止信号触发或预算耗尽；(III) Synthesize——丢弃工作上下文，仅在 (q,𝒢) 上推理出最终答案，每个 claim 都可回溯到证据节点的 source URL。</p>\n<p>Navigator 用 <strong>GRPO</strong> 训练，反事实对比奖励：R_i = clip(R_w/v + λ(R_w/v − R_w/o v), 0, 1)，λ=0.5；R_w/v 是用验证后图做 synthesis 的 LLM-judge 分，R_w/o v 是用验证前图的影子分（不回传梯度），这个 bonus 把&quot;验证&quot;的因果贡献单独隔离出来。数据为 5,298 个多跳信息检索问题（答案可验证），每题预先收集固定 Searcher 轨迹，并对 8 个评测基准做实体级去污染。训练用 64×H200 约 1.5 天（100 个 GRPO rollout step），batch=64 prompt×8 rollout=512 有效样本，lr=1e-6，KL β=0.001，clip ϵ=0.2。Rollout 是单条序列展开完整 Argus 循环，observation 用滑动窗口（15 轮，≤8 窗口）增量建图，只有 Navigator 生成的 token 回传梯度、外部输入被 mask，并用状态机强制 DAG 输出格式。Searcher 独立 SFT，不做 Argus 专属 RL。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>结构化证据图替代扁平轨迹聚合</strong>：把 deep research 从&quot;对线性 trace 投票/聚合&quot;改成&quot;在共享图上做组合式证据拼装&quot;，让&quot;哪块还缺&quot;成为可显式推理的对象。(2) <strong>环内验证（in-loop verification）</strong>：在 synthesis 之前就识别缺口并定向派发检索，而非事后打分；对比奖励证明验证阶段全程带来稳定增益（R_w/v 始终高于 R_w/o v）。(3) <strong>上下文与 Searcher 数解耦</strong>：把累计 25.6M Searcher token 压成 21.5K 的 Navigator 视图，约 1200:1 压缩比，使并行规模扩展不再撞上下文窗口。(4) <strong>零样本规模迁移</strong>：在单 Searcher 轨迹上训练的 Navigator 可直接迁移到 K 路并行、甚至换底座，无需重训。消融显示完整 DAG（带 ±1 标签与验证状态）74.5%，去掉边标签降到 72.0%（−2.5），纯文本拼接 69.3%（−5.2），结构化表示净贡献 5.2 分。</p>\n<h2>4. 实验结果分析</h2>\n<p>8 个基准：BrowseComp、BrowseComp-ZH、GAIA、SEAL-0、xbench DeepSearch-2510、HLE、FrontierScience Olympiad/Research。底座 Qwen 35B-A3B：Searcher→Argus Solo→Argus Parallel(K=8) 在 BrowseComp 55.0→62.2→74.5，BrowseComp-ZH 62.3→74.4→83.4，GAIA 84.5→88.0→93.2，SEAL-0 48.9→53.2→56.2，xbench 62.0→67.0→73.0，HLE 43.2→44.2→49.8。8 基准平均：Solo +7.1，Parallel(K=8) 论文口径 +12.7；K=64 时 BrowseComp 达 86.2，超过所有对比闭源 agent（GPT-5.2、Claude-4.6-Opus、Gemini-3.1-Pro 等）。GAIA 93.2 比最强闭源高 12.6 分，SEAL-0 高 6.2 分，5/8 基准取得 SOTA。规模动态（Fig.4）：精度随 Searcher token 单调上升 55.0%(0.4M)→86.2%(25.6M)，而 Navigator synthesis 上下文仅 0.34K→21.5K，对数拟合未见硬上限。换底座（Table 2）：在 DeepSeek-V4-Flash-Max 上 Parallel +18.5、Seed-2.0-Pro +12.2，且 35B 上训练的 Navigator 零样本提升所有闭源底座。训练动态（Fig.5）显示 reward 与留出集精度同步、验证触发率上升后趋平、矛盾证据呈现&quot;探索→固化&quot;转变，说明学到的是有意义的验证行为而非奖励 hack。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出：(1) 推理成本高——累计 Searcher token 从 K=1 的 0.4M 涨到 K=64 的 25.6M，定位是&quot;重型研究求解器&quot;而非低成本/低延迟助手；(2) 墙钟延迟——高 K 时并行批中最慢的 Searcher 主导整体耗时（Navigator synthesis 仍是单次前向）；(3) 源可得性天花板——继承底层 web 源的召回上限，付费墙/不可得内容无法突破，更强 Searcher 大致线性抬升此上限；(4) 标准 agentic 风险——错误信息、版权问题，靠 per-claim 源追溯部分缓解。未提及但显见的是：LLM-judge 奖励本身的偏置会传导进策略，去污染只做到实体级、对改写型泄漏未必稳健。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队最可迁移的是&quot;调度器 + 共享证据图&quot;这套结构，而非具体 web benchmark 分数。要点：(a) 复杂多跳问答（社区里&quot;对比型/求证型&quot;长尾 query）不该靠堆并发投票，而应让一个轻量协调策略显式追踪&quot;已覆盖/有矛盾/还缺&quot;，把算力花在补缺口上；(b) 上下文工程上，&quot;把海量原始证据压成结构化图，synthesis 阶段只读图&quot;是控制长上下文成本的实用范式，1200:1 的压缩比说明收益巨大；(c) 可追溯性——每个结论挂 source URL，对 UGC 问答的可信度与人工审核友好；(d) 训练-部署解耦，单 Searcher 训练、多 Searcher 部署且免重训，降低上线成本。需注意的工程约束：该方法是&quot;重型离线/异步研究&quot;定位，墙钟延迟受最慢分支拖累，不适合在线低延迟搜索主链路，更适合做异步&quot;深度求证&quot;旁路（如争议话题的事实核验、长文生成的证据准备）。落地前应先用自有多跳 query 集验证证据图的去重与矛盾标注质量，并替换 LLM-judge 为更可控的可验证奖励。</p>"
+     },
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:2605.14306",
+     "title": "Towards Self-Evolving Agentic Literature Retrieval",
+     "url": "https://arxiv.org/abs/2605.14306",
+     "source": "web_search",
+     "company": [],
+     "published": "2026-05-14",
+     "authors": "Yuwen Du, Tian Jin, Jing Kang, Xianghe Pang, Jingyi Chai, Tingjia Miao, Fenyi Liu, WenHao Wang, Sikai Yao, Yuzhi Zhang, ...",
+     "total_score": 4.4,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.4,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "针对纯关键词检索可靠但召回受限、而前沿 LLM 直接生成检索结果昂贵且幻觉率高（实测幻觉率 37.79%）的矛盾，提出 PaSaMaster：把文献检索拆成「意图分析 → 检索 → 排序」的可迭代闭环，并坚持用排序而非生成来产出结果以杜绝来源幻觉，同时把规划与检索分离以控成本。在覆盖 38 个学科的 PaSaMaster Benchmark 上，F1 较传统关键词检索提升 15.6 倍，较 GPT-5.2 提升 30% 而仅用其 1% 算力，且来源幻觉为零。",
+     "key_insight": "核心可借鉴点是「检索结果只能来自被排序的真实文档、绝不由 LLM 生成」这一硬约束——它用排序模型把 agent 的能力限制在可验证的语料范围内，从根上消除来源幻觉，对 UGC 社区搜索这种强调结果可信的场景尤为关键。其次，规划/检索分离让昂贵的 LLM 只承担少量意图分析与策略决策、把高频检索交给廉价召回，是 agentic 搜索控成本的可落地范式（1% 算力达到更优效果）。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 1,
+       "id": "arxiv:2605.14306",
+       "total_score": 4.4,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.14306",
+      "slug": "2605.14306",
+      "content_html": "<h1>PaSaMaster: Towards Self-Evolving Agentic Literature Retrieval — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>论文针对文献检索中一个被作者明确表述的「双重矛盾」: <strong>既要保证来源真实性，又要深度理解复杂的学术检索意图</strong>。两类现有方案各占一极却都不及格:</p>\n<ul>\n<li><strong>关键词检索（Google Scholar 类）</strong>: 来源 100% 真实（幻觉率 0），但完全无法理解复杂多约束意图——在论文构建的 PaSaMaster-Bench 上 F1@20 仅 <strong>1.39%</strong>，NDCG@20 仅 2.07%。</li>\n<li><strong>前沿生成式 LLM 直接生成文献</strong>: 能理解复杂意图，却产生严重的来源幻觉。作者实测各模型「编造/不可核实论文」的比例: MiniMax-M2.7 <strong>37.79%</strong>、Kimi-K2.5 35.67%、Gemini-3.1 32.41%、GLM-5 29.07%、DeepSeek-v3.2 20.57%，即便最好的 GPT-5.2 也有 <strong>11.80%</strong>，且单 query 成本高达 <strong>\\$6.06</strong>。Table 3 进一步拆解出幻觉发生在 title/author/date/link 各字段。</li>\n<li><strong>固定流水线 agent（Google Scholar Labs 类）</strong>: 不能用「已排序的证据」反过来迭代修正意图理解，导致对复杂研究需求的理解被一次性查询锁死，F1@20 仅 18.87%。</li>\n</ul>\n<p>动机由此清晰: 检索结果必须来自可核实语料（杜绝幻觉），同时意图理解必须能基于检索到的证据<strong>迭代自我进化</strong>，而不是一次性查询匹配。该问题当下重要，因为 LLM 检索 agent 正被大量用于科研/知识工作，而幻觉来源与高成本是其无法进入严肃工作流的两大硬伤。</p>\n<h2>2. 方法详解</h2>\n<p>PaSaMaster 是一个「Navigator + Librarian Swarm + 三层 agent 原生语料」的三组件系统，核心创新是把检索重构为可自进化的闭环。</p>\n<p><strong>(a) Navigator Agent (πNav)</strong>: 负责理解复杂意图，产出两样东西——检索策略 <em>S</em>（搜什么）与 query 专属的验证清单 <em>C = [c₁,...,cₘ]</em>（如何判定相关）。这把「模糊意图」显式分解为可逐条核验的客观标准。</p>\n<p><strong>(b) Librarian Swarm ({πLib})</strong>: N 个并行 librarian 执行检索、证据核验、意图-论文打分、按清单重排。</p>\n<p><strong>(c) 三层科学语料 𝒟 = {𝒟^meta, 𝒟^abs, 𝒟^chunk}</strong>: 覆盖 1.6 亿篇论文，分别是结构化元数据、摘要级语义表示、全文 passage 级证据块。粗粒度先过滤、细粒度再定位证据。</p>\n<p><strong>核心检索流程（Eq.1–4）</strong>: ⟨S,C⟩=Plan(q,πNav) → 𝒫init=Retrieve(S) → 𝒫scored=Verify(𝒫init,C) → 𝒫=Rerank(𝒫scored)。</p>\n<p><strong>自进化迭代（关键公式）</strong>: 第 t 轮后，⟨S^(t+1), C^(t+1)⟩ = Reflect(q, S^(t), C^(t), 𝒫^(t)_scored)。Navigator 检视已排序结果，识别覆盖缺口、模糊约束、欠探索方向，再生成下一轮策略与清单——这是把「固定查询解释」变成「渐进改进」的闭环。</p>\n<p><strong>反幻觉的证据绑定</strong>: 对候选论文 p 与清单项 cⱼ，从该论文的 chunk 库取 top-k 支撑证据 𝓔_p(cⱼ)=argtop-k cos(φ(cⱼ),φ(e))，φ 为共享文本编码器。即每条相关性判断都必须绑定到论文原文证据，而非模型臆断。打分由训练好的 Scorer 输出 sⱼ∈{1..5}，criterion 级取均值 s̄(p)=Σsⱼ/m，最终相关性 𝒮(p)=(s̄(p)+ρ)/6，ρ 为校准置信度。</p>\n<p><strong>规划-检索分离（控成本关键）</strong>: 工具集 𝒯=𝒯^ret∪𝒯^read。检索工具有三种——语义直检、引文网络扩展、Web→库映射核验——构造广候选池 𝒞init=∪Retrieve_o(S,𝒟)；阅读工具只做廉价元数据/摘要读取，避免昂贵全文处理。前沿 LLM 只承担低频高价值的意图分析，大规模检索/打分交给经知识蒸馏训练的轻量 Scorer（教师模型对 query-paper 对标注 checklist 级分数与证据 rationale，蒸馏到部署侧）。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>自进化检索（self-evolving retrieval）</strong>: 把一次性 query-doc 匹配改成「用已排序证据反推意图缺口→修正策略与清单」的迭代过程。它有效是因为复杂学术意图往往无法一次表达完整，只有看到初轮结果才知道哪些约束被误解；闭环 Reflect 让系统逐轮逼近真实意图，相对固定流水线 Google Scholar Labs 的 F1 从 18.87→21.69（+14.9%）。</li>\n</ol>\n<ol>\n<li><strong>排序而非生成（ranking not generation）</strong>: 所有论文都从可核实语料检索得到，相关性绑定到原文证据。机制上彻底切断了参数化幻觉路径——实验中所有检索类系统幻觉率均为 0%，而生成式 LLM 为 11.80–37.79%。这对「来源可信」是结构性保证而非概率性缓解。</li>\n</ol>\n<ol>\n<li><strong>规划-检索分离</strong>: 前沿 LLM 只做高价值意图理解，海量检索/打分下沉到轻量模型+专用语料。它有效是因为成本主要花在高频检索而非低频规划，分离后 F1 比 GPT-5.2 高 <strong>30.0%</strong> 而成本仅其 <strong>1%</strong>（\\$0.05 vs \\$6.06）。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p><strong>Benchmark</strong>: PaSaMaster-Bench，244 个专家标注任务、覆盖 38 个学科，每任务含复杂多约束意图、显式 checklist、专家多渠道核验的 ground-truth 论文集。指标 K=20: Recall/Precision/F1/NDCG@20、幻觉率、token 成本。</p>\n<p><strong>主结果（Table 2，F1@20 / 幻觉率 / 成本）</strong>:</p>\n<table><thead><tr><th>方法</th><th>NDCG@20</th><th>Recall@20</th><th>Precision@20</th><th>F1@20</th><th>幻觉</th><th>成本</th></tr></thead><tbody><tr><td>Google Scholar</td><td>2.07</td><td>1.69</td><td>1.48</td><td>1.39</td><td>0</td><td>—</td></tr><tr><td>OpenScholar</td><td>14.61</td><td>11.68</td><td>8.52</td><td>7.92</td><td>0</td><td>—</td></tr><tr><td>Bohrium Navigator</td><td>22.39</td><td>19.37</td><td>12.50</td><td>12.26</td><td>0</td><td>—</td></tr><tr><td>GPT-5.2</td><td>31.59</td><td>25.32</td><td>16.82</td><td>16.69</td><td>11.80%</td><td>\\$6.06</td></tr><tr><td>GLM-5</td><td>35.89</td><td>28.99</td><td>16.93</td><td>18.18</td><td>29.07%</td><td>\\$0.56</td></tr><tr><td>Google Scholar Labs</td><td>30.54</td><td>29.01</td><td>18.79</td><td>18.87</td><td>0</td><td>—</td></tr><tr><td><strong>PaSaMaster</strong></td><td><strong>37.93</strong></td><td><strong>31.84</strong></td><td><strong>22.19</strong></td><td><strong>21.69</strong></td><td><strong>0</strong></td><td><strong>\\$0.05</strong></td></tr></tbody></table>\n<p>关键分析:</p>\n<ul>\n<li><strong>Precision 提升最猛</strong>: 22.19 vs 次优 18.79，说明 checklist + 证据绑定 + listwise 重排显著提升了「返回的论文真满足全部约束」的比例，这正是社区搜索最看重的相关性质量。</li>\n<li><strong>生成式 LLM 的伪高分陷阱</strong>: Kimi-K2.5 NDCG 37.80 看似接近 PaSaMaster，但 35.67% 是幻觉论文——印证「不绑定语料的 agent 检索，指标会被编造内容虚高」。</li>\n<li><strong>跨学科一致性</strong>: Figure 3 显示在 38 个学科上 F1 均最高或持平，说明方法不靠某领域语料过拟合。</li>\n<li>作者未报告失败案例，但从 Recall@20 仅 31.84% 可见即便最优系统在复杂多约束意图下召回仍有大量遗漏，问题远未解决。</li>\n</ul>\n<h2>5. 局限与未来方向</h2>\n<p>作者<strong>未设独立 limitations 章节</strong>（这是论文的一个缺陷）。从方法与实验可推出的隐含局限: (1) 强依赖定制化 1.6 亿篇科学语料与三层索引基建，迁移到无此语料的垂直域（如 UGC 社区）需重建；(2) 评测仅 244 query，且 ground-truth 与 checklist 由专家构造，存在标注者偏置；(3) 轻量 Scorer 依赖更强教师模型蒸馏，教师能力上限会传导为系统上限；(4) Recall@20 仅 31.84% 表明复杂意图的召回天花板仍低，迭代轮数与召回的权衡未充分讨论。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索（UGC 短文本、强调 nDCG/CTR 与结果可信）从业者，有三条可直接借鉴:</p>\n<ol>\n<li><strong>「检索结果只能来自被排序的真实内容，绝不由 LLM 生成」应作为硬约束</strong>: 该论文用结构性手段（证据绑定 + 排序）把幻觉压到 0%，对 UGC 搜索做 LLM 改造时，应坚持「LLM 只做意图理解与重排，候选只能来自真实倒排/向量索引」，避免 RAG/agent 改写阶段引入伪结果。</li>\n</ol>\n<ol>\n<li><strong>规划-检索分离是 agentic 搜索控成本的可落地范式</strong>: 把昂贵前沿模型限制在低频意图分析、把高频召回/打分蒸馏成轻量模型，实测 1% 成本达到更优效果。社区搜索 QPS 极高，这种分层（贵模型做 query 理解、廉价模型做大规模打分）直接决定能否上线。</li>\n</ol>\n<ol>\n<li><strong>把「意图→可核验 checklist」显式化</strong>: 将模糊 query 分解为逐条客观标准并绑定证据打分 s̄(p)=Σsⱼ/m，比端到端黑盒相关性更可解释、可调试、可做 badcase 归因——对需要持续优化 nDCG 的搜索团队是高价值工程设计。落地注意: checklist 生成与多轮 Reflect 会增加延迟，需对延迟敏感的在线检索做轮数预算与缓存。无在线 A/B（仅离线 benchmark），上线前需自建在线实验验证 CTR/nDCG 收益。</li>\n</ol>"
+     },
+     "weekly_rank": 2
+    },
+    {
+     "id": "hf:2605.20075",
+     "title": "CopT: Contrastive On-Policy Thinking with Continuous Spaces for General and Agentic Reasoning",
+     "url": "https://huggingface.co/papers/2605.20075",
+     "source": "huggingface",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Dachuan Shi, Hanlin Zhu, Xiangchi Yuan, Wanjia Zhao, Kejing Xia",
+     "total_score": 4.2,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.2,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 5,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "CopT 把传统 think-then-answer 的 CoT 流程倒过来：先让模型直接产出 draft answer，再把这个草稿作为条件输入，让模型在 on-policy 阶段对其进行反思、纠错。为了判断 draft 是否可信，作者把连续 embedding 作为推理期 contrastive verifier — 对同一段 token，分别以离散 token 输入和连续 embedding 输入算 likelihood，序列级的差值给出置信度。无需额外验证器即可避免 performative reasoning 带来的多余 token 成本，论文报告 token 用量大幅降低且 agentic reasoning 任务的准确率不下降。",
+     "key_insight": "对搜索/推荐 agent 直接可借鉴：把昂贵的多步 reasoning 改成 draft → 自检 → 修正，模型自己决定哪些 query 不需要展开复杂规划。线上典型 query 短 + 高 QPS 场景里，先出 draft 召回排序结果、再对置信度低的 query 触发完整 agentic RAG，本质上是把 reasoning 预算按 query 难度分配。连续 embedding contrastive verifier 的设计也提供了一个不依赖外部 reward model 的轻量自验证路径。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 1,
+       "id": "hf:2605.20075",
+       "total_score": 4.2,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.20075",
+      "slug": "2605.20075",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>CopT 直击主流 chain-of-thought (CoT) 推理范式中一个被普遍忽视的低效现象：模型常常在内部其实已经能识别出答案的情况下，仍然机械地走完冗长的 thinking 步骤，作者称之为 &quot;performative reasoning&quot;。论文给出的直接数字证据是在 GSM8K 上，标准 CoT 用约 2,100 tokens 才达到 95.75% 准确率，而 CopT 仅用约 960 tokens 就达到 96.36% — token 量直接砍掉 55% 而准确率反而提升 0.61 个百分点。在更复杂的 LeetCode-Contest 上差距更大，CoT 59.44% 而 CopT 提升到 66.11%。</p>\n<p>这个问题对生产环境意义重大：on-line agentic search 类应用对延迟和 token 成本极其敏感，但目前没有可靠的 inference-time 信号告诉模型 &quot;这个 query 不需要再多想了&quot;。已有的 latent CoT (SwiReasoning、Soft-Thinking) 试图用连续 embedding 直接生成，牺牲了可读性，CopT 给出了第三条路：保留显式 CoT 的可读性，同时用 continuous embedding 当作 inference-time 验证器。</p>\n<h2>2. 方法详解</h2>\n<p>CopT 把推理流程倒过来：先 draft answer，再按需 on-policy thinking。整体由两个阶段、两个 contrastive 量决定。</p>\n<p><strong>Stage 1 — Draft Answer</strong>: 强制模型跳过 thinking 直接产出答案 a₁:Tₐ（数学任务限 1024 token，多轮限 512）。在生成过程中并行计算 reliability estimator：</p>\n<p>  κₐ(a₁:Tₐ) = (1/Tₐ) Σₜ [log p_θ(aₜ | q, a&lt;t) − log p_θ(aₜ | q, e&lt;t)]</p>\n<p>其中 e_t = Σ_v p_θ(v | q, a&lt;t) · E(v) 是按下一 token 分布加权的 embedding 期望，相当于把不确定性以连续向量形式注入 prefix。κₐ 在理论上等价于离散 prefix 与连续 prefix 下答案分布的 reverse KL；作者在 mixture-linear 假设下证明它的期望恰好等于潜在推理状态 S 与答案 token A 之间的互信息 I(S;A)，所以这个量度量的是 &quot;answer-relevant uncertainty&quot; 而不是任意 embedding entropy。</p>\n<p><strong>Stage 2 — On-Policy Thinking（条件触发）</strong>: 仅当 κₐ &gt; τₐ（reliability 阈值）时才启动反思链。反思过程以 chunk 为单位（chunk 大小 max(1, ⌊Tₐ/4⌋)），每个 chunk 用类似形式的 κᵣ^(k) 度量当前 thinking chunk 在看 / 不看 draft answer 时的稳定性差异：</p>\n<p>  κᵣ^(k) = (1/C) Σₜ [log p_θ(rₜ | …) − log p_θ(rₜ | …, e_{sₖ:t−1})]</p>\n<p>当 κᵣ^(k) &lt; τᵣ（稳定阈值）时把 draft answer 在下一个 chunk 暴露给模型，否则继续隐藏，让模型独立思考再合并。最终输出由 thinking 结束后的修正答案给出。</p>\n<p><strong>关键设计要点</strong>：(1) 训练 free，纯 inference-time。(2) 仅需要可获取 next-token 概率分布，与开源模型完全兼容；闭源 API 不能用。(3) 用 expected embedding 而非采样，保留概率分布而非塌缩成一个 token，这是连续 verifier 优于 token-level reflection 的关键。(4) 阈值 τₐ、τᵣ 任务可调（BFCL 上 τₐ=0.3，ZebraArena 上 τₐ=1.5）。</p>\n<p>训练设置：作者在 Qwen3 (2B / 8B / 35B) 与 Qwen3.5 (2B / 35B-A3B Gated-DeltaNet) 上做实验，单 H200 GPU，采样 temperature 0.6 / top-p 0.95 / top-k 20。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>Performative reasoning 的可量化诊断</strong>：κₐ 在识别错误 draft 的实证 precision 达到 80–90%，相比均匀 baseline 的 10–15% 是数量级提升 — 这意味着 &quot;什么时候停止想&quot; 第一次有了可靠的 inference-time 信号。</p>\n<p>(2) <strong>连续 embedding 作为 verifier 而非 generator</strong>：以往 latent CoT (SwiReasoning、Soft-Thinking) 都把 embedding 作为生成空间，必然牺牲可读性。CopT 的洞见是 embedding 真正的价值是 &quot;保留分布的不确定性&quot;，把它当作 contrastive 参考量比当生成媒介更合理。表 2 显示 CopT 比 SwiReasoning 平均 +0.30~0.61% 准确率同时还少用 8–36% token。</p>\n<p>(3) <strong>Visibility control for self-correction</strong>：分 chunk 的 κᵣ 实现了一种 &quot;独立思考 vs 看草稿&quot; 的自适应切换，避免模型一开始就被错误 draft 锚定。消融显示更严格的 τᵣ 提升 draft 修正率但增加 thinking token，这是显式 trade-off。</p>\n<p>(4) <strong>数学证明 contrastive 估计的语义性</strong>：在 mixture-linear 假设下证明 E[κₐ] = I(S;A)。这把一个看似 ad-hoc 的工程量提升到了信息论解释，理论稳健。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>数学 &amp; 编程任务（Qwen3-8B）</strong>：</p>\n<table><thead><tr><th>Benchmark</th><th>CoT 准确率</th><th>CopT 准确率</th><th>Token 变化</th></tr></thead><tbody><tr><td>GSM8K</td><td>95.75%</td><td>96.36%</td><td>−55.1%</td></tr><tr><td>Math500</td><td>96.00%</td><td>97.60%</td><td>−2.7%</td></tr><tr><td>AIME 2024</td><td>75.83%</td><td>79.17%</td><td>−4.6%</td></tr><tr><td>HumanEval</td><td>92.68%</td><td>96.34%</td><td>−22.2%</td></tr><tr><td>LeetCode-Contest</td><td>59.44%</td><td>66.11%</td><td>+4.1% (准确率 +6.67%)</td></tr></tbody></table>\n<p>GSM8K 的极端 token 节省（55%）说明在简单数学题上 performative reasoning 现象最严重 — 直觉合理。LeetCode-Contest 上 token 略增但准确率大涨，说明对真正困难任务 CopT 在节省与正确之间做出了合理偏向，没有为了省 token 牺牲难题正确性。</p>\n<p><strong>Agentic 任务（BFCL v4 &amp; ZebraArena）—这是与搜索/推荐场景最相关的部分</strong>：</p>\n<ul>\n<li>BFCL v4 (single-turn function calling)：Qwen3.5-2B 上 +0.84% 准确率 / −29.9% token；35B-A3B 上 +0.68% / −28.5%。</li>\n<li>ZebraArena (multi-turn) Large split：CoT 59.21% → CopT 82.24%，提升 23.03 个百分点；Medium split 也有 +13.14。</li>\n</ul>\n<p>ZebraArena 上随任务难度增加 CopT 收益放大（Small +2.98 / Medium +13.14 / Large +23.03），强烈说明 on-policy thinking 的核心价值在 hard cases — 这与作者宣称的 &quot;easy 走 draft，hard 才 think&quot; 的设计哲学完全吻合。</p>\n<p><strong>Latency</strong>：实际 wall-clock 时间在 GSM8K −37% / Math500 −20% / HumanEval −69%，对生产部署直接有价值。</p>\n<p><strong>消融重要观察</strong>：(1) κₐ 仅对答案 span 计算比对整段答案计算多 7–10% 效率提升，准确率几乎不变 — 实践中可只在 answer extraction 区域算。(2) 最大 draft 长度超过 2,048 后无收益 — 给出了实际部署上限。(3) τᵣ 更严能提高 draft 修正率但增加 thinking token，可作为按业务 tradeoff 调参点。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者自述的局限主要有三：</p>\n<p>(1) <strong>方差</strong>：KL 估计仅基于单条轨迹，没有多采样平均，token-level 平均缓解了方差但仍高于 ensemble 方案。</p>\n<p>(2) <strong>API 兼容性</strong>：必须能拿到 next-token 概率分布，纯文本输出的闭源 API 不能用。作者把这列为重要的未来方向。</p>\n<p>(3) <strong>校准问题</strong>：某些 reasoning-tuned 的 LLM 在 &quot;直接给答案不思考&quot; 模式下校准变差，draft 阶段会出现重复输出，目前靠 length cap 兜底，但不是根本解法。</p>\n<p>未做但显而易见的 follow-up：(a) 把 τₐ / τᵣ 改成 query-conditional 学习而非全局阈值；(b) 把 contrastive 信号纳入 RLVR 训练阶段而不仅仅是 inference；(c) 把 verifier 蒸馏到一个小模型避免主模型自己跑两次。</p>\n<h2>6. 工业实践意义</h2>\n<p>对做社区搜索 / agentic search 的团队，CopT 是少数能直接落地的 inference-time 推理优化：</p>\n<p>(1) <strong>直接落地的 token 经济</strong>：BFCL v4 上 single-turn function call 节省 28–30% token，这对每天数百万次 agent 调用的成本意义巨大。社区搜索 agent 链路里 query rewrite → tool selection → answer 这三步都可以套用：每步先 draft，再用 κₐ 判断是否触发反思，预算按 query 难度自适应分配。</p>\n<p>(2) <strong>不需要训练，第一周就能上线</strong>：相比 RLVR 或 SFT，CopT 是 plug-in 的，只要后端模型自部署（能拿到 token 概率）即可立刻接入。这是与 GoLongRL 等需要大规模训练的方法相比的最大优势。</p>\n<p>(3) <strong>对高 QPS、短 query 场景特别合适</strong>：社区搜索 query 大多是短 UGC 查询，绝大多数不需要复杂多步推理。CopT 在 GSM8K 上 55% token 节省的现象暗示在 &quot;简单 query 偏多&quot; 的工业场景节省比例会更高。</p>\n<p>(4) <strong>多轮 agent 任务上的爆发性收益</strong>：ZebraArena Large 上 +23 个百分点的提升说明对 deep research / 多轮工具调用类任务收益最大 — 正好是社区里 &quot;为我找到关于 X 的所有相关帖子并总结&quot; 这类多轮 agent 检索的形态。</p>\n<p>(5) <strong>部署考量</strong>：(a) 需要主模型暴露 logits / token-level 概率，闭源 API 路径暂时无解。(b) 阈值 τₐ / τᵣ 需要离线在自家评测集上调，不同任务最佳值差几倍。(c) draft 阶段 length cap 必须设，避免某些模型校准差导致重复输出。(d) latency 节省 20–70% 对在线服务 SLA 直接友好，不引入额外服务依赖。</p>\n<p>(6) <strong>可借鉴的范式</strong>：哪怕不直接用 CopT 算法，&quot;connecting continuous-embedding distribution to discrete-token output 作为不确定性 verifier&quot; 这个思路对自研 ranker / re-ranker 的置信度估计有启发 — 用对比两种 prefix encoding 下的 likelihood 差异作为不确定性，比 softmax max-prob 更稳。</p>"
+     },
+     "weekly_rank": 3
+    },
+    {
+     "id": "hf:2605.21468",
+     "title": "You Only Need Minimal RLVR Training: Extrapolating LLMs via Rank-1 Trajectories",
+     "url": "https://huggingface.co/papers/2605.21468",
+     "source": "huggingface",
+     "company": [
+      "UVA",
+      "WUSTL"
+     ],
+     "published": "2026-05-19",
+     "authors": "Zhepei Wei, Xinyu Zhu, Wei-Lin Chen, Chengsong Huang, Jiaxin Huang, Yu Meng",
+     "total_score": 4.15,
+     "adjusted_score": 4.15,
+     "preference_bonus": 0.1,
+     "rank_score": 4.15,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 5,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "论文研究 RLVR (可验证奖励强化学习) 训练过程中参数轨迹的几何结构，发现 RLVR 的权重增量轨迹极度低秩：大部分下游性能增益由参数 delta 的 rank-1 近似捕获，且该投影的幅度随训练步数近似线性增长。据此提出 RELEX，从一个很短的观测窗口估计 rank-1 子空间，再用线性回归外推未来 checkpoint，无需任何可学习模型。在 Qwen2.5-Math-1.5B、Qwen3-4B-Base、Qwen3-8B-Base 上，RELEX 仅用约 15% 的 RLVR 训练步数即可匹配或超过完整 RLVR 的域内/域外表现，并能外推到观测前缀的 10~20 倍步数仍持续提升。",
+     "key_insight": "rank-1 近似 + 近线性增长揭示 RLVR 增益的低维本质，外推成功源于一种\"去噪\"效应：投影到主子空间过滤掉高秩噪声方向。消融显示提高子空间秩或改用非线性建模都无额外收益，印证极简充分性。对训练搜索/推荐 reasoning 模型有直接价值——可用前 50 步轨迹预测 1000 步 checkpoint，把昂贵的 RL rollout 预算压到 ~15%，为 RLVR 训练 agent/排序策略提供低成本 scaling 手段。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 1,
+       "id": "hf:2605.21468",
+       "total_score": 4.15,
+       "adjusted_score": 4.15
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "hf:2605.21468",
+      "slug": "2605.21468",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>RLVR (可验证奖励强化学习) 已成为提升 LLM 推理能力的主流范式 (DeepSeek-R1 等)，但典型 RLVR 流程要用 GRPO 跑海量优化步、动辄数天 GPU 时，成本随训练步数线性增长。论文从一个被忽视的角度切入：RLVR 训练得到的<strong>参数轨迹 (weight trajectory) 的几何结构</strong>。</p>\n<p>先前工作已暗示 RLVR 更新是高度结构化的——它更像&quot;激发并放大预训练模型中已潜在的推理行为&quot;而非从零学新能力，且有研究指出更新的&quot;方向比幅度更重要&quot;、RLVR 可能只改动稀疏/低维的参数子集。由此作者提出核心假设：能否从训练早期动态 (例如前 15% 步) 预测 RLVR 训练的走向，并达到完整训练的性能？这把一个&quot;省算力&quot;的工程问题，转化为&quot;RLVR 轨迹是否可预测&quot;的科学问题。</p>\n<h2>2. 方法详解</h2>\n<p>论文先做两项实证发现，再据此设计方法。</p>\n<p><strong>发现 1（低秩）</strong>：记 θ₀ 为基座权重、θ_t 为训练 t 步后的权重，计算参数增量 Δθ_t = θ_t − θ₀，对每个权重张量把各步增量 flatten 后堆叠成轨迹矩阵 M ∈ R^(T×mn)，做 SVD。结果显示<strong>每个张量仅用 rank-1 (单一主方向) 重构，就能保留几乎全部 MATH 下游准确率增益</strong>。即虽然张量身处高维空间、原则上可沿很多独立分量移动，但单一分量已捕获绝大部分任务相关变化。</p>\n<p><strong>发现 2（线性）</strong>：把每步增量投影到主奇异向量 v₁ 上得到标量系数 c_t，用最小二乘拟合 c(t)=at+b，<strong>绝大多数张量 R²&gt;0.98</strong>，即 rank-1 系数随训练步近似线性增长。</p>\n<p><strong>RELEX 算法</strong>（训练无关、闭式解、无可学习参数）三步：</p>\n<ol>\n<li><strong>rank-1 子空间估计</strong>：对前 T_cut 个 checkpoint 的轨迹矩阵做截断 SVD，取 top-1 右奇异向量 v₁ 作为参数变化主方向（注意是对整段观测窗口做&quot;轨迹级&quot; SVD，得到一个共享 basis）。</li>\n<li><strong>线性系数外推</strong>：把观测到的各步增量投影到 v₁ 得标量序列 C₁，用 OLS 拟合斜率 a=Cov(t,c_t)/Var(t)、截距 b，外推目标步 T 的系数 ĉ_T = aT+b。</li>\n<li><strong>预测未来权重</strong>：Ŵ_T = W₀ + ĉ_T·v₁，逐张量组装成完整 checkpoint θ̂_T。</li>\n</ol>\n<p><strong>训练设置</strong>：3 个模型 (Qwen2.5-Math-1.5B、Qwen3-4B-Base、Qwen3-8B-Base) 用 GRPO 在 MATH 上训练至 plateau，共 500 步、每步存 checkpoint。整个 RELEX 只需每张量一次截断 SVD + 两参数最小二乘，相对 RLVR 训练成本可忽略。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>揭示 RLVR 轨迹的&quot;极低秩 + 近线性&quot;双重规律</strong>：rank-1 重构在各训练步、各模型族都贴合 oracle RLVR checkpoint；rank-1 系数 R²&gt;0.98 的线性度，比同期 Weight Extrapolation 在原始权重上观察到的 R²&gt;0.7 (80% 权重) 信号更强、更规整——这正是 rank-1 投影优于裸权重外推的根源。</li>\n</ol>\n<ol>\n<li><strong>提出 RELEX——参数无关的 checkpoint 外推法</strong>：区别于 AlphaRL (在每个 checkpoint 各自做 SVD，basis 会随步旋转) 和 NExt (训练一个预测器做非线性外推)，RELEX 用&quot;轨迹级&quot;单一 SVD + 闭式线性拟合，无需训练任何预测模块，对每步噪声更鲁棒。</li>\n</ol>\n<ol>\n<li><strong>&quot;谱去噪 (spectral denoiser)&quot;机制解释</strong>：rank-1 投影相当于低通滤波，保留平滑单调的任务相关信号、丢弃高频随机优化噪声；外推甚至能改进原始 checkpoint。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p><strong>主结果（in-domain MATH，仅用 15–20% 训练成本）</strong>：RELEX vs 完整 RLVR——Qwen2.5-Math-1.5B 71.6% vs 71.5%（持平略超）、Qwen3-4B-Base 85.6% vs 85.5%（持平略超）、Qwen3-8B-Base 87.4% vs 88.5%（差 1.1% 内）。</p>\n<p><strong>OOD 泛化</strong>（AIME2025/2026、HMMT2025、OlympiadBench、AMC2023 五个竞赛集）：RELEX 在 Qwen2.5 上 5 个里赢 4 个、Qwen3-4B 上赢 3 个，Qwen3-8B 平均差 0.9% 内但仍赢 OlympBench。说明外推 checkpoint 捕获的是可迁移推理增益，而非死记 MATH 训练分布。</p>\n<p><strong>对比同算力外推基线</strong>（均用 15–20% 成本，以 Qwen2.5 为例）：RELEX 比 Weight Extrapolation +1.2、比 Logits Extrapolation +6.7、比 ExPO +3.9、比 AlphaRL +4.3。与 Weight Extrap 的差距最有信息量：两者都靠轨迹线性，但后者在原始权重上拿 2 个点拟合，RELEX 先投影到 rank-1 SVD 子空间——SVD 这步起到低通滤波、抑制被 2 点拟合误当信号的噪声方向。</p>\n<p><strong>消融</strong>（Qwen2.5, T_cut=75）：(a) 用原始权重空间代替 SVD 空间，每步都掉点；(b) rank-5/rank-10 全面落后 rank-1——Figure 5 显示 layer 14 gate_proj 的第 1 分量占 rank-5 子空间方差的 <strong>81.4%</strong> 且近线性，分量 2–5 合计仅 18.6% 且噪声大、非单调；(c) 线性外推优于多项式 (窗口外灾难性崩溃) 和神经网络 (无一致优势，step 200 时 69.5% vs 70.0%，却带来大量超参与拟合成本)。</p>\n<p><strong>长程稳定性</strong>：在合适 T_cut 下可外推到 step 1000（约观测窗口 8 倍、原 500 步 RLVR 的 2 倍）仍接近峰值——Qwen2.5 T_cut=125 在 step 750 达峰、step 1000 仍 71.6%（超 RLVR step-500 的 71.5%）。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出的局限：(1) <strong>只研究了 GRPO + 数学推理 + Qwen 系列三个模型</strong>；是否对 PPO 等其他 RL 算法、代码生成等其他任务形态、Llama 等其他模型族成立尚未知。(2) <strong>rank-1 设计虽在所配 T_cut 下充分，但未必普适</strong>，需要自适应秩选择。(3) <strong>观测窗口 T_cut 的选择很关键且模型依赖</strong>：Qwen2.5 偏好更长前缀，Qwen3-4B 反而是小窗口 (T_cut=75) 更稳、大窗口在 step 1000 崩到 50–61%，Qwen3-8B 则要中大窗口 (100–125)——说明 rank-1 主方向的&quot;平稳性&quot;在不同模型族并不一致。作者建议在线监控子空间漂移/奇异值间隙来自适应选 T_cut。</p>\n<p>一个论文未充分展开的隐忧：rank-1 充分性可能与 MATH 这类&quot;奖励信号清晰&quot;的任务强相关，奖励更稀疏/含噪的检索类任务上线性度可能下降。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者训练 reasoning 类模型（如多步检索-推理 agent、生成式排序策略）有直接价值：</p>\n<ol>\n<li><strong>把昂贵的 RL rollout 预算压到约 15–20%</strong>：先正常 GRPO 跑前 ~75–125 步，再用 RELEX 闭式外推到等效 500–1000 步 checkpoint，省下 80%+ GPU 时。对算力受限团队是低门槛的提效手段（代码已开源 github.com/weizhepei/RELEX）。</li>\n</ol>\n<ol>\n<li><strong>零成本后处理增益</strong>：即使已有完整 RLVR run，对其做一次 rank-1 SVD 投影本身就能当谱正则器，可能小幅改进现成 checkpoint——几乎零成本，值得作为常规后处理尝试。</li>\n</ol>\n<ol>\n<li><strong>落地注意事项</strong>：T_cut 必须按模型族实测验证，不能照搬；rank-1 与线性外推默认配置在数学推理验证过，迁移到检索/推荐任务前应先验证 rank-1 系数的线性度 (查 R² 与第 1 分量方差占比) 再决定是否外推。部署上 RELEX 无额外推理开销——产物就是一个标准 checkpoint，不改变 serving 路径。</li>\n</ol>"
+     },
+     "weekly_rank": 4
+    },
+    {
+     "id": "blog_rss:microsoft_research_blog:https://www.microsoft.com/en-us/research/blog/magenticlite-magenticbrain-fara1-5-an-agentic-experience-optimized-for-small-models",
+     "title": "MagenticLite, MagenticBrain, Fara1.5: An agentic experience optimized for small models",
+     "url": "https://www.microsoft.com/en-us/research/blog/magenticlite-magenticbrain-fara1-5-an-agentic-experience-optimized-for-small-models/",
+     "source": "blog_rss",
+     "company": [
+      "Microsoft"
+     ],
+     "published": "2026-05-21",
+     "authors": "Microsoft Research",
+     "total_score": 4.1,
+     "adjusted_score": 4.1,
+     "preference_bonus": 0.0,
+     "rank_score": 4.1,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "微软研究院发布面向小模型的 agentic 体系三件套：MagenticLite (跨浏览器与本地文件系统的自主任务完成应用，Magentic-UI 下一代)、MagenticBrain (14B 编排模型，负责规划、写代码、委派子任务)、Fara1.5 (4B/9B/27B computer-use 模型族)。架构遵循三条原则：增量式 step-by-step 规划以便长任务中途纠错；主动 context 管理 (小模型有效上下文窗口更小，把早期交互压缩成摘要)；通过子 agent 委派 (MagenticBrain 把浏览器任务分派给 Fara1.5)。在 OnlineMind2Web (300 任务) 上 Fara1.5-9B 取得同规模 SOTA，约为 Fara-7B 的两倍，Fara1.5-27B 达到 90%+ 性能。",
+     "key_insight": "证明 14B 编排 + 9B 执行的小模型组合即可在真实 web 任务上接近大模型水平，关键在分工 (brain 规划 / Fara 执行) 与主动上下文摘要。对工业 agent 部署的启示：与其堆单个大模型，不如用专精小模型分层编排，显著降低延迟与成本；\"小模型有效上下文更短、随上下文增长退化更快\"的观察对搜索 agent 的多轮检索-推理上下文管理有直接参考价值。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 2,
+       "id": "blog_rss:microsoft_research_blog:https://www.microsoft.com/en-us/research/blog/magenticlite-magenticbrain-fara1-5-an-agentic-experience-optimized-for-small-models",
+       "total_score": 4.1,
+       "adjusted_score": 4.1
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:2605.18299",
+     "title": "SD-Search: On-Policy Hindsight Self-Distillation for Search-Augmented Reasoning",
+     "url": "https://arxiv.org/abs/2605.18299",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Yufei Ma, Zihan Liang, Ben Chen, Zhipeng Qian, Huangyu Dai, Lingtao Mao, Xuxin Zhang, Chenyi Lei, Wenwu Ou",
+     "total_score": 4.05,
+     "adjusted_score": 4.05,
+     "preference_bonus": 0.2,
+     "rank_score": 4.05,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "搜索增强推理 agent 在内部推理与外部检索调用之间交替，整条 rollout 只有一个轨迹级 outcome reward，单次 search query 拿不到 step 级信用。已有 process-supervision 方法要么依赖更大的 teacher 模型，要么依赖外部系统标注的子问题。SD-Search 让同一个模型扮演两个只在 conditioning 上不同的角色：student 只看推理时可见的上下文，teacher 额外条件于一段紧凑的 hindsight block（汇总本次 rollout 发出的 search query 与最终成败）。训练时在每个 search 决策点最小化 student 与 teacher 输出分布的 Jensen-Shannon 散度，把 step 级信号叠加到轨迹 reward 上，整个过程在标准 RL 训练 loop 内完成，不需外部 teacher 推理、额外标注或辅助训练阶段。",
+     "key_insight": "核心是用 on-policy hindsight self-distillation 做 query 级信用分配：teacher 知道哪些 rollout 成功，其 query 分布隐式标出哪些 search 决策值得做，再用 JS 散度蒸馏回 student。对社区搜索的启示是，用 LLM 做多轮 query 改写或迭代检索时，可用同一模型加后见上下文构造 step 级监督，省掉维护更大 teacher 或人工标注子问题，降低 query 改写策略训练的标注与算力门槛；hindsight block 只传 query 摘要与成败这一极简接口，本身就是一种轻量信用分配设计。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 1,
+       "id": "arxiv:2605.18299",
+       "total_score": 4.05,
+       "adjusted_score": 4.05
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.18299",
+      "slug": "2605.18299",
+      "content_html": "<h2>SD-Search 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>搜索增强推理（search-augmented reasoning）agent 在内部 think 与外部 retriever 调用之间交替，性能高度依赖每一次 search query 的质量。问题在于：当前主流用 outcome-reward RL（如 GRPO）训练时，一条 rollout 里所有 search 决策共享同一个轨迹级 reward——&quot;every search decision in a rollout shares the same trajectory-level reward, leaving individual queries without step-specific credit&quot;。后果是一条成功轨迹里的差 query 和好 query 拿到完全相同的梯度信号，反之亦然，step 级信用分配缺失。</p>\n<p>已有的 process-supervision 方案（Thinker、StepSearch）确实补了 step 级信号，但代价是引入外部资源：Thinker 需要一个 72B teacher 模型对全训练集做一遍推理再加 SFT 阶段，StepSearch 依赖 GPT-4o 标注子问题。作者的关键观察是：policy 自己只要拿到关于 rollout 结果的&quot;后见信息&quot;，就能在内部产生这些 step 级信号，不需要更大的 teacher，也不需要训练之外的额外标注。这一动机直接对应工业界痛点——多轮检索/query 改写策略训练里，维护一个更大的 teacher 或人工标注子问题的成本极高。</p>\n<h3>2. 方法详解</h3>\n<p><strong>双角色（同参数）。</strong> student 只看推理时可见的上下文：对位置 p 的动作 token，student 分布为 πθ(·|τ&lt;p)。teacher 用同一套参数，但额外条件于一个 hindsight block h(𝒢)，其中汇总了同一问题采样的一组（group size G=5）sibling rollouts 的 search query 与 outcome label。</p>\n<p><strong>Hindsight block 内容。</strong> 对每条 sibling rollout τⱼ，block 含两部分：(a) 掩码视图 ℳ(τⱼ)，只保留 search span，用&quot;future masking&quot;剥掉 think、检索文档、answer；(b) 二元 outcome label y(τⱼ)∈{Correct, Incorrect}，由 F1 阈值（ρ=0）导出。future masking 的必要性被消融证明：若 teacher 看到检索文档和后续 think，gold answer 会从 hindsight 前缀里被直接抽出，导致分布崩塌——去掉 future masking 掉 3.0 EM（在 2Wiki 多跳上掉 4.7）。</p>\n<p><strong>JS 散度目标。</strong> 只在 search-query token 集合 𝒬τ 上施加 token 级损失：ℒ_SD(τ)=(1/|𝒬τ|)Σ JSD(P^tch_p ∥ P^stu_p)。选 JSD 而非 KL/MSE 的理由是对称（避免 mode-seeking/covering 偏置）且有界（≤log2，提升稳定性），分布只取 top-k=50 token 提效。消融显示：forward KL −1.0、reverse KL −1.4、MSE −2.1 EM；把作用域从 𝒬τ 扩到全部动作 token 𝒜τ −0.7 EM。</p>\n<p><strong>与轨迹级 reward 结合。</strong> 总损失 ℒ_total=ℒ_GRPO+α_SD·ℒ_SD，两项互补：GRPO 用 advantage 提供粗粒度轨迹级强化，ℒ_SD 用直接分布匹配提供稠密 token 级监督。</p>\n<p><strong>训练配置。</strong> base 模型 Qwen2.5-3B/7B（base 与 instruct）；GRPO，group size 5；训练集 NQ+HotpotQA 合并，评测 7 个 QA 基准（3 单跳 4 多跳）；actor lr 1e-6，200 步，KL 系数 β=0.001，clip ε=0.2；SD 专属超参 α_SD=1e-3、warmup 50 步、top-k=50、outcome 阈值 ρ=0；检索器 E5-base-v2 + 2018-12 Wikipedia，每 query 取 3 文档；硬件 8×H800。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) <strong>on-policy hindsight self-distillation 框架</strong>：用 policy 自身在标准 RL loop 内产生 search 决策的 step 级监督，不需外部 teacher、不需 outcome-reward 训练以外的标注。机制是&quot;teacher 知道哪些 rollout 成功，其 query 分布隐式标出哪些 search 决策值得做&quot;，再蒸馏回 student。</p>\n<p>(2) <strong>token 级 JS 目标</strong>：在每个 search step 把 policy 的 query 分布对齐到&quot;后见条件下&quot;的分布。相比 KL，JSD 的对称+有界特性带来 1.0–2.1 EM 的稳定收益（消融实证）。</p>\n<p>(3) <strong>规模化验证</strong>：在 3B/7B 两个尺度、7 个基准上一致优于 outcome-reward，并匹配或超过依赖外部 teacher 的 process-supervision 基线。相比 AutoRefine-Base，3B 提升 +2.3、7B +2.1，多跳收益更大。</p>\n<h3>4. 实验结果分析</h3>\n<p>3B 尺度（Table 1，Avg EM）：AutoRefine-Base 0.405、MR-Search-Base 0.414、Thinker-Instruct（72B teacher+SFT）0.430、SD-Search-Base（纯 RL）0.428——即不用外部 teacher 就追平了最强 process-supervision 基线，比 AutoRefine-Base 高 2.3、比 MR-Search-Base 高 1.4。多跳收益更明显：Bamboogle +5.8、MuSiQue +3.1、2Wiki +2.7，作者归因于更稠密的 per-step 监督与轨迹内方差。</p>\n<p>7B 尺度（Table 2）：SD-Search-Instruct 0.476，超 Thinker-Instruct 2.4 点；值得注意的是 7B 上 Thinker 相对 AutoRefine 的增益转负（−0.3），而 SD-Search 仍 +2.1。Scaling 分析（1.5B/3B/7B/14B）：SD-Search 增益 +2.5/+2.3/+2.1/+0.9，全程为正；Thinker 增益随规模单调缩小并从 7B 起转负——说明外部 teacher 蒸馏在大模型上反而拖累，而 on-policy 自蒸馏更稳。</p>\n<p>消融（hindsight block）：去掉 outcome label −1.4；打乱 label −2.3（比直接删更差，说明 label 必须正确而非仅占位）；去 future masking −3.0；leave-one-out（teacher 只看 siblings 不看本条）−0.5。超参敏感性（Figure 4）各默认值都在曲线峰附近，波动 &lt;2.5 点，调参鲁棒。局限是 14B 上增益收窄。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确两点局限（Section 4）：(1) <strong>可评分性要求</strong>：hindsight 对比依赖由 gold answer 导出的 outcome label，方法被限制在有可靠参考答案、可打分的任务；开放式生成需要换成学习的偏好分数或多数投票代理。(2) <strong>label 同质化退化</strong>：当一组 rollout 的 label 全同时对比信号消失——全失败时与 GRPO 一样崩，全成功时对比被抹平；这正是 14B 上增益收窄的原因（base 成功率高使 group 内全 Correct 更频繁）。一个作者未展开但明显的方向是：把二元 label 换成连续/分档 reward，或对 group 采样做难度平衡以缓解同质化。</p>\n<h3>6. 工业实践意义</h3>\n<p>对社区搜索/UGC 检索的 LLM query 改写与多轮检索策略训练，SD-Search 提供了一条低成本路径：用同一个 policy + 后见上下文构造 step 级监督，省掉维护更大 teacher 或人工标注子问题。<strong>该采用的</strong>：JSD 而非 KL 作对齐目标（对称有界、收益 1–2 EM 且更稳）；future masking（不掩码会让 teacher 泄漏答案、掉 3 EM）；只在 search-query token 上施加蒸馏（扩到全 token 反而 −0.7）。<strong>该试的</strong>：把 hindsight block 的&quot;query 摘要+二元成败&quot;接口迁移到自家 RL 改写管线，作为轻量信用分配层。<strong>部署考量</strong>：训练端到端 wall-clock 仅 +15.5%（8×H800，11.9h vs 10.3h），其中 teacher forward+JSD +22% step 时间、SD backward +17.5%，rollout/PPO/optimizer 基本不变；<strong>推理成本完全不变</strong>（teacher forward 仅训练时用且 stop-gradient）。相较 Thinker 需 72B 全集推理+SFT、StepSearch 需 GPT-4o API，SD-Search 的开销全部包在标准 RL loop 内，对算力有限的搜索团队尤其友好。需注意其前提是任务可打分——社区搜索相关性可用线上点击/人工标注代理 outcome label，但要警惕 label 同质化（高基线成功率场景对比信号会变弱）。</p>"
+     },
+     "weekly_rank": 6
+    },
+    {
+     "id": "hf:2605.19577",
+     "title": "GoLongRL: Capability-Oriented Long Context Reinforcement Learning with Multitask Alignment",
+     "url": "https://huggingface.co/papers/2605.19577",
+     "source": "huggingface",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Minxuan Lv, Tiehua Mei, Tanlong Du, Junmin Chen, Zhenpeng Su",
+     "total_score": 4.05,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.05,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "GoLongRL 提出 capability-oriented 的长上下文 RLVR 后训练方案，作者完全开源了 23K 训练样本、整套构造 pipeline 和训练代码。区别于以前一味堆复杂 retrieval path 的数据构造，论文按长上下文能力建立 taxonomy，覆盖 9 类任务（书籍、论文、多轮对话等），每类配一个原生评估指标。在相同 vanilla GRPO 设置下，仅替换数据集就在多个长上下文 benchmark 上拿到显著提升，并通过 multitask alignment 让能力可叠加而不互相抵消。",
+     "key_insight": "对做 agentic search 的团队意义在于打通了「数据 → RLVR → 能力评估」的开源闭路：以前自研长上下文 RL 最大成本不是算法而是高质量训练数据，现在可以直接拿来微调内部 search agent，再按自家任务能力分布补样本。多任务对齐的实证结论也很重要 — 与其训练一个通用长上下文 agent，不如把任务拆成正交能力分别训练。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 2,
+       "id": "hf:2605.19577",
+       "total_score": 4.05,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.18772",
+     "title": "Improving Retrieval-Augmented Generation without Taxonomy-based Error Categorization",
+     "url": "https://arxiv.org/abs/2605.18772",
+     "source": "arxiv",
+     "company": [
+      "Columbia",
+      "Cornell"
+     ],
+     "published": "2026-05-20",
+     "authors": "Gongbo Zhang, Yifan Peng, Chunhua Weng",
+     "total_score": 4.0,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.0,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "目前 agentic RAG 普遍依赖 critic agent 把错误分到细粒度类别 (factual / hallucination / coverage…) 后再对应修复策略，但作者实证发现细粒度 taxonomy 既难维护又会把 critic 误分类的噪声放大。论文提出 RePAIR，一种 response-action learning 范式，跳过显式错误分类，直接学习「flawed RAG 输出 → 纠错 action plan」的端到端映射。在多个 RAG benchmark 上 RePAIR 稳定优于带 critic taxonomy 的 baseline，并明显减少 critic 误分类引起的级联错误。",
+     "key_insight": "社区搜索的 agentic RAG 链路上，常见做法是把答案不准切成几十种细粒度类别再写不同 prompt 修复，工程负担和噪声都很大。RePAIR 的启示是：与其依赖 critic 把错误标对，不如让模型直接学到「这种 output 该做哪种 action」，对应到生产就是把人工写的 reflection prompt 改成端到端学到的纠错策略。配合内部 case 库做 SFT 即可上线，迭代成本远低于持续维护错误 taxonomy。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 3,
+       "id": "arxiv:oai:arXiv.org:2605.18772",
+       "total_score": 4.0,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2510.21712",
+     "title": "DecoupleSearch: Decouple Planning and Search via Hierarchical Reward Modeling",
+     "url": "https://arxiv.org/abs/2510.21712",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Hao Sun, Zile Qiao, Bo Wang, Guoxin Chen, Yingyan Hou, Yong Jiang, Pengjun Xie, Fei Huang, Yan Zhang",
+     "total_score": 3.95,
+     "adjusted_score": 3.95,
+     "preference_bonus": 0.2,
+     "rank_score": 3.95,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "Agentic RAG 引入自主 agent 后面临三个问题：每一步成败同时依赖高质量 planning 和准确 search、中间推理步骤缺监督、planning 与 search 的候选空间随步数指数膨胀。DecoupleSearch 用 dual value models 把 planning 和 search 解耦，分别独立优化 plan reasoning 与 search grounding；构造一棵 reasoning tree，每个节点代表一次 planning 加 search 步，用 Monte Carlo Tree Search 评估每步质量，推理时再用 Hierarchical Beam Search 迭代精炼候选。论文发表于 EMNLP 2025，在不同参数规模的 policy 模型上验证有效。",
+     "key_insight": "用两个独立 value model 分别建模 planning value 与 search value，是给 Agentic RAG 中间步骤补监督的可操作方案：plan 对不对、检索 grounding 准不准分别打分，避免单一 outcome reward 把两类错误混在一起。社区搜索若上 agentic 多轮检索，可借鉴 reasoning tree 加 MCTS 做离线 step 质量估计、再用 Hierarchical Beam Search 控制线上候选爆炸；dual value 解耦也适用于召回质量与改写规划质量需要分别归因的场景。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 3,
+       "id": "arxiv:2510.21712",
+       "total_score": 3.95,
+       "adjusted_score": 3.95
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "arxiv:2508.16438",
+     "title": "OPERA: A Reinforcement Learning-Enhanced Orchestrated Planner-Executor Architecture for Reasoning-Oriented Multi-Hop Retrieval",
+     "url": "https://arxiv.org/abs/2508.16438",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-16",
+     "authors": "Yu Liu, Yanbing Liu, Fangfang Yuan, Cong Cao, Youbang Sun, Kun Peng, Weizhuo Chen, Jianjun Li, Zhiyuan Ma",
+     "total_score": 3.95,
+     "adjusted_score": 3.95,
+     "preference_bonus": 0.2,
+     "rank_score": 3.95,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "面向复杂推理型多跳检索，OPERA 指出现有 RAG 的三个失效点：规则式 decomposer 在非模板问题上规划差、有限的 query 改写导致迭代检索打转找不到 golden doc、缺乏细粒度推理无法从噪声结果里过滤有用信息，根因是检索与推理弱耦合。方法上拆成 Goal Planning Module（把复杂问题分解成可执行子目标）与 Reason-Execute Module（按子目标做精确推理与有效检索），并提出 Multi-Agents Progressive Group Relative Policy Optimization（MAPGRPO）——GRPO 的多 agent 渐进式变体，对规划与检索全链路做 RL 优化。论文已被 AAAI 2026 接收，在复杂多跳基准上优于现有方法。",
+     "key_insight": "把 planner 与 executor 拆成独立 agent、用 MAPGRPO 分阶段做 RL，是缓解检索-推理弱耦合的一条可借鉴路径。对社区搜索的复杂 query（多实体、多条件问答帖检索），可借鉴 Goal Planning Module 的子目标分解加 Reason-Execute 的逐目标检索结构，把一次性 query 改写换成带推理的迭代检索；MAPGRPO 的多 agent 渐进式 group-relative 优化也提示，当规划和执行两个角色 reward 尺度不同时，分阶段训练比端到端联合训练更稳。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 2,
+       "id": "arxiv:2508.16438",
+       "total_score": 3.95,
+       "adjusted_score": 3.95
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
+  "infra": {
+   "raw_count": 43,
+   "unique_count": 43,
+   "days": [
+    "2026-05-18",
+    "2026-05-19",
+    "2026-05-20",
+    "2026-05-21",
+    "2026-05-22"
+   ],
+   "papers": [
+    {
+     "id": "hf:2605.19633",
+     "title": "optimize_anything: A Universal API for Optimizing any Text Parameter",
+     "url": "https://huggingface.co/papers/2605.19633",
+     "source": "huggingface",
+     "company": [
+      "UC Berkeley",
+      "Databricks"
+     ],
+     "published": "2026-05-18",
+     "authors": "Lakshya A Agrawal, Donghyun Lee, Shangyin Tan, Wenjie Ma, Karim Elmaaroufi",
+     "total_score": 4.45,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.45,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 5,
+      "practicality": 4,
+      "evidence_quality": 5,
+      "timeliness": 5
+     },
+     "summary": "本文提出 optimize_anything，一个面向任意文本参数（prompt、agent 架构、调度策略、CUDA kernel 等）的通用 LLM-based 优化系统，将所有优化问题统一为「迭代改进可被评分函数评估的文本工件」。系统支持单任务搜索、多任务跨问题迁移与对未见输入的泛化。在 6 个截然不同的任务上达到 SOTA：发现的 agent 架构把 Gemini Flash 在 ARC-AGI 上的准确率从 32.5% 提升到 89.5%（接近 3 倍）；找到的调度算法把云成本削减 40%；生成的 CUDA kernel 中 87% 持平或超过 PyTorch 实现；圆形堆叠 n=26 优于 AlphaEvolve 报告的解。消融显示「可操作侧信息」反馈比纯分数反馈收敛更快、最终分数更高，多任务搜索在等额预算下也优于独立优化。",
+     "key_insight": "把 prompt、agent 流程、内核代码这些原本由专家手工调优的「文本参数」抽象成同一个优化对象，是 DSPy/AlphaEvolve 等思路的进一步泛化——通用 LLM 优化器在多个领域已能持平或击败定制工具。对搜索场景的直接启示：query 改写 prompt、ranker 提示模板、agent 工作流编排都可以接入同一套搜索框架进行批量自动调优；并且作者实测「带原因的反馈」远胜「只回分数」，这意味着评测体系要刻意暴露失败样本与原因，而不是只输出 nDCG/CTR 一个标量。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 1,
+       "id": "hf:2605.19633",
+       "total_score": 4.45,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:2605.14359",
+     "title": "RQ-MoE: Residual Quantization via Mixture of Experts for Efficient Input-Dependent Vector Compression",
+     "url": "https://arxiv.org/abs/2605.14359",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-14",
+     "authors": "Zhengjia Zhong, Shuyan Ke, Zaizhou Lin, Jiaqi Song, Hongyi Lan, Hui Li",
+     "total_score": 4.35,
+     "adjusted_score": 4.35,
+     "preference_bonus": 0.05,
+     "rank_score": 4.35,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "向量量化是压缩高维 embedding 的基础工具，但传统 multi-codebook 方法用静态码本，难适配异构数据几何；QINCo 等动态量化器虽按输入自适应码本，却因严格序列依赖造成解码瓶颈。论文提出 RQ-MoE，用两级 MoE 加双流量化 (dual-stream quantization) 实现输入相关的码本自适应，把指令与量化解耦以支持并行解码。理论上证明标准 Residual Quantization 与 QINCo 都是 RQ-MoE 的受限特例，并给出专家维度设置准则。",
+     "key_insight": "把“动态码本”用 MoE 路由表达，既保留 QINCo 的输入自适应表达力，又避开其串行解码瓶颈、支持并行解码——这对社区搜索的短文本向量召回 / ANN 索引很直接：可在不牺牲召回精度的前提下压缩 embedding 存储与检索带宽。RQ / QINCo 作为特例的统一视角，便于在现有量化检索栈上做增量替换与调参。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 1,
+       "id": "arxiv:2605.14359",
+       "total_score": 4.35,
+       "adjusted_score": 4.35
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 2
+    },
+    {
+     "id": "hf:2605.17757",
+     "title": "OSCAR: Offline Spectral Covariance-Aware Rotation for 2-bit KV Cache Quantization",
+     "url": "https://arxiv.org/abs/2605.17757",
+     "source": "huggingface",
+     "company": [],
+     "published": "2026-05-17",
+     "authors": "(HuggingFace Daily Papers)",
+     "total_score": 4.35,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.35,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 5,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "针对长上下文 LLM serving 中 INT2 KV cache 量化既要精度又要可部署的难题，论文提出 OSCAR。它在离线阶段估计「注意力感知」的协方差结构，据此推导出固定的旋转矩阵和裁剪阈值，使 KV 量化方向与注意力实际消费的协方差结构对齐——而非沿用 Hadamard 等与下游注意力无关的通用旋转（后者在 INT2 下会明显掉点）。论文不仅给出理论依据，还实现了一套完整可部署系统：自定义 INT2 attention kernel，兼容 paged KV-cache 与 fused kernel pipeline，可直接接入 SGLang 等现代 serving 框架。",
+     "key_insight": "把量化旋转矩阵从「数据无关的去离群值」升级为「注意力协方差对齐」是核心创新：旋转目标应服务于注意力真正用到的方向，而不是单纯压缩动态范围。对搜索/推荐中用 LLM 做 query 理解、生成式重排的团队，2-bit KV cache 把长上下文显存压到约 1/8，且 kernel 与 paged attention/SGLang 兼容意味着改造成本可控。可借鉴的设计是「离线标定 + 固定旋转/裁剪」这一思路：用少量校准数据离线求解一次，推理期零额外开销，适合线上低延迟场景。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 1,
+       "id": "hf:2605.17757",
+       "total_score": 4.35,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 3
+    },
+    {
+     "id": "arxiv:2605.14844",
+     "title": "XFP: Quality-Targeted Adaptive Codebook Quantization with Sparse Outlier Separation for LLM Inference",
+     "url": "https://arxiv.org/abs/2605.14844",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-14",
+     "authors": "Thomas Witt",
+     "total_score": 4.3,
+     "adjusted_score": 4.3,
+     "preference_bonus": 0.05,
+     "rank_score": 4.3,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "XFP 是面向 LLM 推理的动态权重量化器，颠倒常规流程：由部署方按 per-channel 余弦相似度指定重建质量下限 (attention 与共享专家用严格下限、MoE 路由专家用宽松下限)，XFP 自动决定每层码本大小、离群点预算与打包，无需 Hessian、无需校准数据、无需手工选 bit 宽。权重矩阵分解为稀疏 fp16 离群残差与稠密 sub-byte 索引张量。在 Qwen3.5-122B-A10B 上 V2 模式达单流 138 tok/s 解码 (RTX PRO 6000 Blackwell, TP=2)，GSM8K strict-match 94.49% (3 seeds, n=3957)。",
+     "key_insight": "把量化目标从“选 bit 宽”改为“声明质量地板”，让部署方按业务可接受的精度损失反推压缩配置，省掉校准数据与 Hessian——对需要低成本部署 LLM 重排 / encoder 的社区搜索很实用。对 attention / 共享专家严格、对路由专家宽松的差异化质量地板，是 MoE 量化的可借鉴设计。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 2,
+       "id": "arxiv:2605.14844",
+       "total_score": 4.3,
+       "adjusted_score": 4.3
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 4
+    },
+    {
+     "id": "arxiv:2605.17989",
+     "title": "Predictive Prefetching for Retrieval-Augmented Generation",
+     "url": "https://arxiv.org/abs/2605.17989",
+     "source": "web_search",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Wuyang Zhang, Shichao Pei",
+     "total_score": 4.25,
+     "adjusted_score": 4.25,
+     "preference_bonus": 0.15,
+     "rank_score": 4.25,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "RAG 系统的同步检索会把向量检索耗时压在生成主路径上，拉高首 token 延迟。论文提出异步预取框架，由 retrieval predictor、context monitor、query generator 三个模块组成，通过监测生成过程中的语义信号，提前判断“何时该检索、检索什么”，让检索与生成重叠执行。在保持答案质量与同步 RAG 相当的前提下，端到端延迟最多降低 43.5%，首 token 时间（TTFT）改善 62.4%。已被 ICML 2026 接收。",
+     "key_insight": "把检索从生成关键路径上摘出来、用预测器判断触发时机做异步预取，是社区搜索做 RAG/生成式问答压延迟的可直接借鉴思路。三模块解耦清晰（预测器判时机、监控器读生成状态、查询生成器构造 query），不依赖改动底层检索引擎，适合叠加在现有“召回+LLM”链路上。需注意预测器误触发会带来额外检索开销，线上要权衡 prefetch 命中率。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 1,
+       "id": "arxiv:2605.17989",
+       "total_score": 4.25,
+       "adjusted_score": 4.25
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:2605.09329",
+     "title": "Test-Time Speculation",
+     "url": "https://arxiv.org/abs/2605.09329",
+     "source": "web_search",
+     "company": [
+      "UT Austin"
+     ],
+     "published": "2026-05-19",
+     "authors": "Avinash Kumar, Sujay Sanghavi, Poulami Das",
+     "total_score": 4.15,
+     "adjusted_score": 4.15,
+     "preference_bonus": 0.05,
+     "rank_score": 4.15,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "投机解码靠小草稿模型批量产 token、大目标模型并行校验来提速，但论文发现“接受长度”（草稿被目标接受的 token 数）随生成推进急剧衰减——即便 DFlash、EAGLE-3 这类强草稿器，几千 token 后接受长度也跌到接近 1（几乎无加速）。作者提出 Test-Time Speculation（TTS）：推理中用目标模型已产生的校验信号在线蒸馏、持续更新草稿模型，无需额外标注。接受长度峰值最多提升 72%、平均提升 41%，且生成越长收益越大，在 Qwen-3、Qwen-3.5、Llama-3.1 上验证。",
+     "key_insight": "指出投机解码接受长度会随上下文漂移衰减，这是长输出场景（长答案、Agent 多轮）里被忽视的加速损耗点。TTS 用“免费”的目标校验信号在线蒸馏草稿器，是对现有 EAGLE 系草稿器的轻量增量改造，不改目标模型、不需离线训练数据，落地成本低。对社区搜索的长文本生成/摘要场景能稳住加速比；代价是推理时要承担在线更新草稿器的额外计算。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 2,
+       "id": "arxiv:2605.09329",
+       "total_score": 4.15,
+       "adjusted_score": 4.15
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 6
+    },
+    {
+     "id": "hf:2605.21226",
+     "title": "OCTOPUS: Optimized KV Cache for Transformers via Octahedral Parametrization Under Optimal Squared-error Quantization",
+     "url": "https://huggingface.co/papers/2605.21226",
+     "source": "huggingface",
+     "company": [
+      "Stability AI"
+     ],
+     "published": "2026-05-19",
+     "authors": "Mark Boss, Vikram Voleti, Simon Donné, Shimon Vainer",
+     "total_score": 4.05,
+     "adjusted_score": 4.05,
+     "preference_bonus": 0.05,
+     "rank_score": 4.05,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "长上下文自回归推理中，KV cache 主导显存占用与带宽。延续 TurboQuant、PolarQuant 的“结构化随机旋转 + 逐坐标标量量化”思路，OCTOPUS 改为对旋转后的坐标三元组做联合量化：用八面体参数化把每个三元组的方向映射到正方形，再对两个坐标和三元组模长按“实现匹配的边缘分布”做 Lloyd-Max 量化，并按总维度推导出严格非均匀的比特分配。论文称在所测试的真实 decoder 上质量最优点稳定，给出一个免训练的 KV 压缩 codec。",
+     "key_insight": "把 KV 量化从“逐坐标”推进到“旋转坐标三元组联合量化”，靠八面体参数化压低方向编码误差，是 KV cache 压缩在量化粒度上的细化。免训练 codec 可作推理侧 drop-in，对长上下文检索/RAG 服务直接省显存与带宽。需关注旋转+三元组量化在解码端的额外算子开销，以及“质量最优比特分配恒定”这一结论在不同 decoder 上的泛化边界。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 3,
+       "id": "hf:2605.21226",
+       "total_score": 4.05,
+       "adjusted_score": 4.05
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "arxiv:2605.14929",
+     "title": "A Hardware-Aware, Per-Layer Methodology for Post-Training Quantization of Large Language Models",
+     "url": "https://arxiv.org/abs/2605.14929",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-14",
+     "authors": "Earl Killian",
+     "total_score": 4.0,
+     "adjusted_score": 4.0,
+     "preference_bonus": 0.0,
+     "rank_score": 4.0,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "Scaled Outer Product (SOP) 是面向 LLM 权重的训练后量化 (PTQ) 方法，在支持 per-layer LUT 解码的硬件上以 4.5–6 bit / 权重达近无损保真。方法组合：固定 + 动态码本对的逐层搜索 (per-block 选择位)、有符号 per-block scale、激活加权余弦选择、对敏感层的多选背包提升加离群 / 稀疏残差修正。固定码本含 NF4 / BOF4 / Split87 / SH4，逐层优化码本 DD4 驻留 LUT SRAM，并提出硬件高效 LUT 输出格式 HIF。跨六个开源模型族，推荐 FP6 工作点 (E2M3sUE4M4, 6.5 bpw) 权重重建误差低于常规 per-layer-POT FP8 基线。",
+     "key_insight": "把码本量化与硬件 LUT 解码协同设计，让 6.5 bpw 的 FP6 在重建误差上反超 FP8，并给出可直接采纳的“推荐工作点”——对要在固定预算 GPU 上塞下更大搜索 LLM 的团队是低成本部署的实操参考。逐层固定 / 动态码本搜索 + 敏感层背包提升的分配思路可借鉴。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 5,
+       "id": "arxiv:2605.14929",
+       "total_score": 4.0,
+       "adjusted_score": 4.0
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2605.14220",
+     "title": "Diagnosing Training Inference Mismatch in LLM Reinforcement Learning",
+     "url": "https://arxiv.org/abs/2605.14220",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-14",
+     "authors": "Tianle Zhong, Neiwen Ling, Yifan Pi, Zijun Wei, Tianshu Yu, Geoffrey Fox, Peng Wu, Xiao Yu",
+     "total_score": 4.0,
+     "adjusted_score": 4.0,
+     "preference_bonus": 0.0,
+     "rank_score": 4.0,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "现代 LLM RL 系统把 rollout 生成与策略优化分离，二者本应对同一序列、同一权重给出完全一致的 token 概率，但实现差异会让它们赋值不同，产生 Training-Inference Mismatch (TIM)。TIM 与 off-policy drift 及常见稳定化机制纠缠，难以排查。论文在零失配诊断设置 VeXact 中隔离 TIM，证明微小的 token 级数值分歧即可独立导致训练崩溃，并指出 TIM 改变了有效优化目标，给出一组缓解措施。",
+     "key_insight": "TIM 不是良性数值噪声，而是系统级扰动，应作为分析 LLM RL 的一阶因素。对用 RLHF / RLEF 训练搜索排序或 LLM 对齐的团队，rollout 引擎与训练引擎的概率不一致是隐蔽崩溃源——VeXact 这类零失配诊断思路可纳入 RL 训练管线的回归检查。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 4,
+       "id": "arxiv:2605.14220",
+       "total_score": 4.0,
+       "adjusted_score": 4.0
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "arxiv:2605.13734",
+     "title": "KVServe: Service-Aware KV Cache Compression for Communication-Efficient Disaggregated LLM Serving",
+     "url": "https://arxiv.org/abs/2605.13734",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-13",
+     "authors": "Zedong Liu, Xinyang Ma, Dejun Luo, Hairui Zhao, Bing Lu, Wenjing Huang, Yida Gu, Xingchen Liu",
+     "total_score": 4.0,
+     "adjusted_score": 4.0,
+     "preference_bonus": 0.0,
+     "rank_score": 4.0,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "分离式 LLM 服务 (PD 分离、KV 状态 disaggregation) 提升扩展性与成本效率，却让 KV 成为跨网络 / 存储的显式负载、成为端到端主瓶颈。现有 KV 压缩多为静态运行配置，无法适应工作负载、带宽、SLO / 质量预算随时间变化，固定选择可能次优甚至增加延迟。KVServe 是首个面向服务、自适应的分离式 LLM 服务 KV 通信压缩框架：把 KV 压缩统一为模块化策略空间并支持跨方法重组；引入 Bayesian Profiling Engine 高效搜索该空间以匹配实时服务上下文。",
+     "key_insight": "把 KV 压缩从“静态超参”变成随 SLO / 带宽 / 负载在线自适应的策略搜索，是分离式推理服务的关键工程视角。社区搜索若用 LLM 做重排 / RAG 且采用 PD 分离部署，KV 通信往往是隐形成本，模块化策略空间 + 贝叶斯画像可作为压缩选型的参考框架。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 3,
+       "id": "arxiv:2605.13734",
+       "total_score": 4.0,
+       "adjusted_score": 4.0
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  }
+ }
+}

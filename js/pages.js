@@ -123,17 +123,37 @@
   // Routes (all render the native-style report view; "#/" = latest day, default track):
   //   #/  |  #/reports  |  #/view/<date>/<track>  |  #/view/<date>  |  #/<date>/<track>
   //   #/reports/<date>[/<track>]  (native-style alias)
+  //   #/weekly  |  #/weekly/<week-monday>  |  #/weekly/<week-monday>/<track>   (周榜)
+  //   optional "?p=<paper id>" on a day view scrolls to / highlights that paper card.
   function parseRoute() {
-    const raw = (location.hash || "#/").replace(/^#/, "").split("?")[0] || "/";
+    const full = (location.hash || "#/").replace(/^#/, "");
+    const qi = full.indexOf("?");
+    const raw = (qi >= 0 ? full.slice(0, qi) : full) || "/";
+    let focus = null;
+    if (qi >= 0) {
+      full.slice(qi + 1).split("&").forEach(function (kv) {
+        const i = kv.indexOf("=");
+        if (i > 0 && kv.slice(0, i) === "p") {
+          try { focus = decodeURIComponent(kv.slice(i + 1)); } catch (e) { focus = kv.slice(i + 1); }
+        }
+      });
+    }
     const parts = raw.split("/").filter(Boolean);
     const isDate = function (s) {
       return /^\d{4}-\d{2}-\d{2}$/.test(s || "");
     };
+    if (parts[0] === "weekly") {
+      return {
+        weekly: true,
+        week: isDate(parts[1]) ? parts[1] : null,
+        track: (isDate(parts[1]) ? parts[2] : parts[1]) || null,
+      };
+    }
     if ((parts[0] === "view" || parts[0] === "reports") && isDate(parts[1])) {
-      return { date: parts[1], track: parts[2] || null };
+      return { date: parts[1], track: parts[2] || null, focus: focus };
     }
     if (isDate(parts[0])) {
-      return { date: parts[0], track: parts[1] || null };
+      return { date: parts[0], track: parts[1] || null, focus: focus };
     }
     return { date: null, track: null };
   }
@@ -387,7 +407,7 @@
   // Mirrors web/static/index.html "Reports (merged list + detail)": ‹ date (周X) ▼ › with a
   // dropdown (date input + Go, list of report dates with track badges), then track tabs.
 
-  const state = { date: null, track: null, pickerOpen: false, notice: "" };
+  const state = { view: "daily", date: null, week: null, track: null, pickerOpen: false, notice: "" };
 
   function orderTracks(list) {
     return (list || []).slice().sort(function (a, b) {
@@ -525,15 +545,28 @@
   }
 
   let renderSeq = 0;
+  function setNavActive(which) {
+    const rep = document.getElementById("nav-reports");
+    const wk = document.getElementById("nav-weekly");
+    if (rep) rep.classList.toggle("active", which === "reports");
+    if (wk) wk.classList.toggle("active", which === "weekly");
+  }
+
   function render() {
-    const nav = document.getElementById("nav-reports");
-    if (nav) nav.classList.add("active");
+    const route = parseRoute();
+    if (route.weekly) {
+      setNavActive("weekly");
+      renderWeekly(route);
+      return;
+    }
+    setNavActive("reports");
     if (!DATA.days.length) {
       document.getElementById("main").innerHTML =
         '<div class="empty-state"><span class="icon">📰</span><h3>No reports yet</h3><p>No report_data.json files found.</p></div>';
       return;
     }
-    const r = resolve(parseRoute());
+    const r = resolve(route);
+    state.view = "daily";
     state.date = r.date;
     state.track = r.track;
     state.pickerOpen = false;
@@ -543,6 +576,7 @@
       .then(function (report) {
         if (seq !== renderSeq) return; // user switched again meanwhile
         document.getElementById("report-body").innerHTML = renderReportBody(report);
+        if (route.focus) focusPaper(route.focus);
       })
       .catch(function (err) {
         if (seq !== renderSeq) return;
@@ -556,6 +590,312 @@
     // Warm the cache for the neighbouring (older) day so prev-clicks feel instant.
     const older = DATA.days[r.idx + 1];
     if (older) loadReport(older.date, orderTracks(older.tracks)[0]).catch(function () {});
+  }
+
+  // Scroll to (and briefly highlight) a paper card on a day view: #/view/<date>/<track>?p=<id>
+  function focusPaper(pid) {
+    const el = document.getElementById("paper-" + pid);
+    if (!el) return;
+    el.classList.add("weekly-focus");
+    window.scrollTo(0, window.scrollY + el.getBoundingClientRect().top - 72);
+    setTimeout(function () { el.classList.remove("weekly-focus"); }, 2400);
+  }
+
+  // ---------- 周榜 (weekly ranking) ----------
+  // Precomputed at build time (weekly/<monday>.json, index in data.json "weeks"):
+  // Mon–Sun weeks, per track dedupe by arXiv id / URL / title, adjusted_score desc then
+  // total_score desc, top N papers. The selector mirrors the daily date navigator.
+  let weekCache = {};
+
+  function todayShanghai() {
+    try {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+    } catch (e) {
+      return new Date().toISOString().slice(0, 10);
+    }
+  }
+
+  function weekInProgress(w) {
+    const today = todayShanghai();
+    return w.week_start <= today && today <= w.week_end;
+  }
+
+  function weekRangeLabel(w) {
+    const end = w.week_end.slice(0, 4) === w.week_start.slice(0, 4) ? w.week_end.slice(5) : w.week_end;
+    return w.week_start + " ~ " + end;
+  }
+
+  function weekIndex(monday) {
+    const ws = DATA.weeks || [];
+    for (let i = 0; i < ws.length; i++) if (ws[i].week_start === monday) return i;
+    return -1;
+  }
+
+  function weekIndexForDate(dateStr) {
+    const ws = DATA.weeks || [];
+    for (let i = 0; i < ws.length; i++) {
+      if (ws[i].week_start <= dateStr && dateStr <= ws[i].week_end) return i;
+    }
+    // nearest week by start date
+    const target = new Date(dateStr + "T00:00:00").getTime();
+    let best = 0, bestDiff = Infinity;
+    ws.forEach(function (w, i) {
+      const diff = Math.abs(new Date(w.week_start + "T00:00:00").getTime() - target);
+      if (diff < bestDiff) { bestDiff = diff; best = i; }
+    });
+    return best;
+  }
+
+  function weeklyHash(monday, track) {
+    return "#/weekly/" + monday + "/" + track;
+  }
+
+  function goWeek(i) {
+    const w = (DATA.weeks || [])[i];
+    if (!w) return;
+    const h = weeklyHash(w.week_start, state.track && TRACKS.indexOf(state.track) !== -1 ? state.track : TRACKS[0]);
+    if (location.hash === h) render();
+    else location.hash = h;
+  }
+
+  function resolveWeek(route) {
+    const ws = DATA.weeks || [];
+    let idx = 0, notice = "";
+    if (route.week) {
+      idx = weekIndex(route.week);
+      if (idx < 0) {
+        idx = weekIndexForDate(route.week);
+        notice = route.week + " 所在周没有日报，已显示 " + weekRangeLabel(ws[idx]);
+      }
+    }
+    let track = TRACKS[0];
+    if (route.track) {
+      if (TRACKS.indexOf(route.track) !== -1) track = route.track;
+      else if (!notice) notice = "未知方向 " + route.track + "，已显示 " + trackLabel(track);
+    }
+    return { idx: idx, week: ws[idx], track: track, notice: notice };
+  }
+
+  function renderWeekNav(r) {
+    const ws = DATA.weeks;
+    const n = ws.length;
+    const w = r.week;
+    const items = ws.map(function (x) {
+      const live = weekInProgress(x);
+      return (
+        '<li class="date-picker-item' + (x.week_start === w.week_start ? " active" : "") +
+        '" data-week="' + escapeHtml(x.week_start) + '" tabindex="0" role="option">' +
+        '<span class="dp-date">' + escapeHtml(weekRangeLabel(x)) + "</span>" +
+        '<span class="dp-weekday">第' + escapeHtml(x.iso_week) + "周</span>" +
+        '<span class="dp-tracks"><span class="dp-track-badge">' + escapeHtml(x.day_count) + " 天日报</span>" +
+        (live ? '<span class="dp-track-badge weekly-live-badge">进行中</span>' : "") +
+        "</span></li>"
+      );
+    }).join("");
+    const live = weekInProgress(w);
+    return (
+      '<div class="date-nav weekly-nav" id="date-nav">' +
+      '<button class="date-nav-btn" type="button" data-week-prev title="上一周 (更早)"' +
+      (r.idx >= n - 1 ? " disabled" : "") + ">&#8249;</button>" +
+      '<div class="date-label" id="date-label" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="' +
+      (state.pickerOpen ? "true" : "false") + '" title="选择周">' +
+      '<span class="weekly-range">' + escapeHtml(weekRangeLabel(w)) + "</span>" +
+      '<span class="date-weekday">(第' + escapeHtml(w.iso_week) + "周)</span>" +
+      '<span class="date-caret' + (state.pickerOpen ? " open" : "") + '">&#9660;</span>' +
+      (live ? '<span class="date-latest-tag weekly-live-tag">进行中</span>'
+        : r.idx === 0 ? '<span class="date-latest-tag">最新</span>' : "") +
+      "</div>" +
+      '<button class="date-nav-btn" type="button" data-week-next title="下一周 (更新)"' +
+      (r.idx <= 0 ? " disabled" : "") + ">&#8250;</button>" +
+      '<div class="date-picker-dropdown" id="date-picker"' + (state.pickerOpen ? "" : " hidden") + ">" +
+      '<div class="date-picker-jump">' +
+      '<input type="date" id="week-jump" value="' + escapeHtml(w.week_start) + '" min="' +
+      escapeHtml(ws[n - 1].week_start) + '" max="' + escapeHtml(ws[0].week_end) + '">' +
+      '<button type="button" data-week-go>Go</button></div>' +
+      '<div class="date-picker-count">' + n + " 周有日报 · 周一至周日</div>" +
+      '<ul class="date-picker-list" role="listbox">' + items + "</ul></div>" +
+      "</div>"
+    );
+  }
+
+  function renderWeeklyShell(r) {
+    const main = document.getElementById("main");
+    main.classList.add("viewer-mode");
+    const counts = r.week.unique_counts || {};
+    const tabs = TRACKS.map(function (t) {
+      const c = counts[t] || 0;
+      return (
+        '<a class="track-tab' + (t === r.track ? " active" : "") + (c ? "" : " weekly-empty-tab") +
+        '" href="' + weeklyHash(r.week.week_start, t) + '">' + escapeHtml(trackLabel(t)) + "</a>"
+      );
+    }).join("");
+    main.innerHTML =
+      '<div class="viewer-shell weekly-shell">' +
+      '<div class="viewer-toolbar">' +
+      '<div class="weekly-title">&#127942; 周榜 <span>每个方向本周 Top ' + escapeHtml(DATA.weekly_top_n || 10) + "</span></div>" +
+      renderWeekNav(r) +
+      '<div class="track-tabs">' + tabs + "</div>" +
+      (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
+      "</div>" +
+      '<div class="viewer-report-body" id="report-body">' +
+      '<div class="empty-state"><span class="spinner"></span></div>' +
+      "</div>" +
+      '<div class="viewer-foot"><span class="open-raw">排序：adjusted_score（含偏好加分）降序，其次 total_score；按 arXiv id / URL / 标题去重</span>' +
+      '<a class="open-raw" href="#/">Reports →</a>' +
+      '<a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读 →</a></div>' +
+      "</div>";
+  }
+
+  function shortDay(d) {
+    return d.slice(5) + " " + weekdayChinese(d);
+  }
+
+  function renderWeeklyCard(paper, track) {
+    const pid = paper.id || "w" + paper.weekly_rank;
+    const scores = paper.scores || {};
+    const val = function (k) { return escapeHtml(scores[k] != null ? scores[k] : "-"); };
+    let scoreDetail = "";
+    if (paper.scores) {
+      scoreDetail =
+        '<div class="score-detail">Relevance ' + val("business_relevance") +
+        " | Novelty " + val("technical_novelty") +
+        " | Practical " + val("practicality") +
+        " | Evidence " + val("evidence_quality") +
+        " | Timely " + val("timeliness") + "</div>";
+    }
+    let scoreLine = "Total " + formatScore(paper.total_score);
+    if (paper.adjusted_score != null) {
+      const bonus = Number(paper.preference_bonus);
+      scoreLine += " · 偏好 " + (Number.isNaN(bonus) ? "-" : (bonus >= 0 ? "+" : "") + bonus.toFixed(2)) +
+        " · Adjusted " + formatScore(paper.adjusted_score);
+    }
+    const bodyParts = [];
+    if (paper.summary) bodyParts.push("<p><strong>Summary:</strong> " + escapeHtml(paper.summary) + "</p>");
+    if (paper.key_insight) bodyParts.push("<p><strong>Key insight:</strong> " + escapeHtml(paper.key_insight) + "</p>");
+    const body = bodyParts.length
+      ? '<div class="paper-body" style="margin-top: 12px;">' + bodyParts.join("") + "</div>" : "";
+    const apps = (paper.appearances || []).map(function (a) {
+      return (
+        '<a href="' + viewHash(a.date, track) + "?p=" + encodeURIComponent(a.id || pid) + '">' +
+        escapeHtml(shortDay(a.date)) + (a.rank != null ? " · 当日 #" + escapeHtml(a.rank) : "") + "</a>"
+      );
+    }).join("");
+    let companies = paper.company || [];
+    if (typeof companies === "string") companies = [companies];
+    const companyHtml = companies.filter(Boolean).map(function (c) {
+      return '<span class="company-tag">' + escapeHtml(c) + "</span>";
+    }).join("");
+    let meta = '<div class="paper-meta"><span class="source-tag">' + escapeHtml(sourceLabel(paper.source)) + "</span>" + companyHtml;
+    if (paper.published) meta += '<span style="font-size: 12px; color: var(--text-muted);">' + escapeHtml(paper.published) + "</span>";
+    if (paper.authors) meta += '<span style="font-size: 12px; color: var(--text-muted);">' + escapeHtml(truncate(paper.authors, 80)) + "</span>";
+    meta += "</div>";
+    return (
+      '<div class="card weekly-card" data-paper-id="' + escapeHtml(pid) + '" id="paper-' + escapeHtml(pid) + '">' +
+      '<div class="card-with-radar"><div class="card-content">' +
+      '<div class="card-header">' +
+      '<div class="card-title"><span class="weekly-rank weekly-rank-' + escapeHtml(paper.weekly_rank) + '">' +
+      escapeHtml(paper.weekly_rank) + '</span><a href="' + escapeHtml(paper.url || "#") +
+      '" target="_blank" rel="noopener">' + escapeHtml(paper.title || "Untitled") + "</a></div>" +
+      '<div class="card-actions"><span class="badge ' + badgeClass(paper.rank_score) +
+      '" title="周榜排序分 (adjusted_score，缺失时为 total_score)">' + escapeHtml(formatScore(paper.rank_score)) +
+      "</span></div></div>" +
+      scoreDetail +
+      '<div class="score-detail weekly-score-line">' + escapeHtml(scoreLine) + "</div>" +
+      body +
+      '<div class="dr-appearances weekly-appearances">出现于日报：' + apps + "</div>" +
+      renderDeepRead(paper) +
+      meta +
+      "</div></div></div>"
+    );
+  }
+
+  function renderWeeklyBody(r, wk) {
+    const td = (wk.tracks || {})[r.track] || { papers: [], raw_count: 0, unique_count: 0, days: [] };
+    const papers = td.papers || [];
+    const dayLinks = (td.days || []).map(function (d) {
+      return '<a href="' + viewHash(d, r.track) + '">' + escapeHtml(shortDay(d)) + "</a>";
+    }).join(" · ");
+    const statsBits = [
+      "Track: " + escapeHtml(r.track),
+      escapeHtml((td.days || []).length) + " 天日报",
+      escapeHtml(td.raw_count) + " 条入选 → 去重 " + escapeHtml(td.unique_count) + " 篇",
+      "显示 Top " + papers.length,
+    ];
+    const head =
+      '<div style="text-align: center; margin-bottom: 16px;">' +
+      '<span style="font-family: Inter, sans-serif; font-size: 13px; color: var(--text-muted);">' +
+      statsBits.join(" | ") + "</span>" +
+      (dayLinks ? '<div class="weekly-days">当周日报：' + dayLinks + "</div>" : "") +
+      "</div>";
+    if (!papers.length) {
+      const msg = (td.days || []).length
+        ? "本周该方向的日报没有入选论文。"
+        : "本周 " + escapeHtml(weekRangeLabel(r.week)) + " 没有 " + escapeHtml(trackLabel(r.track)) + " 日报" +
+          (r.week.days.length ? "（本周日报日期：" + r.week.days.map(shortDay).map(escapeHtml).join("、") + "）" : "") + "。";
+      return '<div class="native-report">' + head +
+        '<div class="empty-state"><span class="icon">📭</span><h3>暂无周榜数据</h3><p>' + msg + "</p></div></div>";
+    }
+    const outline = papers.map(function (p) {
+      const pid = p.id || "w" + p.weekly_rank;
+      return '<a class="outline-paper" href="#paper-' + escapeHtml(pid) + '" title="' + escapeHtml(p.title) +
+        '"><span>' + escapeHtml(p.weekly_rank) + ". " + escapeHtml(p.title) + "</span></a>";
+    }).join("");
+    return (
+      '<div class="native-report weekly-report">' + head +
+      '<div class="content-with-outline">' +
+      '<nav class="outline-sidebar"><div class="outline-title">周榜</div>' + outline + "</nav>" +
+      '<div class="outline-main">' + papers.map(function (p) { return renderWeeklyCard(p, r.track); }).join("") +
+      "</div></div></div>"
+    );
+  }
+
+  function loadWeek(monday) {
+    if (weekCache[monday]) return Promise.resolve(weekCache[monday]);
+    const wi = weekIndex(monday);
+    const h = wi >= 0 && DATA.weeks[wi].hash ? DATA.weeks[wi].hash : DATA.asset_version;
+    const v = h ? "?v=" + h : "";
+    return fetch("weekly/" + monday + ".json" + v, { cache: "no-store" }).then(function (res) {
+      if (!res.ok) throw new Error("weekly/" + monday + ".json " + res.status);
+      return res.json().then(function (json) {
+        weekCache[monday] = json;
+        return json;
+      });
+    });
+  }
+
+  function renderWeekly(route) {
+    if (!DATA.weeks || !DATA.weeks.length) {
+      document.getElementById("main").classList.remove("viewer-mode");
+      document.getElementById("main").innerHTML =
+        '<div class="empty-state"><span class="icon">🏆</span><h3>暂无周榜</h3><p>还没有任何日报数据。</p></div>';
+      return;
+    }
+    const r = resolveWeek(route);
+    state.view = "weekly";
+    state.week = r.week.week_start;
+    state.track = r.track;
+    state.pickerOpen = false;
+    renderWeeklyShell(r);
+    const seq = ++renderSeq;
+    loadWeek(r.week.week_start)
+      .then(function (wk) {
+        if (seq !== renderSeq) return;
+        document.getElementById("report-body").innerHTML = renderWeeklyBody(r, wk);
+      })
+      .catch(function (err) {
+        if (seq !== renderSeq) return;
+        document.getElementById("report-body").innerHTML =
+          '<div class="empty-state"><h3>周榜加载失败</h3><p>' + escapeHtml(String(err)) + "</p></div>";
+      });
+    const older = DATA.weeks[r.idx + 1];
+    if (older) loadWeek(older.week_start).catch(function () {});
+  }
+
+  function jumpWeek(value) {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+    goWeek(weekIndexForDate(value));
   }
 
   function setPicker(open) {
@@ -634,6 +974,15 @@
       if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: "smooth" });
       return;
     }
+    if (t.closest("[data-week-prev]")) { goWeek(weekIndex(state.week) + 1); return; }
+    if (t.closest("[data-week-next]")) { goWeek(weekIndex(state.week) - 1); return; }
+    if (t.closest("[data-week-go]")) {
+      const winp = document.getElementById("week-jump");
+      jumpWeek(winp && winp.value);
+      return;
+    }
+    const witem = t.closest(".date-picker-item[data-week]");
+    if (witem) { goWeek(weekIndex(witem.getAttribute("data-week"))); return; }
     if (t.closest("[data-date-prev]")) { goToDayIndex(dayIndex(state.date) + 1); return; }
     if (t.closest("[data-date-next]")) { goToDayIndex(dayIndex(state.date) - 1); return; }
     if (t.closest("#date-label")) { setPicker(!state.pickerOpen); return; }
@@ -651,10 +1000,12 @@
     const t = ev.target;
     if (ev.key === "Escape" && state.pickerOpen) { setPicker(false); return; }
     if (t && t.id === "date-jump" && ev.key === "Enter") { jumpTo(t.value); return; }
+    if (t && t.id === "week-jump" && ev.key === "Enter") { jumpWeek(t.value); return; }
     if (t && t.classList && (t.classList.contains("date-picker-item") || t.id === "date-label") &&
         (ev.key === "Enter" || ev.key === " ")) {
       ev.preventDefault();
       if (t.id === "date-label") setPicker(!state.pickerOpen);
+      else if (t.hasAttribute("data-week")) goWeek(weekIndex(t.getAttribute("data-week")));
       else jumpTo(t.getAttribute("data-date"));
     }
   });
