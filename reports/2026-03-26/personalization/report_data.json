@@ -1,0 +1,251 @@
+{
+  "date": "2026-03-26",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 585,
+    "papers_selected": 10,
+    "score_min": 2.65,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2603.22779",
+      "title": "KARMA: Knowledge-Action Regularized Multimodal Alignment for Personalized Search at Taobao",
+      "url": "https://arxiv.org/abs/2603.22779",
+      "authors": "Zhi Sun, Wenming Zhang, Yi Wei, Liren Yu, Zhixuan Zhang, Dan Ou, Haihong Tang",
+      "company": [
+        "Alibaba",
+        "Taobao"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 4.4,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.6,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "该论文针对 LLM 在个性化搜索任务中的微调难题，揭示了「知识-行为鸿沟」(Knowledge-Action Gap) 现象：直接用判别式目标微调 LLM 会导致语义坍缩 (Semantic Collapse)，注意力出现 sink 现象，模型泛化能力严重退化。为此提出 KARMA 框架，通过知识正则化和行为对齐的双重约束，在保持 LLM 预训练语义知识的同时有效学习个性化搜索行为。该方法已部署于淘宝搜索系统，在个性化推荐指标上取得显著提升。",
+      "key_insight": "KARMA 揭示了 LLM 微调中语义知识与个性化行为之间的本质冲突——过度优化行为目标会破坏预训练语义表征。其核心创新在于设计了知识-行为正则化机制，通过多模态对齐约束避免注意力坍缩。对搜推系统的启示是：在用 LLM 增强个性化能力时，必须同时保护语义泛化能力，不能简单地端到端微调。这一发现对所有将 LLM 引入排序/推荐系统的工程实践都有重要指导意义。",
+      "deep_reading": {
+        "paper_id": "arxiv:2603.22779",
+        "title": "KARMA: Knowledge-Action Regularized Multimodal Alignment for Personalized Search at Taobao",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nKARMA 论文揭示了将 LLM 应用于个性化搜索时的一个关键失败模式——「知识-行为鸿沟」(Knowledge-Action Gap)。具体而言，在淘宝搜索系统中，用户历史交互的商品被压缩为单个连续 embedding 以满足延迟要求，但当用这种 embedding-only 的方式直接用判别式目标（如 pairwise loss）微调 LLM 时，模型会发生「语义坍缩」(Semantic Collapse)。其表现为注意力出现条码状 sink 模式——模型将注意力集中在极少数位置上，绕过了真正的语义建模，将商品 embedding 当作不透明 ID 使用。尽管行为指标（如 gAUC）看似合理，但语义保真度指标（JS@50，即检索 top-50 商品与真实商品的词级 Jaccard 重叠）严重下降，说明 LLM 预训练获得的语义知识被破坏。这一问题的工业背景是淘宝作为全球最大电商搜索引擎之一，其个性化搜索系统迫切需要 LLM 的语义泛化能力来提升长尾 query 和新商品的匹配质量。\n\n## 2. 方法详解\n\nKARMA 框架基于 decoder-only Transformer 架构（使用 Qwen3-0.6B 作为用户解码器，Qwen3-1.7B/Qwen3-VL-2B 作为商品编码器），其核心损失函数为：\n\n**ℒ_KARMA = ℒ_act + λ_dec · ℒ_dec**\n\n其中 ℒ_act 是行为对齐目标，ℒ_dec 是可解码性正则化。\n\n**行为对齐目标 (ℒ_act)**：采用 pairwise cross-entropy 损失，对用户最终兴趣向量 h_t 与正负样本 embedding 的点积差进行排序学习。负样本包括曝光未点击的困难负例和 batch 内负例。选择 pairwise-CE 而非 InfoNCE 是因为前者在异质负例难度下更稳定。\n\n**可解码性正则化 (ℒ_dec)** 包含两条互补路径：\n- **Task 1 - 历史条件语义生成 (ℒ_gen)**：给定用户行为历史，自回归解码目标商品的文本 token，将优化锚定在 LLM 原生的 token 级目标上\n- **Task 2 - Embedding 条件语义重建 (ℒ_recon)**：仅从最终用户兴趣向量 h_t 重建目标商品文本，强制要求 h_t 必须保持语义可恢复性，直接阻止 ID 式快捷学习\n- **Task 3 - 视觉可解码性 (ℒ_img)**（多模态扩展）：使用条件扩散/flow-matching 头从行为状态重建冻结的视觉语义特征\n\n训练采用两阶段策略：(1) 语义热身阶段，让解码器学会从独立商品 embedding 解码语义；(2) 联合训练阶段，在行为序列上同时优化行为对齐和可解码性。**关键设计是「训练重、推理轻」——所有正则化解码头在推理时完全移除，实现零在线延迟开销。**\n\n训练数据来自淘宝搜索的匿名化日志，按时间顺序切分。\n\n## 3. 核心技术贡献\n\n**贡献 1：首次系统性揭示了 LLM 在连续 token 接口下的语义坍缩现象。** 通过注意力可视化和 JS@50 语义保真度指标，证明判别式训练会导致注意力 sink 和语义退化。这不是简单的过拟合，而是模型在损失景观中找到了绕过语义建模的快捷解。\n\n**贡献 2：提出「训练时正则化、推理时零开销」的设计原则。** 通过可解码性约束在训练时保持语义空间的结构性，推理时完全不需要额外计算，这对延迟敏感的工业系统至关重要。\n\n**贡献 3：发现扩散模型作为 embedding 生成器的模式偏差。** 实验表明扩散目标本质上是 mode-seeking 的（追求高保真采样），而检索 embedding 应该是 mean-seeking 的（充当稳定质心）。这解释了为何扩散生成的 embedding 在检索任务上不如判别式方法。\n\n**贡献 4：双路径可解码性设计分别正则化不同的失败模式。** Task 1 锚定预训练目标防止语义空间漂移，Task 2 通过信息瓶颈阻止快捷学习。\n\n## 4. 实验结果分析\n\n主实验在淘宝搜索数据上进行，以 action-only pairwise-CE 为基线，KARMA 的改进如下：\n\n| 方法 | ΔgAUC | ΔHR@200 | ΔHR@1000 | ΔJS@50 |\n|------|-------|---------|----------|--------|\n| Task 1 (ℒ_gen) | +0.43 | +4.81 | +3.46 | -0.87 |\n| Task 2 (ℒ_recon) | +0.43 | +19.19 | +19.31 | +2.65 |\n| KARMA (Task 1+2) | +0.97 | +22.57 | +21.19 | +2.26 |\n| + 视觉重建 | +1.38 | +10.83 | +8.41 | +0.40 |\n\n关键发现：(1) Task 2 (embedding 重建) 是主要的反坍缩约束，带来最大的检索提升（HR@200 +19%）；(2) Task 1 和 Task 2 正则化互补的失败模式，组合效果最优；(3) 视觉重建在文本 KARMA 基础上进一步提升，提供互补的多模态锚定信号。\n\n消融实验中，扩散方法（DDPM、EDM、Flow-Matching）作为 embedding 生成器均不如判别式方法，验证了 mode-seeking vs mean-seeking 的洞察。\n\n**线上 A/B 测试结果（14 天，淘宝搜索全漏斗部署）：**\n- 排序阶段：CTR AUC +0.25\n- 粗排阶段：HR@500 +1.86\n- 召回阶段：HR@5000 +2.51\n- 整体效果：商品点击量 +0.5%，推理零额外延迟\n\n## 5. 局限与未来方向\n\n**作者明确指出的局限：** (1) 注意力 sink 被视为诊断信号而非因果证据——主要证据来自行为指标和语义保真度的一致性改进；(2) 视觉重建需要冻结的预训练视觉编码器，增加训练成本但不影响推理。\n\n**未明确讨论但值得注意的局限：** (1) 实验仅在淘宝电商搜索域验证，向其他个性化搜索场景的泛化性未知；(2) 随用户历史长度增加，解码目标线性增长，可能限制超长序列的可扩展性；(3) 用户解码器选用 0.6B 规模模型，更大模型是否表现一致未做讨论。\n\n## 6. 工业实践意义\n\n**可直接借鉴的方案：** KARMA 的「训练时正则化、推理时零开销」模式是将 LLM 集成到延迟敏感搜推系统的最佳实践参考。任何试图用 LLM 增强排序/推荐系统的团队都应关注语义坍缩风险——简单地在行为数据上微调 LLM 可能适得其反。\n\n**对社区搜索的具体启示：** UGC 短文本搜索同样面临语义泛化与行为对齐的矛盾。可以借鉴 KARMA 的思路：(1) 在训练排序模型时加入内容重建正则化，防止模型将 UGC 内容 embedding 退化为纯 ID 特征；(2) 对于新话题/新内容的 query，语义保真度比行为信号更重要。\n\n**部署注意事项：** (1) KARMA 在淘宝三级漏斗（召回→粗排→精排）全面集成，不同阶段采用不同融合策略（召回用 ANN、粗排加权融合、精排作为 CTR 模型特征）；(2) 14 天 A/B 测试 +0.5% 点击提升看似不大，但在淘宝搜索的超大流量下经济价值极高；(3) 训练成本增加但推理成本不变，适合有足够训练资源的团队。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>KARMA 论文揭示了将 LLM 应用于个性化搜索时的一个关键失败模式——「知识-行为鸿沟」(Knowledge-Action Gap)。具体而言，在淘宝搜索系统中，用户历史交互的商品被压缩为单个连续 embedding 以满足延迟要求，但当用这种 embedding-only 的方式直接用判别式目标（如 pairwise loss）微调 LLM 时，模型会发生「语义坍缩」(Semantic Collapse)。其表现为注意力出现条码状 sink 模式——模型将注意力集中在极少数位置上，绕过了真正的语义建模，将商品 embedding 当作不透明 ID 使用。尽管行为指标（如 gAUC）看似合理，但语义保真度指标（JS@50，即检索 top-50 商品与真实商品的词级 Jaccard 重叠）严重下降，说明 LLM 预训练获得的语义知识被破坏。这一问题的工业背景是淘宝作为全球最大电商搜索引擎之一，其个性化搜索系统迫切需要 LLM 的语义泛化能力来提升长尾 query 和新商品的匹配质量。</p>\n<h2>2. 方法详解</h2>\n<p>KARMA 框架基于 decoder-only Transformer 架构（使用 Qwen3-0.6B 作为用户解码器，Qwen3-1.7B/Qwen3-VL-2B 作为商品编码器），其核心损失函数为：</p>\n<p><strong>ℒ_KARMA = ℒ_act + λ_dec · ℒ_dec</strong></p>\n<p>其中 ℒ_act 是行为对齐目标，ℒ_dec 是可解码性正则化。</p>\n<p><strong>行为对齐目标 (ℒ_act)</strong>：采用 pairwise cross-entropy 损失，对用户最终兴趣向量 h_t 与正负样本 embedding 的点积差进行排序学习。负样本包括曝光未点击的困难负例和 batch 内负例。选择 pairwise-CE 而非 InfoNCE 是因为前者在异质负例难度下更稳定。</p>\n<p><strong>可解码性正则化 (ℒ_dec)</strong> 包含两条互补路径：</p>\n<ul>\n<li><strong>Task 1 - 历史条件语义生成 (ℒ_gen)</strong>：给定用户行为历史，自回归解码目标商品的文本 token，将优化锚定在 LLM 原生的 token 级目标上</li>\n<li><strong>Task 2 - Embedding 条件语义重建 (ℒ_recon)</strong>：仅从最终用户兴趣向量 h_t 重建目标商品文本，强制要求 h_t 必须保持语义可恢复性，直接阻止 ID 式快捷学习</li>\n<li><strong>Task 3 - 视觉可解码性 (ℒ_img)</strong>（多模态扩展）：使用条件扩散/flow-matching 头从行为状态重建冻结的视觉语义特征</li>\n</ul>\n<p>训练采用两阶段策略：(1) 语义热身阶段，让解码器学会从独立商品 embedding 解码语义；(2) 联合训练阶段，在行为序列上同时优化行为对齐和可解码性。<strong>关键设计是「训练重、推理轻」——所有正则化解码头在推理时完全移除，实现零在线延迟开销。</strong></p>\n<p>训练数据来自淘宝搜索的匿名化日志，按时间顺序切分。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：首次系统性揭示了 LLM 在连续 token 接口下的语义坍缩现象。</strong> 通过注意力可视化和 JS@50 语义保真度指标，证明判别式训练会导致注意力 sink 和语义退化。这不是简单的过拟合，而是模型在损失景观中找到了绕过语义建模的快捷解。</p>\n<p><strong>贡献 2：提出「训练时正则化、推理时零开销」的设计原则。</strong> 通过可解码性约束在训练时保持语义空间的结构性，推理时完全不需要额外计算，这对延迟敏感的工业系统至关重要。</p>\n<p><strong>贡献 3：发现扩散模型作为 embedding 生成器的模式偏差。</strong> 实验表明扩散目标本质上是 mode-seeking 的（追求高保真采样），而检索 embedding 应该是 mean-seeking 的（充当稳定质心）。这解释了为何扩散生成的 embedding 在检索任务上不如判别式方法。</p>\n<p><strong>贡献 4：双路径可解码性设计分别正则化不同的失败模式。</strong> Task 1 锚定预训练目标防止语义空间漂移，Task 2 通过信息瓶颈阻止快捷学习。</p>\n<h2>4. 实验结果分析</h2>\n<p>主实验在淘宝搜索数据上进行，以 action-only pairwise-CE 为基线，KARMA 的改进如下：</p>\n<table><thead><tr><th>方法</th><th>ΔgAUC</th><th>ΔHR@200</th><th>ΔHR@1000</th><th>ΔJS@50</th></tr></thead><tbody><tr><td>Task 1 (ℒ_gen)</td><td>+0.43</td><td>+4.81</td><td>+3.46</td><td>-0.87</td></tr><tr><td>Task 2 (ℒ_recon)</td><td>+0.43</td><td>+19.19</td><td>+19.31</td><td>+2.65</td></tr><tr><td>KARMA (Task 1+2)</td><td>+0.97</td><td>+22.57</td><td>+21.19</td><td>+2.26</td></tr><tr><td>+ 视觉重建</td><td>+1.38</td><td>+10.83</td><td>+8.41</td><td>+0.40</td></tr></tbody></table>\n<p>关键发现：(1) Task 2 (embedding 重建) 是主要的反坍缩约束，带来最大的检索提升（HR@200 +19%）；(2) Task 1 和 Task 2 正则化互补的失败模式，组合效果最优；(3) 视觉重建在文本 KARMA 基础上进一步提升，提供互补的多模态锚定信号。</p>\n<p>消融实验中，扩散方法（DDPM、EDM、Flow-Matching）作为 embedding 生成器均不如判别式方法，验证了 mode-seeking vs mean-seeking 的洞察。</p>\n<p><strong>线上 A/B 测试结果（14 天，淘宝搜索全漏斗部署）：</strong></p>\n<ul>\n<li>排序阶段：CTR AUC +0.25</li>\n<li>粗排阶段：HR@500 +1.86</li>\n<li>召回阶段：HR@5000 +2.51</li>\n<li>整体效果：商品点击量 +0.5%，推理零额外延迟</li>\n</ul>\n<h2>5. 局限与未来方向</h2>\n<p><strong>作者明确指出的局限：</strong> (1) 注意力 sink 被视为诊断信号而非因果证据——主要证据来自行为指标和语义保真度的一致性改进；(2) 视觉重建需要冻结的预训练视觉编码器，增加训练成本但不影响推理。</p>\n<p><strong>未明确讨论但值得注意的局限：</strong> (1) 实验仅在淘宝电商搜索域验证，向其他个性化搜索场景的泛化性未知；(2) 随用户历史长度增加，解码目标线性增长，可能限制超长序列的可扩展性；(3) 用户解码器选用 0.6B 规模模型，更大模型是否表现一致未做讨论。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>可直接借鉴的方案：</strong> KARMA 的「训练时正则化、推理时零开销」模式是将 LLM 集成到延迟敏感搜推系统的最佳实践参考。任何试图用 LLM 增强排序/推荐系统的团队都应关注语义坍缩风险——简单地在行为数据上微调 LLM 可能适得其反。</p>\n<p><strong>对社区搜索的具体启示：</strong> UGC 短文本搜索同样面临语义泛化与行为对齐的矛盾。可以借鉴 KARMA 的思路：(1) 在训练排序模型时加入内容重建正则化，防止模型将 UGC 内容 embedding 退化为纯 ID 特征；(2) 对于新话题/新内容的 query，语义保真度比行为信号更重要。</p>\n<p><strong>部署注意事项：</strong> (1) KARMA 在淘宝三级漏斗（召回→粗排→精排）全面集成，不同阶段采用不同融合策略（召回用 ANN、粗排加权融合、精排作为 CTR 模型特征）；(2) 14 天 A/B 测试 +0.5% 点击提升看似不大，但在淘宝搜索的超大流量下经济价值极高；(3) 训练成本增加但推理成本不变，适合有足够训练资源的团队。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2603.22916",
+      "title": "GateSID: Adaptive Gating for Semantic-Collaborative Alignment in Cold-Start Recommendation",
+      "url": "https://arxiv.org/abs/2603.22916",
+      "authors": "Hai Zhu, Yantao Yu, Lei Shen, Bing Wang, Xiaoyi Zeng",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 3.95,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对冷启动场景中协同信号稀缺导致的马太效应问题，提出 GateSID 框架。核心思路是通过自适应门控网络 (Adaptive Gating Network) 根据物品成熟度动态平衡语义信号和协同过滤信号。当物品处于冷启动阶段时侧重语义信息，随着交互数据积累逐步增加协同信号权重。该方法解决了传统方法中协同-语义权衡 (collaborative-semantic tradeoff) 的固有矛盾。",
+      "key_insight": "GateSID 的核心洞察是冷启动推荐中语义信息和协同信号的最优配比应随物品生命周期动态变化，而非使用静态权重。自适应门控机制允许模型在物品不同成熟阶段自动调整信息融合策略。这对 UGC 平台尤为重要——新帖子/新内容天然面临冷启动问题，可借鉴此方法设计从语义匹配到行为反馈的渐进式排序策略。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2603.22922",
+      "title": "Quality Over Clicks: Intrinsic Quality-Driven Iterative Reinforcement Learning for Cold-Start E-Commerce Query Suggestion",
+      "url": "https://arxiv.org/abs/2603.22922",
+      "authors": "Qi Sun, Kejun Xiao, Huaipeng Zhao, Tao Luo, Xiaoyi Zeng",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对电商搜索中冷启动 Query Suggestion 场景，提出 Cold-EQS 迭代强化学习框架。传统方法依赖 CTR 模型反馈优化查询建议，但冷启动时缺乏点击数据导致 CTR 模型不可靠。Cold-EQS 转而利用可回答性 (answerability)、事实性 (factuality) 和信息增益 (information gain) 作为内在质量奖励，摆脱对点击数据的依赖。同时引入不确定性估计选择困难样本进行持续优化。",
+      "key_insight": "Cold-EQS 的核心启发在于：冷启动场景下应使用内在质量指标替代外部点击反馈作为优化信号。可回答性、事实性、信息增益三维奖励设计为搜索建议提供了不依赖用户行为数据的优化路径。对社区搜索场景的启示是：当新话题或新场景缺乏足够行为数据时，可以用内容质量指标 (如内容完整性、信息丰富度) 作为排序信号的冷启动替代方案。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2503.04406",
+      "title": "Training-free Adjustable Polynomial Graph Filtering for Ultra-fast Multimodal Recommendation",
+      "url": "https://arxiv.org/abs/2503.04406",
+      "authors": "Yu-Seung Roh, Joo-Young Kim, Jin-Duk Park, Won-Yong Shin",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 3.7,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出一种免训练 (training-free) 的多模态推荐方法，基于图信号处理中的多项式图滤波 (Polynomial Graph Filtering) 技术。该方法为每种模态 (文本、图像、视频) 构建独立的相似性图，通过可调多项式滤波器在频域进行信息融合，避免了传统神经网络方法的高计算开销。核心优势在于无需训练即可完成多模态推荐，推理速度极快，同时保持有竞争力的推荐精度。",
+      "key_insight": "该工作的实践意义在于：多模态推荐不一定需要昂贵的端到端训练。通过图信号处理的理论框架，可以用解析方法高效整合多模态特征。对 UGC 搜索平台的启发是：社区内容天然包含文本、图片等多种模态，可以借鉴图滤波思路构建轻量级的多模态内容理解和推荐管道，特别适合对延迟敏感且计算资源有限的场景。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2503.11067",
+      "title": "Variational Bayesian Personalized Ranking",
+      "url": "https://arxiv.org/abs/2503.11067",
+      "authors": "Bin Liu, Xiaohong Liu, Qin Luo, Ziqiao Shang, Jielei Chu, Lin Ma, Zhaoyu Li, Fei Teng, Guangtao Zhai, Tianrui Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "提出变分贝叶斯个性化排序 (VarBPR)，将隐式反馈的 pairwise 学习重新表述为对离散潜变量的变分推断问题。该框架显式建模噪声和索引不确定性，将训练分为变分推断和变分学习两阶段。关键创新是引入曝光可控性——通过变分推断控制曝光偏差的影响，同时提供理论可解释性，将经典 BPR 统一为特例。",
+      "key_insight": "VarBPR 为隐式反馈中的曝光偏差问题提供了概率论视角的优雅解法。通过变分推断框架显式建模曝光不确定性，比启发式的负采样策略更有理论根基。对搜推实践的启示：(1) 社区搜索中用户点击行为存在严重曝光偏差，VarBPR 的曝光可控性机制可用于去偏排序训练；(2) 两阶段训练范式可借鉴到现有排序模型中作为正则化手段。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2511.04087",
+      "title": "E-CARE: An Efficient LLM-based Commonsense-Augmented Framework for E-Commerce",
+      "url": "https://arxiv.org/abs/2511.04087",
+      "authors": "Ge Zhang, Rohan Deepak Ajwani, Yaochen Hu, Tony Zheng, Hongjian Gu, Wei Guo, Mark Coates, Yingxue Zhang",
+      "company": [
+        "Huawei"
+      ],
+      "source": "arxiv",
+      "published": "2025-11-06",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "提出 E-CARE 框架，高效利用 LLM 的常识推理能力增强电商场景中的查询-商品匹配。核心挑战是 LLM 实时推理成本高且需要人工标注和微调。E-CARE 通过离线挖掘 LLM 常识知识并缓存为特征，在推理时无需调用 LLM，大幅降低了在线服务成本，同时保持了 LLM 带来的语义理解提升。该方案可推广至多种电商任务。",
+      "key_insight": "E-CARE 的核心价值在于解决了 LLM 在推荐/搜索系统中的落地难题——如何在不增加在线推理成本的前提下利用 LLM 的语义理解能力。离线知识蒸馏 + 特征缓存的模式是工程上非常实用的 LLM 集成方案。对社区搜索场景直接可借鉴：用 LLM 离线理解 UGC 内容的语义关系，将结果作为特征注入在线排序模型，既能提升语义匹配质量又不增加线上延迟。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2510.15620",
+      "title": "On-device Semantic Selection Made Low Latency and Memory Efficient with Monolithic Forwarding",
+      "url": "https://arxiv.org/abs/2510.15620",
+      "authors": "Jiahao Zhou, Chengliang Lin, Dingji Li, Mingkai Dong, Haibo Chen",
+      "company": [
+        "SJTU"
+      ],
+      "source": "arxiv",
+      "published": "2025-10-20",
+      "total_score": 3.5,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "提出 PRISM 系统，针对端侧 (on-device) 语义 Top-K 选择任务优化延迟和内存效率。关键洞察是 Top-K 选择只需要相对排名而非精确分数，且排名在 Transformer 中间层即已趋于稳定，可以提前剪枝。PRISM 通过 Monolithic Forwarding 维护所有候选的全局视图，实现渐进式候选淘汰，在边缘硬件上显著降低延迟和内存消耗，同时保持选择精度。",
+      "key_insight": "PRISM 的核心发现——排名在中间层即稳定——为重排序模型的加速提供了理论依据。Monolithic Forwarding 技术可推广至云端场景的大规模重排序。对搜推实践的启示：(1) cross-encoder 重排序的计算开销可以通过层级早停大幅削减；(2) 该思路可用于在线排序模型的延迟优化，特别是当候选集较大时，通过渐进式淘汰减少不必要的全量计算。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2603.22349",
+      "title": "Personalized Federated Sequential Recommender",
+      "url": "https://arxiv.org/abs/2603.22349",
+      "authors": "Yicheng Di",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 3.2,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出个性化联邦序列推荐器 (PFSR)，引入 Associative Mamba Block 从全局视角捕获用户画像，同时将计算复杂度从二次降至线性，解决了现有序列推荐方法在实时场景中的效率瓶颈。该框架结合联邦学习实现跨设备的个性化推荐，保护用户隐私的同时维持推荐质量。",
+      "key_insight": "PFSR 将 Mamba 架构引入序列推荐，用线性复杂度替代 Transformer 的二次复杂度，为长序列用户行为建模提供了更高效的选择。联邦学习框架使模型可以在保护用户数据隐私的前提下进行协同训练。对注重用户隐私的社区平台有参考价值，但联邦学习在工业搜推中的落地仍面临通信开销和异构数据等挑战。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2411.13700",
+      "title": "A Collaborative Ensemble Framework for CTR Prediction",
+      "url": "https://arxiv.org/abs/2411.13700",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2024-11-20",
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "提出一种协作集成框架用于 CTR 预估，通过组合多个模型的预测结果提升整体点击率预测精度。不同于传统的模型集成方法，该框架强调模型间的协作学习而非简单的预测融合，使各子模型在训练过程中互相增强，最终实现比单一模型更优的 CTR 预估效果。",
+      "key_insight": "协作集成思路对工业级 CTR 预估有实践参考价值。在搜索推荐系统中，多模型集成是提升排序质量的常见手段，但传统方法缺乏模型间的协同优化。该框架的协作学习机制可以在不显著增加推理成本的情况下提升预测精度，适合作为现有 CTR 模型的增强方案进行评估。"
+    },
+    {
+      "rank": 10,
+      "id": "web:moea-miae",
+      "title": "Multi-objective Recommendation via Multi-population Auxiliary Evolution Framework (MOEA-MIAE)",
+      "url": "https://link.springer.com/article/10.1007/s40747-025-01891-z",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2025-03-01",
+      "total_score": 2.65,
+      "preference_bonus": 0.08,
+      "adjusted_score": 2.73,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "提出基于多种群辅助进化的多目标推荐算法 MOEA-MIAE，针对现有多目标推荐算法在超体积 (HV) 指标上表现不佳的问题，引入多种群进化策略增强解的多样性和新颖性。该方法通过辅助种群探索不同的帕累托前沿区域，改善推荐结果在精度、多样性、新颖性等多目标间的平衡。",
+      "key_insight": "多目标优化是推荐系统工程中的核心挑战——搜索推荐系统需要同时优化 CTR、停留时长、内容多样性等多个指标。MOEA-MIAE 提供了进化算法视角的解决方案，但其计算开销和工业可部署性仍需验证。该方向的价值在于提醒实践者：多目标推荐不应简单用加权求和处理，帕累托优化可能带来更好的整体效果。（注：因源多样性需要纳入，分数低于阈值）"
+    }
+  ]
+}

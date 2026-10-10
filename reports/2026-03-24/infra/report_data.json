@@ -1,0 +1,196 @@
+{
+  "date": "2026-03-24",
+  "track": "infra",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 461,
+    "papers_selected": 8,
+    "score_min": 3.15,
+    "score_max": 4.05
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2603.19296",
+      "title": "TTQ: Activation-Aware Test-Time Quantization to Accelerate LLM Inference On The Fly",
+      "url": "https://arxiv.org/abs/2603.19296",
+      "authors": "Not specified in RSS",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-23",
+      "total_score": 4.05,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出 TTQ（Test-Time Quantization），一种激活感知的测试时量化方法，无需重训练即可加速 LLM 推理。解决现有激活感知压缩方法依赖校准数据导致的领域偏移问题——在未见过的下游任务上精度下降。TTQ 在推理时动态适配量化参数，实现即时加速。",
+      "key_insight": "TTQ 的核心价值在于解决量化的泛化性问题。传统量化方法用特定数据校准后在其他领域可能失效，而 TTQ 的测试时自适应机制让量化模型在任意任务上保持精度。对搜索系统的启示：部署量化模型时无需为每个业务场景单独校准，大幅降低运维成本。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2603.19296",
+        "title": "TTQ: Activation-Aware Test-Time Quantization to Accelerate LLM Inference On The Fly",
+        "status": "completed",
+        "content": "## 深度解读：TTQ: Activation-Aware Test-Time Quantization to Accelerate LLM Inference On The Fly\n\n### 1. 问题与动机\n\n现有的激活感知量化方法（AWQ、GPTQ）依赖离线校准数据来确定量化参数。这带来两个根本问题：(1) 领域偏移——校准数据可能无法代表实际下游任务的分布，导致量化后精度下降；(2) 不可逆性——一旦量化部署，原始全精度权重不可用，无法针对新领域重新校准。TTQ 的核心洞察是：量化参数应该在推理时根据实际输入动态计算，而非依赖离线校准。\n\n### 2. 方法详解\n\n**基础：Round-to-Nearest (RTN) 量化。** 对权重矩阵 W 进行分组量化-反量化（QDQ），最小化 ||W - W_hat||^2。但忽略了激活值统计信息。\n\n**AWQ 的改进与局限。** AWQ 最小化激活加权的量化误差 E_X[||(W-W_hat)X||^2]，引入激活自相关矩阵 C = E_X[XX^T]。为降低计算复杂度（从 O(n^3) 到 O(n^2)），AWQ 仅使用对角近似 D = diag[XX^T + lambda*I]^alpha。闭式解为 W_hat = Q[W*D^(1/2)] * D^(-1/2)。但 D 的计算需要离线校准数据。\n\n**TTQ 的核心创新：在线 AWQ。** TTQ 将 D 的计算从离线搬到推理时，对每个 prompt 的输入 X 动态计算对角相关矩阵 D，然后执行缩放-量化-反缩放。额外计算开销为 rho = O[dT + 3d'dT] / O[d'dT] = O[1/d' + 3/T]，当 d' 和 T 足够大时趋近于零。\n\n**低秩分解补偿。** 对于极端压缩（2-3 bit），TTQ 引入低秩因子 W_hat = W_q + BA，其中 W_q 为量化残差，BA 为 SVD 初始化的低秩因子（r=16）。与 QLoRA 的关键区别：TTQ 动态适配 W_q，QLoRA 使用静态 W_q。\n\n**超参数策略。** 通过离线分析确定固定超参数：alpha=0.5-0.75，lambda=0.4，p=2（L2 范数显著优于原始 L1 范数）。推理时无需搜索。\n\n### 3. 核心技术贡献\n\n**贡献一：零校准量化。** 完全消除离线校准依赖，从根本上解决领域偏移问题。这不是简单的\"不用校准数据\"，而是将校准计算融入推理本身。\n\n**贡献二：对角近似的优化。** 发现 alpha 应\"冷却\"到 0.5-0.75（而非接近 1），lambda 应增大到 0.4，L2 范数优于 L1。这些发现修正了 AWQ 原始设置中的次优选择。\n\n**贡献三：低秩-量化联合优化。** 低秩因子从 SVD 初始化（而非随机），与动态量化权重互补，在 2-bit 极端压缩下仍保持可用。\n\n### 4. 实验结果分析\n\n**校准依赖性消除（OPT-350M, 3-bit）：** AWQ 使用 2^11 token 校准时 PPL=25.73，充分校准（2^17）时 PPL=25.02；TTQ 零校准即达 24.17，反而更优。\n\n**跨模型一致性（4-bit 量化）：**\n- OPT-6.7B: TTQ(r=16) PPL=13.1 = 全精度基线\n- Qwen3-1.7B (3-bit): TTQ(r=16) PPL=26.4 vs AWQ 28.2-30.0\n- Gemma3-4B (3-bit): TTQ 一致优于 AWQ\n\n**AWQ 的领域偏移问题实锤：** AWQ 使用不同校准数据（Wikitext-2 vs C4 vs PTB）时 PPL 波动显著（Qwen3-1.7B 上波动 1.8 点），TTQ 完全免疫。\n\n**分组大小鲁棒性：** TTQ 可容忍约 2 倍大的分组（g=128 vs g=64），直接减少量化元数据的存储开销。\n\n**推理速度（Qwen3-32B, 4-bit, RTX4090）：** FP16: 10.76k tok/s → AWQ: 72.34k (6.7x) → TTQ(r=0): 67.40k (6.3x) → TTQ(r=16): 53.17k (4.9x)。TTQ(r=0) 与 AWQ 速度差距仅 7%，证明测试时计算开销极小。\n\n**多模态和机器人场景：** Qwen3-VL-8B 上 TTQ 4-bit 达到全精度性能（TextVQA 81.71% vs 81.72%），机器人 VLA 模型上优势更显著（长期任务成功率 87.5% vs AWQ 最佳 84.5%）。\n\n### 5. 局限与未来方向\n\n**论文提及的局限：** (1) 固定超参数可能不是所有场景的最优选择，自适应超参数选择可进一步提升。(2) 当前使用通用 Marlin kernel，定制 TTQ kernel（融合预缩放操作）可进一步提速。(3) 低秩因子是静态初始化的，在线 PCA 技术可动态更新但增加开销。\n\n**未提及的局限：** (1) TTQ 在极短序列（T 很小）时开销比 rho 可能不够小——公式中 3/T 项不可忽略。(2) 对于 batch serving 场景（不同请求特性差异大），单一动态 D 是否最优未讨论。(3) 与 GPTQ 的详细对比缺失（GPTQ 也是激活感知但计算更昂贵）。\n\n### 6. 工业实践意义\n\n**直接可用性极高。** TTQ 是 drop-in replacement：替换现有 AWQ 量化步骤即可，无需重训练、无需准备校准数据、无需为每个业务场景单独量化。\n\n**适用场景：** (1) 多租户 LLM serving——不同租户的查询分布差异大，TTQ 自适应每个请求；(2) 频繁更新模型的搜索系统——新模型上线时无需准备校准数据即可量化部署；(3) 多模态搜索——跨模态（文本+图像）的激活分布差异大，TTQ 的动态适配优势更明显。\n\n**部署建议：** (1) 4-bit TTQ(r=0) 是性价比最高的配置——几乎无精度损失且速度仅比 AWQ 慢 7%。(2) 对精度敏感的场景（如搜索相关性判断）使用 TTQ(r=16)，可达全精度水平但速度降至 4.9x。(3) 建议与 vLLM/SGLang 的 continuous batching 结合使用，动态量化参数可在 prefill 阶段计算，decode 阶段复用。",
+        "content_html": "<h2>深度解读：TTQ: Activation-Aware Test-Time Quantization to Accelerate LLM Inference On The Fly</h2>\n<h3>1. 问题与动机</h3>\n<p>现有的激活感知量化方法（AWQ、GPTQ）依赖离线校准数据来确定量化参数。这带来两个根本问题：(1) 领域偏移——校准数据可能无法代表实际下游任务的分布，导致量化后精度下降；(2) 不可逆性——一旦量化部署，原始全精度权重不可用，无法针对新领域重新校准。TTQ 的核心洞察是：量化参数应该在推理时根据实际输入动态计算，而非依赖离线校准。</p>\n<h3>2. 方法详解</h3>\n<p><strong>基础：Round-to-Nearest (RTN) 量化。</strong> 对权重矩阵 W 进行分组量化-反量化（QDQ），最小化 ||W - W_hat||^2。但忽略了激活值统计信息。</p>\n<p><strong>AWQ 的改进与局限。</strong> AWQ 最小化激活加权的量化误差 E_X[||(W-W_hat)X||^2]，引入激活自相关矩阵 C = E_X[XX^T]。为降低计算复杂度（从 O(n^3) 到 O(n^2)），AWQ 仅使用对角近似 D = diag[XX^T + lambda<em>I]^alpha。闭式解为 W_hat = Q[W</em>D^(1/2)] * D^(-1/2)。但 D 的计算需要离线校准数据。</p>\n<p><strong>TTQ 的核心创新：在线 AWQ。</strong> TTQ 将 D 的计算从离线搬到推理时，对每个 prompt 的输入 X 动态计算对角相关矩阵 D，然后执行缩放-量化-反缩放。额外计算开销为 rho = O[dT + 3d&#x27;dT] / O[d&#x27;dT] = O[1/d&#x27; + 3/T]，当 d&#x27; 和 T 足够大时趋近于零。</p>\n<p><strong>低秩分解补偿。</strong> 对于极端压缩（2-3 bit），TTQ 引入低秩因子 W_hat = W_q + BA，其中 W_q 为量化残差，BA 为 SVD 初始化的低秩因子（r=16）。与 QLoRA 的关键区别：TTQ 动态适配 W_q，QLoRA 使用静态 W_q。</p>\n<p><strong>超参数策略。</strong> 通过离线分析确定固定超参数：alpha=0.5-0.75，lambda=0.4，p=2（L2 范数显著优于原始 L1 范数）。推理时无需搜索。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：零校准量化。</strong> 完全消除离线校准依赖，从根本上解决领域偏移问题。这不是简单的&quot;不用校准数据&quot;，而是将校准计算融入推理本身。</p>\n<p><strong>贡献二：对角近似的优化。</strong> 发现 alpha 应&quot;冷却&quot;到 0.5-0.75（而非接近 1），lambda 应增大到 0.4，L2 范数优于 L1。这些发现修正了 AWQ 原始设置中的次优选择。</p>\n<p><strong>贡献三：低秩-量化联合优化。</strong> 低秩因子从 SVD 初始化（而非随机），与动态量化权重互补，在 2-bit 极端压缩下仍保持可用。</p>\n<h3>4. 实验结果分析</h3>\n<p><strong>校准依赖性消除（OPT-350M, 3-bit）：</strong> AWQ 使用 2^11 token 校准时 PPL=25.73，充分校准（2^17）时 PPL=25.02；TTQ 零校准即达 24.17，反而更优。</p>\n<p><strong>跨模型一致性（4-bit 量化）：</strong></p>\n<ul>\n<li>OPT-6.7B: TTQ(r=16) PPL=13.1 = 全精度基线</li>\n<li>Qwen3-1.7B (3-bit): TTQ(r=16) PPL=26.4 vs AWQ 28.2-30.0</li>\n<li>Gemma3-4B (3-bit): TTQ 一致优于 AWQ</li>\n</ul>\n<p><strong>AWQ 的领域偏移问题实锤：</strong> AWQ 使用不同校准数据（Wikitext-2 vs C4 vs PTB）时 PPL 波动显著（Qwen3-1.7B 上波动 1.8 点），TTQ 完全免疫。</p>\n<p><strong>分组大小鲁棒性：</strong> TTQ 可容忍约 2 倍大的分组（g=128 vs g=64），直接减少量化元数据的存储开销。</p>\n<p><strong>推理速度（Qwen3-32B, 4-bit, RTX4090）：</strong> FP16: 10.76k tok/s → AWQ: 72.34k (6.7x) → TTQ(r=0): 67.40k (6.3x) → TTQ(r=16): 53.17k (4.9x)。TTQ(r=0) 与 AWQ 速度差距仅 7%，证明测试时计算开销极小。</p>\n<p><strong>多模态和机器人场景：</strong> Qwen3-VL-8B 上 TTQ 4-bit 达到全精度性能（TextVQA 81.71% vs 81.72%），机器人 VLA 模型上优势更显著（长期任务成功率 87.5% vs AWQ 最佳 84.5%）。</p>\n<h3>5. 局限与未来方向</h3>\n<p><strong>论文提及的局限：</strong> (1) 固定超参数可能不是所有场景的最优选择，自适应超参数选择可进一步提升。(2) 当前使用通用 Marlin kernel，定制 TTQ kernel（融合预缩放操作）可进一步提速。(3) 低秩因子是静态初始化的，在线 PCA 技术可动态更新但增加开销。</p>\n<p><strong>未提及的局限：</strong> (1) TTQ 在极短序列（T 很小）时开销比 rho 可能不够小——公式中 3/T 项不可忽略。(2) 对于 batch serving 场景（不同请求特性差异大），单一动态 D 是否最优未讨论。(3) 与 GPTQ 的详细对比缺失（GPTQ 也是激活感知但计算更昂贵）。</p>\n<h3>6. 工业实践意义</h3>\n<p><strong>直接可用性极高。</strong> TTQ 是 drop-in replacement：替换现有 AWQ 量化步骤即可，无需重训练、无需准备校准数据、无需为每个业务场景单独量化。</p>\n<p><strong>适用场景：</strong> (1) 多租户 LLM serving——不同租户的查询分布差异大，TTQ 自适应每个请求；(2) 频繁更新模型的搜索系统——新模型上线时无需准备校准数据即可量化部署；(3) 多模态搜索——跨模态（文本+图像）的激活分布差异大，TTQ 的动态适配优势更明显。</p>\n<p><strong>部署建议：</strong> (1) 4-bit TTQ(r=0) 是性价比最高的配置——几乎无精度损失且速度仅比 AWQ 慢 7%。(2) 对精度敏感的场景（如搜索相关性判断）使用 TTQ(r=16)，可达全精度水平但速度降至 4.9x。(3) 建议与 vLLM/SGLang 的 continuous batching 结合使用，动态量化参数可在 prefill 阶段计算，decode 阶段复用。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2511.17885",
+      "title": "FastMMoE: Accelerating Multimodal Large Language Models through Dynamic Expert Activation and Routing-Aware Token Pruning",
+      "url": "https://arxiv.org/abs/2511.17885",
+      "authors": "Not specified in RSS",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-23",
+      "total_score": 3.85,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.0,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对多模态大模型（MLLM）中高分辨率视觉输入导致的长 token 序列和推理延迟问题，提出 FastMMoE。通过动态专家激活和路由感知的 token 剪枝，减少冗余视觉 token 的计算和内存开销，在保持性能的同时显著加速 MoE 架构的推理。",
+      "key_insight": "MoE 推理优化的两个关键杠杆：动态专家激活（避免激活不必要的专家）和路由感知的 token 剪枝（在路由决策前剪除低价值 token）。对部署 MoE 模型的搜索系统有直接参考价值——可大幅降低 MoE 推理成本。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2504.09775",
+      "title": "Understanding and Optimizing Multi-Stage AI Inference Pipelines",
+      "url": "https://arxiv.org/abs/2504.09775",
+      "authors": "Not specified in RSS",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-23",
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "系统性分析现代 LLM serving 超越传统 prefill-decode 的多阶段推理管线。涵盖 RAG、多阶段处理等复杂推理流程的性能特征和优化策略。为 LLM 推理系统的端到端优化提供了全面的分析框架和实践指南。",
+      "key_insight": "该工作将 LLM 推理从单模型优化扩展到多阶段管线优化的视角。对搜索系统尤其有价值——搜索+LLM 的管线涉及检索、重排、生成等多个阶段，每个阶段的延迟和吞吐特性不同，需要端到端的系统级优化而非孤立优化单个组件。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2603.14712",
+      "title": "Towards Next-Generation LLM Training: From the Data-Centric Perspective",
+      "url": "https://arxiv.org/abs/2603.14712",
+      "authors": "Hao Liang, Zhengyang Zhao, et al.",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-03-16",
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.75,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "从数据中心视角审视下一代 LLM 训练。提出两个方向：基于 Agent 的自动数据准备系统（自动化工作流构建和管理），以及统一的数据-模型交互训练系统（在训练过程中动态选择、混合和重加权数据）。",
+      "key_insight": "数据质量和选择是 LLM 训练的核心瓶颈之一。动态数据重加权的思路可应用于搜索排序模型的训练：在 fine-tuning 过程中根据模型当前能力动态调整训练数据分布，而非使用静态数据集，提升训练效率和模型质量。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2603.19338",
+      "title": "DAPA: Distribution Aware Piecewise Activation Functions for On-Device Transformer Inference and Training",
+      "url": "https://arxiv.org/abs/2603.19338",
+      "authors": "Not specified in RSS",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-23",
+      "total_score": 3.5,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对端侧 Transformer 推理和训练中非线性激活函数的硬件资源消耗问题，提出 DAPA（分布感知分段激活函数）。通过感知激活值分布的分段线性近似，在保持模型性能的同时大幅降低硬件资源消耗和能耗。",
+      "key_insight": "激活函数的硬件友好替代是端侧部署的实用优化方向。对搜索系统的启示：在移动端或边缘设备上部署轻量级搜索/排序模型时，DAPA 类方法可降低推理能耗和延迟，特别适合对功耗敏感的场景。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2603.18464",
+      "title": "AcceRL: A Distributed Asynchronous Reinforcement Learning and World Model Framework for Vision-Language-Action Models",
+      "url": "https://arxiv.org/abs/2603.18464",
+      "authors": "Not specified in RSS",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-23",
+      "total_score": 3.4,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出 AcceRL，一个全异步解耦的 RL 框架，通过物理隔离消除同步屏障，专为大规模 VLA 模型的 RL 训练设计。解决了 RL 训练中计算效率低和数据采集瓶颈的问题。",
+      "key_insight": "异步解耦的 RL 训练框架对搜索排序模型的 RLHF 训练有借鉴意义。当搜索系统需要通过 RL 优化排序策略时，AcceRL 的异步架构可大幅提升训练吞吐和 GPU 利用率。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2511.16665",
+      "title": "Taming the Long-Tail: Efficient Reasoning RL Training with Adaptive Drafter",
+      "url": "https://arxiv.org/abs/2511.16665",
+      "authors": "Not specified in RSS",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-23",
+      "total_score": 3.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "解决推理 LLM 的 RL 训练中长尾样本导致的效率瓶颈。提出自适应 Drafter 机制，动态分配计算资源——对简单样本快速处理，对困难长尾样本投入更多计算，显著提升 RL 训练效率。",
+      "key_insight": "长尾样本的自适应处理是 RL 训练效率的关键。该思路可迁移到搜索排序模型的训练中：对搜索日志中的长尾 query（低频、复杂查询）分配更多训练资源，提升模型在困难样本上的表现。"
+    },
+    {
+      "rank": 8,
+      "id": "hf:2603.22286",
+      "title": "WorldCache: Content-Aware Caching for Accelerated Video World Models",
+      "url": "https://huggingface.co/papers/2603.22286",
+      "authors": "Not specified",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-03-23",
+      "total_score": 3.15,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.15,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出 WorldCache，一种内容感知的缓存策略用于加速视频 World Model 的推理。通过识别视频帧间的内容冗余，智能缓存和复用计算结果，减少重复计算开销。",
+      "key_insight": "内容感知缓存是一种通用的推理加速思路。对搜索系统的启示：在处理相似查询或重复内容时，智能缓存策略（如相似 query 的结果缓存、embedding 计算缓存）可显著降低计算成本。"
+    }
+  ]
+}

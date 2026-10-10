@@ -1,0 +1,234 @@
+{
+  "date": "2026-05-19",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 38,
+    "papers_selected": 7,
+    "score_min": 3.1,
+    "score_max": 4.35
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.16217",
+      "title": "Argus: Evidence Assembly for Scalable Deep Research Agents",
+      "url": "https://arxiv.org/abs/2605.16217",
+      "authors": "Zhen Zhang, Liangcai Su, Zhuo Chen, Xiang Lin, Haotian Xu, Simon Shaolei Du, Kaiyu Yang, Bo An, Lidong Bing, Xinyu Wang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 4.35,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.6,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对 deep research agent 并行 rollout 重复采集证据、聚合上下文撑爆模型窗口的问题，提出 Argus：Searcher 以 ReAct 方式为子查询收集证据轨迹，Navigator 维护共享证据图（evidence graph），校验缺失片段、调度 Searcher 补全，并在完整图上推理生成可溯源答案。Navigator 用强化学习训练 verify/dispatch/synthesize，Searcher 保持标准 ReAct 独立训练。基于 35B-A3B MoE，单 Searcher 在 8 个 benchmark 平均 +5.5 分，8 路并行 +12.7 分，64 路并行在 BrowseComp 达 86.2，超过所有对比的闭源 agent，且 Navigator 推理上下文稳定在 21.5K token 以内。",
+      "key_insight": "把 deep research 建模为'拼图式证据补全'而非并行暴力枚举：Navigator 用证据图显式追踪'还缺哪块'，从根上解决并行 rollout 的冗余与上下文膨胀。Searcher 数量可在不重训的情况下从 1 扩到 64，工程上把推理时算力扩展和训练解耦。对社区搜索的启示：复杂多跳问答场景可借鉴'调度器+证据图'结构，用一个轻量协调策略管控召回去重与上下文预算，而不是单纯堆并发。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.16217",
+        "title": "Argus: Evidence Assembly for Scalable Deep Research Agents",
+        "status": "completed",
+        "content": "# Argus: Evidence Assembly for Scalable Deep Research Agents — 深度解读\n\n## 1. 问题与动机\n\nDeep research agent 的主流提效路径是测试时并行：跑 K 条独立轨迹再做 self-consistency / best-of-N / 学习式聚合。本文用一组硬数字戳破这条路径的天花板：单 Searcher（Qwen 35B-A3B）在 BrowseComp 上 55.0%，8 路多数投票只到 56.2%（+1.2），LLM 聚合 8 路也只有 56.5%（+1.5）。作者的诊断是：deep research 的答案由互补的证据碎片拼成，而并行 rollout 倾向于重复采集相同证据而非补全缺口——所有聚合方法都是事后（post-hoc）在已完成轨迹上操作，把轨迹当成\"扁平的线性 trace 集合\"，没有共享的'哪些证据已拿到、哪些互相支持/矛盾、哪些还缺'的表示。于是并行越多，边际收益越小，同时聚合上下文被推向模型窗口上限。这个问题此刻重要，是因为业界正用大量推理算力堆 deep research，但收益递减；需要的是把\"算力扩展\"转成\"证据补全\"而非\"答案投票\"。\n\n## 2. 方法详解\n\nArgus 把系统拆成两个角色。**Searcher**：无状态 ReAct agent，动作集 {search, visit, answer}，用 WebSailor-v2 pipeline 在约 10K 合成轨迹上 SFT，不做任何架构改动，因此对基线兼容。**Navigator**：维护一个有向无环证据图 𝒢=(E,C,𝒜)——E 是证据节点（带 source URL 的原始发现），C 是 claim 节点（暂定/最终断言），𝒜⊆(E∪C)×C×{+1,−1} 是带 support(+1)/contradict(−1) 标签的边。\n\n三阶段流程：(I) Search——Navigator 把输入问题改写成多个子查询（solo 模式 1 个，parallel 模式 K 个），各自派给独立 Searcher；(II) Verify & Dispatch——把返回轨迹解析成证据/claim 节点并按 source URL 去重，由策略（而非固定规则）把每个 claim 标为 supported / contradicted / unverified，识别三类缺口（未验证 claim 需独立佐证、矛盾 claim 需权威源消解、问题维度未覆盖需定向子查询），把缺口批量打包成验证查询 𝒱 再派新 Searcher，循环 observe-verify 直到学到的终止信号触发或预算耗尽；(III) Synthesize——丢弃工作上下文，仅在 (q,𝒢) 上推理出最终答案，每个 claim 都可回溯到证据节点的 source URL。\n\nNavigator 用 **GRPO** 训练，反事实对比奖励：R_i = clip(R_w/v + λ(R_w/v − R_w/o v), 0, 1)，λ=0.5；R_w/v 是用验证后图做 synthesis 的 LLM-judge 分，R_w/o v 是用验证前图的影子分（不回传梯度），这个 bonus 把\"验证\"的因果贡献单独隔离出来。数据为 5,298 个多跳信息检索问题（答案可验证），每题预先收集固定 Searcher 轨迹，并对 8 个评测基准做实体级去污染。训练用 64×H200 约 1.5 天（100 个 GRPO rollout step），batch=64 prompt×8 rollout=512 有效样本，lr=1e-6，KL β=0.001，clip ϵ=0.2。Rollout 是单条序列展开完整 Argus 循环，observation 用滑动窗口（15 轮，≤8 窗口）增量建图，只有 Navigator 生成的 token 回传梯度、外部输入被 mask，并用状态机强制 DAG 输出格式。Searcher 独立 SFT，不做 Argus 专属 RL。\n\n## 3. 核心技术贡献\n\n(1) **结构化证据图替代扁平轨迹聚合**：把 deep research 从\"对线性 trace 投票/聚合\"改成\"在共享图上做组合式证据拼装\"，让\"哪块还缺\"成为可显式推理的对象。(2) **环内验证（in-loop verification）**：在 synthesis 之前就识别缺口并定向派发检索，而非事后打分；对比奖励证明验证阶段全程带来稳定增益（R_w/v 始终高于 R_w/o v）。(3) **上下文与 Searcher 数解耦**：把累计 25.6M Searcher token 压成 21.5K 的 Navigator 视图，约 1200:1 压缩比，使并行规模扩展不再撞上下文窗口。(4) **零样本规模迁移**：在单 Searcher 轨迹上训练的 Navigator 可直接迁移到 K 路并行、甚至换底座，无需重训。消融显示完整 DAG（带 ±1 标签与验证状态）74.5%，去掉边标签降到 72.0%（−2.5），纯文本拼接 69.3%（−5.2），结构化表示净贡献 5.2 分。\n\n## 4. 实验结果分析\n\n8 个基准：BrowseComp、BrowseComp-ZH、GAIA、SEAL-0、xbench DeepSearch-2510、HLE、FrontierScience Olympiad/Research。底座 Qwen 35B-A3B：Searcher→Argus Solo→Argus Parallel(K=8) 在 BrowseComp 55.0→62.2→74.5，BrowseComp-ZH 62.3→74.4→83.4，GAIA 84.5→88.0→93.2，SEAL-0 48.9→53.2→56.2，xbench 62.0→67.0→73.0，HLE 43.2→44.2→49.8。8 基准平均：Solo +7.1，Parallel(K=8) 论文口径 +12.7；K=64 时 BrowseComp 达 86.2，超过所有对比闭源 agent（GPT-5.2、Claude-4.6-Opus、Gemini-3.1-Pro 等）。GAIA 93.2 比最强闭源高 12.6 分，SEAL-0 高 6.2 分，5/8 基准取得 SOTA。规模动态（Fig.4）：精度随 Searcher token 单调上升 55.0%(0.4M)→86.2%(25.6M)，而 Navigator synthesis 上下文仅 0.34K→21.5K，对数拟合未见硬上限。换底座（Table 2）：在 DeepSeek-V4-Flash-Max 上 Parallel +18.5、Seed-2.0-Pro +12.2，且 35B 上训练的 Navigator 零样本提升所有闭源底座。训练动态（Fig.5）显示 reward 与留出集精度同步、验证触发率上升后趋平、矛盾证据呈现\"探索→固化\"转变，说明学到的是有意义的验证行为而非奖励 hack。\n\n## 5. 局限与未来方向\n\n作者明确列出：(1) 推理成本高——累计 Searcher token 从 K=1 的 0.4M 涨到 K=64 的 25.6M，定位是\"重型研究求解器\"而非低成本/低延迟助手；(2) 墙钟延迟——高 K 时并行批中最慢的 Searcher 主导整体耗时（Navigator synthesis 仍是单次前向）；(3) 源可得性天花板——继承底层 web 源的召回上限，付费墙/不可得内容无法突破，更强 Searcher 大致线性抬升此上限；(4) 标准 agentic 风险——错误信息、版权问题，靠 per-claim 源追溯部分缓解。未提及但显见的是：LLM-judge 奖励本身的偏置会传导进策略，去污染只做到实体级、对改写型泄漏未必稳健。\n\n## 6. 工业实践意义\n\n对搜索/推荐团队最可迁移的是\"调度器 + 共享证据图\"这套结构，而非具体 web benchmark 分数。要点：(a) 复杂多跳问答（社区里\"对比型/求证型\"长尾 query）不该靠堆并发投票，而应让一个轻量协调策略显式追踪\"已覆盖/有矛盾/还缺\"，把算力花在补缺口上；(b) 上下文工程上，\"把海量原始证据压成结构化图，synthesis 阶段只读图\"是控制长上下文成本的实用范式，1200:1 的压缩比说明收益巨大；(c) 可追溯性——每个结论挂 source URL，对 UGC 问答的可信度与人工审核友好；(d) 训练-部署解耦，单 Searcher 训练、多 Searcher 部署且免重训，降低上线成本。需注意的工程约束：该方法是\"重型离线/异步研究\"定位，墙钟延迟受最慢分支拖累，不适合在线低延迟搜索主链路，更适合做异步\"深度求证\"旁路（如争议话题的事实核验、长文生成的证据准备）。落地前应先用自有多跳 query 集验证证据图的去重与矛盾标注质量，并替换 LLM-judge 为更可控的可验证奖励。",
+        "content_html": "<h1>Argus: Evidence Assembly for Scalable Deep Research Agents — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>Deep research agent 的主流提效路径是测试时并行：跑 K 条独立轨迹再做 self-consistency / best-of-N / 学习式聚合。本文用一组硬数字戳破这条路径的天花板：单 Searcher（Qwen 35B-A3B）在 BrowseComp 上 55.0%，8 路多数投票只到 56.2%（+1.2），LLM 聚合 8 路也只有 56.5%（+1.5）。作者的诊断是：deep research 的答案由互补的证据碎片拼成，而并行 rollout 倾向于重复采集相同证据而非补全缺口——所有聚合方法都是事后（post-hoc）在已完成轨迹上操作，把轨迹当成&quot;扁平的线性 trace 集合&quot;，没有共享的&#x27;哪些证据已拿到、哪些互相支持/矛盾、哪些还缺&#x27;的表示。于是并行越多，边际收益越小，同时聚合上下文被推向模型窗口上限。这个问题此刻重要，是因为业界正用大量推理算力堆 deep research，但收益递减；需要的是把&quot;算力扩展&quot;转成&quot;证据补全&quot;而非&quot;答案投票&quot;。</p>\n<h2>2. 方法详解</h2>\n<p>Argus 把系统拆成两个角色。<strong>Searcher</strong>：无状态 ReAct agent，动作集 {search, visit, answer}，用 WebSailor-v2 pipeline 在约 10K 合成轨迹上 SFT，不做任何架构改动，因此对基线兼容。<strong>Navigator</strong>：维护一个有向无环证据图 𝒢=(E,C,𝒜)——E 是证据节点（带 source URL 的原始发现），C 是 claim 节点（暂定/最终断言），𝒜⊆(E∪C)×C×{+1,−1} 是带 support(+1)/contradict(−1) 标签的边。</p>\n<p>三阶段流程：(I) Search——Navigator 把输入问题改写成多个子查询（solo 模式 1 个，parallel 模式 K 个），各自派给独立 Searcher；(II) Verify &amp; Dispatch——把返回轨迹解析成证据/claim 节点并按 source URL 去重，由策略（而非固定规则）把每个 claim 标为 supported / contradicted / unverified，识别三类缺口（未验证 claim 需独立佐证、矛盾 claim 需权威源消解、问题维度未覆盖需定向子查询），把缺口批量打包成验证查询 𝒱 再派新 Searcher，循环 observe-verify 直到学到的终止信号触发或预算耗尽；(III) Synthesize——丢弃工作上下文，仅在 (q,𝒢) 上推理出最终答案，每个 claim 都可回溯到证据节点的 source URL。</p>\n<p>Navigator 用 <strong>GRPO</strong> 训练，反事实对比奖励：R_i = clip(R_w/v + λ(R_w/v − R_w/o v), 0, 1)，λ=0.5；R_w/v 是用验证后图做 synthesis 的 LLM-judge 分，R_w/o v 是用验证前图的影子分（不回传梯度），这个 bonus 把&quot;验证&quot;的因果贡献单独隔离出来。数据为 5,298 个多跳信息检索问题（答案可验证），每题预先收集固定 Searcher 轨迹，并对 8 个评测基准做实体级去污染。训练用 64×H200 约 1.5 天（100 个 GRPO rollout step），batch=64 prompt×8 rollout=512 有效样本，lr=1e-6，KL β=0.001，clip ϵ=0.2。Rollout 是单条序列展开完整 Argus 循环，observation 用滑动窗口（15 轮，≤8 窗口）增量建图，只有 Navigator 生成的 token 回传梯度、外部输入被 mask，并用状态机强制 DAG 输出格式。Searcher 独立 SFT，不做 Argus 专属 RL。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>结构化证据图替代扁平轨迹聚合</strong>：把 deep research 从&quot;对线性 trace 投票/聚合&quot;改成&quot;在共享图上做组合式证据拼装&quot;，让&quot;哪块还缺&quot;成为可显式推理的对象。(2) <strong>环内验证（in-loop verification）</strong>：在 synthesis 之前就识别缺口并定向派发检索，而非事后打分；对比奖励证明验证阶段全程带来稳定增益（R_w/v 始终高于 R_w/o v）。(3) <strong>上下文与 Searcher 数解耦</strong>：把累计 25.6M Searcher token 压成 21.5K 的 Navigator 视图，约 1200:1 压缩比，使并行规模扩展不再撞上下文窗口。(4) <strong>零样本规模迁移</strong>：在单 Searcher 轨迹上训练的 Navigator 可直接迁移到 K 路并行、甚至换底座，无需重训。消融显示完整 DAG（带 ±1 标签与验证状态）74.5%，去掉边标签降到 72.0%（−2.5），纯文本拼接 69.3%（−5.2），结构化表示净贡献 5.2 分。</p>\n<h2>4. 实验结果分析</h2>\n<p>8 个基准：BrowseComp、BrowseComp-ZH、GAIA、SEAL-0、xbench DeepSearch-2510、HLE、FrontierScience Olympiad/Research。底座 Qwen 35B-A3B：Searcher→Argus Solo→Argus Parallel(K=8) 在 BrowseComp 55.0→62.2→74.5，BrowseComp-ZH 62.3→74.4→83.4，GAIA 84.5→88.0→93.2，SEAL-0 48.9→53.2→56.2，xbench 62.0→67.0→73.0，HLE 43.2→44.2→49.8。8 基准平均：Solo +7.1，Parallel(K=8) 论文口径 +12.7；K=64 时 BrowseComp 达 86.2，超过所有对比闭源 agent（GPT-5.2、Claude-4.6-Opus、Gemini-3.1-Pro 等）。GAIA 93.2 比最强闭源高 12.6 分，SEAL-0 高 6.2 分，5/8 基准取得 SOTA。规模动态（Fig.4）：精度随 Searcher token 单调上升 55.0%(0.4M)→86.2%(25.6M)，而 Navigator synthesis 上下文仅 0.34K→21.5K，对数拟合未见硬上限。换底座（Table 2）：在 DeepSeek-V4-Flash-Max 上 Parallel +18.5、Seed-2.0-Pro +12.2，且 35B 上训练的 Navigator 零样本提升所有闭源底座。训练动态（Fig.5）显示 reward 与留出集精度同步、验证触发率上升后趋平、矛盾证据呈现&quot;探索→固化&quot;转变，说明学到的是有意义的验证行为而非奖励 hack。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出：(1) 推理成本高——累计 Searcher token 从 K=1 的 0.4M 涨到 K=64 的 25.6M，定位是&quot;重型研究求解器&quot;而非低成本/低延迟助手；(2) 墙钟延迟——高 K 时并行批中最慢的 Searcher 主导整体耗时（Navigator synthesis 仍是单次前向）；(3) 源可得性天花板——继承底层 web 源的召回上限，付费墙/不可得内容无法突破，更强 Searcher 大致线性抬升此上限；(4) 标准 agentic 风险——错误信息、版权问题，靠 per-claim 源追溯部分缓解。未提及但显见的是：LLM-judge 奖励本身的偏置会传导进策略，去污染只做到实体级、对改写型泄漏未必稳健。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队最可迁移的是&quot;调度器 + 共享证据图&quot;这套结构，而非具体 web benchmark 分数。要点：(a) 复杂多跳问答（社区里&quot;对比型/求证型&quot;长尾 query）不该靠堆并发投票，而应让一个轻量协调策略显式追踪&quot;已覆盖/有矛盾/还缺&quot;，把算力花在补缺口上；(b) 上下文工程上，&quot;把海量原始证据压成结构化图，synthesis 阶段只读图&quot;是控制长上下文成本的实用范式，1200:1 的压缩比说明收益巨大；(c) 可追溯性——每个结论挂 source URL，对 UGC 问答的可信度与人工审核友好；(d) 训练-部署解耦，单 Searcher 训练、多 Searcher 部署且免重训，降低上线成本。需注意的工程约束：该方法是&quot;重型离线/异步研究&quot;定位，墙钟延迟受最慢分支拖累，不适合在线低延迟搜索主链路，更适合做异步&quot;深度求证&quot;旁路（如争议话题的事实核验、长文生成的证据准备）。落地前应先用自有多跳 query 集验证证据图的去重与矛盾标注质量，并替换 LLM-judge 为更可控的可验证奖励。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.15529",
+      "title": "Process Rewards with Learned Reliability",
+      "url": "https://arxiv.org/abs/2605.15529",
+      "authors": "Jinyuan Li, Langlin Huang, Chengsong Huang, Shaoyang Xu, Donghong Cai, Yuyi Yang, Wenxuan Zhang, Jiaxin Huang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 3.8,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "现有过程奖励模型（PRM）每步只输出一个分数，下游只能把不完美的步级预测当作可靠信号。BetaPRM 是一个分布式 PRM，同时预测步级成功概率与该预测的可靠性：基于 Monte Carlo 续采的步级成功监督，用 Beta-Binomial 似然学习 Beta 信念，而非回归到有限样本成功率的点目标。基于此可靠性信号提出 Adaptive Computation Allocation（ACA）：在高奖励解可靠时停止、对不确定前缀追加算力。在 4 个 backbone × 4 个推理 benchmark 上提升 PRM 引导的 Best-of-N，ACA 相比固定预算 Best-of-16 在提升答案准确率的同时最多省 33.57% token。",
+      "key_insight": "PRM 输出'分数+可信度'比单点分数更有用——可信度让下游区分'该信的奖励'和'不确定的奖励'，从而按需分配算力。这对 agentic 搜索/RL 的奖励设计有直接借鉴：步级奖励本身带噪，显式建模奖励不确定性可避免在错误中间步上浪费搜索预算。社区搜索若用 LLM 重排+Best-of-N，可用类似可靠性门控做自适应早停，省成本。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.15573",
+      "title": "Response-Conditioned Parallel-to-Sequential Orchestration for Multi-Agent Systems",
+      "url": "https://arxiv.org/abs/2605.15573",
+      "authors": "Nurbek Tastan, Alex Iacob, Lorenzo Sani, Meghdad Kurmanji, Nicholas D. Lane, Samuel Horvath, Karthik Nandakumar",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 3.6,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "多智能体协作通常要么纯并行（独立作答再聚合）、要么纯串行（按拓扑逐步精炼），两者都难以在'最小化通信与延迟'和'最大化最终准确率'间兼得。Nexa 提出 response-conditioned 可训练策略：先并行执行，将各 agent 响应嵌入共享语义空间，再预测一个稀疏有向无环通信图——图为空则保持纯并行，非空则执行一次串行消息传播。策略是轻量 transformer，无需外部 LLM 裁判或奖励模型，也不需手工搜索测试时拓扑；论文证明所得图构造上无环、严格包含纯并行，并给出基于策略梯度的训练方法，学到的通信策略在 agent 数量/任务/底座变化时可复用。",
+      "key_insight": "多 agent 编排不必在并行与串行间二选一：用一个'看了并行结果再决定要不要串行通信'的轻量策略，按 query 难度动态决定是否追加一轮串行精炼。对 agentic 搜索系统的启示：检索/推理子 agent 的通信拓扑可学习且与底座解耦，避免对每个新任务手调 pipeline；轻量策略不依赖额外 LLM 裁判，推理开销可控。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.15202",
+      "title": "DeepSlide: From Artifacts to Presentation Delivery",
+      "url": "https://arxiv.org/abs/2605.15202",
+      "authors": "Ming Yang, Zhiwei Zhang, Jiahang Li, Haoseng Liu, Yuzheng Cai, Weiguo Zheng",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "现有 AI 幻灯片生成只优化'产物'（视觉合理的 deck），却忽视'交付过程'（节奏、叙事、演讲准备）。DeepSlide 是一个 human-in-the-loop 多智能体系统，覆盖需求澄清、带时间预算的叙事规划、证据 grounding 的 slide-script 生成、注意力增强与排练支持，集成四个组件：带每节点时间预算的可控逻辑链规划器、轻量内容树检索器（grounding）、带样式继承的 Markov 式顺序渲染、最小修复的沙箱执行保证可渲染。提出 dual-scoreboard benchmark 把静态产物质量与动态交付质量分开评估，在 20 个领域上产物质量持平强基线、交付指标（叙事流畅度、节奏精度、slide-script 协同）显著更优。",
+      "key_insight": "把'内容树检索器做 grounding + 带时间预算的逻辑链规划器 + 沙箱执行最小修复'组合成可落地的多 agent 流水线，是值得借鉴的工程范式：检索器负责事实接地、规划器负责结构与预算约束、沙箱保证产物可用。对搜索/推荐内容生成的启示：把'可控规划'与'检索 grounding'解耦，并用沙箱+最小修复保证线上可渲染/可用，是降低 LLM 生成不可控性的实用手段。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.15588",
+      "title": "Calibrating LLMs with Semantic-level Reward",
+      "url": "https://arxiv.org/abs/2605.15588",
+      "authors": "Fengfei Yu, Ruijia Niu, Dongxia Wu, Yian Ma, Rose Yu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "标准 RLVR 用二元正确性奖励训练，对置信度无感知——对'自信但错误'的预测不施加惩罚，从而损害校准。近期工作让模型输出 verbalized confidence 并奖励其与正确性一致，但 verbalized confidence 在 token 级校准，对语义相同但表述不同的变体不一致。本文提出语义级奖励：在语义层面而非 token 层面建模与奖励置信度一致性，使模型在医疗问答、法律推理等高风险场景下产出更校准的不确定性估计，缓解'自信错答'问题。",
+      "key_insight": "奖励应作用在语义层而非 token 层——同义改写不应导致置信度漂移。这对在搜索/推荐里用 RLVR 训练 LLM 答案/重排有直接意义：若用模型置信度做拒答或人工兜底路由，token 级校准会被表述变体破坏，语义级奖励能让置信度阈值更稳定可用。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.14665",
+      "title": "Falkor-IRAC: Graph-Constrained Generation for Verified Legal Reasoning in Indian Judicial AI",
+      "url": "https://arxiv.org/abs/2605.14665",
+      "authors": "Joy Bose",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 3.35,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "法律推理不是语义相似度检索：判决书编码了先例传播、程序状态转移、依法推断等约束性符号推理，向量 RAG 无法忠实表达，导致幻觉先例、过时法条引用、无依据推理链。Falkor-IRAC 提出图约束生成框架，将生成接地在 IRAC（Issue/Rule/Analysis/Conclusion）知识图的结构化推理上，并设有 Verifier Agent 校验引用、拒绝伪造引用。提出 graph-native 评估指标（引用接地准确率、路径有效率、幻觉先例率、冲突检测率）；当前为 51 篇最高法院判决的概念验证+500+ 篇 InIRAC 标注集，与向量 RAG 基线的定量对比留作未来工作。",
+      "key_insight": "对'先例/法条'这类强约束知识，图约束生成 + Verifier Agent 拒绝伪造引用，比纯向量 RAG 更能抑制幻觉——核心是把领域结构（IRAC）显式编码进知识图并在生成时约束。对社区搜索的启示：高可信场景（如医疗/法律/政策类 UGC 问答）可在 RAG 上叠加结构化校验 agent 做引用核验；但该文仅 PoC、无 baseline 对比，证据强度有限，落地前需补对照实验。"
+    },
+    {
+      "rank": 7,
+      "id": "blog:openai-dell-codex-enterprise",
+      "title": "OpenAI and Dell partner to bring Codex to hybrid and on-premise enterprise environments",
+      "url": "https://openai.com/index/dell-codex-enterprise-partnership",
+      "authors": "OpenAI",
+      "company": [
+        "OpenAI",
+        "Dell"
+      ],
+      "source": "openai_research_blog",
+      "published": "2026-05-18",
+      "total_score": 3.1,
+      "preference_bonus": 0.07,
+      "adjusted_score": 3.17,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "OpenAI 与 Dell 合作，把 Codex 编码 agent 带入混合云与本地（on-premise）企业环境，目标是让企业在自有数据与工作流内安全部署 AI 编码智能体。这是一条产业动向信号：deep research / coding agent 的落地正从纯云 API 走向需要数据驻留、合规与私有化部署的企业场景。",
+      "key_insight": "agentic 系统的产业落地瓶颈正从'模型能力'转向'部署形态'——数据驻留、本地化、合规是企业采用 coding/research agent 的关键门槛。对搜索/推荐团队的启示：评估引入 agent 能力时，私有化部署与数据边界是和效果同等重要的工程约束，选型时需把'能否 on-prem/混合部署'纳入考量。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "WildClawBench Hard, practical, end-to-end evaluation for AI agents — in the wild. WildClawBench is an agent benchmark that tests what actually matters: can an AI agent do real work, end-to-end, without hand-holding? We drop agents into a live OpenClaw environment — the same open-; tags: benchmark:of",
+      "language": "dataset",
+      "stars": 59,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 2,
+      "id": "hf_dataset:zai-org/ImageMining",
+      "title": "zai-org/ImageMining",
+      "url": "https://huggingface.co/datasets/zai-org/ImageMining",
+      "source": "huggingface",
+      "description": "Dataset Card for ImageMining Dataset Description ImageMining is a benchmark for evaluating image mining and knowledge discovery capabilities of multimodal models. Given an image, the task requires models to identify entities, perform multi-step reasoning (often with search-augmen; tags: task_categor",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-05-05"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:zai-org/GLM-5.1",
+      "title": "zai-org/GLM-5.1",
+      "url": "https://huggingface.co/zai-org/GLM-5.1",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 1664,
+      "created_at": "2026-04-03"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "model",
+      "stars": 1297,
+      "created_at": "2026-04-14"
+    },
+    {
+      "rank": 5,
+      "id": "hf_space:TencentARC/Pixal3D",
+      "title": "TencentARC/Pixal3D",
+      "url": "https://huggingface.co/spaces/TencentARC/Pixal3D",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 169,
+      "created_at": "2026-04-30"
+    }
+  ]
+}

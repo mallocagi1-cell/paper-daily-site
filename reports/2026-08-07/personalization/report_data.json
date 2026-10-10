@@ -1,0 +1,347 @@
+{
+  "date": "2026-08-07",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 89,
+    "papers_selected": 10,
+    "score_min": 3.3,
+    "score_max": 5.0
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2608.04455",
+      "title": "Multi-Objective Ranking for Live-Streaming: Balancing Fresh and Delayed Signals with Segment-Aware Targeting",
+      "url": "https://arxiv.org/abs/2608.04455",
+      "authors": "Xiaoyi Gu, Julia Tavares, Eder Santana, Carlos Mendoza-Cardenas, Nikita Mishra, Saad Ali",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-08-05",
+      "base_score": 5.0,
+      "total_score": 5.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 5.0,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 5,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "针对直播推荐中观看、聊天、关注、消费等行为并发且反馈延迟、不同生命周期用户分布偏置的问题，论文用延迟窗口补齐反馈，融合新鲜与延迟信号，并以分段目标模块和 MMoE 联合多目标排序。线上 A/B 使日活观众提升 0.09%、高参与用户封顶 ARPU 提升 0.56%，MMoE 还使参数量减少 41.9%，新关注提升 0.27%。",
+      "key_insight": "论文把多目标推荐拆成“反馈时间建模—用户分段—目标共享”三层，适合短视频或直播中 CTR、关注、收入同时优化的场景。实践上可先用延迟窗口修正标签，再按新老用户设置目标权重；MMoE 在提升效果的同时降低独立模型参数，且请求延迟可规模化控制。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2608.04455",
+        "title": "Multi-Objective Ranking for Live-Streaming: Balancing Fresh and Delayed Signals with Segment-Aware Targeting",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n这篇论文面对的是直播推荐里一个典型、但容易被普通 CTR 建模掩盖的问题：用户行为不是整齐的点击→购买链路，而是观看、继续观看、聊天、关注、订阅和消费同时发生，且时间跨度不同。Twitch 是创作者与观众双边市场，推荐既要帮助新用户找到内容，也要让成熟用户与主播形成更深关系，同时支持创作者增长与变现。单纯把所有行为压成一个即时标签，会把“现在想看什么”和“几天后是否关注或付费”混为一谈。\n\n作者在 100 万观众、连续 7 天、数百万次曝光的分析中量化了稀疏性：短时观看目标的密度约为点击率的 1/2.5，长时观看约为点击率的 1/3.4，聊天约低 20 倍，关注几乎低 90 倍，消费更稀疏。对于关注、订阅或消费，曝光后几小时甚至几天才发生并不罕见；如果曝光后立刻把未发生的动作标成负例，会把尚未成熟的兴趣误标为不喜欢；如果等很久才建标签，又会让训练数据变旧。已有 ESMM、AITM 一类方法更适合有顺序的转化漏斗，而直播行为可能没有固定顺序。\n\n论文还指出用户生命周期造成训练偏置。Dedicated（成熟/高活跃）观众贡献的数据量约是 Early（新用户或低活跃用户）的 4 倍，统一目标权重天然偏向成熟用户；但两类用户需要的目标不同：Early 更需要即时观看与回访信号，Dedicated 才适合更重视长时观看、互动和变现。论文因此不把重点放在再造一个更大的多任务网络，而是先把新鲜信号、延迟信号和用户分段分开，再讨论 MMoE 等具体架构。\n\n## 2. 方法详解\n\n### 2.1 统一的多目标排序函数\n\n系统聚焦推荐链路的 ranking stage。Twitch 先用双塔召回模型从数百万创作者中取出几十个频道，再由深度排序模型计算观众与频道的匹配分。论文将五类动作作为预测目标：SMP（Short-form Minutes Play，短时观看）、LMP（Long-form Minutes Play，长时观看）、chat、follow 和 spend。基础排序形式是 `F(x_v,c,s) = Σ_a w_(a,s) · p_a(x_v,c)`。其中 `p_a` 是观众 v 对频道 c 发生动作 a 的预测概率，`w_(a,s)` 是用户分段 s 下的目标权重。\n\n这个公式的关键不在加权和本身，而在于它允许模型输出一组可解释的行为概率，再在推理时根据生命周期决定目标之间的相对优先级。SMP、LMP、聊天、关注和消费分别对应即时参与、深度留存、社区关系和收入等不同业务目标。\n\n### 2.2 Delayed Window 与 Fresh/Delayed 分离\n\n对稀疏动作，论文定义曝光时刻 t 后长度为 Δt 的延迟窗口：`DW_(v,c)(t,Δt) = {(a,t') | t ≤ t' ≤ t+Δt，观众在 t' 对频道执行 a}`。只要窗口内发生过该动作，就把延迟标签置为 1：`y_delayed = I[|DW| > 0]`。这会把很稀疏的单点行为转成更密集的窗口级监督，但不是无限延长窗口。作者对 7、14、21、28、35 天进行比较，最终为 chat、follow、spend 使用 14 天；SMP 和 LMP 仍使用即时标签。\n\n系统采用 Multi-Model 架构：Fresh Signal Model（FSM）负责较密集、需要反映最新偏好的 SMP；Delayed Signal Models（DSM）负责 chat、follow、spend 等稀疏动作。两类模型并行训练、在线分别输出预测。这样做是为了避免单独使用延迟标签导致所有特征都落后 Δt 天，也避免只用即时标签丢失几天后才发生的关注和消费。最终的 MMoE 版本保留独立 FSM，用 MMoE 联合建模 LMP 与延迟目标。\n\n### 2.3 Viewer Segment Targeting\n\n作者没有为 Early 和 Dedicated 维护两套完整模型，而是在推理时应用分段条件权重。Early 用户提高 SMP 权重，尽量先促成观看和回访；Dedicated 用户提高 LMP、chat、follow 及 spend 的综合权重，鼓励更深的内容关系与变现。模型参数和训练数据仍共享，只有排序标量化阶段按 `w_(a,s)` 调整。作者还尝试在训练阶段给 Early 样本加权，但没有带来收益，反而增加复杂度；因此选择零额外参数的 inference-time weighting。\n\n### 2.4 FSM + MMoE 结构\n\n最终结构的 FSM 预测 SMP；MMoE 预测 LMP、chat、follow、spend。MMoE 有 4 个 expert，采用 3 层、宽度 1000 的共享底层，expert 为两层 512、256，任务 gate 为 4 层、每层 128，任务 tower 宽度为 64。各任务通过自己的 gate 选择共享 expert，既共享相关行为表征，又保留目标差异。最终得分为 FSM 的 SMP 分数与 MMoE 四个目标分数的分段加权和。\n\n训练使用观众人口特征、频道特征和观众—频道交互特征，所有模型采用二元交叉熵；Adam 学习率候选为 0.001、0.005、0.01，batch size 候选为 1024、2048，通过超参搜索选择，使用验证集 NDCG 做模型选择。训练数据是 600 万观众的 7 天曝光，评估集是 100 万观众的一天历史曝光，并向前观察 35 天生成延迟动作的真值。生产请求要求 p99 延迟低于 110ms。\n\n## 3. 核心技术贡献\n\n第一，论文把“信号时间尺度分离”提升为多任务架构之前的首要设计。单一网络同时吃密集 SMP 和稀疏 follow/spend 时，密集梯度会淹没稀疏目标；把 FSM 与 DSM 分开后，Shared-Bottom、CGC、MMoE 三种骨干的离线表现都接近，说明收益主要来自数据与信号隔离，而非某个专家网络的品牌。\n\n第二，VST 将生命周期偏置变成推理阶段的目标控制。它不增加参数、不要求重新训练用户分段模型，却使 Early 的 DAV 提升 0.15%，同时基本保持 Dedicated 指标。这种“共享预测，分段标量化”的设计对推荐系统很实用，尤其适用于策略变化快、不能频繁重训的产品。\n\n第三，MMoE 不是简单把五个目标全部塞进一个共享网络，而是让 SMP 保持独立，把 LMP 与延迟动作放进同一组。这样既保留长时观看与关注/消费的关系，又避免 SMP 过强地干扰稀疏任务。延迟目标建模参数从多个独立 DSM 的 2670 万降到约 1550 万，减少 41.9%。\n\n第四，论文提供了完整的工业闭环证据：用离线窗口分析确定 14 天，用分阶段 14 天线上 A/B 验证延迟标签、用户分段和 MMoE，再在 Twitch mobile live feed 做迁移测试。它把推荐模型的结构改动与 DAV、LMP、ARPU、follow 以及 p99 延迟放在同一套验证框架里，而不是只报告一个离线 AUC。\n\n## 4. 实验结果分析\n\n### 4.1 延迟窗口与离线效果\n\n用 2025 年 6—7 月数据比较窗口长度时，Early 用户在 1 天窗口下表现最差，7—14—21 天都能改善 LMP 与 Spend NDCG；Dedicated 用户则呈现权衡：1—7 天更有利于 LMP，较长窗口更有利于稀疏 Spend，但过长会把已经无关的行为归到旧曝光上。14 天在捕捉消费与保持观看信号之间最平衡；21 天只有略高的 Spend、略低的 LMP，却带来更多计算与陈旧风险。\n\n| 架构/目标分组 | All LMP NDCG@6 | All Spend NDCG@6 | 解释 |\n| --- | ---: | ---: | --- |\n| Single MMoE（五目标全联合） | 0.2347 | 0.0741 | Spend 最高，但 SMP 干扰深度观看 |\n| FSM(SMP)+MMoE(Delayed) | 0.2456 | 0.0736 | 隔离即时与延迟信号 |\n| MMoE(SMP+LMP)+MMoE(Delayed) | 0.2460 | 0.0739 | 复杂度增加，收益有限 |\n| FSM(SMP)+MMoE(LMP+Delayed) | 0.2462 | 0.0739 | 论文最终结构 |\n\n相对单目标 DNN，最终结构把 LMP NDCG@6 从 0.2459 提到 0.2462（+0.12%），Spend NDCG@6 从 0.0726 提到 0.0739（+1.79%）。单一 MMoE 虽然 Spend NDCG@6 达到 0.0741，却让 LMP 从 0.2462 降到 0.2347，下降 4.7%；这正是“所有目标共享”在密度极不均衡时的失败模式。\n\n### 4.2 分阶段线上 A/B\n\n第一阶段把旧的单目标 SMP 模型与 FSM+独立 DSM 比较，覆盖数百万访客。整体 DAV +0.09%（p<0.01）、LMP +0.16%（p<0.01），Dedicated 的封顶 ARPU +0.56%（p<0.05），但 Early ARPU 方向性下降 0.72%，说明即时增长与成熟用户变现并非同一目标。第二阶段加入 VST，Early DAV +0.15%、LMP +0.25%，整体 DAV +0.03%、LMP +0.07%。第三阶段以 VST 版本为基线换成 MMoE，整体 follow +0.27%（p<0.01）、DAV +0.08%（p<0.05）、LMP +0.10%（p<0.05）；Dedicated DAV +0.06%但 p=0.11，不能视为显著。\n\nShared-Bottom 的线上结果更弱：封顶 ARPU +0.19%、DAV +0.06%（p=0.10）、LMP +0.06%、follow +0.15%，均未达到显著。MMoE 版本将延迟目标组件从 26.7M 参数压到 15.5M，同时保持服务延迟。另一个 Twitch mobile feed 的 14 天 A/B 带来正向用户—频道互动（点击、关注、点赞）+1.12%，论文结论处报告 p<0.001，说明并非只在主场景指标上有效。\n\n### 4.3 失败模式与工业含义\n\n最值得注意的不是平均提升幅度，而是不同人群的方向差异：延迟多模型让 Dedicated ARPU 上升，却让 Early ARPU 下降；VST 的价值正是将这种差异显式化。论文还发现训练时给 Early 样本加权没有收益，推理时调权却有效，说明数据重采样与目标标量化不是可互换的手段。另一个关键结果是三种 MTL backbone 在信号隔离后相近，工程团队应先修标签和时间窗口，再决定 MMoE、PLE 或 Shared-Bottom。\n\n## 5. 局限与未来方向\n\n论文结尾明确提出三个未来方向：用在线学习自动优化分段权重，扩展 Early/Dedicated 之外的更细用户分层，以及研究能够随动作稀疏性和业务周期变化的自适应延迟窗口。论文还把具体用户分段阈值、SMP/LMP 的分钟阈值、目标权重和部分频道业务细节设为 proprietary，因此复现者无法直接复制生产配置。\n\n从正文披露看，实验集中在 Twitch 直播这一双边市场，且训练、评估和线上 A/B 都围绕观众—频道关系展开；作者没有给出社区 UGC、商品推荐或中文短文本场景的迁移结果。时间窗口依赖 35 天前视真值，意味着训练样本无法在曝光后立即封存，数据管道和指标反馈都会滞后。论文虽然报告 p99<110ms，却没有公开不同流量、硬件、候选规模下的绝对 QPS、内存与训练成本。\n\n这些属于证据边界，不应擅自说成作者已经验证过的通用结论。尤其是直播中的“关注后几天消费”与社区搜索的“点击后短时满意”行为差异很大，直接照搬 14 天窗口可能增加标签污染。未来在社区平台应做窗口长度、目标稀疏性、用户生命周期和内容冷启动的分层实验，并同时报告长期留存与短期 CTR。\n\n## 6. 工业实践意义\n\n对 CTR/多目标排序团队，第一条可执行建议是先画出每个目标的延迟分布和正样本密度，再决定标签窗口。可以从 1、3、7、14 天做离线对照，观测短期点击、深度停留、关注/收藏和转化之间的 trade-off；窗口变长后不仅看指标是否升，还要看样本封存时延、数据成本和老行为污染。论文的 7 天窗口使聊天正样本约增加 9 倍，14 天约增加 12 倍，但更长窗口出现边际递减，这个思路可以迁移而不能迁移数字本身。\n\n第二条是按信号密度和行为深度分组。社区搜索中浅层点击通常很密，长停留、关注作者、收藏、后续回访更稀疏；可以让浅层点击由 fresh model 负责，把稀疏长期目标放到独立塔或一个多任务组，再在融合层组合。不要默认一个共享底座能解决所有冲突；如果单一多任务模型中点击梯度压制长期目标，应优先做结构性隔离。\n\n第三条是把用户分段控制放在可解释的推理层。新用户、低活跃用户、频繁用户和高价值用户可以共享行为预测，但使用不同的目标权重与守护指标。论文的 VST 证明，不增加训练参数也能提高低活跃用户 DAV；不过真实系统必须设置公平性、内容多样性、负反馈和商业目标护栏，避免“为新用户提 CTR”变成短期标题党或低质量曝光。\n\n部署时应维护双路特征时间戳：即时路读最近行为，延迟路读已封存窗口；对两路模型分别监控 freshness、缺失率、回填比例和 p99。线上先用小流量做分阶段 A/B，像论文一样逐层加入延迟标签、分段权重和 MMoE，避免一次改动无法归因。最终目标不只是总 CTR，而是分用户群的 nDCG、留存、深度互动、转化、GPU/CPU 成本和延迟都能解释。\n\n总体来看，这项工作的最大价值是告诉工程团队“多目标推荐的第一性问题可能是标签时间，而不是网络结构”。在密集点击与稀疏长期行为同时存在的系统中，14 天延迟窗口、独立 fresh signal、推理时分段权重和有选择的 MMoE 组合形成了一条清晰的落地路线；但其生产收益来自 Twitch 的百万级流量与成熟数据管道，迁移到 UGC 社区前仍需用本地行为延迟分布和在线实验重新校准。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>这篇论文面对的是直播推荐里一个典型、但容易被普通 CTR 建模掩盖的问题：用户行为不是整齐的点击→购买链路，而是观看、继续观看、聊天、关注、订阅和消费同时发生，且时间跨度不同。Twitch 是创作者与观众双边市场，推荐既要帮助新用户找到内容，也要让成熟用户与主播形成更深关系，同时支持创作者增长与变现。单纯把所有行为压成一个即时标签，会把“现在想看什么”和“几天后是否关注或付费”混为一谈。</p>\n<p>作者在 100 万观众、连续 7 天、数百万次曝光的分析中量化了稀疏性：短时观看目标的密度约为点击率的 1/2.5，长时观看约为点击率的 1/3.4，聊天约低 20 倍，关注几乎低 90 倍，消费更稀疏。对于关注、订阅或消费，曝光后几小时甚至几天才发生并不罕见；如果曝光后立刻把未发生的动作标成负例，会把尚未成熟的兴趣误标为不喜欢；如果等很久才建标签，又会让训练数据变旧。已有 ESMM、AITM 一类方法更适合有顺序的转化漏斗，而直播行为可能没有固定顺序。</p>\n<p>论文还指出用户生命周期造成训练偏置。Dedicated（成熟/高活跃）观众贡献的数据量约是 Early（新用户或低活跃用户）的 4 倍，统一目标权重天然偏向成熟用户；但两类用户需要的目标不同：Early 更需要即时观看与回访信号，Dedicated 才适合更重视长时观看、互动和变现。论文因此不把重点放在再造一个更大的多任务网络，而是先把新鲜信号、延迟信号和用户分段分开，再讨论 MMoE 等具体架构。</p>\n<h2>2. 方法详解</h2>\n<h3>2.1 统一的多目标排序函数</h3>\n<p>系统聚焦推荐链路的 ranking stage。Twitch 先用双塔召回模型从数百万创作者中取出几十个频道，再由深度排序模型计算观众与频道的匹配分。论文将五类动作作为预测目标：SMP（Short-form Minutes Play，短时观看）、LMP（Long-form Minutes Play，长时观看）、chat、follow 和 spend。基础排序形式是 <code>F(x_v,c,s) = Σ_a w_(a,s) · p_a(x_v,c)</code>。其中 <code>p_a</code> 是观众 v 对频道 c 发生动作 a 的预测概率，<code>w_(a,s)</code> 是用户分段 s 下的目标权重。</p>\n<p>这个公式的关键不在加权和本身，而在于它允许模型输出一组可解释的行为概率，再在推理时根据生命周期决定目标之间的相对优先级。SMP、LMP、聊天、关注和消费分别对应即时参与、深度留存、社区关系和收入等不同业务目标。</p>\n<h3>2.2 Delayed Window 与 Fresh/Delayed 分离</h3>\n<p>对稀疏动作，论文定义曝光时刻 t 后长度为 Δt 的延迟窗口：<code>DW_(v,c)(t,Δt) = {(a,t&#x27;) | t ≤ t&#x27; ≤ t+Δt，观众在 t&#x27; 对频道执行 a}</code>。只要窗口内发生过该动作，就把延迟标签置为 1：<code>y_delayed = I[|DW| &gt; 0]</code>。这会把很稀疏的单点行为转成更密集的窗口级监督，但不是无限延长窗口。作者对 7、14、21、28、35 天进行比较，最终为 chat、follow、spend 使用 14 天；SMP 和 LMP 仍使用即时标签。</p>\n<p>系统采用 Multi-Model 架构：Fresh Signal Model（FSM）负责较密集、需要反映最新偏好的 SMP；Delayed Signal Models（DSM）负责 chat、follow、spend 等稀疏动作。两类模型并行训练、在线分别输出预测。这样做是为了避免单独使用延迟标签导致所有特征都落后 Δt 天，也避免只用即时标签丢失几天后才发生的关注和消费。最终的 MMoE 版本保留独立 FSM，用 MMoE 联合建模 LMP 与延迟目标。</p>\n<h3>2.3 Viewer Segment Targeting</h3>\n<p>作者没有为 Early 和 Dedicated 维护两套完整模型，而是在推理时应用分段条件权重。Early 用户提高 SMP 权重，尽量先促成观看和回访；Dedicated 用户提高 LMP、chat、follow 及 spend 的综合权重，鼓励更深的内容关系与变现。模型参数和训练数据仍共享，只有排序标量化阶段按 <code>w_(a,s)</code> 调整。作者还尝试在训练阶段给 Early 样本加权，但没有带来收益，反而增加复杂度；因此选择零额外参数的 inference-time weighting。</p>\n<h3>2.4 FSM + MMoE 结构</h3>\n<p>最终结构的 FSM 预测 SMP；MMoE 预测 LMP、chat、follow、spend。MMoE 有 4 个 expert，采用 3 层、宽度 1000 的共享底层，expert 为两层 512、256，任务 gate 为 4 层、每层 128，任务 tower 宽度为 64。各任务通过自己的 gate 选择共享 expert，既共享相关行为表征，又保留目标差异。最终得分为 FSM 的 SMP 分数与 MMoE 四个目标分数的分段加权和。</p>\n<p>训练使用观众人口特征、频道特征和观众—频道交互特征，所有模型采用二元交叉熵；Adam 学习率候选为 0.001、0.005、0.01，batch size 候选为 1024、2048，通过超参搜索选择，使用验证集 NDCG 做模型选择。训练数据是 600 万观众的 7 天曝光，评估集是 100 万观众的一天历史曝光，并向前观察 35 天生成延迟动作的真值。生产请求要求 p99 延迟低于 110ms。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文把“信号时间尺度分离”提升为多任务架构之前的首要设计。单一网络同时吃密集 SMP 和稀疏 follow/spend 时，密集梯度会淹没稀疏目标；把 FSM 与 DSM 分开后，Shared-Bottom、CGC、MMoE 三种骨干的离线表现都接近，说明收益主要来自数据与信号隔离，而非某个专家网络的品牌。</p>\n<p>第二，VST 将生命周期偏置变成推理阶段的目标控制。它不增加参数、不要求重新训练用户分段模型，却使 Early 的 DAV 提升 0.15%，同时基本保持 Dedicated 指标。这种“共享预测，分段标量化”的设计对推荐系统很实用，尤其适用于策略变化快、不能频繁重训的产品。</p>\n<p>第三，MMoE 不是简单把五个目标全部塞进一个共享网络，而是让 SMP 保持独立，把 LMP 与延迟动作放进同一组。这样既保留长时观看与关注/消费的关系，又避免 SMP 过强地干扰稀疏任务。延迟目标建模参数从多个独立 DSM 的 2670 万降到约 1550 万，减少 41.9%。</p>\n<p>第四，论文提供了完整的工业闭环证据：用离线窗口分析确定 14 天，用分阶段 14 天线上 A/B 验证延迟标签、用户分段和 MMoE，再在 Twitch mobile live feed 做迁移测试。它把推荐模型的结构改动与 DAV、LMP、ARPU、follow 以及 p99 延迟放在同一套验证框架里，而不是只报告一个离线 AUC。</p>\n<h2>4. 实验结果分析</h2>\n<h3>4.1 延迟窗口与离线效果</h3>\n<p>用 2025 年 6—7 月数据比较窗口长度时，Early 用户在 1 天窗口下表现最差，7—14—21 天都能改善 LMP 与 Spend NDCG；Dedicated 用户则呈现权衡：1—7 天更有利于 LMP，较长窗口更有利于稀疏 Spend，但过长会把已经无关的行为归到旧曝光上。14 天在捕捉消费与保持观看信号之间最平衡；21 天只有略高的 Spend、略低的 LMP，却带来更多计算与陈旧风险。</p>\n<table><thead><tr><th>架构/目标分组</th><th>All LMP NDCG@6</th><th>All Spend NDCG@6</th><th>解释</th></tr></thead><tbody><tr><td>Single MMoE（五目标全联合）</td><td>0.2347</td><td>0.0741</td><td>Spend 最高，但 SMP 干扰深度观看</td></tr><tr><td>FSM(SMP)+MMoE(Delayed)</td><td>0.2456</td><td>0.0736</td><td>隔离即时与延迟信号</td></tr><tr><td>MMoE(SMP+LMP)+MMoE(Delayed)</td><td>0.2460</td><td>0.0739</td><td>复杂度增加，收益有限</td></tr><tr><td>FSM(SMP)+MMoE(LMP+Delayed)</td><td>0.2462</td><td>0.0739</td><td>论文最终结构</td></tr></tbody></table>\n<p>相对单目标 DNN，最终结构把 LMP NDCG@6 从 0.2459 提到 0.2462（+0.12%），Spend NDCG@6 从 0.0726 提到 0.0739（+1.79%）。单一 MMoE 虽然 Spend NDCG@6 达到 0.0741，却让 LMP 从 0.2462 降到 0.2347，下降 4.7%；这正是“所有目标共享”在密度极不均衡时的失败模式。</p>\n<h3>4.2 分阶段线上 A/B</h3>\n<p>第一阶段把旧的单目标 SMP 模型与 FSM+独立 DSM 比较，覆盖数百万访客。整体 DAV +0.09%（p&lt;0.01）、LMP +0.16%（p&lt;0.01），Dedicated 的封顶 ARPU +0.56%（p&lt;0.05），但 Early ARPU 方向性下降 0.72%，说明即时增长与成熟用户变现并非同一目标。第二阶段加入 VST，Early DAV +0.15%、LMP +0.25%，整体 DAV +0.03%、LMP +0.07%。第三阶段以 VST 版本为基线换成 MMoE，整体 follow +0.27%（p&lt;0.01）、DAV +0.08%（p&lt;0.05）、LMP +0.10%（p&lt;0.05）；Dedicated DAV +0.06%但 p=0.11，不能视为显著。</p>\n<p>Shared-Bottom 的线上结果更弱：封顶 ARPU +0.19%、DAV +0.06%（p=0.10）、LMP +0.06%、follow +0.15%，均未达到显著。MMoE 版本将延迟目标组件从 26.7M 参数压到 15.5M，同时保持服务延迟。另一个 Twitch mobile feed 的 14 天 A/B 带来正向用户—频道互动（点击、关注、点赞）+1.12%，论文结论处报告 p&lt;0.001，说明并非只在主场景指标上有效。</p>\n<h3>4.3 失败模式与工业含义</h3>\n<p>最值得注意的不是平均提升幅度，而是不同人群的方向差异：延迟多模型让 Dedicated ARPU 上升，却让 Early ARPU 下降；VST 的价值正是将这种差异显式化。论文还发现训练时给 Early 样本加权没有收益，推理时调权却有效，说明数据重采样与目标标量化不是可互换的手段。另一个关键结果是三种 MTL backbone 在信号隔离后相近，工程团队应先修标签和时间窗口，再决定 MMoE、PLE 或 Shared-Bottom。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文结尾明确提出三个未来方向：用在线学习自动优化分段权重，扩展 Early/Dedicated 之外的更细用户分层，以及研究能够随动作稀疏性和业务周期变化的自适应延迟窗口。论文还把具体用户分段阈值、SMP/LMP 的分钟阈值、目标权重和部分频道业务细节设为 proprietary，因此复现者无法直接复制生产配置。</p>\n<p>从正文披露看，实验集中在 Twitch 直播这一双边市场，且训练、评估和线上 A/B 都围绕观众—频道关系展开；作者没有给出社区 UGC、商品推荐或中文短文本场景的迁移结果。时间窗口依赖 35 天前视真值，意味着训练样本无法在曝光后立即封存，数据管道和指标反馈都会滞后。论文虽然报告 p99&lt;110ms，却没有公开不同流量、硬件、候选规模下的绝对 QPS、内存与训练成本。</p>\n<p>这些属于证据边界，不应擅自说成作者已经验证过的通用结论。尤其是直播中的“关注后几天消费”与社区搜索的“点击后短时满意”行为差异很大，直接照搬 14 天窗口可能增加标签污染。未来在社区平台应做窗口长度、目标稀疏性、用户生命周期和内容冷启动的分层实验，并同时报告长期留存与短期 CTR。</p>\n<h2>6. 工业实践意义</h2>\n<p>对 CTR/多目标排序团队，第一条可执行建议是先画出每个目标的延迟分布和正样本密度，再决定标签窗口。可以从 1、3、7、14 天做离线对照，观测短期点击、深度停留、关注/收藏和转化之间的 trade-off；窗口变长后不仅看指标是否升，还要看样本封存时延、数据成本和老行为污染。论文的 7 天窗口使聊天正样本约增加 9 倍，14 天约增加 12 倍，但更长窗口出现边际递减，这个思路可以迁移而不能迁移数字本身。</p>\n<p>第二条是按信号密度和行为深度分组。社区搜索中浅层点击通常很密，长停留、关注作者、收藏、后续回访更稀疏；可以让浅层点击由 fresh model 负责，把稀疏长期目标放到独立塔或一个多任务组，再在融合层组合。不要默认一个共享底座能解决所有冲突；如果单一多任务模型中点击梯度压制长期目标，应优先做结构性隔离。</p>\n<p>第三条是把用户分段控制放在可解释的推理层。新用户、低活跃用户、频繁用户和高价值用户可以共享行为预测，但使用不同的目标权重与守护指标。论文的 VST 证明，不增加训练参数也能提高低活跃用户 DAV；不过真实系统必须设置公平性、内容多样性、负反馈和商业目标护栏，避免“为新用户提 CTR”变成短期标题党或低质量曝光。</p>\n<p>部署时应维护双路特征时间戳：即时路读最近行为，延迟路读已封存窗口；对两路模型分别监控 freshness、缺失率、回填比例和 p99。线上先用小流量做分阶段 A/B，像论文一样逐层加入延迟标签、分段权重和 MMoE，避免一次改动无法归因。最终目标不只是总 CTR，而是分用户群的 nDCG、留存、深度互动、转化、GPU/CPU 成本和延迟都能解释。</p>\n<p>总体来看，这项工作的最大价值是告诉工程团队“多目标推荐的第一性问题可能是标签时间，而不是网络结构”。在密集点击与稀疏长期行为同时存在的系统中，14 天延迟窗口、独立 fresh signal、推理时分段权重和有选择的 MMoE 组合形成了一条清晰的落地路线；但其生产收益来自 Twitch 的百万级流量与成熟数据管道，迁移到 UGC 社区前仍需用本地行为延迟分布和在线实验重新校准。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2604.26996",
+      "title": "LUCid: Redefining Relevance For Lifelong Personalization",
+      "url": "https://arxiv.org/abs/2604.26996",
+      "authors": "Chimaobi Okite, Anika Misra, Joyce Chai, Rada Mihalcea",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-08-05",
+      "base_score": 4.3,
+      "total_score": 4.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.45,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "论文指出长期个性化不能用语义相近替代情境相关，提出 Proximity Advantage (PA) 衡量语义邻近偏差，并构建 LUCid 诊断集，含 1,936 个用户查询及长行为历史。对检索、重排、生成全链路评测发现，最难样本检索召回接近 0%，即使 Gemini-3-Flash、GPT-5.4、Claude Haiku 的响应对齐度也约 50%。",
+      "key_insight": "LUCid 提醒推荐团队把“像用户过去喜欢的内容”与“解决用户此刻任务”分开评估，不能只看语义相似度或平均 CTR。可将 PA 类指标加入离线切片，按任务、上下文和历史跨度检查召回坍塌，再为长期画像增加情境门控与任务条件。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2604.26996",
+        "title": "LUCid: Redefining Relevance For Lifelong Personalization",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nLUCid 讨论的是长期个性化系统里一个比“用户画像是否存得住”更根本的问题：系统到底把什么当作 relevant。现有 RAG、向量记忆和重排器通常用 query 与历史 session 的语义相似度来找上下文，因此偏爱与当前问题主题相近的历史片段。但长期个性化需要的经常是情境相关（situational relevance）：某段历史未必与 query 词面相似，却包含了回答该用户时必需的年龄、地域、健康约束、沟通风格、专业背景或文化偏好。\n\n作者先定义 Proximity Advantage（PA），表示 gold session 的 cosine similarity 是否高于随机非相关 session。已有个性化基准的 PA 为 61.1%–98.7%，其中 PrefEval 98.7%、LongMemEval 97.8%、PersonaMem 91.2%；这些数字说明多数基准可以靠语义邻近解决，不能有效检验模型是否能从语义距离很远的历史中找出真正有用的用户线索。LUCid 的目标是把“语义相似”和“功能上必须相关”拆开，观察检索、重排和生成三个环节各自在哪里失败。\n\n论文的动机与社区推荐直接相关：把用户过去看过的内容向量化并做 ANN，可能在平均指标上有效，但遇到“用户当前任务需要一个隐含约束，而该约束只在很远历史中出现”的情况，top-k 召回可能从第一步就把正确证据丢掉。即使历史已被送入长上下文，生成模型也可能无法识别哪个事实应该改变答案。作者因此把工作定位为诊断 benchmark，而不是提出一个新的画像模型，目的是先测量现有 personalization pipeline 对情境相关性的真实能力。\n\n## 2. 方法详解\n\n### 2.1 问题建模与 PA\n\n论文把长期交互历史写成 `H={s1,s2,...,sn}`，新 query 为 `q_(n+1)`，系统从历史中选择或压缩一部分 `φ(H)`，生成 `P(y | q_(n+1), φ(H))`。每个 LUCid 实例还包含一个 latent user attribute `A*`，它既不直接写在 query 里，也不完整出现在任何一个 session 中，但必须从相关历史中推断出来，才能生成正确的个性化响应。相关上下文集合记为 `C_L`。\n\nPA 的形式是：对每个 query，比较相关 session 的平均 cosine similarity 与一个随机非相关 session 的相似度，统计相关 session 胜出的比例。如果 PA=50%，说明语义相似度几乎分不清 gold 与随机干扰；PA 越高，说明 benchmark 越容易被浅层相似度破解。LUCid 的 PA 为 51.2%，LUCid-Hard 只有 22.1%，而既有基准为 61%–98%，由此把正确证据故意推入语义尾部。\n\n### 2.2 LUCid 数据构造\n\n作者提供四种规模：LUCid-C 是受控重排探针，每个实例 30 条 session、约 47K tokens；LUCid-S 为 50 条、约 64K tokens；LUCid-B 为 200 条、约 270K tokens；LUCid-L 为 500 条、约 620K tokens。总计 1,936 个 query，每个 query 配一段交互历史和 ground-truth latent attribute；LUCid-Hard 从 LUCid-B 中挑出 856 个相关 session 位于极端语义尾部的实例。\n\nquery 由三条路径组成：从 UltraChat/ShareGPT 真实对话日志提取和改写 125 条；从 SituatedQA、PersonaMem、PrefEval、SafeBench、CASE-Bench 等已有数据集采用或轻改 952 条，其中 PersonaMem 健康 query 561 条、SituatedQA 地理 query 273 条、PrefEval 电影推荐 75 条、安全相关 43 条；剩余 859 条由人工补写。所有 query 都人工检查清晰度、现实感以及是否包含个性化线索，覆盖领域归属、年龄、地理位置、宗教/文化、健康和沟通风格等六个维度。\n\n相关 session 有三种来源：直接从日志抽取、把已有 session 的维度值翻译成另一个值，以及对稀缺属性用 self-chat 生成。一个维度值会由多个不同主题的 session 间接透露，例如年龄可能分别出现在第一次看演唱会和某代际事件的叙述中；有些实例必须联合多条 session，单条无法完成推断。无关 session 则从超过 10,000 条 UltraChat/ShareGPT 对话中人工筛出约 700 条，要求既没有个人可归因信息，也不会补充或反驳相关信号。\n\n构造 haystack 时，作者不把相关 session 简单放在最不相似的位置。单信号实例保留最不相似的一条相关 session，多信号实例保留最不相似的五条；同时从无关池选与 query 主题最相似的 K 条，K 由 benchmark 规模决定。两池独立，因此相关 session 不一定是全体中 cosine 最低的一个，避免把任务简化成“反向相似度检索”。论文同时开源数据、构造代码和 curation pipeline。\n\n### 2.3 三阶段评测\n\nRQ1 评测 Session RAG、Turn-Based RAG、LongMemEval 的结构化 user facts、以及利用 Prospective Reflection 的 RMM memory system，在 LUCid-B 上以 Contriever 为基础 retriever、Qwen-3.5-27B 为 LLM，报告 NDCG@5/10 和 Recall@K。RQ2 用 LUCid-C 保证 gold session 已进入 top-30，隔离检索因素，再测 bge-reranker-v2-gemma、Qwen-Reranker-8B，以及 Qwen/GPT/Gemini zero-shot reranker，并加入要求“关注情境相关性”的 prompt-guided 版本。RQ3 在 LUCid-S 直接给长上下文，比较 No Retrieval、约 9K tokens 的 Orig、明确提供 gold session 的 Oracle、直接提供 latent attribute 的 Gold 四种设置。\n\n## 3. 核心技术贡献\n\n第一，PA 和 LUCid-H 给出了一个可操作的“语义邻近偏差”诊断。它不再只问相关上下文是否被检索，而是问相关上下文是否因为语义不相似而系统性落选。已有 benchmark 的高 PA 与 LUCid-H 的低 PA 形成了清晰对照，能揭示过去被平均 Recall 掩盖的失败。\n\n第二，benchmark 构造把低相似相关证据和高相似无关干扰交叉组合，且相关 session 并不固定在最末端。这一设计比简单造一条“不相似正例”更接近实际长历史：正确证据可能语义很远，但也可能只是普通相似；模型必须使用用户属性与任务条件，而不是反向排序。\n\n第三，论文把 pipeline 分成检索、重排、生成三重瓶颈，并用受控版本逐级隔离。即便在 gold session 已进入候选的情况下，reranker 仍会偏爱主题相似的错误历史；即便直接给出 gold session，LLM 仍有 Oracle→Gold 的明显差距。这个分解让工程团队能够知道应该修召回、修重排还是修生成条件化，而不是把所有失败都归因于模型不够大。\n\n第四，LUCid 将安全与个性化放在同一诊断里。作者指出，模型在没有足够用户线索时会用主流预训练先验填补空白，在年龄、健康、宗教等情境上可能输出不适合内容；这说明“记住更多”并不等于“更安全”，画像证据、置信度和不确定性表达同样是系统能力。\n\n## 4. 实验结果分析\n\n### 4.1 检索与记忆系统\n\n在全部 1,936 个实例上，Session RAG 的 Recall@10 为 0.3445、NDCG@10 为 0.1902；但在 856 个 LUCid-Hard 上，Recall@5 降到 0.0067、NDCG@5 只有 0.0042。Turn-Based RAG 在 Hard 上 Recall@5=0，LongMemEval 为 0.0022，Prospective Reflection 为 0.0212，RMM 最好也只有 0.0324。由此可见，把历史整理成事实或多粒度 memory unit 并没有消除 similarity bottleneck：如果压缩后的单元仍靠相似度找回，错误会从 flat index 转移到 compressed index。\n\n| 系统 | LUCid Recall@10 | LUCid-Hard Recall@5 | LUCid-Hard NDCG@5 |\n| --- | ---: | ---: | ---: |\n| Session RAG | 0.3445 | 0.0067 | 0.0042 |\n| Turn-Based RAG | 0.1994 | 0.0000 | 0.0000 |\n| LongMemEval | 0.2908 | 0.0022 | 0.0022 |\n| Prospective Reflection | 0.2526 | 0.0212 | 0.0107 |\n| RMM | 0.2629 | 0.0324 | 0.0161 |\n\n### 4.2 重排器与 prompt guidance\n\n在 LUCid-C 中 gold session 已进入 top-30，bge-reranker-v2-gemma 的 Recall@10 从全体 0.4427 降到 Hard 0.2492，Qwen-Reranker-8B 从 0.4360 降到 0.1330，Qwen-3.5-27B 从 0.4199 降到 0.1285，GPT-5.4-mini 从 0.4034 降到 0.0816。要求模型显式思考 situational relevance 能缓解但不能根治：Qwen-3.5-27B guided 在 Hard 上升到 0.3486，GPT guided 只有 0.1229。这个差距说明 prompt 不是简单的修复开关，模型默认仍将 relevance 当作 semantic similarity。\n\n### 4.3 长上下文生成\n\n在 LUCid-S 中，直接塞完整历史带来的增益很小。GPT-5.4-mini 在 NoRet/Orig/Oracle/Gold 四种设置的 response accuracy 是 0.474/0.514/0.705/0.945；Qwen3.5-27B 是 0.461/0.490/0.744/0.954；Gemini-3-Flash 是 0.427/0.572/0.804/0.964；Claude-Haiku-4-5 是 0.469/0.493/0.782/0.954。Orig 只比 NoRet 略高，说明模型面对约 9K tokens 仍不能稳定找到隐含属性；Oracle 与 Gold 之间还有明显差距，说明即便正确 session 已被送入，生成器也可能无法把隐含属性转化为回答条件。\n\n### 4.4 失败模式与解释\n\n作者的核心解释是“对比瓶颈”：Dense retriever 通过 InfoNCE 让 query 与同文档或相邻片段靠近，长期训练就把 semantic proximity 当成 relevance。Reranker 接着在同一相似度空间上精修，GraphRAG 或 memory compression 如果仍从相似度入口开始，还会把偏差重复叠加。另一个失败是 benchmark-driven safety：在显式出现的安全表面模式上表现正常，但在没有固定模式的年龄适切性场景中可能依赖预训练先验，出现美国中心或不适合未成年人的默认答案。\n\n## 5. 局限与未来方向\n\n作者在第 8 节明确写出两点局限。第一，LUCid 当前只覆盖六个用户维度，并且多 session 推理最多跨五条 session；残疾、社会经济背景、维度交互和更长证据链仍未覆盖。第二，实验只比较了代表性架构，受成本限制没有做更广泛的模型横评，不过附录给出理论说明，指出 proximity bottleneck 可推广到更广检索类别。\n\n作者还说明数据来自公开 UltraChat、ShareGPT 与已有 benchmark，不收集真实个人身份信息；所有年龄、宗教、健康、地理、专业和沟通风格属性都是虚构 persona。这个选择利于研究安全，但也限制了真实用户行为与真实画像噪声的代表性。论文提醒研究者不要把 LUCid 作为攻击线上模型的工具，也不要把敏感属性测试误用为画像收集机制。\n\n从工业角度看，LUCid 还没有给出真实产品的长期 A/B，也没有证明某一种 situational retriever 已经能稳定胜过 dense retrieval。它主要告诉我们现有系统哪里失败，并未解决如何在百万级历史上低延迟识别隐含属性的问题。未来需要将任务条件编码、结构化属性检索、时间与因果关系、用户可控记忆以及不确定性输出结合，并在真实点击、收藏、回访和满意度数据上验证。\n\n## 6. 工业实践意义\n\n第一，把离线评估从“主题相似/点击率”扩展到“情境必要性”。社区搜索可以构造这样的切片：query 只表达当前任务，真正影响排序的用户条件埋在较早的搜索、收藏、关注作者或消费记录里；正例与 query 语义不相似但行为上有解释力，负例主题相似但不能解决任务。除了 nDCG/Recall，还要记录相关证据是否在 top-k、是否被 reranker 置换，以及结果是否使用了正确的用户约束。\n\n第二，诊断要分三段做。先在候选召回已包含 gold evidence 的受控集上评测 reranker；如果 reranker 失败，先不要盲目扩大向量库。再给模型完整历史和 Oracle session，分离“找不到”与“拿到但不会用”。最后才看线上 CTR/满意度。LUCid 的四种设置给了一个实用的 debug 模板：NoRet、Orig、Oracle、Gold 之间的差距可以直接对应召回、重排和生成三类工程工作。\n\n第三，用户画像要带证据与不确定性。一个字段应记录来自哪条行为、发生时间、置信度和是否允许被覆盖；语义上相似但不能解释当前任务的历史，不应作为强画像证据。对年龄、健康、地域和文化偏好等敏感属性，系统应允许用户查看、修正或删除，模型缺少证据时应澄清问题或给出多种可能，而不是用默认人群先验替用户决定。\n\n第四，对 UGC 搜索和推荐，不能把 LUCid 的任务指标直接等同为产品指标。LUCid 的 Hard 任务故意制造极端语义距离，线上流量通常包含大量容易匹配的 query；更合理的做法是把 Hard 作为安全下限和 stress test，再与自然流量的 session depth、长期回访、作者多样性和负反馈结合。可先离线重放历史 query，测 semantic retriever、hybrid retriever、属性索引、行为图和 cross-encoder 的分层贡献，再以小流量验证长期满意。\n\n总体而言，LUCid 给搜索/推荐团队的最重要启示不是“向量检索无用”，而是向量相似度不能承担全部 relevance 定义。长期个性化需要同时建模主题、任务、用户状态和证据链；当正确上下文在语义上很远时，召回阶段要允许属性/关系/时间路径进入候选，重排阶段要评估情境效用，生成阶段要明确使用了什么证据。否则系统可能在平均离线分数上看起来很强，却在真正需要个性化的长尾任务上接近随机。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>LUCid 讨论的是长期个性化系统里一个比“用户画像是否存得住”更根本的问题：系统到底把什么当作 relevant。现有 RAG、向量记忆和重排器通常用 query 与历史 session 的语义相似度来找上下文，因此偏爱与当前问题主题相近的历史片段。但长期个性化需要的经常是情境相关（situational relevance）：某段历史未必与 query 词面相似，却包含了回答该用户时必需的年龄、地域、健康约束、沟通风格、专业背景或文化偏好。</p>\n<p>作者先定义 Proximity Advantage（PA），表示 gold session 的 cosine similarity 是否高于随机非相关 session。已有个性化基准的 PA 为 61.1%–98.7%，其中 PrefEval 98.7%、LongMemEval 97.8%、PersonaMem 91.2%；这些数字说明多数基准可以靠语义邻近解决，不能有效检验模型是否能从语义距离很远的历史中找出真正有用的用户线索。LUCid 的目标是把“语义相似”和“功能上必须相关”拆开，观察检索、重排和生成三个环节各自在哪里失败。</p>\n<p>论文的动机与社区推荐直接相关：把用户过去看过的内容向量化并做 ANN，可能在平均指标上有效，但遇到“用户当前任务需要一个隐含约束，而该约束只在很远历史中出现”的情况，top-k 召回可能从第一步就把正确证据丢掉。即使历史已被送入长上下文，生成模型也可能无法识别哪个事实应该改变答案。作者因此把工作定位为诊断 benchmark，而不是提出一个新的画像模型，目的是先测量现有 personalization pipeline 对情境相关性的真实能力。</p>\n<h2>2. 方法详解</h2>\n<h3>2.1 问题建模与 PA</h3>\n<p>论文把长期交互历史写成 <code>H={s1,s2,...,sn}</code>，新 query 为 <code>q_(n+1)</code>，系统从历史中选择或压缩一部分 <code>φ(H)</code>，生成 <code>P(y | q_(n+1), φ(H))</code>。每个 LUCid 实例还包含一个 latent user attribute <code>A*</code>，它既不直接写在 query 里，也不完整出现在任何一个 session 中，但必须从相关历史中推断出来，才能生成正确的个性化响应。相关上下文集合记为 <code>C_L</code>。</p>\n<p>PA 的形式是：对每个 query，比较相关 session 的平均 cosine similarity 与一个随机非相关 session 的相似度，统计相关 session 胜出的比例。如果 PA=50%，说明语义相似度几乎分不清 gold 与随机干扰；PA 越高，说明 benchmark 越容易被浅层相似度破解。LUCid 的 PA 为 51.2%，LUCid-Hard 只有 22.1%，而既有基准为 61%–98%，由此把正确证据故意推入语义尾部。</p>\n<h3>2.2 LUCid 数据构造</h3>\n<p>作者提供四种规模：LUCid-C 是受控重排探针，每个实例 30 条 session、约 47K tokens；LUCid-S 为 50 条、约 64K tokens；LUCid-B 为 200 条、约 270K tokens；LUCid-L 为 500 条、约 620K tokens。总计 1,936 个 query，每个 query 配一段交互历史和 ground-truth latent attribute；LUCid-Hard 从 LUCid-B 中挑出 856 个相关 session 位于极端语义尾部的实例。</p>\n<p>query 由三条路径组成：从 UltraChat/ShareGPT 真实对话日志提取和改写 125 条；从 SituatedQA、PersonaMem、PrefEval、SafeBench、CASE-Bench 等已有数据集采用或轻改 952 条，其中 PersonaMem 健康 query 561 条、SituatedQA 地理 query 273 条、PrefEval 电影推荐 75 条、安全相关 43 条；剩余 859 条由人工补写。所有 query 都人工检查清晰度、现实感以及是否包含个性化线索，覆盖领域归属、年龄、地理位置、宗教/文化、健康和沟通风格等六个维度。</p>\n<p>相关 session 有三种来源：直接从日志抽取、把已有 session 的维度值翻译成另一个值，以及对稀缺属性用 self-chat 生成。一个维度值会由多个不同主题的 session 间接透露，例如年龄可能分别出现在第一次看演唱会和某代际事件的叙述中；有些实例必须联合多条 session，单条无法完成推断。无关 session 则从超过 10,000 条 UltraChat/ShareGPT 对话中人工筛出约 700 条，要求既没有个人可归因信息，也不会补充或反驳相关信号。</p>\n<p>构造 haystack 时，作者不把相关 session 简单放在最不相似的位置。单信号实例保留最不相似的一条相关 session，多信号实例保留最不相似的五条；同时从无关池选与 query 主题最相似的 K 条，K 由 benchmark 规模决定。两池独立，因此相关 session 不一定是全体中 cosine 最低的一个，避免把任务简化成“反向相似度检索”。论文同时开源数据、构造代码和 curation pipeline。</p>\n<h3>2.3 三阶段评测</h3>\n<p>RQ1 评测 Session RAG、Turn-Based RAG、LongMemEval 的结构化 user facts、以及利用 Prospective Reflection 的 RMM memory system，在 LUCid-B 上以 Contriever 为基础 retriever、Qwen-3.5-27B 为 LLM，报告 NDCG@5/10 和 Recall@K。RQ2 用 LUCid-C 保证 gold session 已进入 top-30，隔离检索因素，再测 bge-reranker-v2-gemma、Qwen-Reranker-8B，以及 Qwen/GPT/Gemini zero-shot reranker，并加入要求“关注情境相关性”的 prompt-guided 版本。RQ3 在 LUCid-S 直接给长上下文，比较 No Retrieval、约 9K tokens 的 Orig、明确提供 gold session 的 Oracle、直接提供 latent attribute 的 Gold 四种设置。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，PA 和 LUCid-H 给出了一个可操作的“语义邻近偏差”诊断。它不再只问相关上下文是否被检索，而是问相关上下文是否因为语义不相似而系统性落选。已有 benchmark 的高 PA 与 LUCid-H 的低 PA 形成了清晰对照，能揭示过去被平均 Recall 掩盖的失败。</p>\n<p>第二，benchmark 构造把低相似相关证据和高相似无关干扰交叉组合，且相关 session 并不固定在最末端。这一设计比简单造一条“不相似正例”更接近实际长历史：正确证据可能语义很远，但也可能只是普通相似；模型必须使用用户属性与任务条件，而不是反向排序。</p>\n<p>第三，论文把 pipeline 分成检索、重排、生成三重瓶颈，并用受控版本逐级隔离。即便在 gold session 已进入候选的情况下，reranker 仍会偏爱主题相似的错误历史；即便直接给出 gold session，LLM 仍有 Oracle→Gold 的明显差距。这个分解让工程团队能够知道应该修召回、修重排还是修生成条件化，而不是把所有失败都归因于模型不够大。</p>\n<p>第四，LUCid 将安全与个性化放在同一诊断里。作者指出，模型在没有足够用户线索时会用主流预训练先验填补空白，在年龄、健康、宗教等情境上可能输出不适合内容；这说明“记住更多”并不等于“更安全”，画像证据、置信度和不确定性表达同样是系统能力。</p>\n<h2>4. 实验结果分析</h2>\n<h3>4.1 检索与记忆系统</h3>\n<p>在全部 1,936 个实例上，Session RAG 的 Recall@10 为 0.3445、NDCG@10 为 0.1902；但在 856 个 LUCid-Hard 上，Recall@5 降到 0.0067、NDCG@5 只有 0.0042。Turn-Based RAG 在 Hard 上 Recall@5=0，LongMemEval 为 0.0022，Prospective Reflection 为 0.0212，RMM 最好也只有 0.0324。由此可见，把历史整理成事实或多粒度 memory unit 并没有消除 similarity bottleneck：如果压缩后的单元仍靠相似度找回，错误会从 flat index 转移到 compressed index。</p>\n<table><thead><tr><th>系统</th><th>LUCid Recall@10</th><th>LUCid-Hard Recall@5</th><th>LUCid-Hard NDCG@5</th></tr></thead><tbody><tr><td>Session RAG</td><td>0.3445</td><td>0.0067</td><td>0.0042</td></tr><tr><td>Turn-Based RAG</td><td>0.1994</td><td>0.0000</td><td>0.0000</td></tr><tr><td>LongMemEval</td><td>0.2908</td><td>0.0022</td><td>0.0022</td></tr><tr><td>Prospective Reflection</td><td>0.2526</td><td>0.0212</td><td>0.0107</td></tr><tr><td>RMM</td><td>0.2629</td><td>0.0324</td><td>0.0161</td></tr></tbody></table>\n<h3>4.2 重排器与 prompt guidance</h3>\n<p>在 LUCid-C 中 gold session 已进入 top-30，bge-reranker-v2-gemma 的 Recall@10 从全体 0.4427 降到 Hard 0.2492，Qwen-Reranker-8B 从 0.4360 降到 0.1330，Qwen-3.5-27B 从 0.4199 降到 0.1285，GPT-5.4-mini 从 0.4034 降到 0.0816。要求模型显式思考 situational relevance 能缓解但不能根治：Qwen-3.5-27B guided 在 Hard 上升到 0.3486，GPT guided 只有 0.1229。这个差距说明 prompt 不是简单的修复开关，模型默认仍将 relevance 当作 semantic similarity。</p>\n<h3>4.3 长上下文生成</h3>\n<p>在 LUCid-S 中，直接塞完整历史带来的增益很小。GPT-5.4-mini 在 NoRet/Orig/Oracle/Gold 四种设置的 response accuracy 是 0.474/0.514/0.705/0.945；Qwen3.5-27B 是 0.461/0.490/0.744/0.954；Gemini-3-Flash 是 0.427/0.572/0.804/0.964；Claude-Haiku-4-5 是 0.469/0.493/0.782/0.954。Orig 只比 NoRet 略高，说明模型面对约 9K tokens 仍不能稳定找到隐含属性；Oracle 与 Gold 之间还有明显差距，说明即便正确 session 已被送入，生成器也可能无法把隐含属性转化为回答条件。</p>\n<h3>4.4 失败模式与解释</h3>\n<p>作者的核心解释是“对比瓶颈”：Dense retriever 通过 InfoNCE 让 query 与同文档或相邻片段靠近，长期训练就把 semantic proximity 当成 relevance。Reranker 接着在同一相似度空间上精修，GraphRAG 或 memory compression 如果仍从相似度入口开始，还会把偏差重复叠加。另一个失败是 benchmark-driven safety：在显式出现的安全表面模式上表现正常，但在没有固定模式的年龄适切性场景中可能依赖预训练先验，出现美国中心或不适合未成年人的默认答案。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在第 8 节明确写出两点局限。第一，LUCid 当前只覆盖六个用户维度，并且多 session 推理最多跨五条 session；残疾、社会经济背景、维度交互和更长证据链仍未覆盖。第二，实验只比较了代表性架构，受成本限制没有做更广泛的模型横评，不过附录给出理论说明，指出 proximity bottleneck 可推广到更广检索类别。</p>\n<p>作者还说明数据来自公开 UltraChat、ShareGPT 与已有 benchmark，不收集真实个人身份信息；所有年龄、宗教、健康、地理、专业和沟通风格属性都是虚构 persona。这个选择利于研究安全，但也限制了真实用户行为与真实画像噪声的代表性。论文提醒研究者不要把 LUCid 作为攻击线上模型的工具，也不要把敏感属性测试误用为画像收集机制。</p>\n<p>从工业角度看，LUCid 还没有给出真实产品的长期 A/B，也没有证明某一种 situational retriever 已经能稳定胜过 dense retrieval。它主要告诉我们现有系统哪里失败，并未解决如何在百万级历史上低延迟识别隐含属性的问题。未来需要将任务条件编码、结构化属性检索、时间与因果关系、用户可控记忆以及不确定性输出结合，并在真实点击、收藏、回访和满意度数据上验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>第一，把离线评估从“主题相似/点击率”扩展到“情境必要性”。社区搜索可以构造这样的切片：query 只表达当前任务，真正影响排序的用户条件埋在较早的搜索、收藏、关注作者或消费记录里；正例与 query 语义不相似但行为上有解释力，负例主题相似但不能解决任务。除了 nDCG/Recall，还要记录相关证据是否在 top-k、是否被 reranker 置换，以及结果是否使用了正确的用户约束。</p>\n<p>第二，诊断要分三段做。先在候选召回已包含 gold evidence 的受控集上评测 reranker；如果 reranker 失败，先不要盲目扩大向量库。再给模型完整历史和 Oracle session，分离“找不到”与“拿到但不会用”。最后才看线上 CTR/满意度。LUCid 的四种设置给了一个实用的 debug 模板：NoRet、Orig、Oracle、Gold 之间的差距可以直接对应召回、重排和生成三类工程工作。</p>\n<p>第三，用户画像要带证据与不确定性。一个字段应记录来自哪条行为、发生时间、置信度和是否允许被覆盖；语义上相似但不能解释当前任务的历史，不应作为强画像证据。对年龄、健康、地域和文化偏好等敏感属性，系统应允许用户查看、修正或删除，模型缺少证据时应澄清问题或给出多种可能，而不是用默认人群先验替用户决定。</p>\n<p>第四，对 UGC 搜索和推荐，不能把 LUCid 的任务指标直接等同为产品指标。LUCid 的 Hard 任务故意制造极端语义距离，线上流量通常包含大量容易匹配的 query；更合理的做法是把 Hard 作为安全下限和 stress test，再与自然流量的 session depth、长期回访、作者多样性和负反馈结合。可先离线重放历史 query，测 semantic retriever、hybrid retriever、属性索引、行为图和 cross-encoder 的分层贡献，再以小流量验证长期满意。</p>\n<p>总体而言，LUCid 给搜索/推荐团队的最重要启示不是“向量检索无用”，而是向量相似度不能承担全部 relevance 定义。长期个性化需要同时建模主题、任务、用户状态和证据链；当正确上下文在语义上很远时，召回阶段要允许属性/关系/时间路径进入候选，重排阶段要评估情境效用，生成阶段要明确使用了什么证据。否则系统可能在平均离线分数上看起来很强，却在真正需要个性化的长尾任务上接近随机。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2608.04488",
+      "title": "Energy- and Memory-Efficient PEFT Methods for Personalized On-Device SLMs on Consumer GPUs",
+      "url": "https://arxiv.org/abs/2608.04488",
+      "authors": "Kuanysh Akhmetzhanov, Jurn-Gyu Park",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-08-05",
+      "base_score": 4.1,
+      "total_score": 4.25,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.25,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文比较 Full Fine-Tuning、LoRA、LoRA+、QLoRA 和 BitFit 在 4 个小语言模型、3 个 GLUE 任务及 3 个 LaMP 个性化任务上的能耗与显存。24 组配置中 LoRA+ 有 19 组取得最高能效、18 组按能效优先规则被选中；QLoRA 相对 LoRA 最多降低 3.9 倍微调显存，但反量化开销使其仅 1 组胜出。",
+      "key_insight": "个性化模型部署不应只比较离线效果，应先明确能耗还是显存是主约束：能耗优先选 LoRA+，显存优先再考虑 QLoRA。对端侧用户画像或轻量排序模型，可用 TinyLlama、Qwen3-1.7B 等 SLM 做 PEFT，并把 NetScore-E/M 纳入模型准入。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2608.04807",
+      "title": "WatchLens: A Configurable Platform for Online Video Recommendation Experiments",
+      "url": "https://arxiv.org/abs/2608.04807",
+      "authors": "Deogyong Kim, Dongha Lee",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-08-05",
+      "base_score": 4.1,
+      "total_score": 4.15,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "WatchLens 解决推荐实验中播放行为与产生该行为的推荐条件难以一一对应的问题，提供可配置的界面、内容源和推荐策略，并在每条事件日志中写入策略与排名位置。短视频案例固定界面、内容池和信息流策略，仅改变观看页策略，验证了会话延续与跨页面行为分析；系统可单服务器部署并开源。",
+      "key_insight": "这是推荐实验基础设施的可复用设计：把策略版本、曝光位置和后续播放事件在写入时绑定，避免事后拼接日志造成归因误差。对社区推荐可按信息流、详情页和相关推荐拆分策略，建立统一事件协议后再分析长期留存，而不是只看单次点击。"
+    },
+    {
+      "rank": 5,
+      "id": "hf:2608.04570",
+      "title": "The Personalization Mirage: How LLMs Fabricate User Profiles, and Why Self-Monitoring Misleads",
+      "url": "https://huggingface.co/papers/2608.04570",
+      "authors": "Yushi Sun, Yanjie Zhang, Rui Sheng",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-08-04",
+      "base_score": 3.95,
+      "total_score": 4.1,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "论文研究持久记忆型 LLM 的用户画像忠实度，定义“过度推断”并构建 MirageBench：150 个平衡人物、6 类个性化任务、12 个模型和 143,616 条判定。独立人工验证的四分类 Cohen κ 为 0.863、二分类 κ 为 0.900；12 个模型的过度推断率均为 35%–49%，跨模型均值 41.6%。",
+      "key_insight": "个性化系统若把模型猜测当成事实，会把错误画像持续反馈给召回与排序。上线用户建模时应保存证据来源、置信度和更新时间，对画像字段做可撤回约束；模型自评不能作为唯一监控信号，必须配合独立评审与反事实测试。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2608.04809",
+      "title": "DEGR: Dual Exploration-Driven Generative Re-Ranking for Adaptive Cross-Request Context Bridging",
+      "url": "https://arxiv.org/abs/2608.04809",
+      "authors": "Binglei Zhao, Xuanhua Yang, Xiwei Zhao, Sulong Xu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-08-05",
+      "base_score": 4.0,
+      "total_score": 4.1,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "面向电商推荐重排中业务目标、多样性与跨请求上下文难以兼顾的问题，DEGR 用探索奖励模型区分即时价值与探索价值，并结合监督学习、探索多样性约束和自适应 reward-weighted ORPO。京东推荐系统的离线与线上实验显示，UC​​TR 最高提升 1.22%，PV 提升 0.20%，论文为 KDD 2026 ADS Track 接收工作。",
+      "key_insight": "当上游候选供给质量下降时，重排层不必只做静态打分，可以显式估计探索收益并跨请求传递上下文。工程落地应把探索约束、用户短期满意和长期新颖性拆成可观测奖励，先在低风险流量验证，再逐步扩大 ORPO 的偏好优化范围。"
+    },
+    {
+      "rank": 7,
+      "id": "s2:3ab876ea1525ada8b9a136b1155c3bb916e6e60c",
+      "title": "Removing Hidden Confounding in Recommendation: A Unified Multi-Task Learning Approach",
+      "url": "https://www.semanticscholar.org/paper/3ab876ea1525ada8b9a136b1155c3bb916e6e60c",
+      "authors": "Haoxuan Li, Kunhan Wu, Chunyuan Zheng, Yanghao Xiao, Hao Wang",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "",
+      "base_score": 4.0,
+      "total_score": 4.1,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "summary": "论文聚焦推荐日志中的选择偏差与隐藏混杂，指出仅依赖观测特征、propensity 或双层优化可能无法得到无偏学习结果。作者用少量无偏评分校准名义 propensity 与误差插补，再以统一多任务学习框架处理偏置数据；摘要明确给出理论分析与推荐实验，但未在抓取摘要中披露统一的数值提升。",
+      "key_insight": "对 CTR/CVR 多任务模型，新增任务不一定自动带来去偏，隐藏混杂会让多个目标共享错误信号。实践上可保留小规模随机或无偏样本作为校准集，先检查 propensity 与插补误差，再将校准项接入多任务训练并做敏感性分析。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2608.04432",
+      "title": "The Price of Isolation: Estimating the Ecosystem Cost of Symmetric Two-Sided A/B Testing",
+      "url": "https://arxiv.org/abs/2608.04432",
+      "authors": "Yuanyuan Shen, Yiren Yan, Wenjie Li, Chunhui Zhu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-08-05",
+      "base_score": 3.85,
+      "total_score": 3.95,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文研究双边内容平台在创作者与观众两侧做隔离实验时的生态代价。极值理论表明，轻尾或有界匹配质量下损失会随候选池增大而消失，重尾分布下却收敛到与规模无关的常数；两个拥有数百万创作者的平台生产实验还验证了流量隔离会带来可测且随深度变化的互动损失。",
+      "key_insight": "个性化推荐的冷启动和创作者实验不能默认隔离成本会被大规模流量稀释。上线 A/B 前可用小探索池估计匹配质量尾部，做 A/A 流量扫描与单侧候选削减实验，并把候选变薄造成的互动损失计入样本量和收益评估。"
+    },
+    {
+      "rank": 9,
+      "id": "s2:d75c969290ea6b91bbf7811c1150e01edda5f889",
+      "title": "MTRec: Multi-Task Learning over BERT for News Recommendation",
+      "url": "https://www.semanticscholar.org/paper/d75c969290ea6b91bbf7811c1155c3bb916e6e60c",
+      "authors": "Qiwei Bi, Jian Li, Lifeng Shang, Xin Jiang, Qun Liu",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "",
+      "base_score": 3.45,
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "summary": "MTRec 针对新闻标题之外的类目、实体等字段难以与 BERT 深层表示协同的问题，把多字段信息建模为辅助任务并注入 BERT 新闻编码，同时按辅助任务与主任务的梯度冲突修改梯度。在 MIND 新闻推荐基准上，摘要报告该方法有效，但抓取信息未提供统一的具体提升幅度。",
+      "key_insight": "多任务推荐的关键不只是增加辅助目标，还要处理辅助梯度与主任务的冲突。对社区内容推荐，可把主题、实体、作者或质量标签作为辅助任务，并监控梯度夹角；冲突持续扩大时应做投影、降权或任务门控，避免 BERT 表示被噪声目标带偏。"
+    },
+    {
+      "rank": 10,
+      "id": "web:sciencedirect:adaptive-collaborative-filtering-multi-objective",
+      "title": "Adaptive collaborative filtering for multi-objective Top-N recommendations with implicit feedback",
+      "url": "https://www.sciencedirect.com/science/article/pii/S2772415826000015",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-06-01",
+      "base_score": 3.2,
+      "total_score": 3.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "论文面向隐式反馈下的多目标 Top-N 推荐，组合用户画像、可适应交互预测和排序模块，并针对数据稀疏与冷启动设计过滤机制。检索到的公开摘要强调该框架能缓解稀疏和冷启动，但未披露可核验的统一指标与提升幅度，因此将证据质量和实用性保守评为中等。",
+      "key_insight": "这项工作适合作为冷启动基线，而不是直接替换成熟精排模型。落地时应把画像质量、交互预测和 Top-N 目标拆开做消融，分别检查新用户、新物品和多目标冲突样本，避免把过滤带来的短期点击提升误判为长期个性化收益。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:dqtx760/glm4v-vision-mcp",
+      "title": "glm4v-vision-mcp: 基于智谱 AI GLM-4V Flash 的图片识别 MCP 服务器，支持图片分析、OCR 文字提取和智能描述生成",
+      "url": "https://github.com/dqtx760/glm4v-vision-mcp",
+      "source": "github",
+      "description": "基于智谱 AI GLM-4V Flash 的图片识别 MCP 服务器，支持图片分析、OCR 文字提取和智能描述生成",
+      "language": "JavaScript",
+      "stars": 5,
+      "created_at": "2026-08-04"
+    },
+    {
+      "rank": 2,
+      "id": "github:earendil-works/pi",
+      "title": "pi: AI agent toolkit: unified LLM API, agent loop, TUI, coding agent CLI",
+      "url": "https://github.com/earendil-works/pi",
+      "source": "github",
+      "description": "AI agent toolkit: unified LLM API, agent loop, TUI, coding agent CLI",
+      "language": "TypeScript",
+      "stars": 84786,
+      "created_at": "2025-08-09"
+    },
+    {
+      "rank": 3,
+      "id": "github:flornkm/skills",
+      "title": "skills: Collection of skills giving agents guidance on design/eng concepts LLMs aren't trained on.",
+      "url": "https://github.com/flornkm/skills",
+      "source": "github",
+      "description": "Collection of skills giving agents guidance on design/eng concepts LLMs aren't trained on.",
+      "language": "",
+      "stars": 52,
+      "created_at": "2026-08-02"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:zai-org/AISE-Bench",
+      "title": "zai-org/AISE-Bench",
+      "url": "https://huggingface.co/datasets/zai-org/AISE-Bench",
+      "source": "huggingface",
+      "description": "AISE-Bench: A Full-Cycle Curated Benchmark for Information Seeking on Academic Knowledge Graphs 🌐 Project Page • 💻 GitHub • 📖 KDD 2026 Paper AISE-Bench is a real-world benchmark for information seeking on academic knowledge graphs. It is built from authentic AMiner user search qu; tags: task_categories:question-answering, language:zh, language:en, license:mit, size_categories:n<1K, format:json, modality:tabular, modality:text",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-08-06"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash-0731",
+      "title": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, arxiv:2606.19348, license:mit, eval-results",
+      "language": "model",
+      "stars": 2630,
+      "created_at": "2026-07-31"
+    },
+    {
+      "rank": 6,
+      "id": "hf_dataset:moonshotai/PerceptionBench",
+      "title": "moonshotai/PerceptionBench",
+      "url": "https://huggingface.co/datasets/moonshotai/PerceptionBench",
+      "source": "huggingface",
+      "description": "PerceptionBench PerceptionBench: Evaluating Atomic Visual Perception in Multimodal Large Language Models Abstract We introduce PerceptionBench, a benchmark specifically designed to evaluate the atomic visual perception capabilities of Multimodal Large Language Models (MLLMs). Exi; tags: task_categories:visual-question-answering, language:en, license:cc-by-nc-4.0, size_categories:1K<n<10K, format:json, modality:tabular, modality:text, library:datasets",
+      "language": "dataset",
+      "stars": 44,
+      "created_at": "2026-07-23"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:internlm/Intern-S1-FP8",
+      "title": "internlm/Intern-S1-FP8",
+      "url": "https://huggingface.co/internlm/Intern-S1-FP8",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: safetensors, interns1, image-text-to-text, conversational, custom_code, arxiv:2508.15763, base_model:internlm/Intern-S1, base_model:quantized:internlm/Intern-S1",
+      "language": "model",
+      "stars": 41,
+      "created_at": "2025-07-24"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:internlm/Intern-S2-Mobius",
+      "title": "internlm/Intern-S2-Mobius",
+      "url": "https://huggingface.co/internlm/Intern-S2-Mobius",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, interns2_mobius, image-text-to-text, conversational, custom_code, license:apache-2.0, region:us",
+      "language": "model",
+      "stars": 35,
+      "created_at": "2026-07-29"
+    }
+  ]
+}

@@ -1,0 +1,254 @@
+{
+  "date": "2026-04-22",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 96,
+    "papers_selected": 10,
+    "score_min": 3.0,
+    "score_max": 4.25
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "web:shopify-generative-rec-2026",
+      "title": "The Generative Recommender Behind Shopify's Commerce Engine",
+      "url": "https://shopify.engineering/generative-recommendations",
+      "authors": "Shopify Engineering",
+      "company": [
+        "Shopify"
+      ],
+      "source": "web_search",
+      "published": "2026-02-25",
+      "total_score": 4.25,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 3
+      },
+      "summary": "Shopify 将购买旅程建模为因果序列，采用自回归模型预测用户下一个交互商品。核心创新包括：(1) 基于 RoPE 旋转编码的 Time-Aware Attention，将时间戳直接编入注意力机制捕捉季节性和时效性；(2) 结合 shared negatives 和 positive-aware sampling 的高级负采样策略；(3) 基于 boosting 思想的 incremental recall 集成方法，弥补其他检索模型的覆盖盲区。训练流水线加速 7.3 倍。线上 A/B 测试结果：订单量 +0.94%，高质量点击率 +5%，转化率 +0.71%，recall@2 +4.8%。",
+      "key_insight": "该系统展示了生成式推荐在电商级规模的完整落地路径。Time-Aware Attention 通过 RoPE 编码将时间信号嵌入注意力权重，无需额外时间特征工程即可建模用户兴趣的周期性漂移——这一思路可直接迁移到 UGC 搜索中的时效性排序。incremental recall 策���特别值得借鉴：不追求单模型最优，而是让生成式检索模型补充传统方法的覆盖盲区，这是大规模推荐系统中多路召回协同的实用范式。",
+      "deep_reading": {
+        "paper_id": "blog:shopify-genrec-2026",
+        "title": "The Generative Recommender Behind Shopify's Commerce Engine",
+        "status": "completed",
+        "content": "Now I have the full content. Let me provide the deep analysis.\n\n---\n\n# 深度解读：The Generative Recommender Behind Shopify's Commerce Engine\n\n## 问题与动机\n\nShopify 面对的核心挑战是：**如何在超大规模电商场景下，利用买家完整的行为序列来预测其下一步可能感兴趣的商品？**\n\n传统推荐系统通常将用户行为简化为静态特征（如用户画像、历史偏好标签），丢失了行为序列中蕴含的丰富信息——搜索、浏览、加购、收藏、购买的**顺序、时间间隔和上下文变化**。例如，一个用户 6 月份浏览 T 恤和 12 月份浏览 T 恤，其购买意图可能截然不同，但传统方法难以区分。\n\n这个问题之所以重要，有三个层面：\n1. **规模层面**：Shopify 在 BFCM 2025 期间处理了 2.2 万亿次边缘请求，超过 8100 万消费者完成了购买。这种规模既意味着海量的学习信号，也意味着严苛的实时服务约束。\n2. **商业价值层面**：推荐质量直接影响转化率和订单量，在电商场景中每 0.1% 的提升都意味着巨大的商业价值。\n3. **方法论层面**：将推荐问题重新定义为**序列预测问题**（而非传统的协同过滤或特征工程问题），可以让模型自动学习意图变化、长期偏好和季节性行为等复杂模式，减少对人工特征工程的依赖。\n\n## 方法概述\n\nShopify 构建了一个**基础生成式推荐系统（Foundational Generative Recommender）**，核心思路是将推荐问题建模为**自回归的下一商品预测任务**。\n\n**整体框架**：\n- **输入**：买家的原始事件序列（搜索、浏览、加购、收藏、购买等），跨 Shop App 和各个商户店铺\n- **建模方式**：使用**自回归模型 + 因果掩码（causal mask）** 预测序列中的下一个 token（即商品）\n- **基础架构**：基于 Meta 提出的 **HSTU（Hierarchical Sequential Transduction Unit）** 架构，这是一种专为序列推荐设计的生成式架构\n\n系统沿三个维度演进：\n1. **数据**：融合 Shop App 内行为和跨店铺行为，更完整地表示买家旅程\n2. **模型**：引入创新的时间编码和改进的负采样策略\n3. **计算**：实现优化的 CUDA kernel，满足内存和延迟约束\n\n## 核心技术贡献\n\n### 1. 时间感知注意力机制（Time-aware Attention）\n\nShopify 将**时间作为一等公民（first-class signal）** 编码进注意力机制中：\n- 采用 **RoPE 启发的旋转编码**来表示事件的绝对时间\n- 结合**相对注意力偏置（relative attention bias）** 来建模时间间隔和近因性\n- 关键创新：在推理时可以注入**当前会话的时间戳**，使模型能自适应地感知季节性变化，而不需要手工规则\n\n**与现有方法的区别**：大多数序列推荐模型要么忽略时间信息，要么仅用简单的位置编码。Shopify 的方案将\"绝对时间\"和\"相对时间差\"统一进注意力计算，使模型从一个通用序列预测器转变为一个**理解时间上下文的商业模型**。\n\n### 2. 负采样作为核心扩展轴（Negative Sampling as a Scaling Axis）\n\n在百万级商品目录上训练下一商品预测模型需要使用 sampled softmax。Shopify 发现**负样本的数量和质量是模型质量最重要的杠杆之一**：\n\n- **共享负样本（Shared Negatives）**：在 batch 内共享负样本池，在不爆内存的前提下有效扩大负样本覆盖范围\n- **正例感知的困难负样本（Positive-aware Hard Negatives）**：困难负样本（near miss）最有价值，但必须仔细筛选以避免将用户未曾见过的潜在正例错误标记为负例（false negative 问题）\n\n**核心洞察**：负采样不是一个训练细节，而是一个**扩展维度**——随着负样本数量和质量的提升，模型质量持续改善。但这需要将系统效率作为建模问题的一部分来解决。\n\n### 3. Boosting 式增量训练策略\n\n这是本文**最具工业价值的贡献**。在生产环境中，推荐系统通常是一个集成体（ensemble）——多路召回 + 精排 + 聚合层。一个单独模型即使离线指标很强，如果它找到的结果与其他模型高度重叠，对整体系统的增量价值可能很小。\n\nShopify 采用了 **boosting 启发的训练策略**：\n- 增加对集成系统薄弱区域的训练压力\n- 将其他模型的预测结果作为困难负样本\n- 目标不是追求新颖性本身，而是**在真正需要的地方提升覆盖率**，使集成系统整体变强而非只是变大\n\n**关键区别**：传统做法是优化单个模型的独立指标（如 Recall@K），而 Shopify 优化的是模型对整体系统的**增量贡献（incremental recall）**，这是一种系统级思维。\n\n### 4. 训练效率优化\n\n通过优化 CUDA kernel 和训练流水线，实现了相对于基线实现最高 **7.3x 的训练加速**。这不仅是工程优化，更直接转化为迭代速度——更快的训练意味着可以更积极地探索模型容量、批大小和上下文长度。\n\n## 实验结果分析\n\n在 2025 年 8 月版本模型的**在线 A/B 测试**中，Shopify 报告了以下关键指标的提升：\n\n| 指标 | 相对提升 |\n|------|---------|\n| Shop 订单量 | **+0.94%** |\n| 高质量点击率（导向收藏/加购/购买的点击） | **+5.0%** |\n| 转化率 | **+0.71%** |\n| 最终服务的商品 Recall@2 | **+4.8%** |\n\n**结果分析**：\n\n1. **订单量 +0.94%** 在 Shopify 的规模下极具商业价值。对于日交易额数十亿美元的平台，不到 1% 的订单量提升意味着显著的收入增长。\n2. **高质量 CTR +5%** 是最显著的提升，说明模型不仅在找到相关商品，更在找到能**驱动深层用户行为**（收藏、加购、购买）的商品，而非仅仅吸引点击。\n3. **Recall@2 +4.8%** 验证了增量召回策略的有效性——模型确实在找到其他模型遗漏的真正正例。\n4. 离线召回质量与线上指标的**正相关性**得到验证，这对\"离线指标能否代表线上效果\"这一老问题提供了正面证据。\n\n值得注意的是，文章强调这些提升**不是来自单一改变**，而是时间编码、负采样、boosting 训练和系统优化等多项技术**协同作用**的结果。\n\n## 局限与未来方向\n\n### 当前局限\n\n1. **商品 ID 空间问题**：当前系统将每个商品建模为独立的 ID embedding，这导致：\n   - 超大规模的 embedding 表，内存开销巨大\n   - 冷启动问题——新商品没有充分训练的 embedding\n   - 难以融合更丰富的信号（如文本查询、对话式交互）\n\n2. **序列长度受限**：虽然文章提到优化了 CUDA kernel，但长序列的计算成本仍然是实际限制。对于行为极其丰富的活跃用户，可能需要截断序列。\n\n3. **跨域泛化**：当前模型依赖 Shopify 生态内的行为数据，对于新入驻商户或新品类的推荐可能存在冷启动瓶颈。\n\n4. **文章信息有限**：作为工程博客而非学术论文，缺少消融实验（ablation study）的详细数据，难以精确评估每项技术的独立贡献。\n\n### 未来方向\n\n文章明确提出的方向是 **Semantic IDs（语义 ID）**：\n- 将商品从 product ID 空间映射到 **token 空间**，用更小的词汇表中的 token 序列来表示商品\n- 进而训练能同时处理**语义 ID token 和文本 token** 的统一模型\n- 最终实现**基于 prompt 的任务适配**，同时保持在 Shopify 商业上下文中的 grounding\n\n这个方向与学术界的 TIGER（Google）、LC-Rec 等工作高度呼应，但 Shopify 更强调工程可行性和服务成本的可预测性。\n\n## 工业实践意义\n\n### 对搜索/推荐系统的借鉴\n\n1. **\"增量价值\"思维比\"独立最优\"更重要**：这是本文最核心的工业洞察。在多路召回的生产系统中，新模型的价值不在于它自己有多强，而在于它能为现有系统**补充多少**。Boosting 式训练策略提供了一个优雅的解决方案——让新模型专注于现有集成的盲区。这个思路对任何拥有多路召回的推荐系统都直接可用。\n\n2. **负采样是一个被低估的扩展维度**：工业界常把注意力放在模型架构和特征工程上，而 Shopify 的经验表明，在足够大的商品空间下，负采样策略的改进可能比换模型架构更有效。特别是\"共享负样本\"和\"正例感知的困难负样本\"两个技巧，实现成本低但效果显著。\n\n3. **时间编码的工程化路径**：RoPE + 相对注意力偏置的时间编码方案，给出了一种将时间信息融入 Transformer 推荐模型的**实用方案**，尤其是在推理时注入当前时间来处理季节性的做法，避免了传统基于规则的季节性调整。\n\n4. **系统效率即模型质量**：7.3x 的训练加速不是锦上添花，而是使更多实验成为可能的基础设施。这提醒我们，在工业推荐系统中，**迭代速度本身就是竞争优势**。\n\n### 对广告系统的启示\n\n文章提到模型也用于推荐广告（\"recommend the next products, and in some contexts the next ads\"），这意味着该框架具有**统一推荐和广告的潜力**。将广告也视为买家旅程中的一个自然环节进行序列建模，可能比传统的分离式广告系统更能平衡用户体验和商业化目标。\n\n### 关键 Takeaway\n\n> **生成式推荐在工业界真正可行的关键，不仅在于选对了模型架构（HSTU），更在于围绕\"系统级增量价值\"这一目标，重新设计了训练策略（boosting 式负采样）、时间建模和计算效率的整套方案。** 这是一个从\"模型好不好\"到\"系统好不好\"的思维范式转变。",
+        "content_html": "<p>Now I have the full content. Let me provide the deep analysis.</p>\n<hr>\n<h1>深度解读：The Generative Recommender Behind Shopify&#x27;s Commerce Engine</h1>\n<h2>问题与动机</h2>\n<p>Shopify 面对的核心挑战是：<strong>如何在超大规模电商场景下，利用买家完整的行为序列来预测其下一步可能感兴趣的商品？</strong></p>\n<p>传统推荐系统通常将用户行为简化为静态特征（如用户画像、历史偏好标签），丢失了行为序列中蕴含的丰富信息——搜索、浏览、加购、收藏、购买的<strong>顺序、时间间隔和上下文变化</strong>。例如，一个用户 6 月份浏览 T 恤和 12 月份浏览 T 恤，其购买意图可能截然不同，但传统方法难以区分。</p>\n<p>这个问题之所以重要，有三个层面：</p>\n<ol>\n<li><strong>规模层面</strong>：Shopify 在 BFCM 2025 期间处理了 2.2 万亿次边缘请求，超过 8100 万消费者完成了购买。这种规模既意味着海量的学习信号，也意味着严苛的实时服务约束。</li>\n<li><strong>商业价值层面</strong>：推荐质量直接影响转化率和订单量，在电商场景中每 0.1% 的提升都意味着巨大的商业价值。</li>\n<li><strong>方法论层面</strong>：将推荐问题重新定义为<strong>序列预测问题</strong>（而非传统的协同过滤或特征工程问题），可以让模型自动学习意图变化、长期偏好和季节性行为等复杂模式，减少对人工特征工程的依赖。</li>\n</ol>\n<h2>方法概述</h2>\n<p>Shopify 构建了一个<strong>基础生成式推荐系统（Foundational Generative Recommender）</strong>，核心思路是将推荐问题建模为<strong>自回归的下一商品预测任务</strong>。</p>\n<p><strong>整体框架</strong>：</p>\n<ul>\n<li><strong>输入</strong>：买家的原始事件序列（搜索、浏览、加购、收藏、购买等），跨 Shop App 和各个商户店铺</li>\n<li><strong>建模方式</strong>：使用<strong>自回归模型 + 因果掩码（causal mask）</strong> 预测序列中的下一个 token（即商品）</li>\n<li><strong>基础架构</strong>：基于 Meta 提出的 <strong>HSTU（Hierarchical Sequential Transduction Unit）</strong> 架构，这是一种专为序列推荐设计的生成式架构</li>\n</ul>\n<p>系统沿三个维度演进：</p>\n<ol>\n<li><strong>数据</strong>：融合 Shop App 内行为和跨店铺行为，更完整地表示买家旅程</li>\n<li><strong>模型</strong>：引入创新的时间编码和改进的负采样策略</li>\n<li><strong>计算</strong>：实现优化的 CUDA kernel，满足内存和延迟约束</li>\n</ol>\n<h2>核心技术贡献</h2>\n<h3>1. 时间感知注意力机制（Time-aware Attention）</h3>\n<p>Shopify 将<strong>时间作为一等公民（first-class signal）</strong> 编码进注意力机制中：</p>\n<ul>\n<li>采用 <strong>RoPE 启发的旋转编码</strong>来表示事件的绝对时间</li>\n<li>结合<strong>相对注意力偏置（relative attention bias）</strong> 来建模时间间隔和近因性</li>\n<li>关键创新：在推理时可以注入<strong>当前会话的时间戳</strong>，使模型能自适应地感知季节性变化，而不需要手工规则</li>\n</ul>\n<p><strong>与现有方法的区别</strong>：大多数序列推荐模型要么忽略时间信息，要么仅用简单的位置编码。Shopify 的方案将&quot;绝对时间&quot;和&quot;相对时间差&quot;统一进注意力计算，使模型从一个通用序列预测器转变为一个<strong>理解时间上下文的商业模型</strong>。</p>\n<h3>2. 负采样作为核心扩展轴（Negative Sampling as a Scaling Axis）</h3>\n<p>在百万级商品目录上训练下一商品预测模型需要使用 sampled softmax。Shopify 发现<strong>负样本的数量和质量是模型质量最重要的杠杆之一</strong>：</p>\n<ul>\n<li><strong>共享负样本（Shared Negatives）</strong>：在 batch 内共享负样本池，在不爆内存的前提下有效扩大负样本覆盖范围</li>\n<li><strong>正例感知的困难负样本（Positive-aware Hard Negatives）</strong>：困难负样本（near miss）最有价值，但必须仔细筛选以避免将用户未曾见过的潜在正例错误标记为负例（false negative 问题）</li>\n</ul>\n<p><strong>核心洞察</strong>：负采样不是一个训练细节，而是一个<strong>扩展维度</strong>——随着负样本数量和质量的提升，模型质量持续改善。但这需要将系统效率作为建模问题的一部分来解决。</p>\n<h3>3. Boosting 式增量训练策略</h3>\n<p>这是本文<strong>最具工业价值的贡献</strong>。在生产环境中，推荐系统通常是一个集成体（ensemble）——多路召回 + 精排 + 聚合层。一个单独模型即使离线指标很强，如果它找到的结果与其他模型高度重叠，对整体系统的增量价值可能很小。</p>\n<p>Shopify 采用了 <strong>boosting 启发的训练策略</strong>：</p>\n<ul>\n<li>增加对集成系统薄弱区域的训练压力</li>\n<li>将其他模型的预测结果作为困难负样本</li>\n<li>目标不是追求新颖性本身，而是<strong>在真正需要的地方提升覆盖率</strong>，使集成系统整体变强而非只是变大</li>\n</ul>\n<p><strong>关键区别</strong>：传统做法是优化单个模型的独立指标（如 Recall@K），而 Shopify 优化的是模型对整体系统的<strong>增量贡献（incremental recall）</strong>，这是一种系统级思维。</p>\n<h3>4. 训练效率优化</h3>\n<p>通过优化 CUDA kernel 和训练流水线，实现了相对于基线实现最高 <strong>7.3x 的训练加速</strong>。这不仅是工程优化，更直接转化为迭代速度——更快的训练意味着可以更积极地探索模型容量、批大小和上下文长度。</p>\n<h2>实验结果分析</h2>\n<p>在 2025 年 8 月版本模型的<strong>在线 A/B 测试</strong>中，Shopify 报告了以下关键指标的提升：</p>\n<table><thead><tr><th>指标</th><th>相对提升</th></tr></thead><tbody><tr><td>Shop 订单量</td><td><strong>+0.94%</strong></td></tr><tr><td>高质量点击率（导向收藏/加购/购买的点击）</td><td><strong>+5.0%</strong></td></tr><tr><td>转化率</td><td><strong>+0.71%</strong></td></tr><tr><td>最终服务的商品 Recall@2</td><td><strong>+4.8%</strong></td></tr></tbody></table>\n<p><strong>结果分析</strong>：</p>\n<ol>\n<li><strong>订单量 +0.94%</strong> 在 Shopify 的规模下极具商业价值。对于日交易额数十亿美元的平台，不到 1% 的订单量提升意味着显著的收入增长。</li>\n<li><strong>高质量 CTR +5%</strong> 是最显著的提升，说明模型不仅在找到相关商品，更在找到能<strong>驱动深层用户行为</strong>（收藏、加购、购买）的商品，而非仅仅吸引点击。</li>\n<li><strong>Recall@2 +4.8%</strong> 验证了增量召回策略的有效性——模型确实在找到其他模型遗漏的真正正例。</li>\n<li>离线召回质量与线上指标的<strong>正相关性</strong>得到验证，这对&quot;离线指标能否代表线上效果&quot;这一老问题提供了正面证据。</li>\n</ol>\n<p>值得注意的是，文章强调这些提升<strong>不是来自单一改变</strong>，而是时间编码、负采样、boosting 训练和系统优化等多项技术<strong>协同作用</strong>的结果。</p>\n<h2>局限与未来方向</h2>\n<h3>当前局限</h3>\n<ol>\n<li><strong>商品 ID 空间问题</strong>：当前系统将每个商品建模为独立的 ID embedding，这导致：</li>\n</ol>\n<p>   - 超大规模的 embedding 表，内存开销巨大<br>   - 冷启动问题——新商品没有充分训练的 embedding<br>   - 难以融合更丰富的信号（如文本查询、对话式交互）</p>\n<ol>\n<li><strong>序列长度受限</strong>：虽然文章提到优化了 CUDA kernel，但长序列的计算成本仍然是实际限制。对于行为极其丰富的活跃用户，可能需要截断序列。</li>\n</ol>\n<ol>\n<li><strong>跨域泛化</strong>：当前模型依赖 Shopify 生态内的行为数据，对于新入驻商户或新品类的推荐可能存在冷启动瓶颈。</li>\n</ol>\n<ol>\n<li><strong>文章信息有限</strong>：作为工程博客而非学术论文，缺少消融实验（ablation study）的详细数据，难以精确评估每项技术的独立贡献。</li>\n</ol>\n<h3>未来方向</h3>\n<p>文章明确提出的方向是 <strong>Semantic IDs（语义 ID）</strong>：</p>\n<ul>\n<li>将商品从 product ID 空间映射到 <strong>token 空间</strong>，用更小的词汇表中的 token 序列来表示商品</li>\n<li>进而训练能同时处理<strong>语义 ID token 和文本 token</strong> 的统一模型</li>\n<li>最终实现<strong>基于 prompt 的任务适配</strong>，同时保持在 Shopify 商业上下文中的 grounding</li>\n</ul>\n<p>这个方向与学术界的 TIGER（Google）、LC-Rec 等工作高度呼应，但 Shopify 更强调工程可行性和服务成本的可预测性。</p>\n<h2>工业实践意义</h2>\n<h3>对搜索/推荐系统的借鉴</h3>\n<ol>\n<li><strong>&quot;增量价值&quot;思维比&quot;独立最优&quot;更重要</strong>：这是本文最核心的工业洞察。在多路召回的生产系统中，新模型的价值不在于它自己有多强，而在于它能为现有系统<strong>补充多少</strong>。Boosting 式训练策略提供了一个优雅的解决方案——让新模型专注于现有集成的盲区。这个思路对任何拥有多路召回的推荐系统都直接可用。</li>\n</ol>\n<ol>\n<li><strong>负采样是一个被低估的扩展维度</strong>：工业界常把注意力放在模型架构和特征工程上，而 Shopify 的经验表明，在足够大的商品空间下，负采样策略的改进可能比换模型架构更有效。特别是&quot;共享负样本&quot;和&quot;正例感知的困难负样本&quot;两个技巧，实现成本低但效果显著。</li>\n</ol>\n<ol>\n<li><strong>时间编码的工程化路径</strong>：RoPE + 相对注意力偏置的时间编码方案，给出了一种将时间信息融入 Transformer 推荐模型的<strong>实用方案</strong>，尤其是在推理时注入当前时间来处理季节性的做法，避免了传统基于规则的季节性调整。</li>\n</ol>\n<ol>\n<li><strong>系统效率即模型质量</strong>：7.3x 的训练加速不是锦上添花，而是使更多实验成为可能的基础设施。这提醒我们，在工业推荐系统中，<strong>迭代速度本身就是竞争优势</strong>。</li>\n</ol>\n<h3>对广告系统的启示</h3>\n<p>文章提到模型也用于推荐广告（&quot;recommend the next products, and in some contexts the next ads&quot;），这意味着该框架具有<strong>统一推荐和广告的潜力</strong>。将广告也视为买家旅程中的一个自然环节进行序列建模，可能比传统的分离式广告系统更能平衡用户体验和商业化目标。</p>\n<h3>关键 Takeaway</h3>\n<blockquote><p><strong>生成式推荐在工业界真正可行的关键，不仅在于选对了模型架构（HSTU），更在于围绕&quot;系统级增量价值&quot;这一目标，重新设计了训练策略（boosting 式负采样）、时间建模和计算效率的整套方案。</strong> 这是一个从&quot;模型好不好&quot;到&quot;系统好不好&quot;的思维范式转变。</p></blockquote>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2508.02506",
+      "title": "R3A: Reinforced Reasoning for Relevance Assessment for RAG in User-Generated Content Platforms",
+      "url": "https://arxiv.org/abs/2508.02506",
+      "authors": "Xiaowei Yuan, Lei Jin, Haoxin Zhang, Ziyang Huang, Yan Gao, Yi Wu, Yao Hu, Jun Zhao, Kang Liu",
+      "company": [
+        "Xiaohongshu"
+      ],
+      "source": "arxiv",
+      "published": "2025-08-05",
+      "total_score": 4.2,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.4,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "针对 UGC 平台 RAG 系��中相关性评估的两大挑战——用户意图模糊和非对称相关性（相关性由局部答案片段驱动而非全局相似度），提出 R3A 框架。方法将相关性评估分解为意图推理和证据锚定两个阶段：利用高点击文档作为辅助信号推断潜在查询意图，再提取原文证据片段锚定相关性判断，降低噪声敏感性。蒸馏后的 R3A-1.5B 模型在大规模线上 A/B 测试中取得显著提升，兼顾了效果和部署效率。",
+      "key_insight": "R3A 的核心创新在于将相关性评估从「端到端打分」重构为「推理链式分解」：先推断用户真实意图，再基于证据片段做判断。这种设计对 UGC 短文本搜索极具实践意义——短文本中用户 query 天然模糊，而答案往往隐藏在帖子的某个段落中。通过强化学习优化推理过程（而非直接优化评分），模型能学到更鲁棒的相关性判断策略。1.5B 蒸馏版本在线上验证了可部署性，是大模型能力落地到搜索场景的良好范例。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2508.02506",
+        "title": "R3A: Reinforced Reasoning for Relevance Assessment for RAG in User-Generated Content Platforms",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n在 UGC 平台（如小红书）的 RAG 系统中，相关性评估面临两个传统检索方法难以解决的挑战。第一，**用户意图模糊**：UGC 平台缺少文档级点击日志来消歧用户意图，用户查询往往简短且含义多变（例如「减肥方法」可能指饮食控制、运动方案或药物推荐）。第二，**非对称相关性**：UGC 内容噪声大、格式不规范，文档的相关性并非由全局相似度决定，而是取决于其中是否存在局部的「答案承载片段」。传统基于全局语义匹配的方法（如 bi-encoder）在面对 UGC 噪声时性能严重退化。\n\n现有的 LLM 相关性评估方法（如 UMbrela 提示工程方案）虽然在通用搜索上表现良好，但直接应用于 UGC 场景时效果不佳：QwQ-32B、DeepSeek-R1 等模型在 UGC 数据上的 F1 分数远低于专门训练的小模型。这表明 UGC 平台需要专门针对其数据特性设计的相关性评估框架。\n\n## 2. 方法详解\n\nR3A 将相关性评估分解为两个阶段的推理链：\n\n**阶段一：意图推理 (<intent>)**。模型接收查询和最多 4 篇辅助文档（同一查询下的高点击文档）作为输入。辅助文档提供了用户潜在意图的上下文信号——如果用户搜索「感冒怎么办」后高频点击了中医偏方类帖子，模型可以推断用户更关注中医疗法而非西药推荐。模型输出对查询意图的自然语言分析。\n\n**阶段二：证据提取与评分 (<extract> + <score>)**。基于第一阶段推断的意图，模型审视候选文档并必须提取与查询相关的原文证据片段（verbatim fragments），或返回None表示无相关内容。这种设计强制模型将评分锚定在具体的文本证据上，而非依赖模糊的语义印象。最终输出三级相关性评分：0-无关、1-部分相关、2-高度相关。\n\n**强化学习训练**采用 GRPO（Group Relative Policy Optimization）而非 PPO，在分组 rollout 内计算相对优势，避免了 PPO 中 value network 的额外开销。奖励函数设计为：R = I_format × r_score，其中 I_format 确保输出格式正确（包含 <intent>、<extract>、<score> 标签），r_score 对精确匹配给 1.0 分、差 1 级给 λ=0.3、差 2 级给 0 分。\n\n**冷启动初始化**：在 RL 训练前，使用 DeepSeek-R1 对 50k 无标注样本生成结构化 chain-of-thought 推理，作为 SFT 冷启动数据。这一步骤为模型建立正确的输出格式和基础推理模式，使后续 RL 训练更加稳定。\n\n**知识蒸馏**：将 R3A-7B 教师模型蒸馏为 R3A-1.5B 学生模型，使用交叉熵损失拟合标签分布。学生模型仅输出相关性分数，不生成推理链，将推理延迟从 ~493ms 降至 ~11ms（每万条文档）。\n\n## 3. 核心技术贡献\n\n**贡献一：非对称相关性的证据锚定机制**。通过强制模型提取原文证据片段，R3A 将「是否相关」转化为「能否找到具体证据」的问题。消融实验表明，移除 <extract> 组件导致 F1 从 77.1 下降到 74.9，是所有组件中影响最大的。证据片段与标注相关性之间呈强正相关（相似度 0.8-1.0 时准确率接近最优），验证了证据提取是方法生效的核心机制。\n\n**贡献二：辅助文档驱动的意图消歧**。利用同查询高点击文档作为隐式用户意图信号，无需显式的点击日志或用户画像。移除辅助文档使 F1 下降至 75.7，表明该信号提供了有效的意图上下文。\n\n**贡献三：高效的「推理→蒸馏」部署范式**。通过 RL 训练大模型获得推理能力，再蒸馏到小模型用于部署。R3A-Distill-1.5B 不仅超越了同规模的 SFT 基线，甚至接近 7B 教师模型的性能，证明推理能力可以通过蒸馏有效传递。\n\n**贡献四：两阶段分离设计**。将意图推理与文档评估分离，防止过长的上下文（辅助文档 + 候选文档）淹没模型的注意力。消融显示单阶段合并方案（combined intent+extraction）F1 仅为 73.8，比两阶段方案低 3.3 个百分点。\n\n## 4. 实验结果分析\n\n在小红书内部 NoteRel 数据集（7k 人工标注样本）上的核心对比：\n\n| 模型 | Class 0 F1 | Class 1 F1 | Class 2 F1 | AUC |\n|------|-----------|-----------|-----------|-----|\n| R1 (Qwen2.5-7B) | 74.4 | 49.6 | 63.7 | 81.2 |\n| SFT (Qwen2.5-7B) | 76.0 | 52.3 | 61.8 | 82.0 |\n| **R3A-7B** | **77.1** | **56.0** | **64.2** | **83.1** |\n| R3A-Distill-1.5B | 78.3 | 55.9 | 60.3 | - |\n\n关键发现：(1) R3A-7B 全面超越 R1 和 SFT 基线，尤其在最难判断的 Class 1（部分相关）上提升 +6.4 F1；(2) 蒸馏后的 1.5B 模型在 Class 0 和 Class 1 上甚至超过了 7B SFT 基线；(3) 在通用 T²Ranking 基准上，R3A-7B 达到 GPT-4o 水平，验证了跨域泛化能力。\n\n线上部署结果（小红书，10% 流量，一周）：人工评估 100 个样本中 23% 改善（Good:Same:Bad = 23:71:6），二次搜索率下降 1.03%。推理延迟 ~150ms，吞吐量 200 QPS/GPU，部署在 1000 GPU 集群上。\n\n消融实验揭示的优先级：<extract>（证据提取）> 辅助文档 > <intent>（意图推理）> λ 参数。这表明在 UGC 场景中，「找到具体证据」比「推断用户意图」更为关键。\n\n## 5. 局限与未来方向\n\n作者坦承 R3A 在通用搜索基准（T²Ranking）上的优势小于在 UGC 数据上的表现。原因在于「UGC 平台和通用搜索引擎具有不同的上下文特征」，模型针对 UGC 噪声优化的设计（如证据提取、辅助文档）在规范化文本上的边际收益递减。\n\n一个明显但作者未提及的局限是：辅助文档的质量依赖于初始检索系统的能力。如果第一阶段检索质量差，提供的辅助文档可能误导意图推断。此外，三级相关性标注可能过于粗粒度，无法捕捉 UGC 内容中更细微的相关性差异。\n\n## 6. 工业实践意义\n\nR3A 对搜索推荐从业者有三方面直接启示：\n\n**第一，「推理→蒸馏」是 LLM 能力落地的实用范式。** 先用 7B 模型通过 RL 学习推理能力，再蒸馏到 1.5B 用于线上服务。推理延迟从 493ms 降至 11ms（每万条），达到生产可用水平。这种范式适用于任何需要 LLM 推理能力但受延迟约束的搜索场景。\n\n**第二，证据锚定比全局匹配更适合 UGC 短文本。** UGC 内容噪声大、答案隐藏在局部片段中，传统全局语义匹配容易被噪声干扰。R3A 的证据提取机制迫使模型聚焦于答案承载片段，这对社区搜索（帖子、问答、评论）尤其适用。\n\n**第三，高点击文档作为免费的意图信号。** 利用已有的点击行为数据作为辅助上下文，无需额外标注成本即可提升意图理解。对于有一定流量基础的 UGC 平台，这是一个低成本高回报的策略。\n\n**部署考量**：200 QPS/GPU 的吞吐表明 1.5B 模型的服务成本可控。但 1000 GPU 集群的规模提示该方案更适合头部平台。中小型平台可考虑进一步蒸馏到更小的模型（如 0.5B）或使用量化技术降低部署成本。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>在 UGC 平台（如小红书）的 RAG 系统中，相关性评估面临两个传统检索方法难以解决的挑战。第一，<strong>用户意图模糊</strong>：UGC 平台缺少文档级点击日志来消歧用户意图，用户查询往往简短且含义多变（例如「减肥方法」可能指饮食控制、运动方案或药物推荐）。第二，<strong>非对称相关性</strong>：UGC 内容噪声大、格式不规范，文档的相关性并非由全局相似度决定，而是取决于其中是否存在局部的「答案承载片段」。传统基于全局语义匹配的方法（如 bi-encoder）在面对 UGC 噪声时性能严重退化。</p>\n<p>现有的 LLM 相关性评估方法（如 UMbrela 提示工程方案）虽然在通用搜索上表现良好，但直接应用于 UGC 场景时效果不佳：QwQ-32B、DeepSeek-R1 等模型在 UGC 数据上的 F1 分数远低于专门训练的小模型。这表明 UGC 平台需要专门针对其数据特性设计的相关性评估框架。</p>\n<h2>2. 方法详解</h2>\n<p>R3A 将相关性评估分解为两个阶段的推理链：</p>\n<p><strong>阶段一：意图推理 (&lt;intent&gt;)</strong>。模型接收查询和最多 4 篇辅助文档（同一查询下的高点击文档）作为输入。辅助文档提供了用户潜在意图的上下文信号——如果用户搜索「感冒怎么办」后高频点击了中医偏方类帖子，模型可以推断用户更关注中医疗法而非西药推荐。模型输出对查询意图的自然语言分析。</p>\n<p><strong>阶段二：证据提取与评分 (&lt;extract&gt; + &lt;score&gt;)</strong>。基于第一阶段推断的意图，模型审视候选文档并必须提取与查询相关的原文证据片段（verbatim fragments），或返回None表示无相关内容。这种设计强制模型将评分锚定在具体的文本证据上，而非依赖模糊的语义印象。最终输出三级相关性评分：0-无关、1-部分相关、2-高度相关。</p>\n<p><strong>强化学习训练</strong>采用 GRPO（Group Relative Policy Optimization）而非 PPO，在分组 rollout 内计算相对优势，避免了 PPO 中 value network 的额外开销。奖励函数设计为：R = I_format × r_score，其中 I_format 确保输出格式正确（包含 &lt;intent&gt;、&lt;extract&gt;、&lt;score&gt; 标签），r_score 对精确匹配给 1.0 分、差 1 级给 λ=0.3、差 2 级给 0 分。</p>\n<p><strong>冷启动初始化</strong>：在 RL 训练前，使用 DeepSeek-R1 对 50k 无标注样本生成结构化 chain-of-thought 推理，作为 SFT 冷启动数据。这一步骤为模型建立正确的输出格式和基础推理模式，使后续 RL 训练更加稳定。</p>\n<p><strong>知识蒸馏</strong>：将 R3A-7B 教师模型蒸馏为 R3A-1.5B 学生模型，使用交叉熵损失拟合标签分布。学生模型仅输出相关性分数，不生成推理链，将推理延迟从 ~493ms 降至 ~11ms（每万条文档）。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献一：非对称相关性的证据锚定机制</strong>。通过强制模型提取原文证据片段，R3A 将「是否相关」转化为「能否找到具体证据」的问题。消融实验表明，移除 &lt;extract&gt; 组件导致 F1 从 77.1 下降到 74.9，是所有组件中影响最大的。证据片段与标注相关性之间呈强正相关（相似度 0.8-1.0 时准确率接近最优），验证了证据提取是方法生效的核心机制。</p>\n<p><strong>贡献二：辅助文档驱动的意图消歧</strong>。利用同查询高点击文档作为隐式用户意图信号，无需显式的点击日志或用户画像。移除辅助文档使 F1 下降至 75.7，表明该信号提供了有效的意图上下文。</p>\n<p><strong>贡献三：高效的「推理→蒸馏」部署范式</strong>。通过 RL 训练大模型获得推理能力，再蒸馏到小模型用于部署。R3A-Distill-1.5B 不仅超越了同规模的 SFT 基线，甚至接近 7B 教师模型的性能，证明推理能力可以通过蒸馏有效传递。</p>\n<p><strong>贡献四：两阶段分离设计</strong>。将意图推理与文档评估分离，防止过长的上下文（辅助文档 + 候选文档）淹没模型的注意力。消融显示单阶段合并方案（combined intent+extraction）F1 仅为 73.8，比两阶段方案低 3.3 个百分点。</p>\n<h2>4. 实验结果分析</h2>\n<p>在小红书内部 NoteRel 数据集（7k 人工标注样本）上的核心对比：</p>\n<table><thead><tr><th>模型</th><th>Class 0 F1</th><th>Class 1 F1</th><th>Class 2 F1</th><th>AUC</th></tr></thead><tbody><tr><td>R1 (Qwen2.5-7B)</td><td>74.4</td><td>49.6</td><td>63.7</td><td>81.2</td></tr><tr><td>SFT (Qwen2.5-7B)</td><td>76.0</td><td>52.3</td><td>61.8</td><td>82.0</td></tr><tr><td><strong>R3A-7B</strong></td><td><strong>77.1</strong></td><td><strong>56.0</strong></td><td><strong>64.2</strong></td><td><strong>83.1</strong></td></tr><tr><td>R3A-Distill-1.5B</td><td>78.3</td><td>55.9</td><td>60.3</td><td>-</td></tr></tbody></table>\n<p>关键发现：(1) R3A-7B 全面超越 R1 和 SFT 基线，尤其在最难判断的 Class 1（部分相关）上提升 +6.4 F1；(2) 蒸馏后的 1.5B 模型在 Class 0 和 Class 1 上甚至超过了 7B SFT 基线；(3) 在通用 T²Ranking 基准上，R3A-7B 达到 GPT-4o 水平，验证了跨域泛化能力。</p>\n<p>线上部署结果（小红书，10% 流量，一周）：人工评估 100 个样本中 23% 改善（Good:Same:Bad = 23:71:6），二次搜索率下降 1.03%。推理延迟 ~150ms，吞吐量 200 QPS/GPU，部署在 1000 GPU 集群上。</p>\n<p>消融实验揭示的优先级：&lt;extract&gt;（证据提取）&gt; 辅助文档 &gt; &lt;intent&gt;（意图推理）&gt; λ 参数。这表明在 UGC 场景中，「找到具体证据」比「推断用户意图」更为关键。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者坦承 R3A 在通用搜索基准（T²Ranking）上的优势小于在 UGC 数据上的表现。原因在于「UGC 平台和通用搜索引擎具有不同的上下文特征」，模型针对 UGC 噪声优化的设计（如证据提取、辅助文档）在规范化文本上的边际收益递减。</p>\n<p>一个明显但作者未提及的局限是：辅助文档的质量依赖于初始检索系统的能力。如果第一阶段检索质量差，提供的辅助文档可能误导意图推断。此外，三级相关性标注可能过于粗粒度，无法捕捉 UGC 内容中更细微的相关性差异。</p>\n<h2>6. 工业实践意义</h2>\n<p>R3A 对搜索推荐从业者有三方面直接启示：</p>\n<p><strong>第一，「推理→蒸馏」是 LLM 能力落地的实用范式。</strong> 先用 7B 模型通过 RL 学习推理能力，再蒸馏到 1.5B 用于线上服务。推理延迟从 493ms 降至 11ms（每万条），达到生产可用水平。这种范式适用于任何需要 LLM 推理能力但受延迟约束的搜索场景。</p>\n<p><strong>第二，证据锚定比全局匹配更适合 UGC 短文本。</strong> UGC 内容噪声大、答案隐藏在局部片段中，传统全局语义匹配容易被噪声干扰。R3A 的证据提取机制迫使模型聚焦于答案承载片段，这对社区搜索（帖子、问答、评论）尤其适用。</p>\n<p><strong>第三，高点击文档作为免费的意图信号。</strong> 利用已有的点击行为数据作为辅助上下文，无需额外标注成本即可提升意图理解。对于有一定流量基础的 UGC 平台，这是一个低成本高回报的策略。</p>\n<p><strong>部署考量</strong>：200 QPS/GPU 的吞吐表明 1.5B 模型的服务成本可控。但 1000 GPU 集群的规模提示该方案更适合头部平台。中小型平台可考虑进一步蒸馏到更小的模型（如 0.5B）或使用量化技术降低部署成本。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2604.17237",
+      "title": "HeadRank: Decoding-Free Passage Reranking via Preference-Aligned Attention Heads",
+      "url": "https://arxiv.org/abs/2604.17237",
+      "authors": "Anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-21",
+      "total_score": 4.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对免解码（decoding-free）重排序方法中注意力分数同质化的问题——中间位置文档获得近乎相同的注意力分数导致排序区分度丧失——提出 HeadRank。方法通过偏好对齐技术识别和选择 LLM 中与相关性判断最相关的注意力头（attention heads），直接从这些头的注意力权重读取排序信号，无需自回归解码。相比传统 listwise reranking 方法，延迟大幅降低的同时保持了排序质量。",
+      "key_insight": "HeadRank 揭示了一个重要发现：LLM 的不同注意力头对相关性的「理解」差异巨大，大部分头产生同质化分数，但少数头天然编码了强排序信号。通过偏好对齐筛选这些头，可以在不进行任何解码的情况下完成高质量重排序。这对搜索系统���有直接的工程价值：生成式大模型的推理延迟是线上部署的核心瓶颈，而 HeadRank 提供了一条「零解码开销」的替代路径，特别适合延迟敏感的 UGC 搜索场景。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2403.03952",
+      "title": "Bridging Language and Items for Retrieval and Recommendation: Benchmarking LLMs as Semantic Encoders",
+      "url": "https://arxiv.org/abs/2403.03952",
+      "authors": "Yupeng Hou, Jiacheng Li, Xiangjun Fu, Zhankui He, An Yan, Xiusi Chen, Julian McAuley",
+      "company": [
+        "UCSD"
+      ],
+      "source": "arxiv",
+      "published": "2024-03-06",
+      "total_score": 3.75,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "提出 BLaIR 基准，系统评估 LLM 作为推荐系统语义编码器的能力。基于全新构建的 Amazon Reviews 2023 数据集（5.7 亿条评论、4800 万商品），覆盖序列推荐、协同过滤和商品搜索三大任务，并引入半合成复杂查询商品��索任务。对 11 个主流 LLM 的评测发现关键洞察：LLM 在 BLaIR 上的排名与 MTEB 通用文本评测基准的相关性很低，表明推荐场景对语义编码有独特需求。v2 版本 (2026-04-20) 更新了最新模型评测结果。",
+      "key_insight": "BLaIR 最重要��发现是推荐场景下的语义编码需求与通用 NLP 任务存在本质差异——MTEB 排名靠前的模型在��荐任务中并不一定表现最好。这意味着搜索推荐团队不能简单照搬 NLP 社区的 embedding 模型排行榜，而需要针对推荐特性（用户-物品交互模式、属性匹配、行为序列理解）进行专门评估。对于正在选型 LLM 编码器的搜推团队，BLaIR 提供了一个直接可用的评估框架。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2604.16379",
+      "title": "LLMAR: A Tuning-Free Recommendation Framework for Sparse and Text-Rich Industrial Domains",
+      "url": "https://arxiv.org/abs/2604.16379",
+      "authors": "Ryogo Hishikawa, Ichiro Kataoka, Shinya Yuda",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-21",
+      "total_score": 3.7,
+      "preference_bonus": 0.25,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "面向数据极���稀疏但文本丰富的工业 B2B 场景（如建筑风险预测、物料采购），提出 LLMAR 框架。核心思路是利用 LLM 将用户行为模式解释为语义动机（semantic motives），无需任何微调即可完��推荐。三大创新：(1) LLM 直接从行为序列推断用户语义意图；(2) 自纠错机制减少 LLM 幻觉导致的推荐错误；(3) 仅需推理（inference-only）运行，成本约 $1/1000 用户。在 MovieLens-1M、Amazon Prime Pantry 及企业数据集上验证了有效性。",
+      "key_insight": "LLMAR 代表了 LLM-as-Recommender 范式的实用化方向：不微调、不训练，纯靠 LLM 的推理能力做推荐。自纠错机制是关键设计——LLM 先生成推荐理由再自我验证，减少了「看似合理但实际不相关」的幻觉推荐。$1/1000 用户的成本估算表明该方案在冷启动或长尾场景具有实际可行性。对于 UGC 搜索中的新用户、新话题等数据稀疏问题，这种零训练的 LLM 推荐思路值得探索。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2604.17906",
+      "title": "Bayesian Active Learning with Gaussian Processes Guided by LLM Relevance Scoring for Dense Passage Retrieval",
+      "url": "https://arxiv.org/abs/2604.17906",
+      "authors": "Junyoung Kim, Anton Korikov, Jiazhou Liang, Justin Cui, Yifan Simon Liu, Qianfeng Wen, Mark Zhao, Scott Sanner",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "提出 BAGEL 框架，解决 LLM 作为相关性评估器时的高计算成本问题。核心方法：基于 LLM 相关性分数构建查询特定的高斯过程（GP），在 embedding 空间中建模相关性分布，通过贝���斯主动学习策略平衡「高置信区域的利用」和「不确定区域的探索」来选择最值得 LLM 评估的段落。在四个基准数据集和两种 LLM 后端上，BAGEL 在相同 LLM 预算下全面超越传统重排序方法。已被 ACL 2026 Findings 接收。",
+      "key_insight": "BAGEL 的核心贡献是将 LLM 排序从「对所有候选逐一评分」变为「智能选择最值得评估的候选」。高斯过程在 embedding 空间中传播相关性信号，仅需少量 LLM 调用即可估计全量候选的相关性分布。这种「先粗筛再精评」的思路对搜索系统的 LLM 集成具有直接参考价值：在 UGC 搜索中，���以先用轻量检索模型获取候选，再用 GP 引导 LLM 仅对最关键的文档做精细评估，在效果和延迟间找到平衡。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2604.17459",
+      "title": "Transparent and Controllable Recommendation Filtering via Multimodal Multi-Agent Collaboration",
+      "url": "https://arxiv.org/abs/2604.17459",
+      "authors": "Chi Zhang, Zhipeng Xu, Jiahao Liu, Dongsheng Li, Hansu Gu, Peng Zhang, Ning Gu, Tun Lu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-21",
+      "total_score": 3.55,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对 LLM 推荐过滤中的两大瓶颈——缺乏多模态感知和严重的「过度关联」问题（将用户对特定内容的不喜欢错误泛化到相似但无害的内容），提出端云协同的多智能体框架。系统包含事实锚定裁决管线消除推理幻觉，以及动态双层偏好图支持用户显式修改（Delta 调整）防止意图遗忘。在 473 个对抗样本上，误报率降低 74.3%，F1 分数达到纯文本基线的近 2 倍。19 人参与的 7 天纵向实验验证了意图对齐的鲁棒性。",
+      "key_insight": "该研究揭示了 LLM 推荐系统中一个被忽视的问题：过度关联（over-association）。当用户标记不喜欢某类焦虑营销内容时，LLM 会错误地泛化到教育类相似内容，导致大量误过滤。双层偏好图的设计思路值得借鉴——通过分离「全局偏好」和「局部调整」来防止灾难性遗忘。对于 UGC 平台的内容过滤和推荐质量控制，这种细粒度的用户偏好管理机制具有直接应用价值。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2604.17555",
+      "title": "COSEARCH: Joint Training of Reasoning and Document Ranking via Reinforcement Learning for Agentic Search",
+      "url": "https://arxiv.org/abs/2604.17555",
+      "authors": "Hansi Zeng, Liam Collins, Bhuvesh Kumar, Neil Shah, Hamed Zamani",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-21",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "现有 agentic search 方法（如 Search-R1）将检索系统视为固定工具，仅优化推理 agent 而检索组件不变。实验表明 oracle 检索器与固定检索器的差距高达 +26.8% F1，证明检索是性能瓶颈。COSEARCH 通过 Group Relative Policy Optimization (GRPO) 联合训练多步推理 agent 和生成式文档排序模型。关键设计：(1) 语义分组策略按 token 相似度聚类子查询形成优化组；(2) 复合奖励结合排序质量信号和轨迹级结果反馈。在 7 个单跳/多跳 QA 基准上持续优于强基线。",
+      "key_insight": "COSEARCH 最重要的发现是：在 agentic search 中，检索组件（而非推理 agent）才是真正的性能瓶���。+26.8% 的 oracle 差距表明，固定检索器严重限制了推理能力的发挥。通过 GRPO 联合优化推理和排序，模型能学到「什么样的排序结果最有利于后续推理」。对于搜索系统的 LLM 集成，这意味着不应孤立地优化 LLM 排序或 LLM 推理，而应将两者作为一个端到端系统来训练。"
+    },
+    {
+      "rank": 9,
+      "id": "hf:2604.17886",
+      "title": "Latent Preference Modeling for Cross-Session Personalized Tool Calling",
+      "url": "https://arxiv.org/abs/2604.17886",
+      "authors": "Yejin Yoon, Minseo Kim, Taeuk Kim",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-04-20",
+      "total_score": 3.45,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "用户向 LLM agent 发出请求时常省略关键细节，导致工具调用输入不完整。提出 MPT 基准（265 个多会话对话、三个难度级别：偏好回忆、偏好归纳、偏好迁移）和 PRefine 方法。PRefine 将用户偏好建模为动态工作假设，通过 generate-verify-refine 迭代循环从历史对话中提取可复用约束，增强工具调用的个性化。关键优势：仅需完整历史 prompting 的 1.24% token 消耗即可实现有效的偏好建模。",
+      "key_insight": "PRefine 的核心设计思想——将偏好建模为「假设-验证-修正」循环而非静态画像——为生成式推荐的个性化提供了新思路。传统推荐系统依赖用户画像特征，而 PRefine 证明 LLM 可以通过动态推理理解用户偏好的深层逻辑（为什么做这个选择），而不仅是记录选择本身。1.24% 的 token 效率提升尤为突出，表明高效的偏好压缩是可行的。这对 UGC 搜索中的个性化 query 理解具有启发意义。"
+    },
+    {
+      "rank": 10,
+      "id": "dblp:conf/sigir/Li0HH025",
+      "title": "Hypercomplex Knowledge Graph-Aware Recommendation",
+      "url": "https://dl.acm.org/doi/10.1145/3726302.3730001",
+      "authors": "Hao Li et al.",
+      "company": [],
+      "source": "conference_papers",
+      "published": "2025-01-01",
+      "total_score": 3.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "将超复数代数（hypercomplex algebra）引入知识图谱感知推荐系统。与传统实数空间 embedding 不同，超复数 embedding 的多分量结构（如四元数）能够更高效地编码用户、物品和实体间的复杂关系。通过在知识图谱上学习超复数表示，模型用更少的参数获得更强的表达能力，特别是在捕捉多元关系和旋转变换方面优于传统方法。发表于 SIGIR 2025。",
+      "key_insight": "超复数表示为推荐系统的 embedding 设计提供了一个新视角：利用四元数等代数结构的天然旋转和���放特性来建模实体关系，比简单扩大实数 embedding 维度��高效。对于生成式推荐中的 Semantic ID 设计，��复数编码可能提供比 VQ-VAE 更紧凑且关系感知的 item 表示方案。"
+    }
+  ],
+  "code_projects": []
+}

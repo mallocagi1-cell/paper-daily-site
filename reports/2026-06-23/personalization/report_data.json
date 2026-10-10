@@ -1,0 +1,228 @@
+{
+  "date": "2026-06-23",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 6,
+    "papers_selected": 5,
+    "score_min": 3.1,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.19108",
+      "title": "JourneyFormer: Encoding Airbnb Guest Journey with Sequence Modeling",
+      "url": "https://arxiv.org/abs/2606.19108",
+      "authors": "Daochen Zha, Chun How Tan, Xin Liu, Bin Xu, Han Zhao, Huiji Gao, et al.",
+      "company": [
+        "Airbnb"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-17",
+      "total_score": 4.3,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.45,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "论文把序列建模落地到 Airbnb 线上搜索排序，针对生产环境三个具体难题：guest 行为序列长、探索性强、且预订（booking）标签稀疏。作者系统拆解了四类关键工程决策——guest event 的筛选粒度、ID embedding 设计、模型架构、以及 label attribution（标签归因），在序列复杂度与可扩展性之间做权衡，最终形成 JourneyFormer 这一可上线的序列排序方案。",
+      "key_insight": "序列建模在排序里\"理论简单、工程不简单\"：真正决定线上效果的是事件选择粒度、ID embedding 方案与稀疏转化标签的归因策略，而非模型结构本身。社区搜索可直接借鉴其对长行为序列的事件筛选，以及把稀疏强信号（如收藏、发帖、深度停留）作为归因目标的做法，缓解点击之外的弱监督问题。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.19108",
+        "title": "JourneyFormer: Encoding Airbnb Guest Journey with Sequence Modeling",
+        "status": "completed",
+        "content": "## JourneyFormer: Encoding Airbnb Guest Journey with Sequence Modeling 深度解读\n\n### 1. 问题与动机\nAirbnb 这类双边电商搜索排序里，guest 的行为序列\"长、探索性强、且转化标签稀疏\"。一个 guest 常跨多个目的地/日期反复浏览，序列长度从 0（新用户）到上万事件不等，但真正的强信号——booking——只占全量数据约 5%。在 JourneyFormer 之前，Airbnb 排序依赖约 900 维人工特征聚合 guest 历史统计（如某周期总预订数、平均预订价、guest-listing 交叉的浏览次数），再由 MLP 打分。这套强基线问题有二：随着工程师不断堆特征，维护成本飙升；聚合后的数值特征难以让模型推断复杂的 guest 意图。这促使团队转向更可扩展、可持续的序列建模。落地挑战明确有三：(1) 序列长且含噪——view 事件远多于其它；(2) 事件类型异构（view / booking request / booking / cancellation / review / CS ticket），频率差异极大；(3) 标签稀疏且以 booking 为目标，而非社交平台常用的 engagement——一次 view 可能只是探索或横向对比，噪声很大。\n\n### 2. 方法详解\nJourneyFormer 分四块。① 事件选择与截断：采用 frequency-based selection，把序列拆成 long-term（过去 7 年、剔除高频 view 事件、聚焦低频事件）与 short-term（过去 21 天、含 view）。Figure 3 显示 view 占 97.8%、其余事件仅 2.2%。long-term/short-term 分别截断到最多 80/200 个事件，阈值按\"覆盖 top 2% 最长序列 + GPU VRAM 上限\"设定，再按时间戳合并重排。② 特征表示：共享 feature pool，全部用原始特征、不做特征工程，总数 <100（旧模型数百维）。ID 特征（去标识 listing ID、host ID、分层 S2Cell ID）用 Unified Embedding——共享 embedding 表配 m 个静态随机种子，e_xid = Concat over m of UnifiedEmb(Hash_si(x_id))，同等参数预算下比独立 embedding 更可扩展、性能更好。S2Cell 用 14 个层级（level 0 大区到 level 13 街道级，约 1.27 km²），多级地理编码显著优于单一粒度。③ 序列编码：自注意力编码器，多头注意力 + 位置编码 + 残差 + causal mask（防未来事件泄漏，并使中间时刻 embedding 可被后续搜索复用以加速），堆叠多层；实测去掉 feed-forward 层反而 NDCG 更高且更快（推测因 MLP 已把事件映射到 embedding，FFN 冗余）。④ 排序：拼接 sequence embedding + query + listing candidate，过 MLP 出分，用 listwise loss 端到端训练（Eq.4：RankingLoss = -Σ_i [y_i/Σ_j y_j]·log Softmax(z_i)）。标签归因：若某 listing 在搜索后 7 天内被预订则标 1，否则 0；只保留含 booking 的搜索、且每 guest 每天最多 4 次搜索以控数据量保多样性。训练规模：booked 序列量级约 10^8，平均每序列 6.9 次搜索，约 9 亿 search-label 对。模型：4 层 Transformer、d=128、post-norm，事件经 1024-512-256-128 的 MLP 投影、输出降至 32 维存储；ranking 头为轻量 MLP（512-128-64-1 量级）以支持实时推理。\n\n### 3. 核心技术贡献\n(1) 把序列建模\"工程化\"真正落地到搜索排序，贡献核心是四类生产决策的系统拆解（事件选择/capping、特征编码、标签归因、训练加速），而不止于模型结构。(2) 三套训练加速：search batching（让同一 guest 在 T=4/7/10 的多次搜索复用前序时间戳已算出的 encoder embedding，单次前向+反向即可，避免重复跑大 encoder）、sequence bucketization（按长度分桶，边界 4/16/44/88/148/280，对应六种 batch size，用 TensorFlow 的 bucket_by_sequence_length，缓解 padding 造成的数据倾斜）、sparse calculation（只把非 padding 的搜索喂入 ranking 模型，tf.gather_nd）。合计约 4x 吞吐；消融见 Table 2：去掉 search batching 吞吐 -75.41%（即降到约 1/4）、去掉 bucketization -29.35%、去掉 sparse calc -20.54%。(3) 用 Unified Embedding + 14 级分层 S2Cell 处理高基数 ID 与地理信息，去掉 S2Cell ID 造成最大 NDCG 跌幅。(4) 难得地完整记录\"探索过但最终放弃\"的方案（更大模型、实时 encoder、加 search 事件、多任务、DIN early-fusion），为社区降低踩坑成本。\n\n### 4. 实验结果分析\n离线 NDCG（Table 1，相对强基线，作者注明 0.3% 即显著）：JourneyFormer-Long +0.44%、-Short +1.30%、-Full +1.48%（标准差 ±0.01~0.03%）。short-term 贡献明显更大——最终 booking 往往来自近期浏览的 listing，近期 view 是强烈的 booking 意图信号。设计消融（Figure 6）：去掉 FFN 在 128/256/128-256-128 各配置均掉点；逐一移除 listing/host/S2Cell ID embedding 掉 0.05%~0.2%，其中去 S2Cell ID 最严重；14 级 S2Cell 优于只用 level 0-6、7-13 或单独 level 13。序列长度（Figure 7）：long-term 的 NDCG 随长度单调上升（更多低频事件有助意图预测）；short-term 在 11-20 个事件处达峰后随长度下降（浏览很多却无明确意图的 guest 更难预测，反证 frequency-based selection 的合理性）。分布漂移（Figure 8）：训练截止后一个月内多数日期仍保持 >1.4% 增益、NDCG 衰减 <0.1%，说明无需频繁重训，利于部署。在线 A/B（Table 3，三周）：Full 版 Bookers +0.55%(p<0.01)、Booked Nights +0.82%(p<0.01)、Views +0.90%(p<0.01)；Long 版增益较小（Bookers +0.31%）。邮件 listing 排序（Table 4）：Full 版邮件点击 Views +5.04%(p<0.01)、Bookers +0.16%、Booked Nights +0.23%。\n\n### 5. 局限与未来方向\n作者明确陈述的负面结果/局限：① 加大模型（扩 embedding 表、加层、提高维度、换架构与 LR 调度）相对成本仅边际收益，并积累技术债，故最终保留简单架构；② 序列模型若改实时推理，离线排序指标提升 >5%，但因 retargeting（反复把用户看过的 listing 推上来）不转化为在线收益，这与社交网络\"反复曝光提升 engagement\"的规律相反；③ 把 search 事件加入序列无效，可能因 search 数据噪声大；④ 多任务（把 view 当额外标签）离线有些收益、在线无提升，因 view 事件噪声大；⑤ DIN-style early-fusion（query/listing 投影成事件参与自注意力）离线 +0.20%，但训练多花约 15% 且无法离线预计算 encoder 输出、上线 serving 成本高。未来方向：每几小时刷新一次 sequence embedding、纳入 wishlist 创建/支付页访问/地图移动等事件、探索 RL + 序列模型。\n\n### 6. 工业实践意义\n对搜索/推荐实践者：① \"离线涨点 ≠ 在线涨点\"被本文反复验证——实时 encoder、多任务、加 search 事件都离线有效却在线失效，retargeting 是主因；上线前务必以在线 A/B 校验，并警惕离线指标偏向 booker 子集的评估偏差。② 部署架构可直接借鉴：把\"贵\"的序列 encoder 用 batch inference 周期性产出 embedding 落库，把\"轻\"的 ranking 头走实时推理、读 query+listing+sequence embedding——兼顾表达力与延迟。③ 训练加速三件套（search batching / bucketization / sparse calculation）针对\"长序列 + 单 guest 多搜索\"的数据特点，可迁移到类似场景，其中 search batching 收益最大（去掉吞吐降 75%）。④ 用 booking 这类稀疏强信号做归因、把 7 天内的转化回溯到对应搜索，比用高频含噪的 click/view 更稳——社区搜索可类比把收藏、发帖、深度互动等强信号作为归因目标，缓解纯点击的弱监督问题。⑤ frequency-based selection（高频事件给短窗、低频事件给长窗）是控制序列长度与显存的实用技巧。资源上 <100 原始特征、4 层小 Transformer（d=128）、输出降至 32 维，整体 serving 成本可控。",
+        "content_html": "<h2>JourneyFormer: Encoding Airbnb Guest Journey with Sequence Modeling 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>Airbnb 这类双边电商搜索排序里，guest 的行为序列&quot;长、探索性强、且转化标签稀疏&quot;。一个 guest 常跨多个目的地/日期反复浏览，序列长度从 0（新用户）到上万事件不等，但真正的强信号——booking——只占全量数据约 5%。在 JourneyFormer 之前，Airbnb 排序依赖约 900 维人工特征聚合 guest 历史统计（如某周期总预订数、平均预订价、guest-listing 交叉的浏览次数），再由 MLP 打分。这套强基线问题有二：随着工程师不断堆特征，维护成本飙升；聚合后的数值特征难以让模型推断复杂的 guest 意图。这促使团队转向更可扩展、可持续的序列建模。落地挑战明确有三：(1) 序列长且含噪——view 事件远多于其它；(2) 事件类型异构（view / booking request / booking / cancellation / review / CS ticket），频率差异极大；(3) 标签稀疏且以 booking 为目标，而非社交平台常用的 engagement——一次 view 可能只是探索或横向对比，噪声很大。</p>\n<h3>2. 方法详解</h3>\n<p>JourneyFormer 分四块。① 事件选择与截断：采用 frequency-based selection，把序列拆成 long-term（过去 7 年、剔除高频 view 事件、聚焦低频事件）与 short-term（过去 21 天、含 view）。Figure 3 显示 view 占 97.8%、其余事件仅 2.2%。long-term/short-term 分别截断到最多 80/200 个事件，阈值按&quot;覆盖 top 2% 最长序列 + GPU VRAM 上限&quot;设定，再按时间戳合并重排。② 特征表示：共享 feature pool，全部用原始特征、不做特征工程，总数 &lt;100（旧模型数百维）。ID 特征（去标识 listing ID、host ID、分层 S2Cell ID）用 Unified Embedding——共享 embedding 表配 m 个静态随机种子，e_xid = Concat over m of UnifiedEmb(Hash_si(x_id))，同等参数预算下比独立 embedding 更可扩展、性能更好。S2Cell 用 14 个层级（level 0 大区到 level 13 街道级，约 1.27 km²），多级地理编码显著优于单一粒度。③ 序列编码：自注意力编码器，多头注意力 + 位置编码 + 残差 + causal mask（防未来事件泄漏，并使中间时刻 embedding 可被后续搜索复用以加速），堆叠多层；实测去掉 feed-forward 层反而 NDCG 更高且更快（推测因 MLP 已把事件映射到 embedding，FFN 冗余）。④ 排序：拼接 sequence embedding + query + listing candidate，过 MLP 出分，用 listwise loss 端到端训练（Eq.4：RankingLoss = -Σ_i [y_i/Σ_j y_j]·log Softmax(z_i)）。标签归因：若某 listing 在搜索后 7 天内被预订则标 1，否则 0；只保留含 booking 的搜索、且每 guest 每天最多 4 次搜索以控数据量保多样性。训练规模：booked 序列量级约 10^8，平均每序列 6.9 次搜索，约 9 亿 search-label 对。模型：4 层 Transformer、d=128、post-norm，事件经 1024-512-256-128 的 MLP 投影、输出降至 32 维存储；ranking 头为轻量 MLP（512-128-64-1 量级）以支持实时推理。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) 把序列建模&quot;工程化&quot;真正落地到搜索排序，贡献核心是四类生产决策的系统拆解（事件选择/capping、特征编码、标签归因、训练加速），而不止于模型结构。(2) 三套训练加速：search batching（让同一 guest 在 T=4/7/10 的多次搜索复用前序时间戳已算出的 encoder embedding，单次前向+反向即可，避免重复跑大 encoder）、sequence bucketization（按长度分桶，边界 4/16/44/88/148/280，对应六种 batch size，用 TensorFlow 的 bucket_by_sequence_length，缓解 padding 造成的数据倾斜）、sparse calculation（只把非 padding 的搜索喂入 ranking 模型，tf.gather_nd）。合计约 4x 吞吐；消融见 Table 2：去掉 search batching 吞吐 -75.41%（即降到约 1/4）、去掉 bucketization -29.35%、去掉 sparse calc -20.54%。(3) 用 Unified Embedding + 14 级分层 S2Cell 处理高基数 ID 与地理信息，去掉 S2Cell ID 造成最大 NDCG 跌幅。(4) 难得地完整记录&quot;探索过但最终放弃&quot;的方案（更大模型、实时 encoder、加 search 事件、多任务、DIN early-fusion），为社区降低踩坑成本。</p>\n<h3>4. 实验结果分析</h3>\n<p>离线 NDCG（Table 1，相对强基线，作者注明 0.3% 即显著）：JourneyFormer-Long +0.44%、-Short +1.30%、-Full +1.48%（标准差 ±0.01~0.03%）。short-term 贡献明显更大——最终 booking 往往来自近期浏览的 listing，近期 view 是强烈的 booking 意图信号。设计消融（Figure 6）：去掉 FFN 在 128/256/128-256-128 各配置均掉点；逐一移除 listing/host/S2Cell ID embedding 掉 0.05%~0.2%，其中去 S2Cell ID 最严重；14 级 S2Cell 优于只用 level 0-6、7-13 或单独 level 13。序列长度（Figure 7）：long-term 的 NDCG 随长度单调上升（更多低频事件有助意图预测）；short-term 在 11-20 个事件处达峰后随长度下降（浏览很多却无明确意图的 guest 更难预测，反证 frequency-based selection 的合理性）。分布漂移（Figure 8）：训练截止后一个月内多数日期仍保持 &gt;1.4% 增益、NDCG 衰减 &lt;0.1%，说明无需频繁重训，利于部署。在线 A/B（Table 3，三周）：Full 版 Bookers +0.55%(p&lt;0.01)、Booked Nights +0.82%(p&lt;0.01)、Views +0.90%(p&lt;0.01)；Long 版增益较小（Bookers +0.31%）。邮件 listing 排序（Table 4）：Full 版邮件点击 Views +5.04%(p&lt;0.01)、Bookers +0.16%、Booked Nights +0.23%。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确陈述的负面结果/局限：① 加大模型（扩 embedding 表、加层、提高维度、换架构与 LR 调度）相对成本仅边际收益，并积累技术债，故最终保留简单架构；② 序列模型若改实时推理，离线排序指标提升 &gt;5%，但因 retargeting（反复把用户看过的 listing 推上来）不转化为在线收益，这与社交网络&quot;反复曝光提升 engagement&quot;的规律相反；③ 把 search 事件加入序列无效，可能因 search 数据噪声大；④ 多任务（把 view 当额外标签）离线有些收益、在线无提升，因 view 事件噪声大；⑤ DIN-style early-fusion（query/listing 投影成事件参与自注意力）离线 +0.20%，但训练多花约 15% 且无法离线预计算 encoder 输出、上线 serving 成本高。未来方向：每几小时刷新一次 sequence embedding、纳入 wishlist 创建/支付页访问/地图移动等事件、探索 RL + 序列模型。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐实践者：① &quot;离线涨点 ≠ 在线涨点&quot;被本文反复验证——实时 encoder、多任务、加 search 事件都离线有效却在线失效，retargeting 是主因；上线前务必以在线 A/B 校验，并警惕离线指标偏向 booker 子集的评估偏差。② 部署架构可直接借鉴：把&quot;贵&quot;的序列 encoder 用 batch inference 周期性产出 embedding 落库，把&quot;轻&quot;的 ranking 头走实时推理、读 query+listing+sequence embedding——兼顾表达力与延迟。③ 训练加速三件套（search batching / bucketization / sparse calculation）针对&quot;长序列 + 单 guest 多搜索&quot;的数据特点，可迁移到类似场景，其中 search batching 收益最大（去掉吞吐降 75%）。④ 用 booking 这类稀疏强信号做归因、把 7 天内的转化回溯到对应搜索，比用高频含噪的 click/view 更稳——社区搜索可类比把收藏、发帖、深度互动等强信号作为归因目标，缓解纯点击的弱监督问题。⑤ frequency-based selection（高频事件给短窗、低频事件给长窗）是控制序列长度与显存的实用技巧。资源上 &lt;100 原始特征、4 层小 Transformer（d=128）、输出降至 32 维，整体 serving 成本可控。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.18750",
+      "title": "Ensuring Trustworthy Online A/B Testing: Addressing Five Key Questions on CUPED",
+      "url": "https://arxiv.org/abs/2606.18750",
+      "authors": "Yu Zhang, Bokui Wan, Yongli Qin, Jinyong Ma, Yifan Guo",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-17",
+      "total_score": 3.9,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "CUPED（用实验前数据做方差缩减）在保持平均处理效应 ATE 无偏的同时大幅提升实验灵敏度，被各大科技公司广泛用于功能上线、定价与体验优化的 A/B 决策。论文系统回答了五个长期被忽视的方法论问题：对比多种 post-CUPED 估计量以确定最优调整设定、评估回归调整在何种条件下仍然有效，以及相关偏差与有效性的边界。",
+      "key_insight": "对搜索/推荐团队的实验平台直接有用：CUPED 的估计量选择与协变量设定会实质影响实验功效，用错会放大方差或引入偏差。论文给出\"该用哪种 post-CUPED 估计量、回归调整何时失效\"的具体判据，可降低排序/个性化改动在 A/B 评估中的误判风险。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.18773",
+      "title": "Private Learning with Public Feature Conditioning",
+      "url": "https://arxiv.org/abs/2606.18773",
+      "authors": "Shuli Jiang, Walid Krichene, Nicolas Mayoraz",
+      "company": [
+        "Google"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-17",
+      "total_score": 3.45,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "论文研究推荐与广告中常见的\"部分特征公开、标签敏感\"场景下的差分隐私（DP）回归。提出 Cond-DP——DPSGD 的条件化变体，利用公开特征矩阵谱快速衰减的结构，构造数据驱动的 conditioning matrix 来重塑优化地形、加速收敛。论文给出凸、强凸、非凸三种设定下的收敛保证，并说明标准 DPSGD 是其特例。",
+      "key_insight": "推荐/广告里大量特征（物料属性、上下文）本就是公开非敏感的，只有用户标签需要保护。Cond-DP 表明可借公开特征的谱结构改善 DP 回归收敛，为隐私约束下的 CTR/CVR 建模提供了比直接套 DPSGD 更实用的路径，对需要合规处理用户行为标签的个性化系统有参考价值。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.18479",
+      "title": "The Illusion of Improvement: Reject Inference Strategies in Credit Scoring",
+      "url": "https://arxiv.org/abs/2606.18479",
+      "authors": "Bruno Scarone, Ricardo Baeza-Yates",
+      "company": [
+        "Northeastern"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-16",
+      "total_score": 3.1,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "论文系统评估信用评分中用于缓解幸存者偏差的 reject inference 方法，揭示一个结构性失效模式：在自然的重训练循环里，模型 accuracy 上升而 recall 崩塌，制造出\"在改善\"的假象，而其真正的拒绝质量（正确筛出违约者的能力）实际在恶化。作者提出主动放行一小部分被拒样本、观测其真实结果的受控探索策略，不依赖统计假设即可打破反馈闭环。",
+      "key_insight": "\"选择偏差 + 反馈闭环导致指标假象\"的机制对推荐排序同样成立——只用线上曝光样本重训会强化曝光偏差，accuracy 类离线指标会误导决策。论文\"刻意探索被拒/未曝光样本以观测真实标签\"的思路，可迁移到推荐的探索-利用平衡与无偏离线评估设计。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.18933",
+      "title": "Zero-Shot Active Feature Acquisition via LLM-Elicitation",
+      "url": "https://arxiv.org/abs/2606.18933",
+      "authors": "Binyamin Perets, Natalie Mendelson, Shiran Vainberg, Yehuda Chowers, Shai Shen-Orr, Shie Mannor",
+      "company": [
+        "Technion"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-17",
+      "total_score": 3.1,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "主动特征获取（AFA）需顺序决定观测哪些特征来做分类或 top-k 排序决策，传统方法依赖大量标注数据拟合概率模型。论文把\"知识\"与\"决策\"解耦：只向 LLM 索取它可靠返回的判别性统计量——马尔可夫随机场（MRF）的一元偏差与成对协变（即充分统计量），再由 MRF 承担序贯规划，应用于二分类与 top-k 识别两类设定。",
+      "key_insight": "\"让 LLM 只提供它擅长的判别性先验、把序贯决策交给可控概率模型\"的解耦范式值得借鉴。对冷启动或特征稀疏的排序场景，可用 LLM 注入特征间关系先验，而把特征取舍与打分留给统计模型，避免让 LLM 端到端做决策带来的不稳定与不可解释。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:PhilipJohnBasile/vecstore",
+      "title": "vecstore: Embeddable vector database for Rust and Python. HNSW indexing, metadata filtering, hybrid search, and snapshots. The SQLite of vector search.",
+      "url": "https://github.com/PhilipJohnBasile/vecstore",
+      "source": "github",
+      "description": "Embeddable vector database for Rust and Python. HNSW indexing, metadata filtering, hybrid search, and snapshots. The SQLite of vector search.",
+      "language": "Rust",
+      "stars": 15,
+      "created_at": "2025-10-20"
+    },
+    {
+      "rank": 2,
+      "id": "github:begin0808/LiveCaption",
+      "title": "LiveCaption:  即時影音雙語字幕翻譯系統。本機離線 AI 語音辨識與翻譯，支援 SenseVoice、Ollama 與 DeepSeek。 | Real-time tab audio bilingual subtitle translation system using local ASR (SenseVoice) and LLMs (Ollama / DeepSeek). 100% offline & private.",
+      "url": "https://github.com/begin0808/LiveCaption",
+      "source": "github",
+      "description": " 即時影音雙語字幕翻譯系統。本機離線 AI 語音辨識與翻譯，支援 SenseVoice、Ollama 與 DeepSeek。 | Real-time tab audio bilingual subtitle translation system using local ASR (SenseVoice) and LLMs (Ollama / DeepSeek). 100% offline & private.",
+      "language": "HTML",
+      "stars": 47,
+      "created_at": "2026-06-21"
+    },
+    {
+      "rank": 3,
+      "id": "github:oldnordic/sqlitegraph",
+      "title": "sqlitegraph: Embedded graph database on SQLite — HNSW vector search, Cypher-like queries, graph algorithms (BFS, A*, SCC, dominance), ACID + WAL + MVCC delta log, Python bindings, Native V3 CSR backend.",
+      "url": "https://github.com/oldnordic/sqlitegraph",
+      "source": "github",
+      "description": "Embedded graph database on SQLite — HNSW vector search, Cypher-like queries, graph algorithms (BFS, A*, SCC, dominance), ACID + WAL + MVCC delta log, Python bindings, Native V3 CSR backend.",
+      "language": "Rust",
+      "stars": 11,
+      "created_at": "2025-11-24"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, arxiv:2606.19348, license:mit, eval-results",
+      "language": "model",
+      "stars": 5007,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 1992,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, arxiv:2606.19348, license:mit, eval-results",
+      "language": "model",
+      "stars": 1558,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: scail-2, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2606.10804, license:mit",
+      "language": "model",
+      "stars": 252,
+      "created_at": "2026-06-09"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/GLM-5.2-FP8",
+      "title": "zai-org/GLM-5.2-FP8",
+      "url": "https://huggingface.co/zai-org/GLM-5.2-FP8",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 132,
+      "created_at": "2026-06-16"
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+{
+  "date": "2026-06-10",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 8,
+    "papers_selected": 5,
+    "score_min": 3.05,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.09082",
+      "title": "Teach Multimodal Recommendation Model to See via Personalized Visual Extraction and Adaptive Learning",
+      "url": "https://arxiv.org/abs/2606.09082",
+      "authors": "Yutong Li, Xinyi Zhang, Ziyi Ye, Daoguo Dong, Yu-Gang Jiang",
+      "company": [
+        "Fudan"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-09",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.3,
+      "summary": "多模态序列推荐(MSR)里视觉特征常被文本信号压制、贡献远低于文本。作者把原因归为两点：预训练视觉编码器抓不到与偏好相关的视觉线索，以及视觉-文本优化失衡。提出即插即用框架 REVEAL，含两个模块：Feedback-Guided Visual Extraction(FVE)用任务级反馈精修 prompt 引导的视觉特征抽取，Adaptive Visual Learning(AVL)在训练中动态重加权视觉损失防止文本主导。框架可挂接现有 MSR backbone，在多个真实数据集上验证并开源代码。",
+      "key_insight": "视觉信号在多模态推荐里'看得见却用不上'的根因是固定视觉编码器与下游偏好脱节、加上视觉梯度被文本淹没。REVEAL 用推荐任务的反馈反向指导视觉抽取，并按训练状态动态调高视觉损失权重，让图片特征真正参与排序。这套'按任务反馈调视觉 + 动态平衡多模态梯度'的做法，对社区图文帖排序中封面/配图特征长期跑不过标题文本的问题直接可借鉴；plug-and-play 加开源降低了接入成本。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.09082",
+        "title": "Teach Multimodal Recommendation Model to See via Personalized Visual Extraction and Adaptive Learning",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nREVEAL 针对多模态序列推荐(Multimodal Sequential Recommendation, MSR)里一个被长期忽视的现象：视觉模态严重欠利用。作者用一组诊断性实验给出量化证据——在推理阶段移除视觉输入，模型性能只有边际下降；而移除文本输入则大幅掉点。在 Amazon Beauty 上，纯视觉(vision-only)模型显著落后于纯文本(text-only)模型，且\"多模态相比单模态的增益，在视觉侧明显小于文本侧\"。也就是说，图片明明喂进去了，却几乎没参与决策。\n\n作者把根因拆成两条：(1) 视觉表征学习不足——在通用图文数据上预训练的视觉编码器/VLM 只关注视觉上最显眼的区域，抓不到与用户偏好相关的细粒度属性(例如颜色、材质、款式细节);(2) 训练期模态失衡——文本模态更容易被 MSR 模型利用、会主导训练过程，挤压视觉信号的学习。这两点合起来导致\"视觉看得见、用不上\"。这正是社区图文/短视频推荐里封面、配图特征长期跑不过标题文本的典型病灶。\n\n## 2. 方法详解\n\nREVEAL 由两个互补模块组成，且都只在训练期生效。\n\n**Feedback-Guided Visual Extraction (FVE)**：核心是用推荐任务的反馈去迭代精修喂给冻结 VLM 的 prompt，而不更新 VLM 参数。三阶段循环(重复 Xmax 次)：① 视觉编码 e^v_X = VLM(p^v, Prompt_X)，p^v 为物品视觉内容、Prompt_X 为当前 prompt；② 推荐 Result_X = f_MSR(e^v_X, e^id, e^t)，把视觉嵌入连同 ID、文本嵌入送入 MSR 主干；③ prompt 分析与精修——让 VLM 充当 critic：Critic_X ← VLM(Prompt_X, EvalInstr, G, Result_X)，再据此精修 Prompt_(X+1) = VLM(Critic_X, Prompt_X, p^v)。初始 prompt 模板按实例构造，包含物品标题、类别、以及该物品评论里 top-5 高频关键词(如 \"An item image of <category>. Item name: <title>. Users often mention: <keywords>. Focus on...\")，不持久化用户级存储、每次交互动态拼。\n\n**Adaptive Visual Learning (AVL)**：在反向传播时动态重加权视觉梯度以缓解模态失衡。每次迭代先算单模态损失：把文本置零得到 vision-only 损失 L^v、把视觉置零得到 text-only 损失 L^t，损失越小说明该模态贡献越强。瞬时差 Δ^v_x = L^v_x − L^t_x，映射成缩放 r^v_x = exp(Δ^v_x)，并维护累计均值 r̄^v_x = exp(L̄^v_x − L̄^t_x)。校准因子 K^v_x = exp(α·(r^v_x − r̄^v_x))：当视觉表现比历史均值更差时 K>1、放大视觉梯度，否则 K<1、抑制。最终对视觉参数梯度施加 ∂L/∂θ^v ← K^v_x·∂L/∂θ^v，参数更新 θ^v_{x+1} = θ^v_x − η·K^v_x·∂L/∂θ^v_x。两个超参：校准强度 α、精修轮数 Xmax。训练采用交替优化(把主干训到收敛→分析/精修 prompt→再训)，prompt 精修用贪心解码加固定随机种子保证可复现。硬件为 8×4090。\n\n## 3. 核心技术贡献\n\n(1) 诊断性贡献：系统性地揭示并量化了 MSR 中视觉欠利用的两条根因(偏好相关特征抽取不足 + 训练期模态失衡)，并在 Amazon Beauty 上用模态消融给出可复现证据，把\"多模态推荐到底用没用上图片\"变成可测量的问题。\n\n(2) FVE：把\"冻结 VLM 特征拿来即用\"改成\"用下游推荐反馈反向指导 VLM 该看什么\"。关键在于用推荐结果驱动 prompt 迭代，使视觉表征与用户偏好对齐，且不动 VLM 参数、存储开销可忽略。\n\n(3) AVL：用基于单模态损失差的指数型梯度校准，把被文本淹没的视觉梯度按需放大，机制上对任何\"一个信号主导\"的多信号模型都通用。\n\n(4) 即插即用：不改原推荐目标即可接入多种 MSR 主干，兼容 BCE/BPR 等不同损失。\n\n## 4. 实验结果分析\n\n数据集：Amazon Home(66,519 用户/28,237 物品/551,682 交互/密度 0.03%)、Beauty(22,363/12,101/198,502/0.06%)、Sports(35,598/18,358/296,337/0.04%)、Yelp(287,116/148,523/4,392,169/0.01%)。基线覆盖 SASRec、BERT4Rec、LightGCN、STOSA、VBPR、UniSRec、MMSR、MMSBR、MISSRec、M3SRec、HM4SR。\n\n整体效果(RQ1)：MISSRec+REVEAL 在 Home 上 Recall@10 0.0227→0.0239(+5.29%)、NDCG@10 0.0148→0.0167(+12.84%)、NDCG@20 +10.65%;M3SRec+REVEAL 在 Beauty 上 Recall@10 0.0712→0.0739(+3.79%)、NDCG@10 +4.10%;HM4SR+REVEAL 在 Sports 上 Recall@10 0.0515→0.0548(+6.41%)、NDCG@10 +8.30%;在 Yelp 上 Recall@10 0.0374→0.0393(+5.08%)。一个一致规律是：增益在 NDCG 这类排序指标上比 Recall 更明显(Home NDCG@10 +12.84% vs Recall@10 +5.29%)，说明视觉信号修好之后主要改善的是排序质量而非召回覆盖。\n\n消融(RQ2，Home/M3SRec)：Base Recall@10 0.0237、NDCG@10 0.0148;w/FVE 0.0245/0.0156(+3.4%/+5.4%);w/AVL 0.0241/0.0152(+1.7%/+2.7%);w/REVEAL(全量) 0.0251/0.0160(+5.9%/+8.1%)。FVE 单独增益普遍略大于 AVL，两者叠加可加性增益。纯视觉设定(Beauty/M3SRec)：V-only Recall@20 0.0925/NDCG@10 0.0373，+FVE 0.0953/0.0384，+AVL 0.0962/0.0388，+REVEAL 0.0989/0.0403(Recall@20 +6.9%)——在去掉文本干扰的纯视觉场景里两模块增益更突出，反向印证了\"视觉本可贡献更多\"的判断。\n\n超参(RQ5)：精修轮数 Xmax 在 2–3 轮最优，4–5 轮收益见顶;校准强度 α 甜区在 0.1–0.2，过大反而递减。VLM 规模(RQ4)：Qwen2.5-VL 从 3B→7B→32B 仅有温和提升(Home 32B Recall@20 0.0359 vs 7B 0.0355)，说明瓶颈不在 VLM 容量，而在\"是否对齐偏好\"——这恰好支撑了 FVE 用 prompt 对齐而非堆大模型的思路。\n\n## 5. 局限与未来方向\n\n作者未单列局限，但可辨识以下几点：(1) FVE 需要多轮 VLM 推理，带来训练期开销，论文未给出完整的训练耗时对比;(2) 方法依赖生成式 VLM(如 Qwen2.5-VL)，纯 embedding 编码器用不了;(3) 初始 prompt 模板(元数据+评论关键词)靠人工设计，对模板质量的敏感性未系统研究;(4) 在 Yelp 等域增益偏小(~5%)，提示视觉在某些应用里本就不关键;(5) AVL 的指数型梯度缩放(对应原文式 10)是经验启发式，缺乏理论保证。未来方向自然指向自动化 prompt 初始化、给 AVL 补理论分析、以及把方法推广到视频等更重的视觉模态。\n\n## 6. 工业实践意义\n\n对搜索/推荐工程团队，REVEAL 有几条可直接落地的启示：(1) 先做模态消融体检——推理时分别屏蔽图片/文本看掉点幅度，判断自家多模态推荐是否真用上了视觉，这个诊断成本极低且常常打脸;(2) 不要把冻结 CLIP/VLM 特征拿来即用，FVE 提供了\"用推荐反馈调 VLM 看什么\"的范式，适配社区图文帖里封面/配图承载偏好信号、却被标题文本压制的场景;(3) AVL 的梯度重加权是一种通用解药，凡是多信号模型里某一路(文本压制图像、或 ID 特征压制内容特征导致冷启动差)被淹没，都可借鉴按单模态损失差动态放大弱势信号梯度;(4) 部署友好——REVEAL 只在训练期生效，推理走标准 MSR 流水、零额外延迟与显存开销，对延迟敏感的在线排序很有吸引力;(5) 成本侧需权衡：训练期要做多轮 VLM 推理且依赖生成式 VLM，离线训练资源(论文用 8×4090)与 prompt 模板设计是主要投入。综合看，对\"已有多模态推荐但图片不出活\"的团队，这是一套低风险、可增量接入、收益集中在排序指标(NDCG 双位数)的改造方案。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>REVEAL 针对多模态序列推荐(Multimodal Sequential Recommendation, MSR)里一个被长期忽视的现象：视觉模态严重欠利用。作者用一组诊断性实验给出量化证据——在推理阶段移除视觉输入，模型性能只有边际下降；而移除文本输入则大幅掉点。在 Amazon Beauty 上，纯视觉(vision-only)模型显著落后于纯文本(text-only)模型，且&quot;多模态相比单模态的增益，在视觉侧明显小于文本侧&quot;。也就是说，图片明明喂进去了，却几乎没参与决策。</p>\n<p>作者把根因拆成两条：(1) 视觉表征学习不足——在通用图文数据上预训练的视觉编码器/VLM 只关注视觉上最显眼的区域，抓不到与用户偏好相关的细粒度属性(例如颜色、材质、款式细节);(2) 训练期模态失衡——文本模态更容易被 MSR 模型利用、会主导训练过程，挤压视觉信号的学习。这两点合起来导致&quot;视觉看得见、用不上&quot;。这正是社区图文/短视频推荐里封面、配图特征长期跑不过标题文本的典型病灶。</p>\n<h2>2. 方法详解</h2>\n<p>REVEAL 由两个互补模块组成，且都只在训练期生效。</p>\n<p><strong>Feedback-Guided Visual Extraction (FVE)</strong>：核心是用推荐任务的反馈去迭代精修喂给冻结 VLM 的 prompt，而不更新 VLM 参数。三阶段循环(重复 Xmax 次)：① 视觉编码 e^v_X = VLM(p^v, Prompt_X)，p^v 为物品视觉内容、Prompt_X 为当前 prompt；② 推荐 Result_X = f_MSR(e^v_X, e^id, e^t)，把视觉嵌入连同 ID、文本嵌入送入 MSR 主干；③ prompt 分析与精修——让 VLM 充当 critic：Critic_X ← VLM(Prompt_X, EvalInstr, G, Result_X)，再据此精修 Prompt_(X+1) = VLM(Critic_X, Prompt_X, p^v)。初始 prompt 模板按实例构造，包含物品标题、类别、以及该物品评论里 top-5 高频关键词(如 &quot;An item image of &lt;category&gt;. Item name: &lt;title&gt;. Users often mention: &lt;keywords&gt;. Focus on...&quot;)，不持久化用户级存储、每次交互动态拼。</p>\n<p><strong>Adaptive Visual Learning (AVL)</strong>：在反向传播时动态重加权视觉梯度以缓解模态失衡。每次迭代先算单模态损失：把文本置零得到 vision-only 损失 L^v、把视觉置零得到 text-only 损失 L^t，损失越小说明该模态贡献越强。瞬时差 Δ^v_x = L^v_x − L^t_x，映射成缩放 r^v_x = exp(Δ^v_x)，并维护累计均值 r̄^v_x = exp(L̄^v_x − L̄^t_x)。校准因子 K^v_x = exp(α·(r^v_x − r̄^v_x))：当视觉表现比历史均值更差时 K&gt;1、放大视觉梯度，否则 K&lt;1、抑制。最终对视觉参数梯度施加 ∂L/∂θ^v ← K^v_x·∂L/∂θ^v，参数更新 θ^v_{x+1} = θ^v_x − η·K^v_x·∂L/∂θ^v_x。两个超参：校准强度 α、精修轮数 Xmax。训练采用交替优化(把主干训到收敛→分析/精修 prompt→再训)，prompt 精修用贪心解码加固定随机种子保证可复现。硬件为 8×4090。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 诊断性贡献：系统性地揭示并量化了 MSR 中视觉欠利用的两条根因(偏好相关特征抽取不足 + 训练期模态失衡)，并在 Amazon Beauty 上用模态消融给出可复现证据，把&quot;多模态推荐到底用没用上图片&quot;变成可测量的问题。</p>\n<p>(2) FVE：把&quot;冻结 VLM 特征拿来即用&quot;改成&quot;用下游推荐反馈反向指导 VLM 该看什么&quot;。关键在于用推荐结果驱动 prompt 迭代，使视觉表征与用户偏好对齐，且不动 VLM 参数、存储开销可忽略。</p>\n<p>(3) AVL：用基于单模态损失差的指数型梯度校准，把被文本淹没的视觉梯度按需放大，机制上对任何&quot;一个信号主导&quot;的多信号模型都通用。</p>\n<p>(4) 即插即用：不改原推荐目标即可接入多种 MSR 主干，兼容 BCE/BPR 等不同损失。</p>\n<h2>4. 实验结果分析</h2>\n<p>数据集：Amazon Home(66,519 用户/28,237 物品/551,682 交互/密度 0.03%)、Beauty(22,363/12,101/198,502/0.06%)、Sports(35,598/18,358/296,337/0.04%)、Yelp(287,116/148,523/4,392,169/0.01%)。基线覆盖 SASRec、BERT4Rec、LightGCN、STOSA、VBPR、UniSRec、MMSR、MMSBR、MISSRec、M3SRec、HM4SR。</p>\n<p>整体效果(RQ1)：MISSRec+REVEAL 在 Home 上 Recall@10 0.0227→0.0239(+5.29%)、NDCG@10 0.0148→0.0167(+12.84%)、NDCG@20 +10.65%;M3SRec+REVEAL 在 Beauty 上 Recall@10 0.0712→0.0739(+3.79%)、NDCG@10 +4.10%;HM4SR+REVEAL 在 Sports 上 Recall@10 0.0515→0.0548(+6.41%)、NDCG@10 +8.30%;在 Yelp 上 Recall@10 0.0374→0.0393(+5.08%)。一个一致规律是：增益在 NDCG 这类排序指标上比 Recall 更明显(Home NDCG@10 +12.84% vs Recall@10 +5.29%)，说明视觉信号修好之后主要改善的是排序质量而非召回覆盖。</p>\n<p>消融(RQ2，Home/M3SRec)：Base Recall@10 0.0237、NDCG@10 0.0148;w/FVE 0.0245/0.0156(+3.4%/+5.4%);w/AVL 0.0241/0.0152(+1.7%/+2.7%);w/REVEAL(全量) 0.0251/0.0160(+5.9%/+8.1%)。FVE 单独增益普遍略大于 AVL，两者叠加可加性增益。纯视觉设定(Beauty/M3SRec)：V-only Recall@20 0.0925/NDCG@10 0.0373，+FVE 0.0953/0.0384，+AVL 0.0962/0.0388，+REVEAL 0.0989/0.0403(Recall@20 +6.9%)——在去掉文本干扰的纯视觉场景里两模块增益更突出，反向印证了&quot;视觉本可贡献更多&quot;的判断。</p>\n<p>超参(RQ5)：精修轮数 Xmax 在 2–3 轮最优，4–5 轮收益见顶;校准强度 α 甜区在 0.1–0.2，过大反而递减。VLM 规模(RQ4)：Qwen2.5-VL 从 3B→7B→32B 仅有温和提升(Home 32B Recall@20 0.0359 vs 7B 0.0355)，说明瓶颈不在 VLM 容量，而在&quot;是否对齐偏好&quot;——这恰好支撑了 FVE 用 prompt 对齐而非堆大模型的思路。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者未单列局限，但可辨识以下几点：(1) FVE 需要多轮 VLM 推理，带来训练期开销，论文未给出完整的训练耗时对比;(2) 方法依赖生成式 VLM(如 Qwen2.5-VL)，纯 embedding 编码器用不了;(3) 初始 prompt 模板(元数据+评论关键词)靠人工设计，对模板质量的敏感性未系统研究;(4) 在 Yelp 等域增益偏小(~5%)，提示视觉在某些应用里本就不关键;(5) AVL 的指数型梯度缩放(对应原文式 10)是经验启发式，缺乏理论保证。未来方向自然指向自动化 prompt 初始化、给 AVL 补理论分析、以及把方法推广到视频等更重的视觉模态。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐工程团队，REVEAL 有几条可直接落地的启示：(1) 先做模态消融体检——推理时分别屏蔽图片/文本看掉点幅度，判断自家多模态推荐是否真用上了视觉，这个诊断成本极低且常常打脸;(2) 不要把冻结 CLIP/VLM 特征拿来即用，FVE 提供了&quot;用推荐反馈调 VLM 看什么&quot;的范式，适配社区图文帖里封面/配图承载偏好信号、却被标题文本压制的场景;(3) AVL 的梯度重加权是一种通用解药，凡是多信号模型里某一路(文本压制图像、或 ID 特征压制内容特征导致冷启动差)被淹没，都可借鉴按单模态损失差动态放大弱势信号梯度;(4) 部署友好——REVEAL 只在训练期生效，推理走标准 MSR 流水、零额外延迟与显存开销，对延迟敏感的在线排序很有吸引力;(5) 成本侧需权衡：训练期要做多轮 VLM 推理且依赖生成式 VLM，离线训练资源(论文用 8×4090)与 prompt 模板设计是主要投入。综合看，对&quot;已有多模态推荐但图片不出活&quot;的团队，这是一套低风险、可增量接入、收益集中在排序指标(NDCG 双位数)的改造方案。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.07688",
+      "title": "TRACER: Token ReAssignment for Concept ERasure in Generative Recommendation",
+      "url": "https://arxiv.org/abs/2606.07688",
+      "authors": "Ziheng Chen, Jiali Cheng, Zezhong Fan, Hadi Amiri, Diyuan Wu, Gabriele Tolomei, Yang Zhang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-09",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.65,
+      "summary": "生成式推荐把 next-item 预测建成对语义 ID(SID)序列的自回归生成，结构上趋近 LLM，因而也需要'概念遗忘'来移除敏感或有害概念。难点在于 SID 是抽象标识、被遗忘项与保留项常共享同一 token，LLM 的 unlearning 方法不能直接照搬。TRACER 把概念相关 item 重新分配到更利于遗忘、对保留项副作用更小的替代 token，并加 coherence 正则保持保留项之间的语义一致性，在真实推荐数据集上验证遗忘效果与效用保持。",
+      "key_insight": "一旦推荐走 SID 自回归生成，就继承了 LLM 的合规与隐私遗忘需求，而 SID 的 token 共享让'删一个概念会误伤一片'。Token 重分配加一致性正则给出了 SID 体系下做概念擦除的可行路径。对正在上生成式召回/推荐、又要应对内容下架与隐私删除请求的团队有参考价值；属偏前沿方向，依赖已部署的 SID 生成式推荐栈，短期内更多是技术储备。"
+    },
+    {
+      "rank": 3,
+      "id": "s2:d75c969290ea6b91bbf7811c1150e01edda5f889",
+      "title": "MTRec: Multi-Task Learning over BERT for News Recommendation",
+      "url": "https://www.semanticscholar.org/paper/d75c969290ea6b91bbf7811c1150e01edda5f889",
+      "authors": "Qiwei Bi et al.",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "summary": "新闻推荐多只用标题学习新闻表示，类别、实体等多域信息常被当作额外特征、用注意力池化做浅层拼接，这与 BERT 的深层编码不兼容。MTRec 提出多任务方法把多域信息注入 BERT：在主推荐任务之外引入类别分类、实体相关的辅助任务，让深层编码同时学到多域语义，从而提升新闻表示与推荐质量。",
+      "key_insight": "短文本(新闻标题)推荐里'类别/实体等多域信号怎么喂进 BERT'是经典痛点，浅层拼接与深层 Transformer 编码不匹配。用多任务把多域信息变成辅助监督、不靠额外特征拼接，这一范式对社区 UGC 帖子(标题+话题标签+实体)的排序表示学习直接可迁移。本文是 BERT 时代的较早期工作，时效性低，价值在方法范式而非最新 SOTA 数字。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.09595",
+      "title": "Popcorn: A Configurable Benchmark for Visual Evidence in Multimodal Movie Recommendation",
+      "url": "https://arxiv.org/abs/2606.09595",
+      "authors": "Ali Tourani, Fatemeh Nazary, Yashar Deldjoo, Tommaso Di Noia",
+      "company": [
+        "Politecnico di Bari"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-09",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "summary": "电影推荐 benchmark 多依赖预告片、缩略图或元数据，而完整影片、预告、缩略图三类视觉证据在语义与可扩展性上各不相同。Popcorn 是可配置的多模态电影推荐视觉证据 benchmark，把标题对齐的完整影片/预告嵌入与 MovieLens 关联的缩略图特征(用现代视觉与视觉语言模型编码)统一起来，标准化模态组装、融合、切分、评测与 LLM 增强元数据。实验显示缩略图 VLM 提供强且可扩展的物品侧证据，而预告/完整影片对照表明不同视觉源不可互换，源与融合策略会影响排序准确率、覆盖、多样性与校准。",
+      "key_insight": "该工作把'用哪种视觉证据做多模态推荐'做成可配置对照实验，结论是缩略图 VLM 特征在可扩展性与效果上性价比最高、不同视觉源不能简单互换。对要在社区图文/视频推荐里做视觉特征源选型(原图 vs 封面 vs VLM 编码)与融合策略的团队，提供了量化参考；属 benchmark/选型类工作，不是可直接上线的方法。"
+    },
+    {
+      "rank": 5,
+      "id": "s2:3ab876ea1525ada8b9a136b1155c3bb916e6e60c",
+      "title": "Removing Hidden Confounding in Recommendation: A Unified Multi-Task Learning Approach",
+      "url": "https://www.semanticscholar.org/paper/3ab876ea1525ada8b9a136b1155c3bb916e6e60c",
+      "authors": "Unknown",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "",
+      "total_score": 3.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 1
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.15,
+      "summary": "推荐训练数据存在选择偏差，已有去偏方法多基于可观测的用户/物品特征，忽略了隐藏混杂。近期工作用敏感性分析对未知真实倾向做最坏情况控制，但仅当真实倾向落在名义倾向的有限界内才有效。本文先用理论分析揭示倾向法、多任务学习、双层优化等既有方法的失效情形，再提出统一的多任务学习框架，在隐藏混杂存在时做无偏学习。",
+      "key_insight": "隐藏混杂是推荐去偏里'看不见的偏差'，纯靠可观测特征的 propensity/IPS 在真实倾向偏离名义值时会失效。本文用统一多任务框架把去偏与混杂控制结合，并从理论上界定了既有方法的失效边界。对关心曝光偏差、点击数据无偏估计的排序团队有方法论价值；偏理论、落地适配成本高，且为较早期工作、时效性低。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:xuansenpa1/skillrevise",
+      "title": "skillrevise: Official release for SkillRevise: trace-conditioned revision of LLM-authored agent skills",
+      "url": "https://github.com/xuansenpa1/skillrevise",
+      "source": "github",
+      "description": "Official release for SkillRevise: trace-conditioned revision of LLM-authored agent skills",
+      "language": "PDDL",
+      "stars": 47,
+      "created_at": "2026-06-08"
+    },
+    {
+      "rank": 2,
+      "id": "github:RightNow-AI/AutoMegaKernel",
+      "title": "AutoMegaKernel: An agent harness that compiles a model into one provably-correct, self-retargeting CUDA megakernel and self-tunes it past cuBLAS at batch-1 LLM decode.",
+      "url": "https://github.com/RightNow-AI/AutoMegaKernel",
+      "source": "github",
+      "description": "An agent harness that compiles a model into one provably-correct, self-retargeting CUDA megakernel and self-tunes it past cuBLAS at batch-1 LLM decode.",
+      "language": "Python",
+      "stars": 18,
+      "created_at": "2026-06-08"
+    },
+    {
+      "rank": 3,
+      "id": "github:gyc-chenxi/llm-fullstack-dev-roadmap",
+      "title": "llm-fullstack-dev-roadmap: 100-Day LLM Full-Stack Engineering Roadmap | 百日大模型开发全栈工程路线",
+      "url": "https://github.com/gyc-chenxi/llm-fullstack-dev-roadmap",
+      "source": "github",
+      "description": "100-Day LLM Full-Stack Engineering Roadmap | 百日大模型开发全栈工程路线",
+      "language": "Jupyter Notebook",
+      "stars": 17,
+      "created_at": "2026-06-09"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 4734,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 1937,
+      "created_at": "2026-01-21"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 1454,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 7,
+      "id": "hf_space:Qwen/Qwen-Image",
+      "title": "Qwen/Qwen-Image",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 907,
+      "created_at": "2025-08-03"
+    },
+    {
+      "rank": 8,
+      "id": "hf_space:Qwen/Qwen-Image-Edit",
+      "title": "Qwen/Qwen-Image-Edit",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image-Edit",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 826,
+      "created_at": "2025-08-17"
+    }
+  ]
+}

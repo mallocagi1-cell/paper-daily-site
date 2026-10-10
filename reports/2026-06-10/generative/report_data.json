@@ -1,0 +1,110 @@
+{
+  "date": "2026-06-10",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 48,
+    "papers_selected": 1,
+    "score_min": 3.95,
+    "score_max": 3.95
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.07972",
+      "title": "OneFeed: A Unified Generative Framework for Feed Content Enhancement and Query Generation",
+      "url": "https://arxiv.org/abs/2606.07972",
+      "authors": "Guo Xun et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-09",
+      "total_score": 3.95,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "feed 推荐靠浏览行为捕捉隐式兴趣、搜索靠显式 query 匹配意图，二者通常各用一套架构，用户理解被割裂。OneFeed 用一个共享行为编码器编码异构用户行为序列，再挂两个生成头：Feed Semantic ID Generator 自回归生成推荐召回用的层级语义 ID，Intent Query Generator 生成搜索候选扩展用的自然语言 query；并用 SID-Query 对比对齐目标(in-batch 负采样)把语义 ID 与 query 表示拉到同一空间，加候选一致性损失把 query 质量与 feed 增强挂钩。关键提醒：论文本质是方法论提案，公开数据集(KuaiRec/Amazon/MovieLens-1M)的表格是“预期值”(基线标 †、OneFeed 行用 >> 只示方向)，唯一真正跑通的是合成数据最小原型(Recall@20 0.4389 vs feed-only 0.3167)，全程无真实训练与线上 A/B。",
+      "key_insight": "把“推荐生成内容语义 ID”和“搜索生成 query”塞进同一个生成模型、再用对比对齐共享语义空间，正对社区搜索这种 feed 与搜索强耦合的场景：feed 行为可反哺 query 生成、生成的 query 又能扩展 feed 召回，对冷启动/长尾尤其友好。最值得借鉴的是语义 ID 与自然语言 query 的对齐设计，以及用伪 query(标题/类目/标签/高频评论词)在缺真实搜索日志时构造监督。但要清醒：本文没有真实实验结果，方法可行性仅靠合成原型证明，价值在“范式与 loss 设计”而非可复现的指标，落地需自建语义 ID 体系并自行验证。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.07972",
+        "title": "OneFeed: A Unified Generative Framework for Feed Content Enhancement and Query Generation",
+        "status": "completed",
+        "content": "## OneFeed 深度解读\n\n### 1. 问题与动机\n\n论文的出发点是工业界 feed 推荐与搜索长期\"两套独立技术栈\"的割裂。作者强调：用户真实旅程是耦合的——先在 feed 浏览发现话题，再发起搜索 query，消费结果后带着更明确的兴趣回到 feed；但系统侧 feed 推荐只建模浏览行为的隐式兴趣、搜索只靠显式 query 匹配意图，二者互不打通。由此带来两类损失：推荐无法利用搜索暴露出的显式意图；搜索 query 生成也吃不到丰富的 feed 行为信号。作者特别指出这种割裂在冷启动与长尾场景最严重——单看推荐行为或单看搜索行为都不够。动机层面，作者认可近期 semantic ID 生成式推荐(如 TIGER/OneRec 路线)的潜力，但批评它们只盯推荐管线本身，没有显式建模\"feed 内容 ↔ 搜索 query\"的双向关系。OneFeed 的主张就是把两者统一成\"两个互补的生成任务\"放进同一框架。需要注意：引言没有给任何量化的\"现状失败\"证据，是一篇定位性/方法论论文而非实证批判。\n\n### 2. 方法详解\n\n整体是\"一个共享编码器 + 两个生成头 + 两个跨任务对齐损失\"。用户行为序列 X_u={x_1,...,x_T}，每个行为元素含动作类型 a_t、内容语义 ID s_t、可选搜索 query q_t、时间 Δt_t、交互强度 r_t。多字段 embedding 聚合为 e_t = e^act + e^sid + e^query + e^time + e^reward，喂入 Transformer 行为编码器（可实例化为因果 Transformer 做自回归，或 prefix-LM 以支持多生成头）；关键设计是让 feed 与搜索交互贡献到同一个用户意图表示。\n\n语义 ID 构造分两步：先用预训练文本/多模态编码器对内容表示做层级聚类/量化得到层级码 SID(i)=[c_1,...,c_K]；再做\"行为感知校准\"，用 co-click/co-search/co-conversion 信号让行为相似的 item 共享相似语义前缀。Feed SID Generator 自回归生成 P(SID(i)|X_u)=∏_k P(c_k|X_u,c_<k)，再经语义 ID 索引映射回候选 item（一码多 item 时按生成概率、内容质量、新鲜度、用户匹配特征排序）。Intent Query Generator 生成 query 集合 Q̂_u；无真实搜索日志时用标题/类目/标签/评论高频词构造弱监督 query。\n\n两个跨任务损失是亮点：SID-Query 对齐(Eq.9)是对比学习 L_align = -log[exp(sim(h_s,h_q)/τ)/Σ_{q'∈B}exp(sim(h_s,h_q')/τ)]，h_s/h_q 为 SID/query 表示、cosine 相似度、in-batch 负样本，正对来自搜索点击日志、feed→search 会话或弱匹配内容-query 对；候选一致性(Eq.10)是 pairwise 形式 L_cons = -log σ(score(u,i+)-score(u,i-))，i+ 是生成 query 召回且有正反馈的候选、i- 是曝光未点，把 query 生成质量与下游 feed 增强挂钩。总损失 L=α·L_feed+β·L_query+γ·L_align+δ·L_cons，以 feed 生成为主、其余提供跨任务监督。所谓\"自增强\"在离线只用 replay 评估 + 迭代自训练模拟，并非真实在线闭环。论文未给模型规模、优化器、学习率等训练超参。\n\n### 3. 核心技术贡献\n\n作者列了四点：(1) 统一生成式框架，从异构行为序列联合建模 feed 内容增强与 query 生成；(2) SID-Query 对齐目标，把内容语义 ID 与自然语言 query 桥接到共享语义空间，实现双向知识迁移——这是相对 TIGER/OneRec 等\"只做推荐侧 SID 生成\"工作的主要增量；(3) 自增强范式，用生成内容与搜索召回结果的隐式反馈持续改进两个生成头；(4) 一套\"可在公开数据集上评估统一 feed 增强 + query 生成\"的实验协议（弱监督 query 构造 + 离线 replay + 最小本地原型）。客观看，真正有方法新意的是 (2) 的对齐设计与 (1) 的双头统一建模；(3)(4) 更偏工程协议而非算法创新，且 (3) 在本文并未真正实现。\n\n### 4. 实验结果分析\n\n这一节必须如实说明——本文几乎没有真实实验结果。数据集选 KuaiRec(稠密视频交互)、Amazon Reviews(标题/类目/评论文本支持弱监督 query)、MovieLens-1M(经典序列推荐 + 冷启动分析)，按时间切分、过滤稀疏用户/item，并设了三条防泄漏规则(只用时间戳前元数据、标签不取未来反馈、做归一化)。基线覆盖推荐(GRU4Rec/SASRec/BERT4Rec/P5-style/OneRec-style/多任务双塔)、query 生成(关键词抽取/T5-base/BART-base/GPT2/独立 QueryGen)、融合(feed-only/query-only/双塔融合/late-fusion)。评测指标也很全：推荐 Recall/NDCG/HR/MRR@K，query 生成 BLEU/ROUGE-L/BERTScore/Distinct-n/Retrievability，候选增强 Coverage/长尾召回/search supplement ratio/replay NDCG。\n\n但关键：论文明确标注这是\"方法论贡献\"，所有表格是\"预期性能\"——基线值带 † 标记，OneFeed 行用 >> 不等式只示方向、无具体数值。例如 Amazon 上 OneRec-style Recall@10=0.119†，OneFeed 写成 >>0.119†；query 生成 T5-base Retrievability=0.723†，OneFeed 写 >>0.189†(方向)；候选增强 late-fusion replay NDCG=0.088†，OneFeed >>0.088†。消融(Table 4)同样只给方向：去掉 SID-Query 对齐/候选一致性/改用独立编码器都\"预期下降\"，无具体数字。唯一真实跑通的是 Table 5 的合成数据最小原型——用 TF-IDF embedding + KMeans 语义 ID、6 个主题类目的模拟序列：feed-only Recall@10=0.3167/NDCG@10=0.1586，OneFeed demo Recall@20=0.4389/NDCG@20=0.1895，Coverage 各法均 0.0952。作者自述这只是\"可执行性的 sanity check，而非最终基准证据\"。全文无任何线上 A/B。换言之，OneFeed 此刻没有可信的有效性证据，只证明了\"管线能跑通、无逻辑 bug\"。\n\n### 5. 局限与未来方向\n\n作者自陈四条局限：(1) 实验处于\"预期性能\"阶段，未在公开数据集真正完整训练，故用 † 与不等式显式标注；(2) 公开数据集无真实搜索 query，依赖元数据弱监督伪 query，结果须在弱监督语境下解读；(3) 离线 replay 无法替代在线 A/B，自增强只靠模拟与离线迭代自训练验证；(4) 生成 query 上线前需做安全/质量/可召回性过滤，作者把完整安全评估留给后续工作。除作者所列，还有明显未覆盖项：无模型规模/延迟/吞吐/部署成本任何讨论，生成式双头在严格延迟约束下的服务可行性完全未触及。\n\n### 6. 工业实践意义\n\n对社区搜索(UGC、feed 与搜索强耦合)团队，OneFeed 的价值在\"范式与 loss 设计\"而非可直接复现的指标。可借鉴的点：其一，用一个共享行为编码器统一 feed 与搜索的用户意图表示，让 feed 行为反哺 query 生成、生成 query 反过来扩 feed 召回，思路对冷启动/长尾友好；其二，SID-Query 对比对齐(cosine + in-batch 负采样 + 温度)是把\"语义 ID 空间\"和\"自然语言 query 空间\"打通的轻量手段，工程上易加；其三，缺真实搜索日志时用标题/类目/标签/高频评论词构造伪 query 的弱监督方案，对自建数据可直接复用。但要清醒：本文不能作为\"上这套就涨点\"的证据，建议把它当设计蓝图——先自建层级语义 ID 体系(预训练编码器聚类 + 行为感知校准)，在自有数据上跑真实训练与离线 replay 验证有效性，再评估双头生成的线上延迟与 query 安全过滤成本。直接照搬其\"预期数字\"做决策是有风险的。",
+        "content_html": "<h2>OneFeed 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>论文的出发点是工业界 feed 推荐与搜索长期&quot;两套独立技术栈&quot;的割裂。作者强调：用户真实旅程是耦合的——先在 feed 浏览发现话题，再发起搜索 query，消费结果后带着更明确的兴趣回到 feed；但系统侧 feed 推荐只建模浏览行为的隐式兴趣、搜索只靠显式 query 匹配意图，二者互不打通。由此带来两类损失：推荐无法利用搜索暴露出的显式意图；搜索 query 生成也吃不到丰富的 feed 行为信号。作者特别指出这种割裂在冷启动与长尾场景最严重——单看推荐行为或单看搜索行为都不够。动机层面，作者认可近期 semantic ID 生成式推荐(如 TIGER/OneRec 路线)的潜力，但批评它们只盯推荐管线本身，没有显式建模&quot;feed 内容 ↔ 搜索 query&quot;的双向关系。OneFeed 的主张就是把两者统一成&quot;两个互补的生成任务&quot;放进同一框架。需要注意：引言没有给任何量化的&quot;现状失败&quot;证据，是一篇定位性/方法论论文而非实证批判。</p>\n<h3>2. 方法详解</h3>\n<p>整体是&quot;一个共享编码器 + 两个生成头 + 两个跨任务对齐损失&quot;。用户行为序列 X_u={x_1,...,x_T}，每个行为元素含动作类型 a_t、内容语义 ID s_t、可选搜索 query q_t、时间 Δt_t、交互强度 r_t。多字段 embedding 聚合为 e_t = e^act + e^sid + e^query + e^time + e^reward，喂入 Transformer 行为编码器（可实例化为因果 Transformer 做自回归，或 prefix-LM 以支持多生成头）；关键设计是让 feed 与搜索交互贡献到同一个用户意图表示。</p>\n<p>语义 ID 构造分两步：先用预训练文本/多模态编码器对内容表示做层级聚类/量化得到层级码 SID(i)=[c_1,...,c_K]；再做&quot;行为感知校准&quot;，用 co-click/co-search/co-conversion 信号让行为相似的 item 共享相似语义前缀。Feed SID Generator 自回归生成 P(SID(i)|X_u)=∏_k P(c_k|X_u,c_&lt;k)，再经语义 ID 索引映射回候选 item（一码多 item 时按生成概率、内容质量、新鲜度、用户匹配特征排序）。Intent Query Generator 生成 query 集合 Q̂_u；无真实搜索日志时用标题/类目/标签/评论高频词构造弱监督 query。</p>\n<p>两个跨任务损失是亮点：SID-Query 对齐(Eq.9)是对比学习 L_align = -log[exp(sim(h_s,h_q)/τ)/Σ_{q&#x27;∈B}exp(sim(h_s,h_q&#x27;)/τ)]，h_s/h_q 为 SID/query 表示、cosine 相似度、in-batch 负样本，正对来自搜索点击日志、feed→search 会话或弱匹配内容-query 对；候选一致性(Eq.10)是 pairwise 形式 L_cons = -log σ(score(u,i+)-score(u,i-))，i+ 是生成 query 召回且有正反馈的候选、i- 是曝光未点，把 query 生成质量与下游 feed 增强挂钩。总损失 L=α·L_feed+β·L_query+γ·L_align+δ·L_cons，以 feed 生成为主、其余提供跨任务监督。所谓&quot;自增强&quot;在离线只用 replay 评估 + 迭代自训练模拟，并非真实在线闭环。论文未给模型规模、优化器、学习率等训练超参。</p>\n<h3>3. 核心技术贡献</h3>\n<p>作者列了四点：(1) 统一生成式框架，从异构行为序列联合建模 feed 内容增强与 query 生成；(2) SID-Query 对齐目标，把内容语义 ID 与自然语言 query 桥接到共享语义空间，实现双向知识迁移——这是相对 TIGER/OneRec 等&quot;只做推荐侧 SID 生成&quot;工作的主要增量；(3) 自增强范式，用生成内容与搜索召回结果的隐式反馈持续改进两个生成头；(4) 一套&quot;可在公开数据集上评估统一 feed 增强 + query 生成&quot;的实验协议（弱监督 query 构造 + 离线 replay + 最小本地原型）。客观看，真正有方法新意的是 (2) 的对齐设计与 (1) 的双头统一建模；(3)(4) 更偏工程协议而非算法创新，且 (3) 在本文并未真正实现。</p>\n<h3>4. 实验结果分析</h3>\n<p>这一节必须如实说明——本文几乎没有真实实验结果。数据集选 KuaiRec(稠密视频交互)、Amazon Reviews(标题/类目/评论文本支持弱监督 query)、MovieLens-1M(经典序列推荐 + 冷启动分析)，按时间切分、过滤稀疏用户/item，并设了三条防泄漏规则(只用时间戳前元数据、标签不取未来反馈、做归一化)。基线覆盖推荐(GRU4Rec/SASRec/BERT4Rec/P5-style/OneRec-style/多任务双塔)、query 生成(关键词抽取/T5-base/BART-base/GPT2/独立 QueryGen)、融合(feed-only/query-only/双塔融合/late-fusion)。评测指标也很全：推荐 Recall/NDCG/HR/MRR@K，query 生成 BLEU/ROUGE-L/BERTScore/Distinct-n/Retrievability，候选增强 Coverage/长尾召回/search supplement ratio/replay NDCG。</p>\n<p>但关键：论文明确标注这是&quot;方法论贡献&quot;，所有表格是&quot;预期性能&quot;——基线值带 † 标记，OneFeed 行用 &gt;&gt; 不等式只示方向、无具体数值。例如 Amazon 上 OneRec-style Recall@10=0.119†，OneFeed 写成 &gt;&gt;0.119†；query 生成 T5-base Retrievability=0.723†，OneFeed 写 &gt;&gt;0.189†(方向)；候选增强 late-fusion replay NDCG=0.088†，OneFeed &gt;&gt;0.088†。消融(Table 4)同样只给方向：去掉 SID-Query 对齐/候选一致性/改用独立编码器都&quot;预期下降&quot;，无具体数字。唯一真实跑通的是 Table 5 的合成数据最小原型——用 TF-IDF embedding + KMeans 语义 ID、6 个主题类目的模拟序列：feed-only Recall@10=0.3167/NDCG@10=0.1586，OneFeed demo Recall@20=0.4389/NDCG@20=0.1895，Coverage 各法均 0.0952。作者自述这只是&quot;可执行性的 sanity check，而非最终基准证据&quot;。全文无任何线上 A/B。换言之，OneFeed 此刻没有可信的有效性证据，只证明了&quot;管线能跑通、无逻辑 bug&quot;。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者自陈四条局限：(1) 实验处于&quot;预期性能&quot;阶段，未在公开数据集真正完整训练，故用 † 与不等式显式标注；(2) 公开数据集无真实搜索 query，依赖元数据弱监督伪 query，结果须在弱监督语境下解读；(3) 离线 replay 无法替代在线 A/B，自增强只靠模拟与离线迭代自训练验证；(4) 生成 query 上线前需做安全/质量/可召回性过滤，作者把完整安全评估留给后续工作。除作者所列，还有明显未覆盖项：无模型规模/延迟/吞吐/部署成本任何讨论，生成式双头在严格延迟约束下的服务可行性完全未触及。</p>\n<h3>6. 工业实践意义</h3>\n<p>对社区搜索(UGC、feed 与搜索强耦合)团队，OneFeed 的价值在&quot;范式与 loss 设计&quot;而非可直接复现的指标。可借鉴的点：其一，用一个共享行为编码器统一 feed 与搜索的用户意图表示，让 feed 行为反哺 query 生成、生成 query 反过来扩 feed 召回，思路对冷启动/长尾友好；其二，SID-Query 对比对齐(cosine + in-batch 负采样 + 温度)是把&quot;语义 ID 空间&quot;和&quot;自然语言 query 空间&quot;打通的轻量手段，工程上易加；其三，缺真实搜索日志时用标题/类目/标签/高频评论词构造伪 query 的弱监督方案，对自建数据可直接复用。但要清醒：本文不能作为&quot;上这套就涨点&quot;的证据，建议把它当设计蓝图——先自建层级语义 ID 体系(预训练编码器聚类 + 行为感知校准)，在自有数据上跑真实训练与离线 replay 验证有效性，再评估双头生成的线上延迟与 query 安全过滤成本。直接照搬其&quot;预期数字&quot;做决策是有风险的。</p>"
+      }
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:akiasprin/ripple-reader",
+      "title": "ripple-reader: Ripple Reader: LLM-driven academic paper discovery & deep reading",
+      "url": "https://github.com/akiasprin/ripple-reader",
+      "source": "github",
+      "description": "Ripple Reader: LLM-driven academic paper discovery & deep reading",
+      "language": "Rust",
+      "stars": 8,
+      "created_at": "2026-06-07"
+    },
+    {
+      "rank": 2,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "language": "model",
+      "stars": 113,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 4734,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 4,
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 1937,
+      "created_at": "2026-01-21"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 1454,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 6,
+      "id": "hf_space:Qwen/Qwen-Image",
+      "title": "Qwen/Qwen-Image",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 907,
+      "created_at": "2025-08-03"
+    }
+  ]
+}

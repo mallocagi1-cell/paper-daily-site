@@ -1,0 +1,350 @@
+{
+  "date": "2026-07-10",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 59,
+    "papers_selected": 10,
+    "score_min": 3.25,
+    "score_max": 4.35
+  },
+  "coverage": {
+    "status": "pass",
+    "core_paper": "From Noisy Traces to Root Causes: Structural Trajectory Analysis and Causal Extraction for Agent Optimization",
+    "industry_practice": "阿里云百炼推出Agentic RAG服务，让AI的知识检索和回答更精准",
+    "recent_paper": "From Noisy Traces to Root Causes: Structural Trajectory Analysis and Causal Extraction for Agent Optimization",
+    "source_diversity": {
+      "arxiv": 4,
+      "industry_blog": 2,
+      "web_search": 2,
+      "blog_rss": 1,
+      "huggingface": 1
+    },
+    "chinese_source": "已找到"
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2607.07702",
+      "title": "From Noisy Traces to Root Causes: Structural Trajectory Analysis and Causal Extraction for Agent Optimization",
+      "url": "https://arxiv.org/abs/2607.07702",
+      "authors": "Ying Chang, Jiahang Xu, Xuan Feng, Chenyuan Yang, Peng Cheng, Yuqing Yang",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 4.35,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "STRACE 面向长程 LLM Agent 的失败诊断与策略优化，解决真实执行轨迹冗余、异质、包含大量无关步骤的问题。方法在批次层面挖掘失败模式、筛掉重复轨迹；在单条轨迹内构建文本依赖图做因果定位，保留真正导致失败的模块和证据。论文在 VeruSAGE-Bench 形式化验证任务上把人工专家设计 Agent 的成功率从 42.5% 提升到 58.5%，约 1.4 倍。",
+      "key_insight": "对搜索/推荐中的 Agent 调优很有借鉴意义：不要把完整日志直接塞给反思模型，而应先做失败聚类、因果步骤抽取和 root-cause 模块定位。社区搜索里的复杂问答、工具化审核、自动标注链路都可复用这种“轨迹压缩 + 因果定位”思路，用更短上下文生成更可执行的优化建议。",
+      "tags": [
+        "agent optimization",
+        "trace analysis",
+        "root cause"
+      ],
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.45,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2607.07702",
+        "title": "From Noisy Traces to Root Causes: Structural Trajectory Analysis and Causal Extraction for Agent Optimization",
+        "status": "completed",
+        "content": "# 深度解读：From Noisy Traces to Root Causes: Structural Trajectory Analysis and Causal Extraction for Agent Optimization\n\n## 1. 问题与动机\n这篇论文关注长程 Agent 的一个很实际的问题：当 Agent 失败时，我们通常把完整执行轨迹、截断后的最近步骤，或检索出的相似步骤交给另一个 LLM 做反思和提示词优化，但这些上下文并不等价于真正的失败原因。长程任务里的轨迹包含规划、工具调用、代码执行、验证、重试和状态转移，错误可能在第 50 步暴露，却由第 5 步的规划参数或检索选择引起。完整轨迹会把大量成功步骤和旁路探索塞进优化器，导致伪相关和幻觉式修补；短截断又会丢掉远距离但因果关键的上游证据。\n\n作者把这个问题定位为 agentic workflow 的结构化 credit assignment：优化目标不应该是“哪里报错就修哪里”，而应该找出哪个模块、哪段输入或哪条控制依赖真正把系统带向失败。论文指出现有自动提示优化、Reflexion、GEPA、TextGrad 等方法已经能利用失败反馈改进 Agent，但在复杂 workflow 中仍主要依赖非结构化反馈、整条轨迹或局部历史。STRACE 的动机是把执行日志从线性文本变成结构化因果证据，让优化器看到高信噪比的失败上下文。这个问题对搜索/推荐 Agent 同样关键：多跳检索、query 改写、工具路由、答案验证任一环节出错，都可能在最后回答才表现出来，单看最终错误很难知道该修召回、重排、规划还是生成。\n\n## 2. 方法详解\nSTRACE 是一个四阶段框架，目标是在不改底层可执行代码的情况下，对 Agent 的可调 instruction / prompt policy 做持续优化。第一阶段是 Structural Modeling。系统先读取 Agent 的实现，识别 workflow 中的原子功能模块，例如 Planner、Retriever、Code Interpreter、Verifier、Executor 等，再构造 textual Execution Dependency Graph。图的边包含两类依赖：data dependency 表示某模块消费了另一个模块产生的 artifact，比如计划、检索证据、代码执行输出；control dependency 表示某模块决定下游模块是否被调用或选择哪个工具/子 Agent。这个 EDG 不是为了精确还原程序控制流，而是给后续故障归因提供轻量拓扑先验。\n\n第二阶段是 Failure Pattern Mining and Trace Filtering。长程 Agent rollout 往往有大量失败轨迹，作者没有直接让 LLM 读全部日志，而是让系统从一条 pilot trace 中推断日志 schema 和结构分隔符，例如 Action、Observation、局部模块状态等，再生成确定性的 Python parser 批量抽取信号。随后从两个维度做全局诊断：一是 statistical severity，估计某个局部节点错误出现时全局任务失败的条件概率，用于发现致命瓶颈；二是 structural path patterns，识别重复调用、死循环、超时路径等异常拓扑。基于这些诊断，STRACE 对失败轨迹按严重性和结构路径聚类，每类只选少量代表样本，避免 optimizer 被重复失败淹没。如果日志没有显式节点错误，系统会退化为用全局结果和路径模式做聚类。\n\n第三阶段是 Causal Localization。过滤后的代表轨迹仍然很长，STRACE 不把“报错节点”当作根因，而是先从 manifestation node 出发在 EDG 上反向遍历 data/control dependency，抽取 minimal causal slice。凡是无法通过依赖闭包影响失败节点的步骤都会被删除，即使它们时间上更早。然后模型在 causal slice 上做语义推断，判断错误最早从哪里产生。例如 Code Interpreter 的 syntax crash 可能只是 manifestation，真正 root cause 是 Planner 更早生成了错误参数。第四阶段是 Inductive Policy Optimization。系统按 root-cause node 聚合 causal slice，把实例级错误抽象成可复用自然语言规则，并只注入到被定位的模块 instruction 中。这一点很重要：它避免把修复规则扩散到无关模块，也避免因单个失败样本过拟合整个 Agent。\n\n实验设置上，作者在三类任务上评估：HotpotQA 多文档多跳问答，使用 DSPy 风格四阶段 workflow 和 GPT-4o；WebArena 的 Shopping、CMS、Reddit、GitLab web 交互任务，使用 CoT web navigation agent；VeruSAGE-Bench 形式化验证任务，包含 IronKV、Memory Allocator、Node Replication、NRKernel、Storage 五个真实 Rust 项目，平均上下文长度约 947 行，使用 hierarchical router-executor multi-agent framework 和 o4-mini，每个任务最多 20 次 repair 或 20 分钟。优化器统一使用 Claude Sonnet 4.5，HotpotQA 指标是 EM，WebArena 和 VeruSAGE 指标是 Success Rate，优化成本按 API token 估算。\n\n## 3. 核心技术贡献\n第一，STRACE 把 Agent 优化上下文从“线性日志”改成“结构化因果证据”。这不是简单摘要，而是先抽取模块级依赖图，再用依赖闭包保留对失败有因果路径的步骤。相比 full trajectory，它降低噪声；相比 sliding window 或 current-node slicing，它保留远距离上游原因。\n\n第二，它把批量失败选择做成可解释的数据处理流程。论文中不是让 LLM 主观挑几条失败，而是用 parser 抽取全局 outcome、局部节点状态和调用路径，再按 severity 与 structural pattern 选代表轨迹。这解决了 rollout 中常见的两个问题：同类失败重复过多导致浪费 token，不同失败混在一起导致优化器给出泛化差的补丁。\n\n第三，它区分 manifestation node 和 root cause node，并只对 root cause module 注入策略改进。这个设计比“哪里错修哪里”更接近真实工程排障，尤其适合多模块 Agent。论文案例显示，25 条 trace 中 5 个表面报错节点可被重映射到 6 个优化目标，暴露了上游源头；另一个 compute_repair loop 最终被追到 assertion_reasoning_pipeline，修复方向从循环本身转向断言推理策略。\n\n第四，STRACE 给出了一个可落地的 prompt-policy 优化模式：不改代码、不重训模型，而是把 causal slices 抽象成 generalized heuristics，注入特定模块的 instruction。对已有 Agent 系统，这种改动成本低，能和日志、trace、RAG 诊断流水线结合。\n\n## 4. 实验结果分析\n主结果覆盖 HotpotQA、WebArena 和 VeruSAGE-Bench。表格中的关键数字如下：\n\n| 方法 | HotpotQA EM | WebArena ALL SR | VeruSAGE ALL SR |\n| --- | ---: | ---: | ---: |\n| Base Agent | 37.0% | 10.8% | 42.5% |\n| Naive Few-shot | 60.0% | 13.7% | 39.6% |\n| Failure-Aware RAG | 57.7% | 14.4% | 42.5% |\n| Summary-based Selection | 64.3% | 15.1% | 45.3% |\n| Retrieval-based Selection | 46.0% | 14.4% | 41.5% |\n| TextGrad | 62.0% | 17.3% | 未跑，成本超预算 |\n| GEPA | 64.4% | 16.5% | 47.2% |\n| STRACE | 68.5% | 23.7% | 58.5% |\n\n结果显示，STRACE 在三类任务上都是最强。HotpotQA 从 Base 的 37.0% EM 提升到 68.5%，相对 GEPA 的 64.4% 也有优势。WebArena ALL 从 10.8% 到 23.7%，绝对提升 12.9 个百分点；其中 Reddit 任务从 Base 4.5% 到 36.4%，说明结构化故障定位对复杂交互路径特别有效。VeruSAGE-Bench 是最能体现长程诊断价值的任务，STRACE 从 42.5% 提升到 58.5%，绝对 +16.0%，比最强 baseline GEPA 的 47.2% 高 +11.3%。分项目看，Memory Allocator 从 66.7% 到 88.9%，Node Replication 到 100.0%，Storage 从 46.2% 到 61.5%。\n\n消融部分的核心结论是：结构建模、trace filtering 和 causal localization 都不可省。去掉结构建模会削弱后续根因定位；去掉 trace filtering 会让优化器面对更多重复低价值失败；去掉 slicing 或退化成 full trace，会重新引入噪声或上下文成本问题。成本分析也很重要：作者把训练轨迹规模从 1 扩到 453，比较 STRACE、GEPA 和 TextGrad。TextGrad 因处理完整轨迹成本快速上升，GEPA 用局部切片降低成本但效果受限；STRACE 依靠统计瓶颈诊断只保留少量高价值 exemplar，在全量 453 条轨迹下仍保持更好的 cost-performance trend。也就是说，STRACE 的收益不只是准确率，更是让 agent optimization 在大批量日志上可扩展。\n\n## 5. 局限与未来方向\n论文结论本身比较克制，没有专门长篇 limitations，但从方法和实验可以看出几个边界。第一，STRACE 依赖日志中可解析的模块边界、Action/Observation 或类似结构；虽然作者提供了 pilot trace schema inference 和 silent failure fallback，但如果生产系统日志极不规范，EDG 和 parser 的质量会直接影响归因。第二，结构建模由 LLM 读取代码并推断依赖关系，论文附录说明其有效，但在更大、更动态的系统里，依赖图可能过时或不完整，需要和真实 tracing / telemetry 结合。\n\n第三，优化方式主要是自然语言 instruction 更新，不改底层工具实现、检索索引或模型参数。如果失败根因来自召回缺失、权限配置、API 错误或数据质量，prompt policy 只能缓解，不能替代工程修复。第四，实验覆盖 HotpotQA、WebArena、VeruSAGE，但还没有大规模线上 A/B，也没有直接测试搜索/推荐工业流量中的 latency、成本和安全审批。未来方向可以是把 STRACE 接入生产 observability，把 EDG 与 OpenTelemetry、LangSmith、workflow engine traces 对齐；同时把 root-cause 输出分流到 prompt patch、工具修复、索引重建、数据标注等不同治理动作。\n\n## 6. 工业实践意义\n对搜索/推荐团队，STRACE 最直接的价值是给复杂 Agent 失败分析提供了可执行模板。一个社区搜索 Agent 往往包含 query intent 识别、query rewrite、多路召回、重排、证据聚合、答案生成和安全校验。用户看到的是最后答案错误，但根因可能是 query rewrite 丢了约束、召回工具选错语料、重排放大了热门但无关内容，或答案生成忽略了负证据。按 STRACE 的做法，应该先把这些模块建成依赖图，再从失败答案向上回溯 evidence flow，而不是简单把整段对话交给 LLM 总结。\n\n落地上，可以先做一个轻量版本：为每次 Agent 搜索记录模块名、输入输出摘要、候选集 ID、工具调用、错误状态、用户反馈；每天按失败类型聚类，选择代表样本；从最终 bad answer 或人工标注失败点向上追踪影响它的 query、doc、ranking、verification 节点；最后只更新对应模块的提示词、路由规则或阈值。这样比全量日志反思更省 token，也更容易审计。对于高风险场景，root-cause localization 还能帮助区分“生成器胡说”和“检索证据本身错误”，避免把所有问题都甩给 LLM。\n\n部署时要注意两点。第一，STRACE 不是实时在线链路的一部分，更适合离线/准实时优化批处理：用失败日志生成 policy patch，再通过灰度实验上线。第二，prompt patch 必须有回滚和评估门槛，因为自然语言规则可能在其他 query 分布上产生副作用。建议把 STRACE 输出接到离线 replay：在历史失败集、随机正常集和高价值 query 集上同时评估 nDCG、answer groundedness、tool-call cost、latency，再决定是否发布。整体来看，这篇论文把 Agent 优化从“经验式反思”推进到“结构化排障”，是构建可维护 Agentic Search 系统的一块关键工程拼图。",
+        "content_html": "<h1>深度解读：From Noisy Traces to Root Causes: Structural Trajectory Analysis and Causal Extraction for Agent Optimization</h1>\n<h2>1. 问题与动机</h2>\n<p>这篇论文关注长程 Agent 的一个很实际的问题：当 Agent 失败时，我们通常把完整执行轨迹、截断后的最近步骤，或检索出的相似步骤交给另一个 LLM 做反思和提示词优化，但这些上下文并不等价于真正的失败原因。长程任务里的轨迹包含规划、工具调用、代码执行、验证、重试和状态转移，错误可能在第 50 步暴露，却由第 5 步的规划参数或检索选择引起。完整轨迹会把大量成功步骤和旁路探索塞进优化器，导致伪相关和幻觉式修补；短截断又会丢掉远距离但因果关键的上游证据。</p>\n<p>作者把这个问题定位为 agentic workflow 的结构化 credit assignment：优化目标不应该是“哪里报错就修哪里”，而应该找出哪个模块、哪段输入或哪条控制依赖真正把系统带向失败。论文指出现有自动提示优化、Reflexion、GEPA、TextGrad 等方法已经能利用失败反馈改进 Agent，但在复杂 workflow 中仍主要依赖非结构化反馈、整条轨迹或局部历史。STRACE 的动机是把执行日志从线性文本变成结构化因果证据，让优化器看到高信噪比的失败上下文。这个问题对搜索/推荐 Agent 同样关键：多跳检索、query 改写、工具路由、答案验证任一环节出错，都可能在最后回答才表现出来，单看最终错误很难知道该修召回、重排、规划还是生成。</p>\n<h2>2. 方法详解</h2>\n<p>STRACE 是一个四阶段框架，目标是在不改底层可执行代码的情况下，对 Agent 的可调 instruction / prompt policy 做持续优化。第一阶段是 Structural Modeling。系统先读取 Agent 的实现，识别 workflow 中的原子功能模块，例如 Planner、Retriever、Code Interpreter、Verifier、Executor 等，再构造 textual Execution Dependency Graph。图的边包含两类依赖：data dependency 表示某模块消费了另一个模块产生的 artifact，比如计划、检索证据、代码执行输出；control dependency 表示某模块决定下游模块是否被调用或选择哪个工具/子 Agent。这个 EDG 不是为了精确还原程序控制流，而是给后续故障归因提供轻量拓扑先验。</p>\n<p>第二阶段是 Failure Pattern Mining and Trace Filtering。长程 Agent rollout 往往有大量失败轨迹，作者没有直接让 LLM 读全部日志，而是让系统从一条 pilot trace 中推断日志 schema 和结构分隔符，例如 Action、Observation、局部模块状态等，再生成确定性的 Python parser 批量抽取信号。随后从两个维度做全局诊断：一是 statistical severity，估计某个局部节点错误出现时全局任务失败的条件概率，用于发现致命瓶颈；二是 structural path patterns，识别重复调用、死循环、超时路径等异常拓扑。基于这些诊断，STRACE 对失败轨迹按严重性和结构路径聚类，每类只选少量代表样本，避免 optimizer 被重复失败淹没。如果日志没有显式节点错误，系统会退化为用全局结果和路径模式做聚类。</p>\n<p>第三阶段是 Causal Localization。过滤后的代表轨迹仍然很长，STRACE 不把“报错节点”当作根因，而是先从 manifestation node 出发在 EDG 上反向遍历 data/control dependency，抽取 minimal causal slice。凡是无法通过依赖闭包影响失败节点的步骤都会被删除，即使它们时间上更早。然后模型在 causal slice 上做语义推断，判断错误最早从哪里产生。例如 Code Interpreter 的 syntax crash 可能只是 manifestation，真正 root cause 是 Planner 更早生成了错误参数。第四阶段是 Inductive Policy Optimization。系统按 root-cause node 聚合 causal slice，把实例级错误抽象成可复用自然语言规则，并只注入到被定位的模块 instruction 中。这一点很重要：它避免把修复规则扩散到无关模块，也避免因单个失败样本过拟合整个 Agent。</p>\n<p>实验设置上，作者在三类任务上评估：HotpotQA 多文档多跳问答，使用 DSPy 风格四阶段 workflow 和 GPT-4o；WebArena 的 Shopping、CMS、Reddit、GitLab web 交互任务，使用 CoT web navigation agent；VeruSAGE-Bench 形式化验证任务，包含 IronKV、Memory Allocator、Node Replication、NRKernel、Storage 五个真实 Rust 项目，平均上下文长度约 947 行，使用 hierarchical router-executor multi-agent framework 和 o4-mini，每个任务最多 20 次 repair 或 20 分钟。优化器统一使用 Claude Sonnet 4.5，HotpotQA 指标是 EM，WebArena 和 VeruSAGE 指标是 Success Rate，优化成本按 API token 估算。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，STRACE 把 Agent 优化上下文从“线性日志”改成“结构化因果证据”。这不是简单摘要，而是先抽取模块级依赖图，再用依赖闭包保留对失败有因果路径的步骤。相比 full trajectory，它降低噪声；相比 sliding window 或 current-node slicing，它保留远距离上游原因。</p>\n<p>第二，它把批量失败选择做成可解释的数据处理流程。论文中不是让 LLM 主观挑几条失败，而是用 parser 抽取全局 outcome、局部节点状态和调用路径，再按 severity 与 structural pattern 选代表轨迹。这解决了 rollout 中常见的两个问题：同类失败重复过多导致浪费 token，不同失败混在一起导致优化器给出泛化差的补丁。</p>\n<p>第三，它区分 manifestation node 和 root cause node，并只对 root cause module 注入策略改进。这个设计比“哪里错修哪里”更接近真实工程排障，尤其适合多模块 Agent。论文案例显示，25 条 trace 中 5 个表面报错节点可被重映射到 6 个优化目标，暴露了上游源头；另一个 compute_repair loop 最终被追到 assertion_reasoning_pipeline，修复方向从循环本身转向断言推理策略。</p>\n<p>第四，STRACE 给出了一个可落地的 prompt-policy 优化模式：不改代码、不重训模型，而是把 causal slices 抽象成 generalized heuristics，注入特定模块的 instruction。对已有 Agent 系统，这种改动成本低，能和日志、trace、RAG 诊断流水线结合。</p>\n<h2>4. 实验结果分析</h2>\n<p>主结果覆盖 HotpotQA、WebArena 和 VeruSAGE-Bench。表格中的关键数字如下：</p>\n<table><thead><tr><th>方法</th><th>HotpotQA EM</th><th>WebArena ALL SR</th><th>VeruSAGE ALL SR</th></tr></thead><tbody><tr><td>Base Agent</td><td>37.0%</td><td>10.8%</td><td>42.5%</td></tr><tr><td>Naive Few-shot</td><td>60.0%</td><td>13.7%</td><td>39.6%</td></tr><tr><td>Failure-Aware RAG</td><td>57.7%</td><td>14.4%</td><td>42.5%</td></tr><tr><td>Summary-based Selection</td><td>64.3%</td><td>15.1%</td><td>45.3%</td></tr><tr><td>Retrieval-based Selection</td><td>46.0%</td><td>14.4%</td><td>41.5%</td></tr><tr><td>TextGrad</td><td>62.0%</td><td>17.3%</td><td>未跑，成本超预算</td></tr><tr><td>GEPA</td><td>64.4%</td><td>16.5%</td><td>47.2%</td></tr><tr><td>STRACE</td><td>68.5%</td><td>23.7%</td><td>58.5%</td></tr></tbody></table>\n<p>结果显示，STRACE 在三类任务上都是最强。HotpotQA 从 Base 的 37.0% EM 提升到 68.5%，相对 GEPA 的 64.4% 也有优势。WebArena ALL 从 10.8% 到 23.7%，绝对提升 12.9 个百分点；其中 Reddit 任务从 Base 4.5% 到 36.4%，说明结构化故障定位对复杂交互路径特别有效。VeruSAGE-Bench 是最能体现长程诊断价值的任务，STRACE 从 42.5% 提升到 58.5%，绝对 +16.0%，比最强 baseline GEPA 的 47.2% 高 +11.3%。分项目看，Memory Allocator 从 66.7% 到 88.9%，Node Replication 到 100.0%，Storage 从 46.2% 到 61.5%。</p>\n<p>消融部分的核心结论是：结构建模、trace filtering 和 causal localization 都不可省。去掉结构建模会削弱后续根因定位；去掉 trace filtering 会让优化器面对更多重复低价值失败；去掉 slicing 或退化成 full trace，会重新引入噪声或上下文成本问题。成本分析也很重要：作者把训练轨迹规模从 1 扩到 453，比较 STRACE、GEPA 和 TextGrad。TextGrad 因处理完整轨迹成本快速上升，GEPA 用局部切片降低成本但效果受限；STRACE 依靠统计瓶颈诊断只保留少量高价值 exemplar，在全量 453 条轨迹下仍保持更好的 cost-performance trend。也就是说，STRACE 的收益不只是准确率，更是让 agent optimization 在大批量日志上可扩展。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文结论本身比较克制，没有专门长篇 limitations，但从方法和实验可以看出几个边界。第一，STRACE 依赖日志中可解析的模块边界、Action/Observation 或类似结构；虽然作者提供了 pilot trace schema inference 和 silent failure fallback，但如果生产系统日志极不规范，EDG 和 parser 的质量会直接影响归因。第二，结构建模由 LLM 读取代码并推断依赖关系，论文附录说明其有效，但在更大、更动态的系统里，依赖图可能过时或不完整，需要和真实 tracing / telemetry 结合。</p>\n<p>第三，优化方式主要是自然语言 instruction 更新，不改底层工具实现、检索索引或模型参数。如果失败根因来自召回缺失、权限配置、API 错误或数据质量，prompt policy 只能缓解，不能替代工程修复。第四，实验覆盖 HotpotQA、WebArena、VeruSAGE，但还没有大规模线上 A/B，也没有直接测试搜索/推荐工业流量中的 latency、成本和安全审批。未来方向可以是把 STRACE 接入生产 observability，把 EDG 与 OpenTelemetry、LangSmith、workflow engine traces 对齐；同时把 root-cause 输出分流到 prompt patch、工具修复、索引重建、数据标注等不同治理动作。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队，STRACE 最直接的价值是给复杂 Agent 失败分析提供了可执行模板。一个社区搜索 Agent 往往包含 query intent 识别、query rewrite、多路召回、重排、证据聚合、答案生成和安全校验。用户看到的是最后答案错误，但根因可能是 query rewrite 丢了约束、召回工具选错语料、重排放大了热门但无关内容，或答案生成忽略了负证据。按 STRACE 的做法，应该先把这些模块建成依赖图，再从失败答案向上回溯 evidence flow，而不是简单把整段对话交给 LLM 总结。</p>\n<p>落地上，可以先做一个轻量版本：为每次 Agent 搜索记录模块名、输入输出摘要、候选集 ID、工具调用、错误状态、用户反馈；每天按失败类型聚类，选择代表样本；从最终 bad answer 或人工标注失败点向上追踪影响它的 query、doc、ranking、verification 节点；最后只更新对应模块的提示词、路由规则或阈值。这样比全量日志反思更省 token，也更容易审计。对于高风险场景，root-cause localization 还能帮助区分“生成器胡说”和“检索证据本身错误”，避免把所有问题都甩给 LLM。</p>\n<p>部署时要注意两点。第一，STRACE 不是实时在线链路的一部分，更适合离线/准实时优化批处理：用失败日志生成 policy patch，再通过灰度实验上线。第二，prompt patch 必须有回滚和评估门槛，因为自然语言规则可能在其他 query 分布上产生副作用。建议把 STRACE 输出接到离线 replay：在历史失败集、随机正常集和高价值 query 集上同时评估 nDCG、answer groundedness、tool-call cost、latency，再决定是否发布。整体来看，这篇论文把 Agent 优化从“经验式反思”推进到“结构化排障”，是构建可维护 Agentic Search 系统的一块关键工程拼图。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2607.07321",
+      "title": "From Atomic Actions to Standard Operating Procedures: Iterative Tool Optimization for Self-Evolving LLM Agents",
+      "url": "https://arxiv.org/abs/2607.07321",
+      "authors": "Haipeng Ding, Yuexiang Xie, Zhewei Wei, Yaliang Li, Bolin Ding",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "EvoSOP 针对工具型 LLM Agent 反复调用原子工具、重复发明多步流程的问题，提出把执行轨迹中的原子动作自动合成为可复用 SOP，并作为更高阶 callable tool 回写到工具集。框架包含构造、合并、评估、剪枝四个生命周期阶段，用迭代工具优化提升任务成功率并减少交互轮数。论文没有在摘要中披露具体百分点，但明确报告相对 baseline 的成功率提升和交互轮次下降。",
+      "key_insight": "这篇的核心启发是把高频搜索/审核/问答流程沉淀成动态工具，而不是永远让 Agent 逐步规划。对 UGC 社区搜索，可以把“query 改写→召回诊断→证据聚合→答案校验”等稳定链路封装成 SOP，既降低推理成本，也减少工具调用漂移和长链路失败。",
+      "tags": [
+        "tool use",
+        "self-evolving agent"
+      ],
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.25
+    },
+    {
+      "rank": 3,
+      "id": "web_search:e0df31ae7b36",
+      "title": "How Search Quality Shapes RL Outcomes",
+      "url": "https://exa.ai/blog/rl-search-outcomes",
+      "authors": "",
+      "company": [
+        "Exa"
+      ],
+      "source": "industry_blog",
+      "published": "2026-06-01",
+      "total_score": 3.95,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "Exa 从工程侧研究“搜索后端质量”如何影响 RL 搜索智能体训练，比较 Exa 与 Google/SERP baseline，关注 pass@k、轨迹多样性和 live-web 检索质量。文章报告多个任务上约 +3.50pp 到 +3.51pp 的改善信号，并指出不同搜索工具会改变 RL 后的概率质量集中方式。它不是传统论文，但直接回答了搜索 Agent 训练中常被忽略的变量：检索环境本身。",
+      "key_insight": "如果要训练社区搜索 Agent，不能只调 reward 和 policy，还要把搜索后端作为训练环境的一部分做 A/B。召回质量、实时性、摘要片段结构会影响 RL 学到的查询策略；建议在离线训练前固定可观测检索指标，并用多个后端或索引版本评估策略是否过拟合某个搜索工具。",
+      "tags": [
+        "retrieval-augmented generation",
+        "question answering"
+      ],
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.1
+    },
+    {
+      "rank": 4,
+      "id": "web_search:9307a85e3fe9",
+      "title": "A Roadmap for Agentic Recommender Systems",
+      "url": "https://arxiv.org/html/2607.04433v1",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-07-05",
+      "total_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "这篇综述把 Agentic Recommender Systems 从静态排序推进到“自主信息寻求”系统，提出按自治水平和三类范式组织：agent-assisted recommendation、agent-as-recommender、agent-as-user-simulator。论文系统梳理 profile、memory、tool use、workflow、optimization、evaluation，并在表格中比较 classical RS、LLM-based RS、Agentic RS 的 7 个维度，包括目标、主动性、上下文、交互、适应性、记忆、工具知识。",
+      "key_insight": "对搜索/推荐从业者的价值在于给“Agent 化推荐”划边界：不是把 LLM 接在排序后面，而是让系统能解释目标、拆任务、调用检索/排序/API、维护约束状态并迭代修正。社区搜索中的探索式查询、商品/内容发现和复杂约束推荐，都可按 LoA 分级逐步落地，避免一开始就做不可控全自治。",
+      "tags": [
+        "recommendation systems",
+        "retrieval-augmented generation"
+      ],
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.1
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2607.07050",
+      "title": "Behavior Leverage Imbalance in Multi-Teacher On-Policy Distillation",
+      "url": "https://arxiv.org/abs/2607.07050",
+      "authors": "Jiabin Shen, Guang Chen, Chengjun Mao",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文研究多教师 on-policy distillation 训练工具型语言模型时的行为偏移：一个教师偏工具调用、另一个教师偏直接回答，vanilla GKD 虽提升 tool-call recall，却会让模型过度调用工具。作者提出 behavior leverage imbalance，指出 <tool_call>、函数名等模式入口 token 对全局生成模式有过强控制，并用 Soft Clamp 动态压缩极端 token-level JS divergence。APIGen-MT 上 over-calling 从 13.7% 降到 9.0%，同时保持决策准确率；BFCL 多轮诊断中也减少工具循环和重复调用。",
+      "key_insight": "搜索 Agent 的线上成本和稳定性往往毁在“该搜不搜、该停不停”。这篇提示我们监控聚合 loss 不够，要盯住工具调用入口 token 和函数名等结构位置；训练 query 改写、检索调用、外部 API 调用模型时，可用类似 Soft Clamp 抑制过度检索，同时保留必要召回能力。",
+      "tags": [
+        "tool use",
+        "distillation"
+      ]
+    },
+    {
+      "rank": 6,
+      "id": "web_search:ddab1a389e37",
+      "title": "阿里云百炼推出Agentic RAG服务，让AI的知识检索和回答更精准",
+      "url": "https://www.icloudnews.net/a/119606.html",
+      "authors": "",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "industry_blog",
+      "published": "2026-07-07",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "阿里云百炼的 Agentic RAG 服务是近期产业实践，核心链路是意图理解、任务拆解、知识检索、结果验证闭环。系统内置 6 类检索工具：语义搜索、章节浏览、章节精读、页面浏览、SQL 执行、文件获取，并支持 15 个知识库联合检索；回答阶段通过 Agentic Generation 反复验证检索结果，并给出文档、段落、页码级来源。报道还提到保险、汽车、物流、零售等行业数万家企业使用百炼 RAG。",
+      "key_insight": "这类产品化方案说明 Agentic RAG 的工业重点已经从“多轮检索”扩展到可追溯、可配置、多知识库路由。UGC 搜索可以借鉴其工具分层：把帖子语义检索、评论页浏览、结构化 SQL、用户画像查询拆成不同工具，并要求最终答案带片段来源，降低复杂查询的幻觉风险。",
+      "tags": [
+        "retrieval-augmented generation",
+        "multi-hop question"
+      ],
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.95
+    },
+    {
+      "rank": 7,
+      "id": "web_search:1551c32e3b43",
+      "title": "A Survey of LLM-based Deep Search Agents: Paradigm, Optimization, Evaluation, and Challenges",
+      "url": "https://github.com/YunjiaXi/Awesome-Search-Agent-Papers",
+      "authors": "Yunjia Xi et al.",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-07-01",
+      "total_score": 3.65,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该资源围绕 LLM-based Deep Search Agents 汇总研究脉络，并标注相关 survey 已被 ACL 2026 Main Conference 接收。分类覆盖早期迭代检索、免调参方法、SFT 方法、RL 方法，以及多跳 QA、Deep Research、事实核查、开放域 QA 等评测方向。它本身更像持续更新的论文索引，但对快速定位 agentic search 技术路线和 benchmark 很有用。",
+      "key_insight": "对日报读者的意义是提供检索 Agent 的路线图：从 prompt-only 迭代检索，到 SFT/RL 训练搜索策略，再到 Deep Research 式长程信息寻求。做社区搜索实验时，可用它反查同类 benchmark 和训练范式，避免只凭单篇论文设计评估。",
+      "tags": [
+        "multi-hop question",
+        "retrieval-augmented generation"
+      ],
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.8
+    },
+    {
+      "rank": 8,
+      "id": "blog_rss:openai_research_blog:https://openai.com/index/chatgpt-for-your-most-ambitious-work",
+      "title": "ChatGPT is now a partner for your most ambitious work",
+      "url": "https://openai.com/index/chatgpt-for-your-most-ambitious-work",
+      "authors": "",
+      "company": [
+        "OpenAI"
+      ],
+      "source": "blog_rss",
+      "published": "2026-07-09",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "OpenAI 发布 ChatGPT Work，把 ChatGPT 定义为可跨 apps、files、browser、desktop 执行动作的工作型 Agent，可把目标拆成较小步骤并持续数小时完成。文中披露 Codex 每周超过 500 万用户，其中超过 100 万用于非软件开发工作；内测案例包括 RingCentral 从支持 1 个产品经理扩展到约 50 个、NVIDIA 把会前 Excel 工作流中约 40% 的时间转给 Agent。",
+      "key_insight": "这篇不是论文，但展示了 Agent 产品化的关键控制面：连接器、浏览器/电脑操作、后台任务、审批和企业治理。对搜索/推荐团队而言，Agentic Search 最终也需要这些产品机制，尤其是权限、可审计进度、重要动作审批和跨应用上下文，而不仅是更强的 RAG 算法。",
+      "tags": [
+        "industry agent"
+      ]
+    },
+    {
+      "rank": 9,
+      "id": "hf:2607.07534",
+      "title": "Infinite Worlds with Versatile Interactions",
+      "url": "https://huggingface.co/papers/2607.07534",
+      "authors": "Zelin Gao, Qiuyu Wang, Jiapeng Zhu, Jingye Chen, Zichen Liu",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-07-07",
+      "total_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LingBot-World 2.0 面向交互式世界模型，提出无界交互时长、实时蒸馏、多样化动作事件和 agentic harness 四项升级。系统声称蒸馏后的实时版本可驱动 720p、60fps 视频流；agentic harness 中 pilot agent 规划并执行角色行为，director agent 随场景进展合成新的环境元素。虽然主题偏 embodied/world model，但“长时程交互 + 双 Agent 协作”的结构与复杂搜索 Agent 相通。",
+      "key_insight": "这篇提示 Agentic 系统可以把“规划者”和“环境生成/维护者”拆开，避免单模型同时承担行为决策和世界状态更新。对搜索场景，可以映射为 query planner 负责下一步信息需求，context director 负责维护候选证据、用户约束和会话状态，从而支持更长时程的探索式搜索。",
+      "tags": [
+        "agentic harness",
+        "world model"
+      ]
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:oai:arXiv.org:2607.06648",
+      "title": "Final Checkpoints Are Not Enough: Analyzing Latent Reasoning Faithfulness Along Training Trajectories",
+      "url": "https://arxiv.org/abs/2607.06648",
+      "authors": "Hengyu Jin, Shu Yang, Di Wang",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文分析 latent reasoning 方法在训练过程中的 faithfulness，而不是只看最终 checkpoint。作者用可验证 counterfactual edit 和 latent reasoning step 的 noise-ablation activation patch，跟踪不同范式在多个保存 checkpoint 上的因果贡献变化。结果显示：输出层面最终可能同样不忠实，但训练轨迹不同；activation 层面 latent reasoning step 对最终答案的因果贡献会随训练衰减；且二选一答案和开放式解码的变化趋势不同。",
+      "key_insight": "对 Agent 搜索的启发是：中间推理轨迹“看起来合理”不等于因果有效，尤其在工具调用、检索链和答案生成分离训练时。评估时应加入轨迹级反事实编辑和关键步骤 ablation，而不是只在最终响应上做准确率或 LLM-as-judge；这有助于发现伪推理和不可解释的成功。",
+      "tags": [
+        "reasoning"
+      ],
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.3
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_dataset:Qwen/AgentWorldBench",
+      "title": "Qwen/AgentWorldBench",
+      "url": "https://huggingface.co/datasets/Qwen/AgentWorldBench",
+      "source": "huggingface",
+      "description": "AgentWorldBench AgentWorldBench is a comprehensive evaluation benchmark for language world models, constructed from real-world observations of frontier model trajectories on established benchmarks such as Tool Decathlon, Terminal-Bench 1.0 & 2.0, and OSWorld-Verified. Every evalu; tags: task_categories:text-generation, language:en, license:apache-2.0, size_categories:1K<n<10K, format:json, modality:tabular, modality:text, library:datasets",
+      "language": "dataset",
+      "stars": 72,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 2,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit",
+      "language": "model",
+      "stars": 457,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit",
+      "language": "model",
+      "stars": 181,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnWorld-Teleop",
+      "title": "Alibaba-DAMO-Academy/RynnWorld-Teleop",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: diffusers, world-model, robotics, teleoperation, video-generation, image-to-video, egocentric, diffusion",
+      "language": "model",
+      "stars": 6,
+      "created_at": "2026-07-03"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnWorld-4D",
+      "title": "Alibaba-DAMO-Academy/RynnWorld-4D",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-4D",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: diffusers, world-model, robotics, video-generation, diffusion, 4d, rgb-depth-flow, embodied-ai",
+      "language": "model",
+      "stars": 6,
+      "created_at": "2026-07-03"
+    }
+  ]
+}

@@ -1,0 +1,179 @@
+{
+  "date": "2026-07-06",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 9,
+    "papers_selected": 3,
+    "score_min": 3.05,
+    "score_max": 4.2,
+    "coverage": "gaps: industry practice unfillable after dedup; source diversity pass with web_search 2/3 and conference_papers 1/3; core generative pass; recency pass"
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2503.10703",
+      "title": "LatentCRS: A Variational EM Framework for Bridging Semantics and Behavior in LLM-based Conversational Recommendation",
+      "url": "https://arxiv.org/abs/2503.10703",
+      "authors": "Guanrong Li, Kuo Tian, Jinnan Qi, Qinghan Fu, Zhen Wu, Rui Xia, Xinyu Dai",
+      "company": [
+        "Nanjing University"
+      ],
+      "source": "web_search",
+      "published": "2026-06-22",
+      "total_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.2,
+      "summary": "这篇论文面向 LLM 会话推荐中“语义理解强、行为协同弱”的断层，把用户对话和历史交互视为同一潜在意图的两个观测，并用变分 EM 在行为空间与语义空间之间学习离散意图锚点。模型以 Llama-3.1-8B-Instruct 编码语义、以 ICLRec 建模序列行为，在 MovieLens-1M 上 Recall@5 达 0.1437、NDCG@5 达 0.0921；采样评测中 LatentCRS 变体在 MovieLens-1M Recall@5 最高到 0.180，明显高于 GPT-4、Chat-Rec、UniCRS 等基线。",
+      "key_insight": "核心价值在于把 LLM 从“直接生成推荐结果”降级为语义归一化、约束过滤和重排组件，把稳定的协同行为建模留给可训练推荐骨干。对社区搜索/推荐场景，这提示我们可以先用行为序列学习用户隐式意图，再用大模型解析当轮 query 或对话约束，避免纯 prompt 推荐无法利用点击历史；消融中去掉 inference module 后 MovieLens-1M Recall@5 从 0.1437 降到 0.0232，说明意图桥接不是装饰模块。",
+      "deep_reading": {
+        "paper_id": "arxiv:2503.10703",
+        "title": "LatentCRS: A Variational EM Framework for Bridging Semantics and Behavior in LLM-based Conversational Recommendation",
+        "status": "completed",
+        "content": "# LatentCRS 深度解读\n\n## 1. 问题与动机\n\n这篇论文要解决的是 LLM 会话推荐里一个很具体的断层：LLM 擅长理解用户在对话里显式表达的语义偏好，但不天然掌握推荐系统依赖的行为协同结构。作者用“啤酒和尿布”式例子说明，很多共购、共看、共点击关系并没有直接的文本语义相似性，纯文本训练出来的 LLM 很难仅靠描述理解这种非语言依赖。已有两类路线都不够理想：一种把推荐模型当工具挂在 agent 后面，LLM 负责对话，推荐模型负责排序，但二者解耦，推荐模型不能直接感知当前对话中激活的约束；另一种把 item 描述转成文本并用用户行为继续微调 LLM，但大目录会受到上下文窗口限制，大规模行为 fine-tuning 成本也不适合真实业务。\n\n作者的核心判断是：对话描述和历史交互不是两个孤立信号，而是同一个潜在用户意图的不同观测。比如用户说想买笔记本配件，历史里又买过电脑和外设但没有包，这两组信号都指向“ laptop bag ”这类潜在需求。论文因此把 latent intent 作为语义空间与行为模式之间的桥梁，用概率潜变量建模替代简单拼接文本和行为 embedding。这个问题对社区搜推也很重要：UGC 场景下 query 很短、点击历史噪声大、用户兴趣会随对话或当前搜索快速变化，如果只用 LLM 做语义扩展容易丢掉协同行为，如果只用序列模型又无法理解当轮自然语言约束。\n\n## 2. 方法详解\n\nLatentCRS 把会话推荐写成给定用户历史交互序列和多轮对话上下文后预测目标 item 的最大似然问题。直接建模很困难，因为行为序列和自然语言对话处在不同表征空间。作者引入离散潜变量 z 表示用户意图，并把目标 item 的预测分布改写为对 latent intent 的边缘化：模型不直接从“历史 + 对话”跳到 item，而是先估计用户属于哪些意图原型，再在这些意图条件下产生推荐。\n\n潜在意图不是连续无限空间，而是通过向量量化离散化成一组 anchor vectors。初始化时，作者从所有用户 session 的行为上下文 embedding 中构造全局池，用 K-Means 聚类得到主要质心，这些质心就是初始 intent anchors。重要的是，这些 anchors 不是固定词表；在后续 M-step 联合训练里会继续被梯度更新，从而可以随着 LLM 语义 embedding 的引入而移动。这个设计避免了“语义端学语义、行为端学行为”的静态对齐。\n\n训练使用变分 EM。E-step 是 Intent Inference：固定生成模型，用 inference model 估计用户意图分布 q(z | history, dialogue, item)。M-step 是 Recommendation Learning：固定 inference model，从估计的意图分布中采样 latent intent，优化生成模型，让它在意图条件下区分真实 item 和负样本。因为完整 item 空间归一化成本太高，作者没有直接估计精确概率，而是定义未归一化 item scoring function；其中 item embedding 与“上下文表示 x 意图原型”做 element-wise 融合，再用 InfoNCE 风格负采样优化。这更符合推荐系统关注相对排序的实际需求。\n\n为了避免随机初始化下两个模块互相提供噪声监督，论文设计了两段 warm-up。Inference model warm-up 增加一个 assistant recommendation module，要求估计出的 intent distribution 本身就足以预测目标 item；Generative model warm-up 则让生成模型先具备基础 item retrieval 能力，同时让自己的 intent prior 靠近 inference model 的估计。联合训练阶段仍保留辅助推荐损失，它的作用是防止 posterior collapse：如果 q(z) 退化成均匀或无信息分布，辅助目标会马上拉低 item prediction 表现。\n\n推理时有三个变体。Base 只把 LLM 用作语义归一化和编码器；Filtered 让 LLM 从对话里抽取强约束属性，比如“动画电影”“某类商品”，再硬过滤候选；Verified/Rerank 则让 LLM 作为 critic 检查推荐 item 与用户请求的一致性并重排。这个分层很实用：大多数召回候选由轻量行为骨干完成，LLM 只在约束解析或语义验证处增加成本。\n\n## 3. 核心技术贡献\n\n第一，论文把 LLM 会话语义和推荐行为协同之间的 gap 明确建成潜变量问题，而不是靠 prompt 拼接或 agent 工具调用绕过去。它的创新点不是“用 LLM 做推荐”，而是让 LLM 的语义能力进入一个可训练的推荐概率框架。\n\n第二，离散 intent anchors 兼具行为可解释性和训练稳定性。anchors 来自行为空间 K-Means，因此一开始就有协同结构；之后又能被联合训练更新，吸收语义信息。论文的可视化显示，一些 anchor 会对应“儿童动画电影”“悬疑暴力电影”等语义一致的 top items，这说明 latent space 没有完全变成不可解释黑盒。\n\n第三，变分 EM 比直接 KL 对齐更稳。消融里 Direct KL Alignment 在 MovieLens-1M Recall@5 只有 0.0847，而完整模型是 0.1437；VideoGames 上 Recall@5 从 0.0728 提到 0.1378。也就是说，同时更新两个分布会带来优化不稳定，交替优化更适合这种语义/行为双空间对齐。\n\n第四，作者给出了一种低成本使用 LLM 的方式。传统 LLM CRS 往往每轮生成大量文本，LatentCRS 的基础变体在 MovieLens-1M 上输入约 85.50 tokens、输出约 1.00 token、本地推理时间 87ms；相比 Llama-3.1-8B few-shot 的 119.51 输入 tokens、148.20 输出 tokens、2568ms，成本差异非常大。这一点比单纯追求更高效果更接近工业部署约束。\n\n## 4. 实验结果分析\n\n实验覆盖 MovieLens-1M、Amazon VideoGames、Amazon CDs and Vinyl 三个真实数据集。LLM 端使用 Llama-3.1-8B-Instruct，序列推荐骨干使用 ICLRec；GPT-4、Gemini-1.5-Pro、Llama-3.1-8B 作为 few-shot baseline，Chat-Rec 和 InteRecAgent 使用与 LatentCRS 相同的 ICLRec 骨干以保证协同知识公平。\n\n| 设置 | 方法 | MovieLens Recall@5 | MovieLens NDCG@5 | VideoGames Recall@5 | VideoGames NDCG@5 |\n|---|---|---:|---:|---:|---:|\n| 全量单轮 | CRM | 0.1165 | 0.0690 | 0.0024 | 0.0014 |\n| 全量单轮 | UNICORN | 0.1215 | 0.0734 | 0.1138 | 0.0753 |\n| 全量单轮 | CRIF | 0.0784 | 0.0489 | 0.0427 | 0.0267 |\n| 全量单轮 | LatentCRS Base | 0.1437 | 0.0921 | 0.1378 | 0.0964 |\n\n在 sampled 单轮设置里，LatentCRS 的 LLM 增强变体优势更明显。MovieLens-1M 上，GPT-4 Recall@5 为 0.064，Chat-Rec 为 0.086，UniCRS 为 0.092，CRAG 为 0.104；LatentCRS 三个变体分别达到 0.142、0.180、0.160。VideoGames 上，LatentCRS 最高 Recall@5 到 0.180、NDCG@5 到 0.1386，也高于 GPT-4、Chat-Rec、UniCRS、CRAG。Amazon CDs 是一个例外：UNICORN 在部分单轮指标上很强，作者解释为 CDs 有 531 个属性，而 MovieLens 只有 18 个属性，基于显式属性询问的 hard filter 在这种窄属性空间特别占优，但不一定代表更自然的多轮推荐能力。\n\n多轮设置中，指标是 S@K 和 AT。MovieLens sampled 上，LatentCRS rerank 变体 S@3 达 0.532、AT 为 3.298；Chat-Rec S@3 为 0.212、AT 为 3.618，GPT-4 S@3 为 0.246、AT 为 3.472。VideoGames 上，LatentCRS rerank 变体 S@3 达 0.378、AT 为 3.706，也高于多数 baseline。作者认为多轮场景里 LLM 的价值更多体现在提出澄清问题、解释反馈并形成更高质量约束，而不是直接替代推荐模型。\n\n消融结果非常关键。完整模型在 MovieLens-1M Recall@5/NDCG@5 为 0.1437/0.0921；去掉 inference module 后掉到 0.0232/0.0147；直接 KL 对齐为 0.0847/0.0518；去掉 RecLoss 为 0.0755/0.0698。VideoGames 上也类似：完整模型 Recall@5 0.1378，去掉 inference module 只有 0.0309。说明 latent intent inference、交替 EM 和辅助推荐损失都不是可有可无的工程细节。\n\n## 5. 局限与未来方向\n\n作者在结论里明确提出一个未来方向：当前 LatentCRS 主要学习当前会话和历史行为对应的 latent intent，但还没有显式建模意图随长对话演化的轨迹。后续如果能区分长期稳定偏好和短期临时偏好，推荐准确性和用户满意度可能进一步提升。\n\n论文还有几个实践层面的限制。第一，评测多轮对话大量依赖 Gemini-1.5-Pro 用户模拟器，虽然作者做了 30 个多轮 session 的盲评，两个标注者认为模拟对话更满意的比例分别是 43% 和 47%，说明模拟与真人接近，但这仍不等同于线上真实用户反馈。第二，实验是 MovieLens、Amazon VideoGames、CDs 等公开数据集，item 类型相对规整；UGC 内容流里的低质文本、图片、评论、时效内容和冷启动发布者会更复杂。第三，Filtered/Rerank 变体虽然效果更好，但 token 用量和延迟上升明显：基础变体约 87ms，而更重的 LLM 增强变体可到 709ms 或 2168ms，线上召回链路未必能承受。\n\n## 6. 工业实践意义\n\n对搜索/推荐团队，LatentCRS 最值得借鉴的是“LLM 不必做全链路主模型”。更可落地的方式是：用现有序列推荐或召回骨干学习行为协同，用 latent intent 层把行为兴趣压成可解释的离散锚点，再让 LLM 只负责把 query、对话或筛选条件映射到这些锚点附近。这样既保留历史点击和曝光行为的统计力量，也避免每次请求都调用大模型生成长文本。\n\n如果迁移到社区 UGC 搜索，可以先从会话推荐的轻量版本做起：构建用户最近点击/收藏/停留序列，训练一个行为 intent inference 模块；用短 query、追问或筛选条件生成语义 embedding；在召回后将“行为意图分布 + 当前语义约束”作为重排特征。对于“我想看装修避坑”“有没有适合新手的相机推荐”这类 query，模型可以同时利用当前语义和用户过去看过的预算、品牌、内容风格。\n\n部署上要注意两点。第一，基础 LatentCRS 的 token 和时延优势来自于只输出很少 token，因此应优先把 LLM 调用设计成 embedding/attribute extraction，而不是让它生成完整推荐解释。第二，线上需要监控 posterior collapse 和 anchor 漂移：如果 intent anchors 退化成热门类目或被短期热点拉偏，推荐会变成另一种流行度偏置。可以用 anchor top items 的语义一致性、不同用户群的 anchor 分布、以及去掉 LLM 语义约束后的效果差，作为日常诊断指标。",
+        "content_html": "<h1>LatentCRS 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>这篇论文要解决的是 LLM 会话推荐里一个很具体的断层：LLM 擅长理解用户在对话里显式表达的语义偏好，但不天然掌握推荐系统依赖的行为协同结构。作者用“啤酒和尿布”式例子说明，很多共购、共看、共点击关系并没有直接的文本语义相似性，纯文本训练出来的 LLM 很难仅靠描述理解这种非语言依赖。已有两类路线都不够理想：一种把推荐模型当工具挂在 agent 后面，LLM 负责对话，推荐模型负责排序，但二者解耦，推荐模型不能直接感知当前对话中激活的约束；另一种把 item 描述转成文本并用用户行为继续微调 LLM，但大目录会受到上下文窗口限制，大规模行为 fine-tuning 成本也不适合真实业务。</p>\n<p>作者的核心判断是：对话描述和历史交互不是两个孤立信号，而是同一个潜在用户意图的不同观测。比如用户说想买笔记本配件，历史里又买过电脑和外设但没有包，这两组信号都指向“ laptop bag ”这类潜在需求。论文因此把 latent intent 作为语义空间与行为模式之间的桥梁，用概率潜变量建模替代简单拼接文本和行为 embedding。这个问题对社区搜推也很重要：UGC 场景下 query 很短、点击历史噪声大、用户兴趣会随对话或当前搜索快速变化，如果只用 LLM 做语义扩展容易丢掉协同行为，如果只用序列模型又无法理解当轮自然语言约束。</p>\n<h2>2. 方法详解</h2>\n<p>LatentCRS 把会话推荐写成给定用户历史交互序列和多轮对话上下文后预测目标 item 的最大似然问题。直接建模很困难，因为行为序列和自然语言对话处在不同表征空间。作者引入离散潜变量 z 表示用户意图，并把目标 item 的预测分布改写为对 latent intent 的边缘化：模型不直接从“历史 + 对话”跳到 item，而是先估计用户属于哪些意图原型，再在这些意图条件下产生推荐。</p>\n<p>潜在意图不是连续无限空间，而是通过向量量化离散化成一组 anchor vectors。初始化时，作者从所有用户 session 的行为上下文 embedding 中构造全局池，用 K-Means 聚类得到主要质心，这些质心就是初始 intent anchors。重要的是，这些 anchors 不是固定词表；在后续 M-step 联合训练里会继续被梯度更新，从而可以随着 LLM 语义 embedding 的引入而移动。这个设计避免了“语义端学语义、行为端学行为”的静态对齐。</p>\n<p>训练使用变分 EM。E-step 是 Intent Inference：固定生成模型，用 inference model 估计用户意图分布 q(z | history, dialogue, item)。M-step 是 Recommendation Learning：固定 inference model，从估计的意图分布中采样 latent intent，优化生成模型，让它在意图条件下区分真实 item 和负样本。因为完整 item 空间归一化成本太高，作者没有直接估计精确概率，而是定义未归一化 item scoring function；其中 item embedding 与“上下文表示 x 意图原型”做 element-wise 融合，再用 InfoNCE 风格负采样优化。这更符合推荐系统关注相对排序的实际需求。</p>\n<p>为了避免随机初始化下两个模块互相提供噪声监督，论文设计了两段 warm-up。Inference model warm-up 增加一个 assistant recommendation module，要求估计出的 intent distribution 本身就足以预测目标 item；Generative model warm-up 则让生成模型先具备基础 item retrieval 能力，同时让自己的 intent prior 靠近 inference model 的估计。联合训练阶段仍保留辅助推荐损失，它的作用是防止 posterior collapse：如果 q(z) 退化成均匀或无信息分布，辅助目标会马上拉低 item prediction 表现。</p>\n<p>推理时有三个变体。Base 只把 LLM 用作语义归一化和编码器；Filtered 让 LLM 从对话里抽取强约束属性，比如“动画电影”“某类商品”，再硬过滤候选；Verified/Rerank 则让 LLM 作为 critic 检查推荐 item 与用户请求的一致性并重排。这个分层很实用：大多数召回候选由轻量行为骨干完成，LLM 只在约束解析或语义验证处增加成本。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文把 LLM 会话语义和推荐行为协同之间的 gap 明确建成潜变量问题，而不是靠 prompt 拼接或 agent 工具调用绕过去。它的创新点不是“用 LLM 做推荐”，而是让 LLM 的语义能力进入一个可训练的推荐概率框架。</p>\n<p>第二，离散 intent anchors 兼具行为可解释性和训练稳定性。anchors 来自行为空间 K-Means，因此一开始就有协同结构；之后又能被联合训练更新，吸收语义信息。论文的可视化显示，一些 anchor 会对应“儿童动画电影”“悬疑暴力电影”等语义一致的 top items，这说明 latent space 没有完全变成不可解释黑盒。</p>\n<p>第三，变分 EM 比直接 KL 对齐更稳。消融里 Direct KL Alignment 在 MovieLens-1M Recall@5 只有 0.0847，而完整模型是 0.1437；VideoGames 上 Recall@5 从 0.0728 提到 0.1378。也就是说，同时更新两个分布会带来优化不稳定，交替优化更适合这种语义/行为双空间对齐。</p>\n<p>第四，作者给出了一种低成本使用 LLM 的方式。传统 LLM CRS 往往每轮生成大量文本，LatentCRS 的基础变体在 MovieLens-1M 上输入约 85.50 tokens、输出约 1.00 token、本地推理时间 87ms；相比 Llama-3.1-8B few-shot 的 119.51 输入 tokens、148.20 输出 tokens、2568ms，成本差异非常大。这一点比单纯追求更高效果更接近工业部署约束。</p>\n<h2>4. 实验结果分析</h2>\n<p>实验覆盖 MovieLens-1M、Amazon VideoGames、Amazon CDs and Vinyl 三个真实数据集。LLM 端使用 Llama-3.1-8B-Instruct，序列推荐骨干使用 ICLRec；GPT-4、Gemini-1.5-Pro、Llama-3.1-8B 作为 few-shot baseline，Chat-Rec 和 InteRecAgent 使用与 LatentCRS 相同的 ICLRec 骨干以保证协同知识公平。</p>\n<table><thead><tr><th>设置</th><th>方法</th><th>MovieLens Recall@5</th><th>MovieLens NDCG@5</th><th>VideoGames Recall@5</th><th>VideoGames NDCG@5</th></tr></thead><tbody><tr><td>全量单轮</td><td>CRM</td><td>0.1165</td><td>0.0690</td><td>0.0024</td><td>0.0014</td></tr><tr><td>全量单轮</td><td>UNICORN</td><td>0.1215</td><td>0.0734</td><td>0.1138</td><td>0.0753</td></tr><tr><td>全量单轮</td><td>CRIF</td><td>0.0784</td><td>0.0489</td><td>0.0427</td><td>0.0267</td></tr><tr><td>全量单轮</td><td>LatentCRS Base</td><td>0.1437</td><td>0.0921</td><td>0.1378</td><td>0.0964</td></tr></tbody></table>\n<p>在 sampled 单轮设置里，LatentCRS 的 LLM 增强变体优势更明显。MovieLens-1M 上，GPT-4 Recall@5 为 0.064，Chat-Rec 为 0.086，UniCRS 为 0.092，CRAG 为 0.104；LatentCRS 三个变体分别达到 0.142、0.180、0.160。VideoGames 上，LatentCRS 最高 Recall@5 到 0.180、NDCG@5 到 0.1386，也高于 GPT-4、Chat-Rec、UniCRS、CRAG。Amazon CDs 是一个例外：UNICORN 在部分单轮指标上很强，作者解释为 CDs 有 531 个属性，而 MovieLens 只有 18 个属性，基于显式属性询问的 hard filter 在这种窄属性空间特别占优，但不一定代表更自然的多轮推荐能力。</p>\n<p>多轮设置中，指标是 S@K 和 AT。MovieLens sampled 上，LatentCRS rerank 变体 S@3 达 0.532、AT 为 3.298；Chat-Rec S@3 为 0.212、AT 为 3.618，GPT-4 S@3 为 0.246、AT 为 3.472。VideoGames 上，LatentCRS rerank 变体 S@3 达 0.378、AT 为 3.706，也高于多数 baseline。作者认为多轮场景里 LLM 的价值更多体现在提出澄清问题、解释反馈并形成更高质量约束，而不是直接替代推荐模型。</p>\n<p>消融结果非常关键。完整模型在 MovieLens-1M Recall@5/NDCG@5 为 0.1437/0.0921；去掉 inference module 后掉到 0.0232/0.0147；直接 KL 对齐为 0.0847/0.0518；去掉 RecLoss 为 0.0755/0.0698。VideoGames 上也类似：完整模型 Recall@5 0.1378，去掉 inference module 只有 0.0309。说明 latent intent inference、交替 EM 和辅助推荐损失都不是可有可无的工程细节。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在结论里明确提出一个未来方向：当前 LatentCRS 主要学习当前会话和历史行为对应的 latent intent，但还没有显式建模意图随长对话演化的轨迹。后续如果能区分长期稳定偏好和短期临时偏好，推荐准确性和用户满意度可能进一步提升。</p>\n<p>论文还有几个实践层面的限制。第一，评测多轮对话大量依赖 Gemini-1.5-Pro 用户模拟器，虽然作者做了 30 个多轮 session 的盲评，两个标注者认为模拟对话更满意的比例分别是 43% 和 47%，说明模拟与真人接近，但这仍不等同于线上真实用户反馈。第二，实验是 MovieLens、Amazon VideoGames、CDs 等公开数据集，item 类型相对规整；UGC 内容流里的低质文本、图片、评论、时效内容和冷启动发布者会更复杂。第三，Filtered/Rerank 变体虽然效果更好，但 token 用量和延迟上升明显：基础变体约 87ms，而更重的 LLM 增强变体可到 709ms 或 2168ms，线上召回链路未必能承受。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队，LatentCRS 最值得借鉴的是“LLM 不必做全链路主模型”。更可落地的方式是：用现有序列推荐或召回骨干学习行为协同，用 latent intent 层把行为兴趣压成可解释的离散锚点，再让 LLM 只负责把 query、对话或筛选条件映射到这些锚点附近。这样既保留历史点击和曝光行为的统计力量，也避免每次请求都调用大模型生成长文本。</p>\n<p>如果迁移到社区 UGC 搜索，可以先从会话推荐的轻量版本做起：构建用户最近点击/收藏/停留序列，训练一个行为 intent inference 模块；用短 query、追问或筛选条件生成语义 embedding；在召回后将“行为意图分布 + 当前语义约束”作为重排特征。对于“我想看装修避坑”“有没有适合新手的相机推荐”这类 query，模型可以同时利用当前语义和用户过去看过的预算、品牌、内容风格。</p>\n<p>部署上要注意两点。第一，基础 LatentCRS 的 token 和时延优势来自于只输出很少 token，因此应优先把 LLM 调用设计成 embedding/attribute extraction，而不是让它生成完整推荐解释。第二，线上需要监控 posterior collapse 和 anchor 漂移：如果 intent anchors 退化成热门类目或被短期热点拉偏，推荐会变成另一种流行度偏置。可以用 anchor top items 的语义一致性、不同用户群的 anchor 分布、以及去掉 LLM 语义约束后的效果差，作为日常诊断指标。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "web:liuzhao09:icml-2026-recsys-ad-llm-selection",
+      "title": "ICML 2026 推荐、广告与 LLM4Rec 筛选论文汇总",
+      "url": "https://liuzhao09.github.io/papers/icml-2026-recsys-ad-llm-selection.html",
+      "authors": "liuzhao09",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-21",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.45,
+      "summary": "这是一篇中文技术汇总，核验 ICML 2026 官方列表中的推荐、广告、RAG、Agent 与可靠推荐论文，覆盖 35 篇候选并保留 32 篇入口，优先链接到 arXiv 或官方 poster。它把 2026 年 LLM4Rec 的热点归纳为 Semantic ID、LLM 后训练、GFlowNet、偏好优化、合成数据扩展、分布偏移、reward hacking 和可靠推荐，适合作为本周生成式搜推论文池的索引。",
+      "key_insight": "它不是单篇方法论文，但对从业者有较强导航价值：可以快速定位哪些 ICML 2026 方向值得进入精读队列，尤其是 Semantic ID、合成数据 scaling law、可靠推荐与偏好优化。对社区搜推团队，建议把这类汇总当作候选发现层，而不是直接当证据层；真正立项前仍需要回到单篇论文的实验设置、数据集和线上约束。"
+    },
+    {
+      "rank": 3,
+      "id": "dblp:conf/daquamrec/2025",
+      "title": "Proceedings of the DaQuaMRec 2025 Workshop on Data Quality-Aware Multimodal Recommendation co-located with RecSys 2025, Prague, Czech Republic, September 22, 2025.",
+      "url": "https://ceur-ws.org/Vol-4188",
+      "authors": "Claudio Pomo, Dietmar Jannach, Yubin Kim 0001, Daniele Malitesta, Alberto Carlo Maria Mancino",
+      "company": [],
+      "source": "conference_papers",
+      "published": "2026-01-01",
+      "total_score": 3.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.05,
+      "summary": "该条目是 RecSys 2025 联合举办的 Data Quality-Aware Multimodal Recommendation 工作坊论文集入口，主题聚焦多模态推荐中的数据质量、噪声、缺失和评测问题。它不是单篇实验论文，因此缺少统一的 Recall、NDCG 或线上 A/B 数字；本次将其作为会议论文集信号纳入，主要用于补足生成式/多模态推荐候选池中的数据质量视角。",
+      "key_insight": "生成式推荐往往把注意力放在 Semantic ID、LLM 推理和序列生成，但实际落地时，多模态 item 表征质量、文本/图像噪声和长尾内容覆盖会直接决定召回上限。对 UGC 搜推团队，这类 workshop 的启发是把“生成模型能力”与“内容理解数据质量”一起评估：先建立噪声、缺失和多模态一致性的诊断集，再判断生成式召回是否真的优于传统召回。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:mitkox/ds4-zgx-gb10",
+      "title": "ds4-zgx-gb10: GLM-5.2 for ZGX GB10",
+      "url": "https://github.com/mitkox/ds4-zgx-gb10",
+      "source": "github",
+      "description": "GitHub 新项目：GLM-5.2 for ZGX GB10。该项目与当前生成式搜推 track 的关系较弱，作为代码趋势信号保留，后续可按是否支持推荐、检索或 LLM 工具链再筛选。",
+      "language": "C",
+      "stars": 15,
+      "created_at": "2026-07-03"
+    },
+    {
+      "rank": 2,
+      "id": "github:liangdabiao/fastmoss-rpa-skills",
+      "title": "fastmoss-rpa-skills: Browser-RPA + 数据分析工具集，覆盖 [fastmoss.com]  (TikTok Shop 数据分析平台) 全部 7 个核心模块。基于 [Kimi WebBridge] 驱动用户真实浏览器（复用登录态），把 FastMoss 的榜单/趋势/市场数据落成 CSV，并自动生成 Markdown 分析报告。",
+      "url": "https://github.com/liangdabiao/fastmoss-rpa-skills",
+      "source": "github",
+      "description": "GitHub 新项目：Browser-RPA + 数据分析工具集，覆盖 [fastmoss.com]  (TikTok Shop 数据分析平台) 全部 7 个核心模块。基于 [Kimi WebBridge] 驱动用户真实浏览器（复用登录态），把 FastMoss 的榜单/趋势/市场数据落成 CSV，并自动生成 Markdown 分析报告。。该项目与当前生成式搜推 track 的关系较弱，作为代码趋势信号保留，后续可按是否支持推荐、检索或 LLM 工具链再筛选。",
+      "language": "Python",
+      "stars": 11,
+      "created_at": "2026-07-03"
+    },
+    {
+      "rank": 3,
+      "id": "github:xbmaxx/cogito-engine",
+      "title": "cogito-engine: Cogito, ergo sum. A portable self-awareness framework for LLM agents — TICK heartbeat, Focus Stack, Temporal parsing, Self-Perception. Platform-agnostic.",
+      "url": "https://github.com/xbmaxx/cogito-engine",
+      "source": "github",
+      "description": "GitHub 新项目：Cogito, ergo sum. A portable self-awareness framework for LLM agents — TICK heartbeat, Focus Stack, Temporal parsing, Self-Perception. Platform-agnostic.。该项目与当前生成式搜推 track 的关系较弱，作为代码趋势信号保留，后续可按是否支持推荐、检索或 LLM 工具链再筛选。",
+      "language": "Python",
+      "stars": 10,
+      "created_at": "2026-06-29"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "HuggingFace 近期发布：pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763。该模型/资源可作为生成式搜推实验的基础模型或对照候选，但不进入论文评分与 dedup。",
+      "language": "model",
+      "stars": 3454,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "source": "huggingface",
+      "description": "HuggingFace 近期发布：pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit。该模型/资源可作为生成式搜推实验的基础模型或对照候选，但不进入论文评分与 dedup。",
+      "language": "model",
+      "stars": 381,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:zai-org/GLM-5.2-FP8",
+      "title": "zai-org/GLM-5.2-FP8",
+      "url": "https://huggingface.co/zai-org/GLM-5.2-FP8",
+      "source": "huggingface",
+      "description": "HuggingFace 近期发布：pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763。该模型/资源可作为生成式搜推实验的基础模型或对照候选，但不进入论文评分与 dedup。",
+      "language": "model",
+      "stars": 188,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "source": "huggingface",
+      "description": "HuggingFace 近期发布：pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit。该模型/资源可作为生成式搜推实验的基础模型或对照候选，但不进入论文评分与 dedup。",
+      "language": "model",
+      "stars": 158,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:Alibaba-DAMO-Academy/ClinFusion-32B",
+      "title": "Alibaba-DAMO-Academy/ClinFusion-32B",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/ClinFusion-32B",
+      "source": "huggingface",
+      "description": "HuggingFace 近期发布：tags: license:apache-2.0, region:us。该模型/资源可作为生成式搜推实验的基础模型或对照候选，但不进入论文评分与 dedup。",
+      "language": "model",
+      "stars": 0,
+      "created_at": "2026-06-29"
+    }
+  ]
+}

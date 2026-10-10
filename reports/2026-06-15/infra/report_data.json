@@ -1,0 +1,331 @@
+{
+  "date": "2026-06-15",
+  "track": "infra",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 16,
+    "papers_selected": 10,
+    "score_min": 3.35,
+    "score_max": 4.25
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.13126",
+      "title": "MiniPIC: Flexible Position-Independent Caching in <100LOC",
+      "url": "https://arxiv.org/abs/2606.13126",
+      "authors": "Nathan Ordonez, Thomas Parnell",
+      "company": [
+        "IBM"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 4.25,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.35,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "检索增强与 Agent 工作负载会反复对文档、代码文件等\"span\"做 prefill，但 vLLM 的 prefix caching 只有在前缀完全相同时才能复用 KV，已有的位置无关缓存（PIC）方案又要么大改服务端、要么把 KV 放在服务外导致主机到设备搬运开销。MiniPIC 用不到 100 行代码在 vLLM 上实现 PIC：KV cache 里存未旋转的 K 向量，在 attention 内用每请求的逻辑位置对 K tile 施加 RoPE，并暴露 block 对齐 padding、span 分隔符 SSep、prompt 依赖 PDep 三个 token 级原语来控制复用与哈希行为。",
+      "key_insight": "把 RoPE 从写入 KV 时延后到 attention 计算时按逻辑位置施加，是让同一段文本的 KV 在任意位置都能复用的关键设计。对社区搜索中大量重复出现的帖子/问答上下文，可直接省掉重复 prefill；三个 token 级原语让复用策略由调用方控制，<100LOC 的改造量使其落地门槛很低。"
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.13392",
+      "title": "MiniMax Sparse Attention",
+      "url": "https://arxiv.org/abs/2606.13392",
+      "authors": "Xunhao Lai, Weiqi Xu, Yufeng Yang, Qiaorui Chen, Yang Xu",
+      "company": [
+        "MiniMax"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.8,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "summary": "面向 Agent 工作流、仓库级代码推理、长期记忆等需要在数十万到百万 token 上做注意力的场景，softmax 注意力的平方级开销在部署规模下难以承受。MiniMax 提出 MSA：构建在 GQA 之上的分块稀疏注意力，用轻量 Index Branch 给 KV block 打分并为每个 GQA group 独立选 Top-k 子集，Main Branch 只在选中的 block 上做精确块稀疏注意力，并与 GPU 执行路径协同设计以把稀疏度转成实测加速，强调简洁、可在多种 GPU 上规模化部署。",
+      "key_insight": "按 GQA group 做组级独立的 Top-k 块选择，同时兼顾稀疏检索的灵活性与 block 级执行效率，是稀疏注意力能真正落地提速的核心。对需要长上下文的搜索 Agent/RAG 服务，可在不显著损失精度的前提下降低 KV 与算力开销；方案来自一线大模型厂商，部署路径清晰。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.13361",
+      "title": "Can I Buy Your KV Cache?",
+      "url": "https://arxiv.org/abs/2606.13361",
+      "authors": "Luoyuan Zhang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "论文指出当前大量 AI agent 在读同一份文档时各自从头 prefill、重复重建完全相同的 KV cache，浪费了最耗算力的步骤。作者提出由发布方预计算文档 KV、其他 agent 付费加载并跳过 prefill 的方案，并验证其 token 精确：贪心解码 24/24 token 与从头 prefill 完全一致，logits 层面也一致。在 Qwen3-4B 上复用比 prefill 算力省 9–50 倍，且因 prefill 注意力随长度 L² 增长，序列越长收益越大，单次复用即可回本。",
+      "key_insight": "核心可借鉴点是\"KV 一次计算、跨请求复用且 token 精确\"，把文档级 KV 当成可分发资产。对社区搜索/RAG 中高频复用的热门帖子与知识库内容，预计算并复用 KV 能省掉占大头的 prefill 开销；论文也点出 KV 近乎不可压缩、难以直接搬运这一落地难点。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.13054",
+      "title": "TWLA: Achieving Ternary Weights and Low-Bit Activations for LLMs via Post-Training Quantization",
+      "url": "https://arxiv.org/abs/2606.13054",
+      "authors": "Zhixiong Zhao, Zukang Xu, Zhixuan Chen, Xing Hu, Zhe Jiang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.7,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "LLM 部署受限于显存与算力，三值化虽能大幅压缩模型，但已有方法因激活分布重尾只能保持激活高精度，从根本上限制了端到端加速。TWLA 是一个后训练量化（PTQ）框架，实现 1.58-bit 权重压缩 + 4-bit 激活量化并保持精度，包含 E2M-ATQ（从欧氏初始化到流形重定位的两阶段三值量化器，最小化层输出误差）、KOTMS（Kronecker 结构正交旋转重塑激活分布）等组件。",
+      "key_insight": "关键在于同时把权重压到 1.58-bit、激活压到 4-bit，突破\"激活必须留高精度\"的瓶颈，从而拿到真正的端到端推理加速。用 Kronecker 正交旋转处理重尾激活的思路，对在搜索/推荐侧部署低比特 LLM 有直接参考价值，且 PTQ 无需重训、落地成本低。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.12883",
+      "title": "The Hidden Power of Scaling Factor in LoRA Optimization",
+      "url": "https://arxiv.org/abs/2606.12883",
+      "authors": "Zicheng Zhang, Haoran Li, Jiaxing Wang, Guoqiang Gong, Anqi Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.7,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "LoRA 中的缩放因子 α 常被当作学习率的附属，其优化作用一直未被充分理解。论文揭示 α 与学习率的作用机制不同，是有效优化的主导因素，其收益无法靠调学习率替代。通过实证分析与 Signal-Drift 理论框架给出三点发现：LoRA 的谱抑制平滑了优化曲面、使常规超参过于保守；α 通过放大任务信号而不增大 drift ratio 来加速收敛；最优 α 与 rank 呈次线性（近似平方根）关系。",
+      "key_insight": "可直接落地的结论是——微调 LoRA 时应重点调 α 而非只调学习率，且 α 可按 rank 的平方根规律设定，降低调参成本。对用 LoRA 微调搜索相关性/排序模型的团队，这是一条低成本提升收敛速度与效果的实操经验，且无需改动模型结构。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.12876",
+      "title": "Multi-Bitwidth Quantization for LLMs Using Additive Codebooks",
+      "url": "https://arxiv.org/abs/2606.12876",
+      "authors": "Liza Babaoglu, Shuangyi Chen, Ashish Khisti",
+      "company": [
+        "University of Toronto"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.6,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "面向在异构硬件上部署 LLM、需在不重训前提下自适应权衡性能与效率的需求，论文提出 Drop-by-Drop 多比特宽后训练量化框架：训练一个模型即可在推理时控制权重精度。方法以信息论与逐次精化（successive refinement）为基础，论证服从高斯分布的 LLM 权重可随比特增加被最优重建；通过 Matryoshka 式监督与加性码本（additive codebooks），码本的有序子集即可给出不同精度的近似。",
+      "key_insight": "一个模型支持推理时按需切换比特宽，省去为不同硬件分别量化/重训的成本；加性码本 + Matryoshka 监督的\"嵌套精度\"设计，适合搜索/推荐服务在不同时段、不同设备上动态权衡延迟与精度。理论基础扎实但偏学术，需自行补充大规模落地验证。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2606.12950",
+      "title": "Maestro: Workload-Aware Cross-Cluster Scheduling for LLM-Based Multi-Agent Systems",
+      "url": "https://arxiv.org/abs/2606.12950",
+      "authors": "Jinghao Wang, Xiao Zhou, Xiaoyang Sun, Yihui Zhang, Yilong Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.6,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "LLM 多智能体系统（LLM-MAS）把任务拆成多个专用 agent 协作，但每个查询会触发迭代式 LLM 调用，资源消耗远超单轮，且 decode 阶段成本不确定、多模型需求重尾导致显存碎片与过度预留。Maestro 是面向严格 GPU 预算下 LLM-MAS 服务的负载感知调度系统：利用 agent 语义与角色预测各阶段的输出长度与显存占用，以此驱动分层调度器，并在节点级支持动态调度。",
+      "key_insight": "借助 agent 角色语义预测输出长度与显存占用，再做分层/跨集群调度，是控制多 agent 服务成本的关键思路。对要把多 agent 搜索/RAG 流水线部署到有限 GPU 上的团队，预测驱动的调度能缓解显存碎片与过度预留，提升 GPU 利用率。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2606.13233",
+      "title": "ReSET: Accurate Latency-Critical NVFP4 Reasoning via Step-Aware Temperature Scaling",
+      "url": "https://arxiv.org/abs/2606.13233",
+      "authors": "Sihwa Lee, Janghwan Lee, Donghoon Yoo, Jae Gon Kim, Hanyul Ryu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.45,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "大推理模型（LRM）靠长推理链提升效果但推理成本高，NVFP4 低精度执行可降算力与显存，但直接用于 LRM 有两个问题：量化后推理精度下降，且现有 NVFP4 kernel 在小 batch 自回归解码下难以兑现延迟收益。论文分析量化对 token 级不确定性的影响，发现量化会在低熵符号 token 上增加错误采样、在高不确定推理步上过度集中，进而提出 ReSET：基于推理步熵在线估计步级不确定性并自适应调整解码温度。",
+      "key_insight": "把\"量化误差\"转化为\"采样温度\"问题、按推理步熵在线调温来补偿 NVFP4 的精度损失，是低比特推理保精度的新角度。不过该方法依赖 NVFP4 硬件（如 Blackwell）与对应 kernel，落地受硬件条件约束，适合已具备新一代 GPU 的推理团队评估。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2606.13501",
+      "title": "GF-DiT: Scheduling Parallelism for Diffusion Transformer Serving",
+      "url": "https://arxiv.org/abs/2606.13501",
+      "authors": "Xinwei Qiang, Yifan Hu, Shixuan Sun, Jing Yang, Han Zhao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.4,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.4,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "扩散 Transformer（DiT）已成为图像/视频生成的主流架构，对高效 DiT 服务的需求随之上升。已有系统给每个请求固定并行配置，但 DiT 负载在请求间、执行阶段与系统状态上高度异构，静态并行会导致 GPU 利用率低、服务质量下降。GF-DiT 把 GPU 并行度当作一等可调度资源：提供策略可编程的弹性 DiT 运行时，用异步执行抽象把请求拆成可独立调度的 trajectory task，支持在线 GPU 重分配与 group-free 通信。",
+      "key_insight": "\"把并行度当作可在线调度的资源、按阶段动态调整\"的设计，对任何模型服务的弹性扩缩都有借鉴意义。虽然面向 DiT（图像/视频），其异步 trajectory task 抽象与在线 GPU 重分配的思路，可迁移到搜索/推荐的多阶段推理服务调度上。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2606.13177",
+      "title": "MemRefine: LLM-Guided Compression for Long-Term Agent Memory",
+      "url": "https://arxiv.org/abs/2606.13177",
+      "authors": "Minjae Kim, Jinheon Baek, Soyeong Jeong, Sung Ju Hwang",
+      "company": [
+        "KAIST"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.35,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "LLM agent 需要在长期交互中保存并回忆历史信息，但记忆库会无界增长、堆积冗余条目，既抬高存储成本，又因挤占有用证据而降低检索质量，在有硬性内存预算的设备上尤为受限。论文提出\"存储预算受限的记忆管理\"任务并给出 MemRefine：因表面相似度难以反映事实价值，仅用相似度提出候选对，把删除/合并/保留的决策交给 LLM judge 按事实内容决定，迭代直到满足预算。",
+      "key_insight": "用相似度做粗筛、再由 LLM judge 按事实价值做删除/合并/保留决策，是在固定预算下维持记忆质量的可行框架。对带长期用户记忆的搜索/推荐 Agent，这种预算约束下的记忆压缩能控制存储与检索开销，但 LLM judge 的迭代会带来额外推理成本。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:MrDoe/OpenCodeRAG",
+      "title": "OpenCodeRAG: OpenCodeRAG is a RAG (Retrieval-Augmented Generation) plugin for semantic code search powered by locally-hosted embedding models. It features a seamless integration with OpenCode and offers a CLI interface for external usage.",
+      "url": "https://github.com/MrDoe/OpenCodeRAG",
+      "source": "github",
+      "description": "OpenCodeRAG is a RAG (Retrieval-Augmented Generation) plugin for semantic code search powered by locally-hosted embedding models. It features a seamless integration with OpenCode and offers a CLI interface for external usage.",
+      "language": "TypeScript",
+      "stars": 14,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 2,
+      "id": "github:onyx-dot-app/onyx",
+      "title": "onyx: Open Source AI Platform - AI Chat with advanced features that works with every LLM",
+      "url": "https://github.com/onyx-dot-app/onyx",
+      "source": "github",
+      "description": "Open Source AI Platform - AI Chat with advanced features that works with every LLM",
+      "language": "Python",
+      "stars": 30317,
+      "created_at": "2023-04-27"
+    },
+    {
+      "rank": 3,
+      "id": "github:deepset-ai/haystack",
+      "title": "haystack: Open-source AI orchestration framework for building context-engineered, production-ready LLM applications. Design modular pipelines and agent workflows with explicit control over retrieval, routing, memory, and generation. Built for scalable agents, RAG, multimodal applications, semantic search, and conversational systems.",
+      "url": "https://github.com/deepset-ai/haystack",
+      "source": "github",
+      "description": "Open-source AI orchestration framework for building context-engineered, production-ready LLM applications. Design modular pipelines and agent workflows with explicit control over retrieval, routing, memory, and generation. Built for scalable agents, RAG, multimodal applications, semantic search, and conversational systems.",
+      "language": "MDX",
+      "stars": 25565,
+      "created_at": "2019-11-14"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 4828,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 1952,
+      "created_at": "2026-01-21"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 1485,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:moonshotai/Kimi-K2.7-Code",
+      "title": "moonshotai/Kimi-K2.7-Code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.7-Code",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, image-feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "model",
+      "stars": 609,
+      "created_at": "2026-06-11"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: diffusers, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2512.05905, license:mit",
+      "language": "model",
+      "stars": 171,
+      "created_at": "2026-06-09"
+    }
+  ]
+}

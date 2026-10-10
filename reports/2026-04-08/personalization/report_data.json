@@ -1,0 +1,244 @@
+{
+  "date": "2026-04-08",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 869,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.35
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.03949",
+      "title": "Semantic IDs for Recommender Systems at Snapchat: Use Cases, Technical Challenges, and Design Choices",
+      "url": "https://arxiv.org/abs/2604.03949",
+      "authors": "Clark Mingxuan Ju, Tong Zhao, Leonardo Neves, Liam Collins, Bhuvesh Kumar, Jiwen Ren, Lili Zhang, Wenfeng Zhuo, Vincent Zhang, Xiao Bai, Jinchao Li, Karthik Iyer, Zihao Fan, Yilun Xu, Yiwen Chen, Peicheng Yu, Manish Malik, Neil Shah",
+      "company": [
+        "Snapchat"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 4.35,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.5,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文系统介绍了 Snapchat 在推荐系统中部署 Semantic IDs (SIDs) 的工业实践。SID 是一种有序编码列表，通过残差量化等分词器从语义表征中提取，相比传统原子 ID 具有更小的基数和更好的语义聚类特性。论文涵盖了 SID 在排序模型辅助特征和新检索源等多个场景中的应用，分享了 tokenizer 设计、层级编码结构、冷启动处理等关键工程决策。",
+      "key_insight": "SID 的核心优势在于将协同过滤信号和语义信息统一编码，同时大幅降低 ID 空间基数。对搜推系统实践者而言，SID 可作为排序模型的辅助特征提升 CTR 预估效果，也可作为额外召回源增强检索多样性。Snapchat 的工程经验表明，SID 的分词器设计（如残差量化层数、码本大小）和部署策略是落地关键。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.03949",
+        "title": "Semantic IDs for Recommender Systems at Snapchat: Use Cases, Technical Challenges, and Design Choices",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n传统推荐系统依赖原子 ID（每个用户/物品一个离散 token）进行个性化，但面临三个核心问题：（1）**参数爆炸**——数百万用户和物品需要巨大的 embedding 表，存储和更新成本极高；（2）**冷启动问题**——新实体缺乏预先的 embedding 条目，模型无法为其生成有效表征；（3）**泛化能力差**——长尾分布下热门物品获得不成比例的梯度更新，而尾部实体训练不足。Semantic IDs (SIDs) 作为一种新范式，将物品表征为有序离散编码序列（而非单一原子 token），通过残差量化从基础模型的语义表征中提取，天然具备更小的基数和语义聚类特性。Snapchat 作为多业务场景（广告、内容推荐、用户增长、搜索）的大规模平台，率先在工业系统中系统性部署 SID，本文首次全面分享其落地经验。\n\n## 2. 方法详解\n\n**SID 生成流水线**包含三阶段：语义编码 → 残差量化分词 → 层级离散编码序列。\n\n**核心分词器 RQ-VAE**：给定物品语义特征 x_i，编码器将其映射为中间表征 h_i^0；量化阶段通过逐层 argmax 在码本中查找最近质心生成离散编码 sid_l = argmax_c ||h_i^l · C_l[c]||_F；后续编码基于残差向量 h_i^l = h_i^(l-1) - C_(l-1)[sid_(l-1)] 计算；解码器从聚合质心向量重建表征。\n\n**关键挑战一：码本坍塌缓解**。训练中大部分码本条目几乎不被使用（\"死码\"问题）。Snapchat 采用两项设计：\n- **Straight-Through Estimator (STE)**：修改重建公式，通过连续近似对整个码本进行梯度反向传播，使\"死码\"也能获得梯度更新\n- **多模态嵌入融合**：不单独编码单一模态，而是聚合多个预训练嵌入（文本/视觉/音频/分类元数据）后再量化。更高方差的输入分布迫使模型利用更广泛的码本范围。实验显示，加入 STE 后唯一性提升 83.4%，多模态嵌入再提升 23.7%，音频嵌入增加 11.2%，转录文本再增 4.7%\n\n**关键挑战二：SID 到物品的消歧**。语义相似的物品可能映射到相同的编码序列（碰撞）。解决方案：\n- **基于启发式的码内消歧**：对共享 SID 的多个物品，使用领域特定元数据（累计观看时长、内容新鲜度）进行二次排序\n- **深度优先检索策略**：实验表明从 top-k SID 中获取更多物品，远优于将检索预算分散到更多低排名 SID\n\n**文本编码器选择**：广告排序使用 Qwen-Embedding；用户推荐使用 GraphHash 将 9 亿+用户压缩为 SID 集合。\n\n## 3. 核心技术贡献\n\n（1）**工业规模部署验证**：在 Snapchat 广告、内容、用户增长、搜索四大业务表面验证了 SID 的有效性，这是目前公开文献中最全面的 SID 工业化报告。SID 不仅能作为排序辅助特征，也能作为生成式检索的目标空间，灵活性强。\n\n（2）**RQ-VAE 架构改进**：通过 STE 和多模态融合有效防止码本坍塌，将唯一性从基线提升超 100%。改进点明确且工程友好——不需要修改训练框架，只需调整反向传播和输入表征。\n\n（3）**唯一性评估反思**：挑战了\"最大化 SID 唯一性总是好的\"假设。实验发现，唯一性在 70% 左右性能就已趋于饱和（Amazon Beauty 数据集上 128³ 码本 70.58% 唯一性与 1024³ 码本 92.95% 唯一性的 Recall@10 仅差 0.1），过度优化唯一性回报递减。\n\n（4）**碰撞处理框架**：提出深度优先检索和启发式消歧的组合方案，在线 A/B 测试中相关性引导映射（top-10 SID）带来 +0.57% 观看、+2.54% 发送、+4.39% 分享、+3.55% 转发的显著提升。\n\n## 4. 实验结果分析\n\n**SID 作为排序辅助特征**：\n- 广告排序：Swipe-up +0.028%，着陆页浏览 +0.035%\n- 动态产品广告 (DPA)：加入购物车 +0.67%，平均 +0.24%——在目录高频变更（冷启动严重）的场景效果尤为突出\n- 好友推荐（GraphHash SID）：相关性 +1.77%/+4.90%，负面行为 -5.13%/-3.17%，搜索 +1.55%/+12.43%——社交图谱 SID 在冷启动严重的好友推荐中效果最为突出\n\n**SID 生成式检索**：\n- 离线：序列长度从 120→480 tokens，Recall@5 +31.5%，NDCG@5 +26.5%——说明更长的行为序列能显著提升 SID 检索质量\n- 在线 A/B：随机映射（100 items/SID）仅 +0.13% 观看，而相关性引导映射 +0.57% 观看、+4.39% 分享——表明 SID-to-Item 的消歧策略是关键差异因素\n\n**唯一性分析**（Amazon Beauty）：码本从 64³ 到 1024³，唯一性从 65.4% 升至 93.0%，但 Recall@10 仅从 5.8 升至 6.1——性能在 70% 唯一性后基本饱和。这一发现挑战了文献中的常见假设。\n\n## 5. 局限与未来方向\n\n**作者明确提出的局限**：\n- **离线指标缺失**：目前缺乏能准确量化\"语义丰富度与物品区分度最优平衡\"的离线评估指标，唯一性不是理想指标\n- **序列长度瓶颈**：基础设施限制导致无法测试超过 480 tokens 的序列，尽管趋势表明更长序列可能带来进一步收益\n- **碰撞处理缺乏原则性框架**：当前启发式方法有效但缺乏理论优化保证\n\n**笔者补充**：论文未讨论 SID 在模型更新时的稳定性问题——当基础语义模型升级时，码本映射可能大幅变化，线上模型需要重新训练。\n\n## 6. 工业实践意义\n\n**可直接借鉴的经验**：\n- **SID 作为辅助特征**是最低成本的落地方式——无需改变现有模型架构，只需将 SID 编码作为额外特征输入排序模型。对 UGC 搜索场景，可对帖子内容提取 SID，补充传统 ID 嵌入\n- **多模态融合是关键**——单模态 SID 效果有限，融合文本+视觉+元数据可显著提升编码质量和唯一性\n- **码本设计建议**：追求 70%+ 唯一性即可，不必过度增大码本；3-4 层残差量化是实用的平衡点\n- **冷启动场景优先部署**——DPA（+0.67%）和好友推荐（+4.9%）的高增益表明，SID 在物品/用户频繁更新、冷启动严重的场景价值最大\n\n**部署考量**：\n- 文本编码器选型（Qwen-Embedding 用于广告、GraphHash 用于社交图谱）需要根据业务特点定制\n- 检索预算分配应采用深度优先策略而非广度优先\n- 代码已开源（https://github.com/snap-research/GRID），降低了复现门槛",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>传统推荐系统依赖原子 ID（每个用户/物品一个离散 token）进行个性化，但面临三个核心问题：（1）<strong>参数爆炸</strong>——数百万用户和物品需要巨大的 embedding 表，存储和更新成本极高；（2）<strong>冷启动问题</strong>——新实体缺乏预先的 embedding 条目，模型无法为其生成有效表征；（3）<strong>泛化能力差</strong>——长尾分布下热门物品获得不成比例的梯度更新，而尾部实体训练不足。Semantic IDs (SIDs) 作为一种新范式，将物品表征为有序离散编码序列（而非单一原子 token），通过残差量化从基础模型的语义表征中提取，天然具备更小的基数和语义聚类特性。Snapchat 作为多业务场景（广告、内容推荐、用户增长、搜索）的大规模平台，率先在工业系统中系统性部署 SID，本文首次全面分享其落地经验。</p>\n<h2>2. 方法详解</h2>\n<p><strong>SID 生成流水线</strong>包含三阶段：语义编码 → 残差量化分词 → 层级离散编码序列。</p>\n<p><strong>核心分词器 RQ-VAE</strong>：给定物品语义特征 x_i，编码器将其映射为中间表征 h_i^0；量化阶段通过逐层 argmax 在码本中查找最近质心生成离散编码 sid_l = argmax_c ||h_i^l · C_l[c]||_F；后续编码基于残差向量 h_i^l = h_i^(l-1) - C_(l-1)[sid_(l-1)] 计算；解码器从聚合质心向量重建表征。</p>\n<p><strong>关键挑战一：码本坍塌缓解</strong>。训练中大部分码本条目几乎不被使用（&quot;死码&quot;问题）。Snapchat 采用两项设计：</p>\n<ul>\n<li><strong>Straight-Through Estimator (STE)</strong>：修改重建公式，通过连续近似对整个码本进行梯度反向传播，使&quot;死码&quot;也能获得梯度更新</li>\n<li><strong>多模态嵌入融合</strong>：不单独编码单一模态，而是聚合多个预训练嵌入（文本/视觉/音频/分类元数据）后再量化。更高方差的输入分布迫使模型利用更广泛的码本范围。实验显示，加入 STE 后唯一性提升 83.4%，多模态嵌入再提升 23.7%，音频嵌入增加 11.2%，转录文本再增 4.7%</li>\n</ul>\n<p><strong>关键挑战二：SID 到物品的消歧</strong>。语义相似的物品可能映射到相同的编码序列（碰撞）。解决方案：</p>\n<ul>\n<li><strong>基于启发式的码内消歧</strong>：对共享 SID 的多个物品，使用领域特定元数据（累计观看时长、内容新鲜度）进行二次排序</li>\n<li><strong>深度优先检索策略</strong>：实验表明从 top-k SID 中获取更多物品，远优于将检索预算分散到更多低排名 SID</li>\n</ul>\n<p><strong>文本编码器选择</strong>：广告排序使用 Qwen-Embedding；用户推荐使用 GraphHash 将 9 亿+用户压缩为 SID 集合。</p>\n<h2>3. 核心技术贡献</h2>\n<p>（1）<strong>工业规模部署验证</strong>：在 Snapchat 广告、内容、用户增长、搜索四大业务表面验证了 SID 的有效性，这是目前公开文献中最全面的 SID 工业化报告。SID 不仅能作为排序辅助特征，也能作为生成式检索的目标空间，灵活性强。</p>\n<p>（2）<strong>RQ-VAE 架构改进</strong>：通过 STE 和多模态融合有效防止码本坍塌，将唯一性从基线提升超 100%。改进点明确且工程友好——不需要修改训练框架，只需调整反向传播和输入表征。</p>\n<p>（3）<strong>唯一性评估反思</strong>：挑战了&quot;最大化 SID 唯一性总是好的&quot;假设。实验发现，唯一性在 70% 左右性能就已趋于饱和（Amazon Beauty 数据集上 128³ 码本 70.58% 唯一性与 1024³ 码本 92.95% 唯一性的 Recall@10 仅差 0.1），过度优化唯一性回报递减。</p>\n<p>（4）<strong>碰撞处理框架</strong>：提出深度优先检索和启发式消歧的组合方案，在线 A/B 测试中相关性引导映射（top-10 SID）带来 +0.57% 观看、+2.54% 发送、+4.39% 分享、+3.55% 转发的显著提升。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>SID 作为排序辅助特征</strong>：</p>\n<ul>\n<li>广告排序：Swipe-up +0.028%，着陆页浏览 +0.035%</li>\n<li>动态产品广告 (DPA)：加入购物车 +0.67%，平均 +0.24%——在目录高频变更（冷启动严重）的场景效果尤为突出</li>\n<li>好友推荐（GraphHash SID）：相关性 +1.77%/+4.90%，负面行为 -5.13%/-3.17%，搜索 +1.55%/+12.43%——社交图谱 SID 在冷启动严重的好友推荐中效果最为突出</li>\n</ul>\n<p><strong>SID 生成式检索</strong>：</p>\n<ul>\n<li>离线：序列长度从 120→480 tokens，Recall@5 +31.5%，NDCG@5 +26.5%——说明更长的行为序列能显著提升 SID 检索质量</li>\n<li>在线 A/B：随机映射（100 items/SID）仅 +0.13% 观看，而相关性引导映射 +0.57% 观看、+4.39% 分享——表明 SID-to-Item 的消歧策略是关键差异因素</li>\n</ul>\n<p><strong>唯一性分析</strong>（Amazon Beauty）：码本从 64³ 到 1024³，唯一性从 65.4% 升至 93.0%，但 Recall@10 仅从 5.8 升至 6.1——性能在 70% 唯一性后基本饱和。这一发现挑战了文献中的常见假设。</p>\n<h2>5. 局限与未来方向</h2>\n<p><strong>作者明确提出的局限</strong>：</p>\n<ul>\n<li><strong>离线指标缺失</strong>：目前缺乏能准确量化&quot;语义丰富度与物品区分度最优平衡&quot;的离线评估指标，唯一性不是理想指标</li>\n<li><strong>序列长度瓶颈</strong>：基础设施限制导致无法测试超过 480 tokens 的序列，尽管趋势表明更长序列可能带来进一步收益</li>\n<li><strong>碰撞处理缺乏原则性框架</strong>：当前启发式方法有效但缺乏理论优化保证</li>\n</ul>\n<p><strong>笔者补充</strong>：论文未讨论 SID 在模型更新时的稳定性问题——当基础语义模型升级时，码本映射可能大幅变化，线上模型需要重新训练。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>可直接借鉴的经验</strong>：</p>\n<ul>\n<li><strong>SID 作为辅助特征</strong>是最低成本的落地方式——无需改变现有模型架构，只需将 SID 编码作为额外特征输入排序模型。对 UGC 搜索场景，可对帖子内容提取 SID，补充传统 ID 嵌入</li>\n<li><strong>多模态融合是关键</strong>——单模态 SID 效果有限，融合文本+视觉+元数据可显著提升编码质量和唯一性</li>\n<li><strong>码本设计建议</strong>：追求 70%+ 唯一性即可，不必过度增大码本；3-4 层残差量化是实用的平衡点</li>\n<li><strong>冷启动场景优先部署</strong>——DPA（+0.67%）和好友推荐（+4.9%）的高增益表明，SID 在物品/用户频繁更新、冷启动严重的场景价值最大</li>\n</ul>\n<p><strong>部署考量</strong>：</p>\n<ul>\n<li>文本编码器选型（Qwen-Embedding 用于广告、GraphHash 用于社交图谱）需要根据业务特点定制</li>\n<li>检索预算分配应采用深度优先策略而非广度优先</li>\n<li>代码已开源（https://github.com/snap-research/GRID），降低了复现门槛</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.04530",
+      "title": "SLSREC: Self-Supervised Contrastive Learning for Adaptive Fusion of Long- and Short-Term User Interests",
+      "url": "https://arxiv.org/abs/2604.04530",
+      "authors": "Wei Zhou, Yue Shen, Junkai Ji, Yinglan Feng, Xing Tang, Xiuqiang He, Liang Feng, Zexuan Zhu",
+      "company": [
+        "Huawei"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.75,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "SLSRec 提出了一种基于会话的长短期用户兴趣自适应融合推荐模型。区别于将长短期兴趣合并为单一表征的传统方法，SLSRec 通过时间分段历史行为，利用自监督学习框架解耦长短期兴趣。核心创新是引入对比学习策略，确保长短期兴趣表征的准确校准，同时保持两类兴趣之间的互补性。",
+      "key_insight": "SLSRec 的实践启示在于：用户兴趣建模不应简单合并长短期信号，而应显式解耦并自适应融合。对比学习提供了一种无需额外标注的自监督信号来校准兴趣表征。该思路可直接应用于 UGC 搜索场景中用户长期偏好（关注话题）和短期意图（近期搜索）的建模。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.04038",
+      "title": "FLAME: Condensing Ensemble Diversity into a Single Network for Efficient Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2604.04038",
+      "authors": "WooJoo Kim, JunYoung Kim, JaeHyung Lim, SeongJin Choi, SeongKu Kang, HwanJo Yu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.7,
+      "preference_bonus": 0.18,
+      "adjusted_score": 3.88,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "FLAME 提出了一种将集成模型多样性压缩到单个网络的高效序列推荐框架。通过模块化集成（Modular Ensemble），将每个网络分解为子模块并动态组合，仅使用两个网络即可模拟指数级多样性。其中一个网络预训练后冻结作为语义锚点，另一个可学习网络通过引导式互学习（Guided Mutual Learning）稳定训练过程。",
+      "key_insight": "FLAME 解决了集成方法在推荐系统中的效率瓶颈：通过冻结+可学习双网络的模块化组合，用单网络推理开销获得集成级别的表达多样性。这一思路对降低在线推理延迟同时保持推荐质量有直接工程价值，特别适用于对延迟敏感的实时推荐场景。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.03724",
+      "title": "Rank, Don't Generate: Statement-level Ranking for Explainable Recommendation",
+      "url": "https://arxiv.org/abs/2604.03724",
+      "authors": "Ben Kabongo, Arthur Satouf, Vincent Guigue",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.7,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出将可解释推荐从文本生成问题重构为语句级排序问题。系统从用户评论中提取候选解释语句，通过排序模型选出 top-k 作为推荐解释，从构造上避免了 LLM 生成幻觉问题。为确保解释质量，论文定义了三个约束：解释性（影响用户体验的商品事实）、原子性（单一观点）和唯一性（合并近义表述），并设计了基于 LLM 的提取与清洗流程。",
+      "key_insight": "\"排序而非生成\"是一种务实的可解释推荐范式，其优势在于：（1）天然避免幻觉，所有解释均来自真实用户评论；（2）可复用成熟的排序评估指标和优化方法；（3）通过相关性分数建模因素重要性。对 UGC 搜索场景尤为适用——社区内容本身就是丰富的候选解释来源。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.03688",
+      "title": "Fusion and Alignment Enhancement with Large Language Models for Tail-item Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2604.03688",
+      "authors": "Zhifu Wei, Yizhou Dang, Guibing Guo, Chuang Zhao, Zhu Sun",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.5,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文针对序列推荐中的长尾物品问题，提出基于 LLM 的融合与对齐增强框架。长尾物品交互稀疏，传统模型难以准确捕捉其转换模式。论文提出两点改进：（1）更有效地融合协同过滤信号与 LLM 语义知识以提升长尾物品嵌入质量；（2）解决 ID 嵌入空间与 LLM 嵌入空间的结构不一致问题，避免冲突信号降低推荐精度。",
+      "key_insight": "长尾物品是搜推系统的普遍痛点，尤其在 UGC 平台上大量新帖/冷门帖面临稀疏交互。利用 LLM 的语义理解能力补充长尾物品的表征是一个值得探索的方向，但关键挑战在于协同信号与语义信号的对齐融合——直接拼接会导致空间冲突，需要显式对齐机制。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.04427",
+      "title": "FAVE: Flow-based Average Velocity Establishment for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2604.04427",
+      "authors": "Ke Shi, Yao Zhang, Feng Guo, Jinyuan Zhang, JunShuo Zhang, Shen Gao, Shuo Shang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "FAVE 提出了一种基于流匹配的一步生成式序列推荐框架。针对现有 \"噪声到数据\" 范式的两个瓶颈——先验不匹配（从无信息噪声出发导致冗长恢复轨迹）和线性冗余（迭代求解器在确定性偏好转换上浪费计算），FAVE 设计了从信息性先验到目标分布的直接轨迹。采用渐进式两阶段训练策略，在第一阶段通过双端语义对齐建立稳定的偏好空间。",
+      "key_insight": "FAVE 将流匹配引入序列推荐，实现了一步生成替代多步扩散，大幅提升了生成推荐的推理效率。核心创新是信息性先验设计——利用用户历史偏好而非随机噪声作为生成起点。这一思路对希望在推荐系统中引入生成范式但受限于推理延迟的实践者有参考价值。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.03671",
+      "title": "User Simulator-Guided Multi-Turn Preference Optimization for Reasoning LLM-based Conversational Recommendation",
+      "url": "https://arxiv.org/abs/2604.03671",
+      "authors": "Xingyuan Xiang, Xiangchen Pan, Wei Wei",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.45,
+      "preference_bonus": 0.12,
+      "adjusted_score": 3.57,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "SMTPO 提出了用户模拟器引导的多轮偏好优化方法，用于基于推理 LLM 的对话式推荐系统。针对对话历史信息稀疏和单轮推荐范式导致的用户偏好建模不准确问题，SMTPO 引入 LLM 用户模拟器生成自然语言反馈，进行多轮模拟交互。为解决模拟器反馈偏离真实用户兴趣导致的误差累积，采用强化学习进行策略优化。",
+      "key_insight": "SMTPO 的启示在于：单轮推荐无法充分捕捉复杂用户偏好，多轮交互是更自然的偏好获取方式。但模拟用户反馈存在误差累积风险，需要 RL 策略优化来约束。对对话式搜索场景（如用户在社区中通过多轮交互细化搜索意图），这一多轮优化思路有潜在应用价值。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.03654",
+      "title": "Joint Behavior-guided and Modality-coherence Conditional Graph Diffusion Denoising for Multi Modal Recommendation",
+      "url": "https://arxiv.org/abs/2604.03654",
+      "authors": "Xiangchen Pan, Wei Wei",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "JBM-Diff 提出了联合行为引导和模态一致性条件的图扩散去噪模型用于多模态推荐。针对两个关键挑战：（1）多模态特征中存在大量与用户偏好无关的冗余信息，直接注入交互图会影响协同特征学习；（2）系统错误导致的误点击和非曝光等虚假正负样本反馈偏差。论文设计了条件扩散模型同时去噪多模态特征和用户反馈。",
+      "key_insight": "JBM-Diff 的核心价值在于将扩散模型的去噪能力同时应用于特征噪声和行为噪声两个维度。在 UGC 推荐中，用户反馈偏差（误点击、未曝光等）和多模态内容噪声（如图片与文本不一致）是常见问题，联合去噪思路比单独处理更加高效。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2604.04270",
+      "title": "A Logical-Rule Autoencoder for Interpretable Recommendations",
+      "url": "https://arxiv.org/abs/2604.04270",
+      "authors": "Jinhao Pan, Bowen Wei, Ziwei Zhu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LIA（Logical-rule Interpretable Autoencoder）提出了一种内在可解释的协同过滤自编码器。核心创新是可学习逻辑规则层，每个规则神经元配备门参数在训练中自动选择 AND 或 OR 算子，从数据中发现多样逻辑模式。通过连接权重的符号编码否定操作，无需翻倍输入维度即实现功能完备性。最终学到的重建规则是显式的、人类可读的。",
+      "key_insight": "LIA 探索了一条不同于后置解释的可解释推荐路径——内在可解释模型。通过逻辑规则层直接学习 AND/OR 模式（如 \"喜欢 A 且喜欢 B → 推荐 C\"），模型决策过程天然透明。虽然在推荐精度上可能与黑盒模型有差距，但对需要审计和可解释性的场景（如内容审核、广告推荐）有独特价值。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2604.03666",
+      "title": "MMP-Refer: Multimodal Path Retrieval-augmented LLMs For Explainable Recommendation",
+      "url": "https://arxiv.org/abs/2604.03666",
+      "authors": "Xiangchen Pan, Wei Wei",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "MMP-Refer 提出了一种多模态路径检索增强 LLM 的可解释推荐框架。针对当前 LLM 可解释推荐方法忽略多模态信息且协同信号对齐不足的问题，设计了多模态检索路径收集方案，通过检索路径将协同信号引入 LLM 语义空间。与依赖不可解释 GNN 算法的现有方法不同，MMP-Refer 的检索路径本身具有可解释性。",
+      "key_insight": "MMP-Refer 将多模态信息与知识图谱路径结合用于增强 LLM 的推荐解释能力。在图文内容丰富的 UGC 场景中，多模态检索路径可以提供比纯文本更丰富的解释依据。但实际部署需考虑多模态特征提取和路径检索的额外计算开销。"
+    }
+  ]
+}

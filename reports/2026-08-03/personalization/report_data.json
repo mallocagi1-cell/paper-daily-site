@@ -1,0 +1,363 @@
+{
+  "date": "2026-08-03",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索)：用户在社区平台搜索帖子、问答、评论等 UGC 内容；核心指标为搜索相关性 nDCG 和点击率 CTR，关注语义匹配、query 理解、短文本召回、排序模型与 LLM 应用。",
+  "stats": {
+    "papers_scored": 64,
+    "papers_selected": 9,
+    "score_min": 3.35,
+    "score_max": 4.75
+  },
+  "coverage": {
+    "status": "pass",
+    "track_core": "TransX: Scaling Transformer-based Recommendation via Behavioral and Serving Stream Crossings",
+    "industry_practice": "Don't Contrast the Impossible: Region-Constrained Batching for Contrastive User Modeling on a Local Community Platform",
+    "recent_paper": "TransX: Scaling Transformer-based Recommendation via Behavioral and Serving Stream Crossings",
+    "source_distribution": {
+      "arxiv": 0.6667,
+      "web_search": 0.3333
+    },
+    "chinese_source": "已找到"
+  },
+  "papers": [
+    {
+      "id": "arxiv:oai:arXiv.org:2607.28940",
+      "title": "TransX: Scaling Transformer-based Recommendation via Behavioral and Serving Stream Crossings",
+      "url": "https://arxiv.org/abs/2607.28940",
+      "authors": "Da Xu, Liyan Fang, Divya Venugopalan, Sunny Hsu, Xukai Wang, Rishav Roy Chowdhury, Cindy Liang, Nishant Satya Lakshmikanth",
+      "company": [
+        "LinkedIn"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-31",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.2,
+      "summary": "针对工业推荐把长期行为与实时服务事件粗暴拼成单一序列所带来的因果混淆和高成本，TransX 用编码器—解码器解耦两类数据，并以跨注意力完成动作转导。LinkedIn 大规模 A/B 测试中 CTR 提升 6.0%、转化提升 4.4%，增量编码与逐请求 KV 缓存将在线计算量降低约 80%。",
+      "key_insight": "社区 UGC 个性化也应把近线长期兴趣与本次请求的曝光、上下文分层建模，再通过受控交互融合，而非不断拉长单体序列。该架构最值得借鉴的是训练目标与服务缓存协同设计：序列长度扩展时延迟基本不随历史长度增长，适合高 QPS 排序链路渐进改造。",
+      "total_score": 4.75,
+      "adjusted_score": 4.95,
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2607.28940",
+        "title": "TransX: Scaling Transformer-based Recommendation via Behavioral and Serving Stream Crossings",
+        "status": "completed",
+        "content": "# TransX: Scaling Transformer-based Recommendation via Behavioral and Serving Stream Crossings 深度解读\n\n## 1. 问题与动机\n\nTransX 针对工业推荐中一个很具体、却常被“统一序列”掩盖的问题：长期用户行为流与系统曝光流不是同一种过程。搜索、浏览主页、关注、发帖等行为由用户主动产生，时间轴与某次广告或内容推荐请求并不对齐；曝光候选、上下文及点击反馈则由系统在请求时刻产生。GRM、MTGR 一类单体序列模型把两者全部 token 化后拼在一起，虽然形式统一，却模糊了“历史意图”和“当前系统决策”的不同因果角色，还会为每个服务事件重复编码长历史。\n\n论文给出的生产约束很硬：LinkedIn 主社交推荐每天处理数亿次交互，使用 180 天行为窗口，线上需承载几十万级 QPS、数百毫秒 p99 SLA 和每请求数百个候选。传统逐事件训练让同一用户历史随每个标签反复前向；直接在线运行长序列 Transformer，又让计算和缓存随历史长度增长。作者因此把目标重新表述为序列到序列的“动作转导”：行为流负责提供可复用的长期上下文，服务流负责提出候选，模型只在两条流交叉处预测 click/no-click 等动作。\n\n这项工作的意义不只在模型结构。论文把训练、近线编码、磁盘缓存、请求级 KV cache、冷启动回退和版本一致性作为一个共同问题处理，试图证明推荐模型扩容并不必然等比例增加线上硬件。它继承 SASRec、TransAct 和生成式推荐的序列建模能力，但把昂贵的序列计算从在线关键路径移到可摊销的近线路径。\n\n## 2. 方法详解\n\n### 2.1 两条流与不对称编码器—解码器\n\n对用户 u，系统服务事件 E_t 包含本次请求的用户特征、上下文、m 个候选的物品特征和 user-item 交叉特征；反馈 Y_t 是每个候选的动作 token。用户行为流 H 则由行为主体 embedding、行为类型 embedding 和相对位置编码拼成，例如搜索、主页浏览或连接行为。两条流可以异步发生，模型学习的是 p(Y_t | E_t, H_<t)。\n\n行为编码器由 2 层因果 Transformer 构成，Pre-LN、残差和 FFN 沿用标准设计。因果 mask 保证每个历史表示只依赖过去，因此一条 180 天行为序列可从左到右编码一次，任意服务事件只切取对应前缀，无需重新计算。相对位置偏置也使新增 token 的近线增量编码只计算新位置，旧缓存不变。\n\n### 2.2 Stream Crossing：分组稀疏交叉注意力\n\n当前候选先经 MLP 形成候选专属 query；历史编码产生的 key/value 在同一请求的所有候选间共享。这样既保留每个候选对历史兴趣的不同选择，又避免为 m 个候选重复生成 K/V。作者没有让 query 关注全部 L 个历史 token，而是使用 local-global 稀疏集合：最近 L_local 个行为表达短期意图，再加入一个通过 attention pooling 学得的全局锚点表达长期偏好。主实验取 L_local=10。\n\n单个事件的交叉注意力因此从依赖完整历史的 O(mL) 降到 O(mL_local)，而行为 K/V 可提前缓存。交叉结果与当前候选、用户及上下文特征进入解码头。论文的 action decoder 维护 click、no-click 等动作查询向量，对每个候选并行生成动作分布；query-key softmax 将动作概率估计与上游表示分开，减少 logit 尺度漂移和多任务干扰。所有候选非自回归并行解码，不会再引入候选之间的串行链。\n\n### 2.3 单次 seq-to-seq 训练\n\n传统 DLRM 逐服务事件构造样本，T 个事件就可能把同一历史重算 T 次。TransX 按用户聚合整条服务事件序列，一次前向编码 H，再对所有 E_t 计算候选动作损失；每个用户的总损失是各事件、各候选二元交叉熵之和，一次反向传播完成。复杂度从近似 O(TL²d) 变为 O(L²d + TmL_local d + Tmkd)，T 不再乘在长序列编码项上。论文实测每 epoch 训练时间相对逐事件方案降低约 50%。\n\n生产数据使用 180 天时间窗，按时间切分训练、验证和测试；真实点击正例率约 3%，训练时把 no-action 下采样到与正例相同数量，验证和测试保持真实分布。所有模型用 Adam，初始学习率 0.001，线性 warmup 后余弦衰减，验证 AUC 早停；实现基于 TensorFlow 2.11，在本地 NVIDIA H100 集群训练。Transformer 基线统一为 2 个 block，并通过宽度匹配 MFLOPs。论文没有披露 batch size、总训练步数、H100 数量和完整训练时长，这些是复现缺口。\n\n### 2.4 服务侧协同设计\n\n最重的行为编码在近线完成并存入每用户磁盘 cache；缓存表示由 float32 量化成 bf16，作者称精度影响可忽略。请求到来后只取最近窗口和全局 token，在内存构建共享 K/V，再为候选做 grouped multi-query attention 与并行动作解码。在线复杂度 O(md² + mL_local d + mkd)，与总历史长度 L 无关，请求内存也被限制为 O(L_local d)。\n\ncache 采用模型 ID 与特征 schema 双版本、TTL 淘汰和故障回退。高活跃用户由 Kafka 事件流近实时增量刷新，其他用户由 HDFS 定时批处理。无缓存或无历史用户走不含行为编码器与交叉注意力的轻量备份模型，生产约 2% 流量触发该回退；短于 10 条行为的用户无需单独逻辑。\n\n## 3. 核心技术贡献\n\n1. **把异质过程显式解耦。** TransX 不再把用户行为、系统曝光和反馈压成一个单体 token 流，而以不对称 encoder-decoder 建模 p(动作 | 当前候选, 历史行为)。交叉注意力只出现在真正需要候选条件化的位置，因此比“全序列统一建模”更符合数据生成过程。\n\n2. **把 seq-to-seq 训练变成摊销机制。** 因果行为编码一次服务多个事件，损失在整条事件序列上累积，昂贵历史计算从乘法项变成一次性项。该设计在保持相近离线 MFLOPs 的同时，把训练时间约减半，也为近线增量更新提供同一套前缀复用语义。\n\n3. **局部—全局稀疏交互兼顾短期与长期。** 最近 10 个行为提供强时效信号，attention-pooled 全局 token 保留 180 天兴趣；候选共享 K/V 又保留各自 query。相比完整交叉注意力，离线 AUC 只少量下降，却把在线计算压到原方案约 20%。\n\n4. **模型与基础设施共同推进 Pareto 前沿。** 磁盘行为缓存、请求级 KV cache、bf16、版本管理和冷启动回退不是附录装饰，而是让模型在平均 80K 请求/秒下落地的必要部分。平均 500 候选时 p99 最多降低约 80%，同时取得 CTR +6.0% 和转化 +4.4%。\n\n## 4. 实验结果分析\n\n离线数据来自 LinkedIn 最大社交推荐应用，含数亿级日交互和 180 天历史。比较对象包括生产 LiDLRM、扩容 LiDLRM、SASRec、TransAct 两种接入方式和类似 Meta GRM 的生成式基线。主要结果如下：\n\n| 模型 | AUC | AUPR | gAUC | 离线/在线 MFLOPs |\n|---|---:|---:|---:|---:|\n| LiDLRM-prod | 0.846 | 0.257 | 0.636 | 80 / 80 |\n| TransAct-append | 0.860 | 0.271 | 0.644 | 400 / 400 |\n| GRM | 0.858 | 0.269 | 0.645 | 410 / 410 |\n| TransX | **0.862** | **0.273** | **0.648** | 380 / **60** |\n\nTransX 的离线算力与强序列模型相近，但在线 MFLOPs 仅为 GRM 的约 15%。消融更能说明结构贡献：移除交叉注意力后 AUC/AUPR/gAUC 相对下降 13.4%/10.6%/7.3%；移除行为编码器下降 28.3%/22.5%/15.8%。把稀疏 attention 换成全局 attention 虽让三项指标相对增加 4.5%/3.6%/2.1%，在线 MFLOPs 却从 40 增至 220，说明完整历史交互的边际精度代价过高。\n\n编码器消融显示 2 层、因果 mask、相对位置偏置的 AUC 为 0.862；增加到 3 层只到 0.863。局部窗口从 5 增到 20 时，attention-pooled 全局 token 的 AUC 从 0.857 升到 0.865，主模型选 10 是效率折中。没有全局 token 时 L_local=10 只有 0.856，证明长期汇总并非可省。\n\n50%–50% 在线 A/B 中，CTR +6.0%、转化 +4.4%，p 均小于 10^-4；平台级日活 +0.26%，主页浏览 +0.08%。实验持续 5 周。按历史长度看，长/中/短用户 CTR 分别 +6.2%/+6.0%/+5.5%，转化 +4.8%/+4.3%/+4.1%；无历史用户两项均为 0。按活跃度看，高、中、低活用户 CTR +6.6%/+5.5%/+1.8%，冷启动近乎中性，收益明显依赖可用历史。\n\n服务实验在平均 80K 请求/秒下测试 300、400、500 候选：仅摊销编码可让 p99 降低 58%、64%、73%，再加 KV cache 后为 63%、71%、83%。更长尾的 100–300、300–500、500–1000、1000+ 候选桶中，原始模型推理 p99 为 201/255/289/330ms，完整优化后降到 43/49/58/74ms。收益在大候选集合更明显，没有出现 cache 延迟导致的质量回退。\n\n## 5. 局限与未来方向\n\n论文没有独立 Limitations 章节，但正文明确暴露了几条边界。第一，收益对历史依赖强：无历史用户在线提升为零，约 2% 流量必须使用备份模型；低活用户的 CTR 增益也显著小于高活用户。作者用回退保证“不退化”，并未解决真正的冷启动个性化。\n\n第二，在线效果来自 LinkedIn 单一主社交推荐应用，数据和特征均不公开。论文给出 H100、优化器和学习率，却没有 batch size、训练步数、集群规模、token 词表、cache 命中率与磁盘容量，因此外部团队难以准确估算复现成本。报告的硬件节省还依赖近线 Kafka/HDFS、版本化 cache 和故障回退已经成熟，不是只替换模型即可获得。\n\n第三，local-global 设计把大部分中远程行为压成一个全局 token。完整 attention 的离线指标更好，说明被舍弃的细粒度长期交互确实有价值；论文没有分析哪些意图被池化抹平，也没有报告兴趣突变、跨域行为或 cache 陈旧的最坏切片。作者只说明延迟刷新下结果稳定。\n\n第四，作者将统一召回与排序列为未来方向：在共享行为/候选编码器上加入 InfoNCE 检索目标，使候选生成与动作转导共模。目前结果仍是候选集后的排序，不能证明端到端召回收益。论文也未讨论多目标动作间冲突、长期用户满意度或公平性，在线指标集中于 CTR、CVR、DAU 和浏览量。\n\n## 6. 工业实践意义\n\n对社区 UGC 搜索推荐，最可借鉴的是“数据流先分清，再决定交互位置”。可把跨产品的搜索、浏览、关注、发帖历史放入行为 encoder，近线生成用户兴趣 cache；本请求的 query、地域、频道和候选帖子作为 serving stream，仅在交叉 attention 中访问最近行为与全局兴趣。这样既避免每次排序重算长历史，也不会把系统曝光当成用户主动兴趣。\n\n落地宜分四步。第一，复刻离线双流样本并做时间因果校验，尤其避免未来行为通过前缀泄漏；第二，用 2 层 causal encoder、L_local=10 和 attention pooling 建最小版本，对比现有 DLRM、SASRec 与全局 attention；第三，影子流量验证 cache 命中、版本切换、p50/p99、候选桶和故障回退；第四，再做用户互斥 A/B，并按历史长度、活跃度、地域与 query 类型切片。\n\n验收不能只看总体 CTR。建议同时跟踪 nDCG、长点击或完读、转化、无历史回退比例、cache 陈旧度、近线刷新延迟、每请求 MFLOPs、磁盘占用和单位 QPS 成本。若完整 attention 离线收益很大，可增加少量按兴趣簇选出的远程 token，而不是简单把 L_local 拉长；若 cache 体系尚未成熟，应先建设幂等版本和冷启动回退，否则模型收益可能被线上不一致抵消。\n\nTransX 还提醒团队，模型与基础设施的接口必须共同设计。行为表示需要稳定 schema、可增量位置编码和量化容忍度；服务侧要能共享候选 K/V、批量并行解码。只有这些契约在训练时就固定，才可能把 180 天行为窗口带来的质量增益转化为实际可承受的延迟与成本。",
+        "content_html": "<h1>TransX: Scaling Transformer-based Recommendation via Behavioral and Serving Stream Crossings 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>TransX 针对工业推荐中一个很具体、却常被“统一序列”掩盖的问题：长期用户行为流与系统曝光流不是同一种过程。搜索、浏览主页、关注、发帖等行为由用户主动产生，时间轴与某次广告或内容推荐请求并不对齐；曝光候选、上下文及点击反馈则由系统在请求时刻产生。GRM、MTGR 一类单体序列模型把两者全部 token 化后拼在一起，虽然形式统一，却模糊了“历史意图”和“当前系统决策”的不同因果角色，还会为每个服务事件重复编码长历史。</p>\n<p>论文给出的生产约束很硬：LinkedIn 主社交推荐每天处理数亿次交互，使用 180 天行为窗口，线上需承载几十万级 QPS、数百毫秒 p99 SLA 和每请求数百个候选。传统逐事件训练让同一用户历史随每个标签反复前向；直接在线运行长序列 Transformer，又让计算和缓存随历史长度增长。作者因此把目标重新表述为序列到序列的“动作转导”：行为流负责提供可复用的长期上下文，服务流负责提出候选，模型只在两条流交叉处预测 click/no-click 等动作。</p>\n<p>这项工作的意义不只在模型结构。论文把训练、近线编码、磁盘缓存、请求级 KV cache、冷启动回退和版本一致性作为一个共同问题处理，试图证明推荐模型扩容并不必然等比例增加线上硬件。它继承 SASRec、TransAct 和生成式推荐的序列建模能力，但把昂贵的序列计算从在线关键路径移到可摊销的近线路径。</p>\n<h2>2. 方法详解</h2>\n<h3>2.1 两条流与不对称编码器—解码器</h3>\n<p>对用户 u，系统服务事件 E_t 包含本次请求的用户特征、上下文、m 个候选的物品特征和 user-item 交叉特征；反馈 Y_t 是每个候选的动作 token。用户行为流 H 则由行为主体 embedding、行为类型 embedding 和相对位置编码拼成，例如搜索、主页浏览或连接行为。两条流可以异步发生，模型学习的是 p(Y_t | E_t, H_&lt;t)。</p>\n<p>行为编码器由 2 层因果 Transformer 构成，Pre-LN、残差和 FFN 沿用标准设计。因果 mask 保证每个历史表示只依赖过去，因此一条 180 天行为序列可从左到右编码一次，任意服务事件只切取对应前缀，无需重新计算。相对位置偏置也使新增 token 的近线增量编码只计算新位置，旧缓存不变。</p>\n<h3>2.2 Stream Crossing：分组稀疏交叉注意力</h3>\n<p>当前候选先经 MLP 形成候选专属 query；历史编码产生的 key/value 在同一请求的所有候选间共享。这样既保留每个候选对历史兴趣的不同选择，又避免为 m 个候选重复生成 K/V。作者没有让 query 关注全部 L 个历史 token，而是使用 local-global 稀疏集合：最近 L_local 个行为表达短期意图，再加入一个通过 attention pooling 学得的全局锚点表达长期偏好。主实验取 L_local=10。</p>\n<p>单个事件的交叉注意力因此从依赖完整历史的 O(mL) 降到 O(mL_local)，而行为 K/V 可提前缓存。交叉结果与当前候选、用户及上下文特征进入解码头。论文的 action decoder 维护 click、no-click 等动作查询向量，对每个候选并行生成动作分布；query-key softmax 将动作概率估计与上游表示分开，减少 logit 尺度漂移和多任务干扰。所有候选非自回归并行解码，不会再引入候选之间的串行链。</p>\n<h3>2.3 单次 seq-to-seq 训练</h3>\n<p>传统 DLRM 逐服务事件构造样本，T 个事件就可能把同一历史重算 T 次。TransX 按用户聚合整条服务事件序列，一次前向编码 H，再对所有 E_t 计算候选动作损失；每个用户的总损失是各事件、各候选二元交叉熵之和，一次反向传播完成。复杂度从近似 O(TL²d) 变为 O(L²d + TmL_local d + Tmkd)，T 不再乘在长序列编码项上。论文实测每 epoch 训练时间相对逐事件方案降低约 50%。</p>\n<p>生产数据使用 180 天时间窗，按时间切分训练、验证和测试；真实点击正例率约 3%，训练时把 no-action 下采样到与正例相同数量，验证和测试保持真实分布。所有模型用 Adam，初始学习率 0.001，线性 warmup 后余弦衰减，验证 AUC 早停；实现基于 TensorFlow 2.11，在本地 NVIDIA H100 集群训练。Transformer 基线统一为 2 个 block，并通过宽度匹配 MFLOPs。论文没有披露 batch size、总训练步数、H100 数量和完整训练时长，这些是复现缺口。</p>\n<h3>2.4 服务侧协同设计</h3>\n<p>最重的行为编码在近线完成并存入每用户磁盘 cache；缓存表示由 float32 量化成 bf16，作者称精度影响可忽略。请求到来后只取最近窗口和全局 token，在内存构建共享 K/V，再为候选做 grouped multi-query attention 与并行动作解码。在线复杂度 O(md² + mL_local d + mkd)，与总历史长度 L 无关，请求内存也被限制为 O(L_local d)。</p>\n<p>cache 采用模型 ID 与特征 schema 双版本、TTL 淘汰和故障回退。高活跃用户由 Kafka 事件流近实时增量刷新，其他用户由 HDFS 定时批处理。无缓存或无历史用户走不含行为编码器与交叉注意力的轻量备份模型，生产约 2% 流量触发该回退；短于 10 条行为的用户无需单独逻辑。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>把异质过程显式解耦。</strong> TransX 不再把用户行为、系统曝光和反馈压成一个单体 token 流，而以不对称 encoder-decoder 建模 p(动作 | 当前候选, 历史行为)。交叉注意力只出现在真正需要候选条件化的位置，因此比“全序列统一建模”更符合数据生成过程。</li>\n</ol>\n<ol>\n<li><strong>把 seq-to-seq 训练变成摊销机制。</strong> 因果行为编码一次服务多个事件，损失在整条事件序列上累积，昂贵历史计算从乘法项变成一次性项。该设计在保持相近离线 MFLOPs 的同时，把训练时间约减半，也为近线增量更新提供同一套前缀复用语义。</li>\n</ol>\n<ol>\n<li><strong>局部—全局稀疏交互兼顾短期与长期。</strong> 最近 10 个行为提供强时效信号，attention-pooled 全局 token 保留 180 天兴趣；候选共享 K/V 又保留各自 query。相比完整交叉注意力，离线 AUC 只少量下降，却把在线计算压到原方案约 20%。</li>\n</ol>\n<ol>\n<li><strong>模型与基础设施共同推进 Pareto 前沿。</strong> 磁盘行为缓存、请求级 KV cache、bf16、版本管理和冷启动回退不是附录装饰，而是让模型在平均 80K 请求/秒下落地的必要部分。平均 500 候选时 p99 最多降低约 80%，同时取得 CTR +6.0% 和转化 +4.4%。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p>离线数据来自 LinkedIn 最大社交推荐应用，含数亿级日交互和 180 天历史。比较对象包括生产 LiDLRM、扩容 LiDLRM、SASRec、TransAct 两种接入方式和类似 Meta GRM 的生成式基线。主要结果如下：</p>\n<table><thead><tr><th>模型</th><th>AUC</th><th>AUPR</th><th>gAUC</th><th>离线/在线 MFLOPs</th></tr></thead><tbody><tr><td>LiDLRM-prod</td><td>0.846</td><td>0.257</td><td>0.636</td><td>80 / 80</td></tr><tr><td>TransAct-append</td><td>0.860</td><td>0.271</td><td>0.644</td><td>400 / 400</td></tr><tr><td>GRM</td><td>0.858</td><td>0.269</td><td>0.645</td><td>410 / 410</td></tr><tr><td>TransX</td><td><strong>0.862</strong></td><td><strong>0.273</strong></td><td><strong>0.648</strong></td><td>380 / <strong>60</strong></td></tr></tbody></table>\n<p>TransX 的离线算力与强序列模型相近，但在线 MFLOPs 仅为 GRM 的约 15%。消融更能说明结构贡献：移除交叉注意力后 AUC/AUPR/gAUC 相对下降 13.4%/10.6%/7.3%；移除行为编码器下降 28.3%/22.5%/15.8%。把稀疏 attention 换成全局 attention 虽让三项指标相对增加 4.5%/3.6%/2.1%，在线 MFLOPs 却从 40 增至 220，说明完整历史交互的边际精度代价过高。</p>\n<p>编码器消融显示 2 层、因果 mask、相对位置偏置的 AUC 为 0.862；增加到 3 层只到 0.863。局部窗口从 5 增到 20 时，attention-pooled 全局 token 的 AUC 从 0.857 升到 0.865，主模型选 10 是效率折中。没有全局 token 时 L_local=10 只有 0.856，证明长期汇总并非可省。</p>\n<p>50%–50% 在线 A/B 中，CTR +6.0%、转化 +4.4%，p 均小于 10^-4；平台级日活 +0.26%，主页浏览 +0.08%。实验持续 5 周。按历史长度看，长/中/短用户 CTR 分别 +6.2%/+6.0%/+5.5%，转化 +4.8%/+4.3%/+4.1%；无历史用户两项均为 0。按活跃度看，高、中、低活用户 CTR +6.6%/+5.5%/+1.8%，冷启动近乎中性，收益明显依赖可用历史。</p>\n<p>服务实验在平均 80K 请求/秒下测试 300、400、500 候选：仅摊销编码可让 p99 降低 58%、64%、73%，再加 KV cache 后为 63%、71%、83%。更长尾的 100–300、300–500、500–1000、1000+ 候选桶中，原始模型推理 p99 为 201/255/289/330ms，完整优化后降到 43/49/58/74ms。收益在大候选集合更明显，没有出现 cache 延迟导致的质量回退。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有独立 Limitations 章节，但正文明确暴露了几条边界。第一，收益对历史依赖强：无历史用户在线提升为零，约 2% 流量必须使用备份模型；低活用户的 CTR 增益也显著小于高活用户。作者用回退保证“不退化”，并未解决真正的冷启动个性化。</p>\n<p>第二，在线效果来自 LinkedIn 单一主社交推荐应用，数据和特征均不公开。论文给出 H100、优化器和学习率，却没有 batch size、训练步数、集群规模、token 词表、cache 命中率与磁盘容量，因此外部团队难以准确估算复现成本。报告的硬件节省还依赖近线 Kafka/HDFS、版本化 cache 和故障回退已经成熟，不是只替换模型即可获得。</p>\n<p>第三，local-global 设计把大部分中远程行为压成一个全局 token。完整 attention 的离线指标更好，说明被舍弃的细粒度长期交互确实有价值；论文没有分析哪些意图被池化抹平，也没有报告兴趣突变、跨域行为或 cache 陈旧的最坏切片。作者只说明延迟刷新下结果稳定。</p>\n<p>第四，作者将统一召回与排序列为未来方向：在共享行为/候选编码器上加入 InfoNCE 检索目标，使候选生成与动作转导共模。目前结果仍是候选集后的排序，不能证明端到端召回收益。论文也未讨论多目标动作间冲突、长期用户满意度或公平性，在线指标集中于 CTR、CVR、DAU 和浏览量。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索推荐，最可借鉴的是“数据流先分清，再决定交互位置”。可把跨产品的搜索、浏览、关注、发帖历史放入行为 encoder，近线生成用户兴趣 cache；本请求的 query、地域、频道和候选帖子作为 serving stream，仅在交叉 attention 中访问最近行为与全局兴趣。这样既避免每次排序重算长历史，也不会把系统曝光当成用户主动兴趣。</p>\n<p>落地宜分四步。第一，复刻离线双流样本并做时间因果校验，尤其避免未来行为通过前缀泄漏；第二，用 2 层 causal encoder、L_local=10 和 attention pooling 建最小版本，对比现有 DLRM、SASRec 与全局 attention；第三，影子流量验证 cache 命中、版本切换、p50/p99、候选桶和故障回退；第四，再做用户互斥 A/B，并按历史长度、活跃度、地域与 query 类型切片。</p>\n<p>验收不能只看总体 CTR。建议同时跟踪 nDCG、长点击或完读、转化、无历史回退比例、cache 陈旧度、近线刷新延迟、每请求 MFLOPs、磁盘占用和单位 QPS 成本。若完整 attention 离线收益很大，可增加少量按兴趣簇选出的远程 token，而不是简单把 L_local 拉长；若 cache 体系尚未成熟，应先建设幂等版本和冷启动回退，否则模型收益可能被线上不一致抵消。</p>\n<p>TransX 还提醒团队，模型与基础设施的接口必须共同设计。行为表示需要稳定 schema、可增量位置编码和量化容忍度；服务侧要能共享候选 K/V、批量并行解码。只有这些契约在训练时就固定，才可能把 180 天行为窗口带来的质量增益转化为实际可承受的延迟与成本。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2607.28971",
+      "title": "Don't Contrast the Impossible: Region-Constrained Batching for Contrastive User Modeling on a Local Community Platform",
+      "url": "https://arxiv.org/abs/2607.28971",
+      "authors": "Seungho Han, Byeongchang Kim, Jin Yu",
+      "company": [
+        "Karrot"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-31",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "summary": "论文指出本地社区推荐中的随机批内负样本常在地理上根本不可曝光，因而稀释用户表征学习；RCBS 将同区域用户组成批次，引入可触达的更难负样本。细粒度分区使不可能负样本占比从 98% 降至 30%，Recall@10 从 0.100 升至 0.149；线上点击量、日活观看者和广告 CTR 分别提升 10.0%、1.91% 和 7.46%。",
+      "key_insight": "这项工作与社区 UGC 场景高度同构：负样本首先要满足地域、权限、库存和分发规则等“可曝光约束”，再谈难例挖掘。RCBS 仅改批采样即可复用现有两塔、排序和广告模型；落地时应同步监控可行负样本比例，避免离线随机评测被大量容易但无效的负例虚高。",
+      "total_score": 4.75,
+      "adjusted_score": 4.9,
+      "rank": 2,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2607.28971",
+        "title": "Don't Contrast the Impossible: Region-Constrained Batching for Contrastive User Modeling on a Local Community Platform",
+        "status": "completed",
+        "content": "# Don't Contrast the Impossible: Region-Constrained Batching for Contrastive User Modeling on a Local Community Platform 深度解读\n\n## 1. 问题与动机\n\n论文研究的是批内负样本的“可曝光性”错误。标准对比学习把一个 batch 中其他用户的正物品都当作当前用户的负例，隐含假设任意用户都可能看到任意物品；但 Karrot 是强地域约束的本地社区，超过 86% 的交易发生在 5 公里内，平台策略决定远处物品根本不会进入用户首页。用户没有点击这些物品，不代表不喜欢，而是从未有选择机会。\n\n作者把负样本分为 feasible negative 和 impossible negative。前者在用户可见范围内但未互动，携带偏好信号；后者曝光概率按策略严格为 0，非互动与偏好无关。随机 batch 中 impossible negative 占比达到 98%，InfoNCE 的绝大多数分母项于是过于容易且无意义，模型会学会区分地域，而不是学习同一可选集合中的细粒度兴趣。\n\n这个问题不能单靠 IPS 解决。逆倾向加权要求每个 user-item 对曝光概率大于 0，而 impossible pair 违反 positivity：概率就是 0，也没有观测日志可重加权。论文因此从数据采样层动手，先把 batch 限制在曝光可行集合，再让 IPS 处理区域内部剩余的非均匀曝光。它延续 PinnerFormer、UserBERT 和跨 batch 负采样的用户表征路线，但指出“更多负样本”之前必须先问这些负例在产品中是否可能发生。\n\n## 2. 方法详解\n\n### 2.1 基础两塔与 InfoNCE\n\n每个用户的行为序列 S_u 含动作类型、时间戳和物品，最长 T=1024。Pre-LN Transformer 用户塔产生每个位置的用户表示 h_u,t；3 层 MLP 物品塔把标题、正文、元数据和图片经预训练内容模型得到的 embedding 映射到同一空间。两侧做 L2 归一化，以内积作为相似度。\n\n训练 batch 形状为 B×T。每个位置的下一次互动物品是正例，同一 batch 其余 B×T−1 个正物品都进入 InfoNCE 分母。损失对用户数和序列位置求平均，温度 τ 控制分布尖锐度。RCBS 不修改塔、相似度或损失，只改变 batch 中用户从哪里采样，因此可以作为现有训练管道的可插拔替换。\n\n### 2.2 地域可行性与 RCBS\n\n平台把用户和物品映射到地域 cell r(u)、r(i)，以 dist(r(u), r(i))≤δ_u 定义可曝光；δ_u 是产品策略或用户设置的可见半径。δ=0 要求同 cell，δ>0 可纳入相邻 cell。对目标区域 r，RCBS 从该区域用户池 U_r 中均匀采 B 个用户，形成地域同质 batch。因为这些用户的曝光边界相近，batch 里大多数物品对彼此都可见。\n\n随机 batch 的 impossible 比例可写成 ρ=1−Σ_r p_r²，其中 p_r 是 batch 中用户来自区域 r 的概率。平台区域多且分散时，Σp_r² 很小，ρ 接近 1；RCBS 把概率质量集中到一个区域，使 ρ 接近 0。真实系统还允许相邻区域和不同半径，所以不是绝对清零，但细粒度 RCBS 把实测 ρ 从 0.98 降到 0.30，粗粒度只能降到 0.79。\n\n这一定义揭示 RCBS 与硬负采样的关系：它并不显式搜索最相似物品，而是去掉策略上不可能的容易负例，剩余 feasible negatives 自然更难。RCBS 与 IPS 也互补：前者恢复 positivity 支持集，后者在支持集内部校正曝光倾向。\n\n### 2.3 数据、训练与下游接入\n\n预训练使用 Karrot 两年生产日志，约 2500 万用户、150 亿次动作；95% 用户训练、5% 用户评估，按用户隔离。batch size 为 18，序列长度 1024，因此每个 batch 有 18,432 个候选分母项。作者比较 Random-Train、粗粒度 RCBS 和细粒度 RCBS，其他超参与训练步数保持一致。\n\n下游日志与预训练时间不重叠：首页排序用 3 周、首页召回用 1 周、展示广告排序用 4 周；排序和广告的时间切分评估窗为 24 小时，召回为 6 小时。首页与广告使用生产 DCN，把用户 embedding 作为附加特征；召回使用两塔，把 embedding 注入用户塔。用户塔每天读取最近 1024 次动作，mean pooling 生成离线用户向量。\n\n论文未披露 optimizer、学习率、InfoNCE 温度、GPU 型号、训练总步数、墙钟时间和线上 A/B 时长。对一项 150 亿动作规模的工业工作，这些缺失会显著影响外部复现与成本评估。\n\n## 3. 核心技术贡献\n\n1. **识别结构性无效负样本。** 论文不是泛泛讨论采样偏差，而是把曝光概率为 0 的 user-item 对从一般未曝光负例中分离。这个定义解释了为什么随机批内负样本会在强地域产品中系统性失败，也能扩展到库存、权限、配送范围和内容合规约束。\n\n2. **用最小工程改动修复训练支持集。** RCBS 不改网络、损失和线上模型，只让同区域用户成批。细粒度采样把 impossible 比例从 98% 降到 30%，预训练 Recall@10 从 0.100 提高到 0.149，说明改数据装载即可显著强化对比信号。\n\n3. **给出 RCBS 与 IPS 的清晰分工。** IPS 无法处理曝光概率为 0 的 pair；RCBS 先保证分母大部分位于可曝光支持集，IPS 才能对支持集内残余曝光不均做无偏校正。这一顺序避免把不同类型的偏差混成同一个权重问题。\n\n4. **证明用户 embedding 可跨任务复用。** 同一 RCBS 表征同时改善首页排序、首页召回和广告排序，并在线带来点击 +10.0%、曝光 +5.12%、日活观看者 +1.91%、eCPM +6.01%、广告 CTR +7.46%，最终部署到多个应用。\n\n## 4. 实验结果分析\n\n预训练与在线核心结果如下：\n\n| 方法 | Random Eval R@10 | Random Eval R@100 | RCBS Eval R@10 | RCBS Eval R@100 | impossible 比例 |\n|---|---:|---:|---:|---:|---:|\n| Random-Train | 0.100 | 0.422 | 0.082 | 0.349 | 0.98 |\n| RCBS-Train（粗） | 0.125 | 0.456 | 0.112 | 0.403 | 0.79 |\n| RCBS-Train（细） | **0.149** | **0.474** | **0.139** | **0.435** | **0.30** |\n\n细粒度 RCBS 在随机评估 R@10 上相对提升 49%，R@100 提升约 12.3%；在更难的 RCBS 评估上 R@10 相对提升约 69.5%，R@100 提升约 24.6%。同一模型在 RCBS-Eval 的绝对值低于 Random-Eval，反而支持作者判断：可曝光负例确实更难，随机评估会被大量不可能负例虚高。\n\n下游离线中，Random-Train embedding 仅让首页 NDCG@10 +0.22%、OPA +0.17%，而 RCBS embedding 分别 +1.18% 和 +1.07%。广告 ROC-AUC/PR-AUC 从 +0.25%/+1.21% 扩大到 +0.53%/+3.38%；首页召回 Recall@10/100 从 +4.44%/+2.36% 扩大到 +7.56%/+4.61%。召回增幅最大，符合预训练本身也是两塔检索式目标的结构相似性。\n\n线上处理组只增加最佳 RCBS 用户 embedding，生产模型其余部分不变。首页排序与召回合并后点击 +10.0%、曝光 +5.12%、DAV +1.91%；广告 eCPM +6.01%、AdCTR +7.46%。多任务同向增长表明 embedding 不只是离线 metric hack。但论文仅给相对值，没有流量占比、实验天数、显著性、置信区间和绝对基线，无法独立判断波动风险。\n\n严格说，论文没有传统模块消融，因为 RCBS 本身就是单一采样改动；粗/细地域粒度构成主要消融。ρ 从 0.98→0.79→0.30 时，R@10 从 0.100→0.125→0.149 单调上升，支撑“越多 feasible negatives 越好”。不过只比较两个平台已有粒度，尚不能证明任意更细 cell 都持续增益；过细区域可能让用户池太小、流行度偏置变大或 batch 多样性下降。\n\n## 5. 局限与未来方向\n\n作者在结论明确提出两条未来方向：用自适应区域分组应对动态曝光约束，以及在地域同质 batch 内加入 propensity correction 处理剩余曝光不均。当前 RCBS 依赖预定义 cell 和 δ_u；当用户移动、配送范围实时变化、跨城内容被临时放开或产品规则多层叠加时，静态区域标签可能不能准确代表真实可曝光集合。\n\n第二，实验只来自 Karrot，一家强本地属性平台。86% 交易在 5 公里内是其特殊结构，普通信息流的主约束可能是语言、年龄、订阅、库存或权限。方法思想可迁移，但“同区域 batch”本身不能直接照搬，必须改成与业务一致的 eligibility group。\n\n第三，论文出于保密只报告下游相对提升，且没有披露训练硬件、optimizer、学习率、温度、步数、线上实验周期和统计显著性。每天离线计算最近 1024 行为的 mean-pooled 用户向量也可能滞后于实时兴趣，论文将缩短推理刷新周期列为实践方向，但没有量化陈旧度影响。\n\n作者未明确讨论的限制是采样分布偏移。按区域成批可能让小区域被过采、热门区域被欠采，也可能降低跨区域内容的表示一致性；如果 item tower 需要学习全局语义，完全隔离区域会损害泛化。还需监控每区域用户池规模、重复率和梯度方差，并考虑混合少量全局负例。\n\n## 6. 工业实践意义\n\n社区 UGC 场景最应立即借鉴的是“训练负例必须通过产品资格检查”。除了地域，还可把内容可见权限、语言、频道、年龄限制、作者屏蔽、库存状态和 query 触发规则编码为 eligibility。先统计现有 batch 中曝光概率为 0 的负例比例；若像 Karrot 一样占多数，继续扩大 batch 或跨 batch memory 只会堆积更多无效负例。\n\n最小试点不需要改模型：保留当前两塔和 InfoNCE，在 dataloader 中按一个稳定约束分组，比较随机、粗分组和细分组。训练时记录 impossible ratio、有效负例数、区域覆盖、样本重复率；评估同时保留 Random-Eval 和 constrained-Eval，避免容易负例让总体 Recall 看似很好。下游要覆盖召回 nDCG/Recall、排序 CTR、长点击以及广告或商业指标。\n\n上线可先把 RCBS embedding 作为附加特征注入现有排序和召回，不直接替换主模型。若多个任务同向增益，再逐步扩大流量。对动态约束，应周期性从真实曝光日志估计 group，而不是长期依赖行政区划；对组内曝光偏差，再加 IPS 或 doubly robust 校正。若区域过小，可用相邻 cell、层级地理索引或“组内负例为主、全局负例为辅”的混合 batch。\n\nRCBS 的更普遍启示是，hard negative 不等于 embedding 最相似，而是“用户真实有机会选择、却没有选择”的样本。把产品规则带回训练支持集，往往比增加网络层数更低成本，也更容易解释线上收益。",
+        "content_html": "<h1>Don&#x27;t Contrast the Impossible: Region-Constrained Batching for Contrastive User Modeling on a Local Community Platform 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>论文研究的是批内负样本的“可曝光性”错误。标准对比学习把一个 batch 中其他用户的正物品都当作当前用户的负例，隐含假设任意用户都可能看到任意物品；但 Karrot 是强地域约束的本地社区，超过 86% 的交易发生在 5 公里内，平台策略决定远处物品根本不会进入用户首页。用户没有点击这些物品，不代表不喜欢，而是从未有选择机会。</p>\n<p>作者把负样本分为 feasible negative 和 impossible negative。前者在用户可见范围内但未互动，携带偏好信号；后者曝光概率按策略严格为 0，非互动与偏好无关。随机 batch 中 impossible negative 占比达到 98%，InfoNCE 的绝大多数分母项于是过于容易且无意义，模型会学会区分地域，而不是学习同一可选集合中的细粒度兴趣。</p>\n<p>这个问题不能单靠 IPS 解决。逆倾向加权要求每个 user-item 对曝光概率大于 0，而 impossible pair 违反 positivity：概率就是 0，也没有观测日志可重加权。论文因此从数据采样层动手，先把 batch 限制在曝光可行集合，再让 IPS 处理区域内部剩余的非均匀曝光。它延续 PinnerFormer、UserBERT 和跨 batch 负采样的用户表征路线，但指出“更多负样本”之前必须先问这些负例在产品中是否可能发生。</p>\n<h2>2. 方法详解</h2>\n<h3>2.1 基础两塔与 InfoNCE</h3>\n<p>每个用户的行为序列 S_u 含动作类型、时间戳和物品，最长 T=1024。Pre-LN Transformer 用户塔产生每个位置的用户表示 h_u,t；3 层 MLP 物品塔把标题、正文、元数据和图片经预训练内容模型得到的 embedding 映射到同一空间。两侧做 L2 归一化，以内积作为相似度。</p>\n<p>训练 batch 形状为 B×T。每个位置的下一次互动物品是正例，同一 batch 其余 B×T−1 个正物品都进入 InfoNCE 分母。损失对用户数和序列位置求平均，温度 τ 控制分布尖锐度。RCBS 不修改塔、相似度或损失，只改变 batch 中用户从哪里采样，因此可以作为现有训练管道的可插拔替换。</p>\n<h3>2.2 地域可行性与 RCBS</h3>\n<p>平台把用户和物品映射到地域 cell r(u)、r(i)，以 dist(r(u), r(i))≤δ_u 定义可曝光；δ_u 是产品策略或用户设置的可见半径。δ=0 要求同 cell，δ&gt;0 可纳入相邻 cell。对目标区域 r，RCBS 从该区域用户池 U_r 中均匀采 B 个用户，形成地域同质 batch。因为这些用户的曝光边界相近，batch 里大多数物品对彼此都可见。</p>\n<p>随机 batch 的 impossible 比例可写成 ρ=1−Σ_r p_r²，其中 p_r 是 batch 中用户来自区域 r 的概率。平台区域多且分散时，Σp_r² 很小，ρ 接近 1；RCBS 把概率质量集中到一个区域，使 ρ 接近 0。真实系统还允许相邻区域和不同半径，所以不是绝对清零，但细粒度 RCBS 把实测 ρ 从 0.98 降到 0.30，粗粒度只能降到 0.79。</p>\n<p>这一定义揭示 RCBS 与硬负采样的关系：它并不显式搜索最相似物品，而是去掉策略上不可能的容易负例，剩余 feasible negatives 自然更难。RCBS 与 IPS 也互补：前者恢复 positivity 支持集，后者在支持集内部校正曝光倾向。</p>\n<h3>2.3 数据、训练与下游接入</h3>\n<p>预训练使用 Karrot 两年生产日志，约 2500 万用户、150 亿次动作；95% 用户训练、5% 用户评估，按用户隔离。batch size 为 18，序列长度 1024，因此每个 batch 有 18,432 个候选分母项。作者比较 Random-Train、粗粒度 RCBS 和细粒度 RCBS，其他超参与训练步数保持一致。</p>\n<p>下游日志与预训练时间不重叠：首页排序用 3 周、首页召回用 1 周、展示广告排序用 4 周；排序和广告的时间切分评估窗为 24 小时，召回为 6 小时。首页与广告使用生产 DCN，把用户 embedding 作为附加特征；召回使用两塔，把 embedding 注入用户塔。用户塔每天读取最近 1024 次动作，mean pooling 生成离线用户向量。</p>\n<p>论文未披露 optimizer、学习率、InfoNCE 温度、GPU 型号、训练总步数、墙钟时间和线上 A/B 时长。对一项 150 亿动作规模的工业工作，这些缺失会显著影响外部复现与成本评估。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>识别结构性无效负样本。</strong> 论文不是泛泛讨论采样偏差，而是把曝光概率为 0 的 user-item 对从一般未曝光负例中分离。这个定义解释了为什么随机批内负样本会在强地域产品中系统性失败，也能扩展到库存、权限、配送范围和内容合规约束。</li>\n</ol>\n<ol>\n<li><strong>用最小工程改动修复训练支持集。</strong> RCBS 不改网络、损失和线上模型，只让同区域用户成批。细粒度采样把 impossible 比例从 98% 降到 30%，预训练 Recall@10 从 0.100 提高到 0.149，说明改数据装载即可显著强化对比信号。</li>\n</ol>\n<ol>\n<li><strong>给出 RCBS 与 IPS 的清晰分工。</strong> IPS 无法处理曝光概率为 0 的 pair；RCBS 先保证分母大部分位于可曝光支持集，IPS 才能对支持集内残余曝光不均做无偏校正。这一顺序避免把不同类型的偏差混成同一个权重问题。</li>\n</ol>\n<ol>\n<li><strong>证明用户 embedding 可跨任务复用。</strong> 同一 RCBS 表征同时改善首页排序、首页召回和广告排序，并在线带来点击 +10.0%、曝光 +5.12%、日活观看者 +1.91%、eCPM +6.01%、广告 CTR +7.46%，最终部署到多个应用。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p>预训练与在线核心结果如下：</p>\n<table><thead><tr><th>方法</th><th>Random Eval R@10</th><th>Random Eval R@100</th><th>RCBS Eval R@10</th><th>RCBS Eval R@100</th><th>impossible 比例</th></tr></thead><tbody><tr><td>Random-Train</td><td>0.100</td><td>0.422</td><td>0.082</td><td>0.349</td><td>0.98</td></tr><tr><td>RCBS-Train（粗）</td><td>0.125</td><td>0.456</td><td>0.112</td><td>0.403</td><td>0.79</td></tr><tr><td>RCBS-Train（细）</td><td><strong>0.149</strong></td><td><strong>0.474</strong></td><td><strong>0.139</strong></td><td><strong>0.435</strong></td><td><strong>0.30</strong></td></tr></tbody></table>\n<p>细粒度 RCBS 在随机评估 R@10 上相对提升 49%，R@100 提升约 12.3%；在更难的 RCBS 评估上 R@10 相对提升约 69.5%，R@100 提升约 24.6%。同一模型在 RCBS-Eval 的绝对值低于 Random-Eval，反而支持作者判断：可曝光负例确实更难，随机评估会被大量不可能负例虚高。</p>\n<p>下游离线中，Random-Train embedding 仅让首页 NDCG@10 +0.22%、OPA +0.17%，而 RCBS embedding 分别 +1.18% 和 +1.07%。广告 ROC-AUC/PR-AUC 从 +0.25%/+1.21% 扩大到 +0.53%/+3.38%；首页召回 Recall@10/100 从 +4.44%/+2.36% 扩大到 +7.56%/+4.61%。召回增幅最大，符合预训练本身也是两塔检索式目标的结构相似性。</p>\n<p>线上处理组只增加最佳 RCBS 用户 embedding，生产模型其余部分不变。首页排序与召回合并后点击 +10.0%、曝光 +5.12%、DAV +1.91%；广告 eCPM +6.01%、AdCTR +7.46%。多任务同向增长表明 embedding 不只是离线 metric hack。但论文仅给相对值，没有流量占比、实验天数、显著性、置信区间和绝对基线，无法独立判断波动风险。</p>\n<p>严格说，论文没有传统模块消融，因为 RCBS 本身就是单一采样改动；粗/细地域粒度构成主要消融。ρ 从 0.98→0.79→0.30 时，R@10 从 0.100→0.125→0.149 单调上升，支撑“越多 feasible negatives 越好”。不过只比较两个平台已有粒度，尚不能证明任意更细 cell 都持续增益；过细区域可能让用户池太小、流行度偏置变大或 batch 多样性下降。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在结论明确提出两条未来方向：用自适应区域分组应对动态曝光约束，以及在地域同质 batch 内加入 propensity correction 处理剩余曝光不均。当前 RCBS 依赖预定义 cell 和 δ_u；当用户移动、配送范围实时变化、跨城内容被临时放开或产品规则多层叠加时，静态区域标签可能不能准确代表真实可曝光集合。</p>\n<p>第二，实验只来自 Karrot，一家强本地属性平台。86% 交易在 5 公里内是其特殊结构，普通信息流的主约束可能是语言、年龄、订阅、库存或权限。方法思想可迁移，但“同区域 batch”本身不能直接照搬，必须改成与业务一致的 eligibility group。</p>\n<p>第三，论文出于保密只报告下游相对提升，且没有披露训练硬件、optimizer、学习率、温度、步数、线上实验周期和统计显著性。每天离线计算最近 1024 行为的 mean-pooled 用户向量也可能滞后于实时兴趣，论文将缩短推理刷新周期列为实践方向，但没有量化陈旧度影响。</p>\n<p>作者未明确讨论的限制是采样分布偏移。按区域成批可能让小区域被过采、热门区域被欠采，也可能降低跨区域内容的表示一致性；如果 item tower 需要学习全局语义，完全隔离区域会损害泛化。还需监控每区域用户池规模、重复率和梯度方差，并考虑混合少量全局负例。</p>\n<h2>6. 工业实践意义</h2>\n<p>社区 UGC 场景最应立即借鉴的是“训练负例必须通过产品资格检查”。除了地域，还可把内容可见权限、语言、频道、年龄限制、作者屏蔽、库存状态和 query 触发规则编码为 eligibility。先统计现有 batch 中曝光概率为 0 的负例比例；若像 Karrot 一样占多数，继续扩大 batch 或跨 batch memory 只会堆积更多无效负例。</p>\n<p>最小试点不需要改模型：保留当前两塔和 InfoNCE，在 dataloader 中按一个稳定约束分组，比较随机、粗分组和细分组。训练时记录 impossible ratio、有效负例数、区域覆盖、样本重复率；评估同时保留 Random-Eval 和 constrained-Eval，避免容易负例让总体 Recall 看似很好。下游要覆盖召回 nDCG/Recall、排序 CTR、长点击以及广告或商业指标。</p>\n<p>上线可先把 RCBS embedding 作为附加特征注入现有排序和召回，不直接替换主模型。若多个任务同向增益，再逐步扩大流量。对动态约束，应周期性从真实曝光日志估计 group，而不是长期依赖行政区划；对组内曝光偏差，再加 IPS 或 doubly robust 校正。若区域过小，可用相邻 cell、层级地理索引或“组内负例为主、全局负例为辅”的混合 batch。</p>\n<p>RCBS 的更普遍启示是，hard negative 不等于 embedding 最相似，而是“用户真实有机会选择、却没有选择”的样本。把产品规则带回训练支持集，往往比增加网络层数更低成本，也更容易解释线上收益。</p>"
+      }
+    },
+    {
+      "id": "arxiv:2607.28070",
+      "title": "CCFormer: Efficient Cross-Field Interaction and Hierarchical Sequence Compression for Industrial Recommendation at Tencent",
+      "url": "https://arxiv.org/abs/2607.28070",
+      "authors": "Yunlong Wang, Huizhe Zhang, Haonan Hu, Yudong Li, Bing Wen, Jianchao Tu, Chengxiang Zhuo, Zang Li",
+      "company": [
+        "Tencent"
+      ],
+      "source": "web_search",
+      "published": "2026-07-30",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.15,
+      "summary": "CCFormer 面向长序列推荐的算力与细粒度交互矛盾，将字段分离交叉注意力、长序列子空间 token mixing 和逐级扩大感受野的层次压缩统一到一个骨干网络。腾讯视频推荐与广告排序 A/B 测试分别获得 3.57% CTR、1.71% 广告收入提升，训练速度相对 HSTU 提高 2.21 倍，并已承载主流量。",
+      "key_insight": "比起直接扩大自注意力窗口，先按用户、物品、上下文等字段控制交互，再用层次压缩保留全序列感受野，更符合线上排序的时延预算。社区场景可先在高价值行为序列上验证字段交叉与压缩比例，用训练吞吐、CTR 和收入三类指标共同决定是否替换现有 Transformer 骨干。",
+      "total_score": 4.65,
+      "adjusted_score": 4.8,
+      "rank": 3
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2607.29213",
+      "title": "GALA: Generative Aligned Learning for Adaptive Multimodal Representation in the Taobao Shangou Recommender System",
+      "url": "https://arxiv.org/abs/2607.29213",
+      "authors": "Jiping Liu, Zhongmin Zhang, Zisen Sang, Zhijia Fang, Tao Ouyang, Ma Jiang, Shaopeng Liang, Zeyang Hou, Guodong Cao, Jia Jia",
+      "company": [
+        "Alibaba",
+        "Tsinghua"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-31",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.25,
+      "summary": "GALA 解决图文语义预训练与行为排序目标脱节问题：先用搜索日志构造 query-image-text 三元组，再以转化奖励和 GRPO 做生成式对齐，最后通过自适应门控及混合损失融合多模态与 ID 表征。系统服务淘宝闪购超过 2 亿日活，离线 AUC 提升 0.12/0.20，线上订单量提升 0.55%。",
+      "key_insight": "多模态编码器不应只追求内容相似度，还需用点击、转化等下游反馈做中间对齐，否则长期训练会被强势 ID 特征淹没。对 UGC 图文搜索推荐，可复用“三元组预训练—业务奖励对齐—门控融合”路径，并将门控权重漂移作为多模态信号是否失效的在线诊断量。",
+      "total_score": 4.45,
+      "adjusted_score": 4.7,
+      "rank": 4
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2605.17863",
+      "title": "DADF: A Distribution-Aware Debiasing Framework for Watch-Time Regression in Recommender Systems",
+      "url": "https://arxiv.org/abs/2605.17863",
+      "authors": "Yiqing Yang, Xinlong Zhao, Zhao Liu, Xiao Lv, Ruiming Tang, Han Li, Kun Gai",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-31",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "summary": "DADF 针对观看时长回归中短样本高估、长样本低估的局部均值收缩，在冻结的一阶段模型上增加乘性残差校正，并按视频时长路由专家、引入互动任务表征。两套公开数据与 7 个骨干上平均 MAE 降低 4.33%、XAUC 提升 4.01%；生产 MAE 降低 12.57%，全量排序 A/B 的设备时长提升 0.649%。",
+      "key_insight": "成熟排序模型不一定需要整体重训；若误差在标签区间或内容时长上呈稳定结构，可用保持接口不变的二阶段校正器低风险修复。社区内容可把停留时长、完读、点赞等多任务表征作为残差特征，同时严格区分“可预测偏差”与不可约噪声，避免简单按时长分桶造成过校正。",
+      "total_score": 4.45,
+      "adjusted_score": 4.55,
+      "rank": 5,
+      "deep_reading": {
+        "paper_id": "arxiv:2605.17863",
+        "title": "DADF: A Distribution-Aware Debiasing Framework for Watch-Time Regression in Recommender Systems",
+        "status": "completed",
+        "content": "# DADF 深度解读：短视频时长回归的分布感知二阶段去偏框架\n\n## 1. 问题与动机\n\n观看时长预测是短视频推荐的核心回归任务，但标签高度长尾——「most impressions correspond to short views or quick skips, while only a small fraction lead to long consumption」。论文指出一个被长期忽视的「伪平衡（pseudo-balance）」陷阱：模型可能整体 calibrated（全局 y/ŷ 比值≈1.0），但同时**系统性高估短播放、低估长播放**，因为正负残差在聚合时相互抵消。Figure 1(a) 给出定量证据：已部署预测器在各 watch-time 桶上「consistently overestimates short views and underestimates long views」，而全局比值仍接近 1.0。更深一层的根因是：乘性 bias factor b=y/ŷ 继承了原始时长分布的长尾性（Appendix A.1 给出理论刻画），导致直接对 b 做回归不稳定。\n\n这一陷阱对任何回归型排序目标（时长、停留、转化时长）都成立，社区搜索的 dwell-time 排序同样会「整体校准但分区间互相抵消」。已有方法多在第一阶段时长预测器上改进，残差分布偏差仍未被充分纠正——这正是 DADF 切入点：不动主模型，在其之上挂一个分布感知的二阶段乘性残差校正。\n\n## 2. 方法详解\n\n**二阶段乘性校正框架。** 设冻结的一阶段预测为 ŷ₀，校正标签 b=y/(sg(ŷ₀)+ε)（sg 为 stop-gradient），最终预测 ŷ=ŷ₀·b̂=ŷ₀·T_λg⁻¹(F_θ(x, ℓ₀, π(d), ha))。即学习一个对 b 的校正而非替换 ŷ₀。三大组件：\n\n**A. 动态分布感知模块。** 对乘性校正因子做分组 Box–Cox 变换：T_λg(b)={(b+ε)^λg−1}/λg（λg≠0），log(b+ε)（λg=0），其中 λg 是每个时长分组可学习的变换参数；推理时用解析逆变换 T_λg⁻¹ 还原。作用是把长尾、异方差的校正目标拉成更接近正态、可稳定回归的空间——这是全框架最关键的设计（消融显示移除它 MAE 退化最大）。\n\n**B. Debias-factor-aware 模块。** 硬路由：每个样本按时长分组 g=π(d) 选择专家网络 E_g，融合信号 h=Fusion(x, ℓ₀, g, ha)，预测变换空间校正量 ẑ=E_g(h)。理论依据用全方差定律证明分组后 oracle 风险满足 R*_G ≤ R*₀，即按时长分桶建模能降低不可约不确定性。\n\n**C. Multi-label-aware 模块。** 三路辅助信息：context 分支 hc=MLP([ℓ_play, xc])；logit 注意力 h_ℓ=SelfAttention(Φ₁(ℓ₁),…,Φ_M(ℓ_M))；tower 表示 hr=TokenMixer(r₁,…,r_M)，拼接成 ha=MLP([hc,h_ℓ,hr])。即复用多任务 engagement 头的 logits 与表示作为去偏辅助信号。\n\n**训练目标。** L_DADF=α·L_trans+β·L_abs+η·L_reg，其中 L_trans 是变换空间 MSE、L_abs 是原空间 Huber、L_reg 对每个时长分组的均值/方差/偏度做正则；超参 α=1.0、β=0.8、η=0.10。\n\n## 3. 核心技术贡献\n\n(1) **不替换已部署预测器的分布感知二阶段去偏**：直接建模乘性 bias factor，是对现有时长预测管线的「model-agnostic plug-in」，落地侵入性极低。\n\n(2) **分组条件建模**：用时长分桶 + 专家硬路由把异质残差模式拆开，并以全方差定律给出 oracle 风险下界证明（R*_G≤R*₀），让「分桶」有理论支撑而非纯工程经验。\n\n(3) **异质变换设计**：每个时长 regime 学独立 Box–Cox 参数 λg，针对短/中/长播放的不同残差分布分别拉正态。\n\n(4) **多任务辅助信号融合**：把 engagement 头的 logit 与 tower 表示引入去偏，复用既有多任务结构而非额外造特征。\n\n(5) **理论刻画**：附录证明 bias factor 的长尾继承性与分组降风险，是该工作区别于纯经验去偏的亮点。\n\n## 4. 实验结果分析\n\n**离线（Table 1）。** 跨 7 个 backbone（VR/WLR/TPM/D2Q/CREAD/D2CO/EGMN）× 2 数据集（KuaiRec/WeChat21）一致提升。KuaiRec 上 WLR：MAE 4.414→4.172、XAUC 0.5941→0.6227；D2CO：MAE 4.613→4.168、XAUC 0.5687→0.6233（提升幅度最大的一档）。WeChat21 上 VR：MAE 18.681→17.912、XAUC 0.6766→0.6902。**平均「reduces MAE by 4.33% and improves XAUC by 4.01%」覆盖所有 backbone-数据集组合**，说明它是 backbone 无关的通用增益层。\n\n**线上 A/B（Table 2，快手 Kwai 平台）。** App 总时长 +0.356%、单设备人均时长 +0.347%、单设备播放数 +0.120%、7 日留存 +0.054%、完播率 +0.215%、有效播放率 +0.312%、长播率 +0.351%、短播率 −0.273%，全部 p<0.05；生产离线 WUAUC +1.88pp、MAE 降 12.57%。短播率下降 + 长播率上升的方向，正好印证它纠正了「高估短播、低估长播」的伪平衡。\n\n**消融（Table 3, WLR）。** 移除分布模块（w/o Dist.）KuaiRec MAE 4.1723→4.1901 退化最大；移除辅助模块（w/o Aux.）对 XAUC 冲击最大（WeChat21 XAUC 0.6934→0.6920）。**分桶分析（RQ4）**最有说服力：分时长桶 MAE 降幅 [0,20)s 5.5%、[20,40)s 7.0%、中长桶 >15%、[180,200) 峰值 23.8%、[200,+) 18.2%；尾部切片 Tail-10% MAE 降 10.43%、XAUC 升 7.98%——证明收益主要来自长尾/长播放区间，恰是伪平衡受害最重的地方。桶数 K 在 2~8 范围稳定。证据质量很高（多 backbone、多数据集、线上多指标显著、细粒度偏差分析）。\n\n## 5. 局限与未来方向\n\n作者**未显式设置 limitations 章节**（这是该论文的一个不足）。从方法可推出的隐含约束：(1) 依赖推理期可观测的 duration 作为 debias factor，若 duration 不可得则路由失效；(2) 冻结一阶段预测器假设，无法与主预测器联合自适应；(3) 分组变换需每组足够样本，长尾极稀疏分组的 λg 估计可能不稳；(4) 依赖多任务 engagement 头的 logits/表示作为辅助信号，单任务时长模型无法直接套用。这些边界在迁移到社区 dwell-time 场景时需逐一核对，尤其辅助信号依赖会限制无多任务结构系统的复用。\n\n## 6. 工业实践意义\n\n对社区搜索/推荐团队，DADF 的最大价值是**几乎零侵入的纠偏旁路**。**应采纳**：「整体校准但分区间互相抵消」是 dwell-time/转化时长排序的通病，先用 DADF 的分桶残差诊断（按目标值分桶看 y/ŷ 是否系统性偏移）做体检，再决定是否上二阶段乘性校正——这套诊断方法本身就值得纳入排序模型上线 checklist。**应尝试**：在已上线时长/停留预测器之上挂二阶段乘性校正（不动主模型），按目标值分 3~4 桶 + 分组 Box–Cox，线上以旁路插件灰度，风险远低于重训第一阶段预测器；快手线上 7 日留存 +0.054%、长播率 +0.351% 且全显著，收益方向明确。**应警惕**：辅助模块强依赖多任务 engagement 头，单塔系统需先补多任务结构或裁剪该模块（消融显示去掉 Aux. 主要损 XAUC、MAE 影响小，可接受降级）；分组需足量样本，极稀疏长尾桶要合并；线上分桶建议用「historical traffic statistics and production experience」定固定边界而非等频，避免线上线下桶不一致。部署上仅需 ranking 特征 x、duration d、原始时长输出 ℓ₀、辅助表示 ha，无显式额外延迟，属轻量级改造。",
+        "content_html": "<h1>DADF 深度解读：短视频时长回归的分布感知二阶段去偏框架</h1>\n<h2>1. 问题与动机</h2>\n<p>观看时长预测是短视频推荐的核心回归任务，但标签高度长尾——「most impressions correspond to short views or quick skips, while only a small fraction lead to long consumption」。论文指出一个被长期忽视的「伪平衡（pseudo-balance）」陷阱：模型可能整体 calibrated（全局 y/ŷ 比值≈1.0），但同时<strong>系统性高估短播放、低估长播放</strong>，因为正负残差在聚合时相互抵消。Figure 1(a) 给出定量证据：已部署预测器在各 watch-time 桶上「consistently overestimates short views and underestimates long views」，而全局比值仍接近 1.0。更深一层的根因是：乘性 bias factor b=y/ŷ 继承了原始时长分布的长尾性（Appendix A.1 给出理论刻画），导致直接对 b 做回归不稳定。</p>\n<p>这一陷阱对任何回归型排序目标（时长、停留、转化时长）都成立，社区搜索的 dwell-time 排序同样会「整体校准但分区间互相抵消」。已有方法多在第一阶段时长预测器上改进，残差分布偏差仍未被充分纠正——这正是 DADF 切入点：不动主模型，在其之上挂一个分布感知的二阶段乘性残差校正。</p>\n<h2>2. 方法详解</h2>\n<p><strong>二阶段乘性校正框架。</strong> 设冻结的一阶段预测为 ŷ₀，校正标签 b=y/(sg(ŷ₀)+ε)（sg 为 stop-gradient），最终预测 ŷ=ŷ₀·b̂=ŷ₀·T_λg⁻¹(F_θ(x, ℓ₀, π(d), ha))。即学习一个对 b 的校正而非替换 ŷ₀。三大组件：</p>\n<p><strong>A. 动态分布感知模块。</strong> 对乘性校正因子做分组 Box–Cox 变换：T_λg(b)={(b+ε)^λg−1}/λg（λg≠0），log(b+ε)（λg=0），其中 λg 是每个时长分组可学习的变换参数；推理时用解析逆变换 T_λg⁻¹ 还原。作用是把长尾、异方差的校正目标拉成更接近正态、可稳定回归的空间——这是全框架最关键的设计（消融显示移除它 MAE 退化最大）。</p>\n<p><strong>B. Debias-factor-aware 模块。</strong> 硬路由：每个样本按时长分组 g=π(d) 选择专家网络 E_g，融合信号 h=Fusion(x, ℓ₀, g, ha)，预测变换空间校正量 ẑ=E_g(h)。理论依据用全方差定律证明分组后 oracle 风险满足 R<em>_G ≤ R</em>₀，即按时长分桶建模能降低不可约不确定性。</p>\n<p><strong>C. Multi-label-aware 模块。</strong> 三路辅助信息：context 分支 hc=MLP([ℓ_play, xc])；logit 注意力 h_ℓ=SelfAttention(Φ₁(ℓ₁),…,Φ_M(ℓ_M))；tower 表示 hr=TokenMixer(r₁,…,r_M)，拼接成 ha=MLP([hc,h_ℓ,hr])。即复用多任务 engagement 头的 logits 与表示作为去偏辅助信号。</p>\n<p><strong>训练目标。</strong> L_DADF=α·L_trans+β·L_abs+η·L_reg，其中 L_trans 是变换空间 MSE、L_abs 是原空间 Huber、L_reg 对每个时长分组的均值/方差/偏度做正则；超参 α=1.0、β=0.8、η=0.10。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>不替换已部署预测器的分布感知二阶段去偏</strong>：直接建模乘性 bias factor，是对现有时长预测管线的「model-agnostic plug-in」，落地侵入性极低。</p>\n<p>(2) <strong>分组条件建模</strong>：用时长分桶 + 专家硬路由把异质残差模式拆开，并以全方差定律给出 oracle 风险下界证明（R<em>_G≤R</em>₀），让「分桶」有理论支撑而非纯工程经验。</p>\n<p>(3) <strong>异质变换设计</strong>：每个时长 regime 学独立 Box–Cox 参数 λg，针对短/中/长播放的不同残差分布分别拉正态。</p>\n<p>(4) <strong>多任务辅助信号融合</strong>：把 engagement 头的 logit 与 tower 表示引入去偏，复用既有多任务结构而非额外造特征。</p>\n<p>(5) <strong>理论刻画</strong>：附录证明 bias factor 的长尾继承性与分组降风险，是该工作区别于纯经验去偏的亮点。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>离线（Table 1）。</strong> 跨 7 个 backbone（VR/WLR/TPM/D2Q/CREAD/D2CO/EGMN）× 2 数据集（KuaiRec/WeChat21）一致提升。KuaiRec 上 WLR：MAE 4.414→4.172、XAUC 0.5941→0.6227；D2CO：MAE 4.613→4.168、XAUC 0.5687→0.6233（提升幅度最大的一档）。WeChat21 上 VR：MAE 18.681→17.912、XAUC 0.6766→0.6902。<strong>平均「reduces MAE by 4.33% and improves XAUC by 4.01%」覆盖所有 backbone-数据集组合</strong>，说明它是 backbone 无关的通用增益层。</p>\n<p><strong>线上 A/B（Table 2，快手 Kwai 平台）。</strong> App 总时长 +0.356%、单设备人均时长 +0.347%、单设备播放数 +0.120%、7 日留存 +0.054%、完播率 +0.215%、有效播放率 +0.312%、长播率 +0.351%、短播率 −0.273%，全部 p&lt;0.05；生产离线 WUAUC +1.88pp、MAE 降 12.57%。短播率下降 + 长播率上升的方向，正好印证它纠正了「高估短播、低估长播」的伪平衡。</p>\n<p><strong>消融（Table 3, WLR）。</strong> 移除分布模块（w/o Dist.）KuaiRec MAE 4.1723→4.1901 退化最大；移除辅助模块（w/o Aux.）对 XAUC 冲击最大（WeChat21 XAUC 0.6934→0.6920）。<strong>分桶分析（RQ4）</strong>最有说服力：分时长桶 MAE 降幅 [0,20)s 5.5%、[20,40)s 7.0%、中长桶 &gt;15%、[180,200) 峰值 23.8%、[200,+) 18.2%；尾部切片 Tail-10% MAE 降 10.43%、XAUC 升 7.98%——证明收益主要来自长尾/长播放区间，恰是伪平衡受害最重的地方。桶数 K 在 2~8 范围稳定。证据质量很高（多 backbone、多数据集、线上多指标显著、细粒度偏差分析）。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者<strong>未显式设置 limitations 章节</strong>（这是该论文的一个不足）。从方法可推出的隐含约束：(1) 依赖推理期可观测的 duration 作为 debias factor，若 duration 不可得则路由失效；(2) 冻结一阶段预测器假设，无法与主预测器联合自适应；(3) 分组变换需每组足够样本，长尾极稀疏分组的 λg 估计可能不稳；(4) 依赖多任务 engagement 头的 logits/表示作为辅助信号，单任务时长模型无法直接套用。这些边界在迁移到社区 dwell-time 场景时需逐一核对，尤其辅助信号依赖会限制无多任务结构系统的复用。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/推荐团队，DADF 的最大价值是<strong>几乎零侵入的纠偏旁路</strong>。<strong>应采纳</strong>：「整体校准但分区间互相抵消」是 dwell-time/转化时长排序的通病，先用 DADF 的分桶残差诊断（按目标值分桶看 y/ŷ 是否系统性偏移）做体检，再决定是否上二阶段乘性校正——这套诊断方法本身就值得纳入排序模型上线 checklist。<strong>应尝试</strong>：在已上线时长/停留预测器之上挂二阶段乘性校正（不动主模型），按目标值分 3~4 桶 + 分组 Box–Cox，线上以旁路插件灰度，风险远低于重训第一阶段预测器；快手线上 7 日留存 +0.054%、长播率 +0.351% 且全显著，收益方向明确。<strong>应警惕</strong>：辅助模块强依赖多任务 engagement 头，单塔系统需先补多任务结构或裁剪该模块（消融显示去掉 Aux. 主要损 XAUC、MAE 影响小，可接受降级）；分组需足量样本，极稀疏长尾桶要合并；线上分桶建议用「historical traffic statistics and production experience」定固定边界而非等频，避免线上线下桶不一致。部署上仅需 ranking 特征 x、duration d、原始时长输出 ℓ₀、辅助表示 ha，无显式额外延迟，属轻量级改造。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2607.29000",
+      "title": "PaletteID: Prototype-Composed Semantic Identifiers for Multimodal CTR Prediction",
+      "url": "https://arxiv.org/abs/2607.29000",
+      "authors": "Huanyu Liu, Baining Chen, Hui Liu, Zengyang Li, Ziyi Huang",
+      "company": [
+        "HUST",
+        "CCNU"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-31",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "summary": "PaletteID 用真实代表物品组成“语义调色板”，通过兼顾局部密度和全局多样性的 SQ-DPP 选原型，再为目标物品检索并聚合多个相近原型，避免残差 SID 的硬量化与前缀依赖。在 TAOBAO-MM 上 DCNv2 AUC 从 0.6275 升至 0.6314，长尾 40% 物品提升 0.0128；KuaiRec 上 RankMixer GAUC 达 0.7514。",
+      "key_insight": "长尾物品不必被压成单一路径离散码；由多个可解释原型软组合，能让稀疏行为物品共享相邻内容的 CTR 知识。UGC 场景可把帖子、作者和话题原型离线入库，线上只做原型 embedding 查表与聚合；重点评估尾部 AUC，而非仅看被头部流量主导的整体指标。",
+      "total_score": 4.4,
+      "adjusted_score": 4.55,
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2605.09040",
+      "title": "UxSID: Semantic-Aware User Interests Modeling for Ultra-Long Sequence",
+      "url": "https://arxiv.org/abs/2605.09040",
+      "authors": "Hongwei Zhang, Qiqiang Zhong, Jiangxia Cao, Yiyang Lv, Huanjie Wang, Liwei Guan, Jing Yao, Yiyu Wang, Junfeng Shu, Zhaojie Liu, Han Li",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "web_search",
+      "published": "2026-05-18",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 2
+      },
+      "preference_bonus": 0.15,
+      "summary": "UxSID 在逐候选检索与完全无目标压缩之间引入“语义组共享兴趣记忆”：先压缩超长行为，再用候选语义 ID 做分层探测，从全局行为和兴趣锚中提取目标相关偏好。模型支持最长 1 万次交互且保持常数时间在线推理，快手广告大规模 A/B 测试带来 0.337% 收入提升。",
+      "key_insight": "当用户历史过长时，可让同一语义组候选共享压缩记忆，既避免为每个候选重搜 1 万条行为，也比单个静态用户向量保留更多目标相关性。对社区推荐，可用内容语义 ID 连接长期主题兴趣与当前帖子，并以线上线下一致的固定长度表示控制延迟。",
+      "total_score": 4.15,
+      "adjusted_score": 4.3,
+      "rank": 7,
+      "deep_reading": {
+        "paper_id": "arxiv:2605.09040",
+        "title": "UxSID: Semantic-Aware User Interests Modeling for Ultra-Long Sequence",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n工业推荐系统中，活跃用户每周可产生约 10,000 条交互，超长行为序列建模因此成为提升 CTR/CVR 的关键资源。然而传统 attention-based DIN/DIEN 因为 O(n²) 复杂度只能截到 n=100 左右；SIM/ETA/TWIN 路线把它当作'对目标 item 做检索 (Top-K)'问题，引入选择偏置——离散语义相关但 retrieval 没召回的远端 item 会被忽略，TWIN 在 KuaiRec-Big 上 AUC 0.8269 但随序列变长收益减缓；item-agnostic 压缩路线 C-Former、MIMN、LURM 把整段序列压缩成固定数量的兴趣向量，相当于'低通滤波'，丢掉了 target-specific 的偏好峰，C-Former 在同数据集 0.8276。论文在 XLong 数据集做了更尖锐的对照：C-Former 0.8135、TWIN 0.8154，而 UxSID 拿到 0.8408，差距 2.5–2.7pp 是非常显著的工业级提升。这一 motivation 实际暗示了第三条道路：既不做 item-level 检索 (避免选择偏置和检索延迟)，也不做完全 item-agnostic 压缩 (避免 target 信号被滤掉)。\n\n## 2. 方法详解\n\nUxSID 的核心思想是用 Semantic IDs (SIDs) 把'语义相近的 item 聚合成共享兴趣组'，再用双层注意力捕捉 target-aware 偏好。具体由两阶段组成：\n\n(a) SID 构造：用一个 MLLM (论文沿用 Kuaishou 自研 QARM V2 体系) 把每个 item 的多模态属性编码为 z_i ∈ R^d，然后用 Res-KmeansFSQ 做层级量化，公开数据集 codebook shape 是 256×256×256×256 (M=4 层)，工业版本第一层 codebook 大小 4096，embedding 维度 32。只取第一层量化结果 k_1 作为 target SID，作者解释这是 granularity vs. latency 的折中。每个 item 因此都有一个紧凑的 SID 表示，而'共享同一 SID 的 item 群'天然形成语义兴趣组。\n\n(b) 双层注意力：\nStage 1 (Item-Agnostic Interest Compression, IAIC)：把原始长序列 B=[b_1,…,b_L] 压缩成 K=16 个可学习的 interest anchors P ∈ R^{K×d}。Cross-attention 公式为 H = Softmax((Q_anc W^Q)(E W^K)^T/√d)(E W^V)。每个 anchor 后接 anchor-specific PFFN (per-token FFN，权重不共享) 防止表示坍塌：p_k = LN(h_k + σ(h_k W_1^(k))W_2^(k))。再加正交损失 L_ortho = ||PP^T/||P||_2² − I||_F，强约束 16 个 anchor 彼此分散。\n\nStage 2 (Hierarchical Semantic Probing)：用 target SID c_target 引导分两步探测：\n- 显式全局探测：e_global = Softmax((c_target W_g^Q)(E W_g^K)^T/√d)(E W_g^V)，直接从原始 ultra-long 序列里抽 target-related 细粒度信号；\n- 门控隐式探测：先用一个 2 层 sigmoid MLP 得 g_ctx = σ(GatedNet(e_global))，再 q_ref = c_target ⊙ g_ctx (Hadamard) 形成 refined query，最后 e_local = Softmax((q_ref W_l^Q)(P W_l^K)^T/√d)(P W_l^V) 在 16 个 anchor 上探测。\n\n最终拼接 E^UxSID = [e_global; e_local]，作为一个 2×d=2×32 的 embedding 接入排序模型：p(x) = σ(MLP(E^t; E^u; E^c; E^short; E^UxSID))。损失是 BCE + λ·L_ortho。优化器 Adam，lr=0.001，batch=256，公开数据集用 NVIDIA L20，工业 1k 序列 16 张 A10，10k 序列 40 张 A10。\n\n值得强调的两点设计：(i) 把 stage 1 设计成 item-agnostic 但加强 anchor 多样性，stage 2 才引入 target 信号，保留了'压缩 + 探测'的两段式分工；(ii) gated probing 用 stage 1 的全局上下文调制 target SID，避免直接拿 SID 当 query 在压缩后的 anchor 上做盲探。\n\n## 3. 核心技术贡献\n\n(1) SID-guided 压缩 + 双层 attention 第三条路径：跳出了 SIM/TWIN 检索 vs. C-Former 静态压缩的二元对立。Ablation 显示把 SID 换成 category tag 后 XLong AUC 从 0.8408 掉到 0.8605→0.8205 区段，Interest Recall@50 从 0.1488 降到 0.0543，确认了 SID 的语义聚合作用是核心。\n\n(2) Dual-stage 探测拆分：去掉 e_global 后 KuaiRec-Big AUC 从 0.8348 降到 0.8302 (-0.0046)、XLong 从 0.8408 降到 0.8370；去掉 e_local 后两数据集分别 -0.0034 / -0.0033。两个分支同等重要，说明全局精细信号 + anchor-level 精探测真是互补。\n\n(3) 门控 refined probing：去掉 gate 后 XLong AUC 降 0.0032，验证'用全局上下文调制 target SID' 比裸 SID query 显著更好。\n\n(4) 正交锚点：L_ortho 让 16 个 anchor 保持独立兴趣方向，去掉后 XLong AUC -0.0023，从工业实战看这是个低成本但稳定收益的项。\n\n## 4. 实验结果分析\n\n公开数据 (Table 1)：UxSID 在 XLong/KuaiRec-Big 两个 ultra-long 数据集相对最强基线 TWIN、C-Former 都拉开 0.7–2.7pp AUC。\n\n工业数据 (Table 2)：在 Kuaishou 广告 CTR 任务上 AUC 0.8728 (vs. TWIN 0.8712，+0.16pp)，CTCVR AUC 0.8626 (vs. TWIN 0.8609，+0.17pp)。AUC 的工业基线本就很高，0.16pp 在 Kuaishou 这个量级是有意义的。\n\n在线 A/B (Table 3，Kuaishou 广告 7 天 10% 流量)：曝光 +0.111%，cost +0.231%，**revenue +0.337%**。Revenue 远超曝光增幅说明精准度在提升——同样的曝光带来更高转化效率。\n\n序列长度 scaling (Figure 3)：UxSID 在 1k→10k 长度上 AUC 单调上升且不收敛，TWIN/SIM 在 2k 之后基本 plateau，C-Former 在长序列上变得不稳定。这是 SID 路线相对 retrieval/compress 路线的关键优势。\n\n健壮性 (Table 7)：3 个 seed 下 KuaiRec-Big AUC 0.8348±0.0001、XLong 0.8415±0.0023，标准差很小。\n\n特征注入对照 (Table 8)：单纯给 TWIN 加上 SID 特征只能提升到 0.8296，仍输 UxSID 的 0.8348，说明收益来自架构而非特征加固。\n\n## 5. 局限与未来方向\n\n论文没有显式 limitations section，但从工程视角可以总结：(1) 需要先训好 RQ-VAE 风格的多层 codebook (Res-KmeansFSQ)，对 SID 还没成熟的团队是一次性投入；(2) 工业部署需要 ~2.56 TB ES 容量做 UID⊗SID hash 的 embedding cache (Kuaishou ~400M 用户 ×100 SID/用户)，对中小厂可能不容忽视；(3) 论文只取第一层 SID (k_1)，更细粒度的 k_2, k_3 是否能带来额外信息没有实验；(4) 评估场景集中在短视频与电商 CTR，对长视频/音乐/资讯类是否同样有效未知；(5) anchor K=16 是经验最优，λ 也需要按数据集调，迁移到新业务可能要再调参。\n\n## 6. 工业实践意义\n\nUxSID 给搜推团队最具操作性的一条建议是：当你已经在召回或生成式推荐链路落地了 SID/RQ-VAE codebook (如 TIGER、KUNLUN、HSTU、QARM 体系)，就可以顺势把它当作'第三种超长行为序列建模工具'，避免每条链路各自重训一套语义空间。线上推理上 UxSID 设计了 O(1) hash table 方案——Key=Hash(UID⊕SID)、Value 是预算好的 2×32 embedding，缓存到 Embedding Server，主排序模型只在最后做轻量 attention，论文报告增加约 0.16ms 延迟，几乎可忽略。重的 O(n²) 注意力被 offload 到离线 batch (1k 序列 16 张 A10、10k 序列 40 张 A10，每周刷新一次)，这种 '离线生产兴趣表征 + 在线轻量查表' 模式对很多 RTP/特征平台都成熟可复用。\n\n落地建议：先把 SID 训出来 (利用现有 MLLM 物料信息和 RQ 量化)，然后用 UxSID 框架替换或并联现有 SIM/TWIN 模块。先 16 个 anchor、第一层 SID 这套默认配置跑一遍，观察 CTR/AUC，再考虑加 k_2 探测或更大 anchor 数量。对 UGC/短视频社区，物料语义信息天然丰富 (封面、首帧、标题、tag)，SID 训练比纯 ID 类 ID 场景容易出效果；广告 0.337% revenue lift 在内容场景往往会对应更大的人均时长/留存提升。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>工业推荐系统中，活跃用户每周可产生约 10,000 条交互，超长行为序列建模因此成为提升 CTR/CVR 的关键资源。然而传统 attention-based DIN/DIEN 因为 O(n²) 复杂度只能截到 n=100 左右；SIM/ETA/TWIN 路线把它当作&#x27;对目标 item 做检索 (Top-K)&#x27;问题，引入选择偏置——离散语义相关但 retrieval 没召回的远端 item 会被忽略，TWIN 在 KuaiRec-Big 上 AUC 0.8269 但随序列变长收益减缓；item-agnostic 压缩路线 C-Former、MIMN、LURM 把整段序列压缩成固定数量的兴趣向量，相当于&#x27;低通滤波&#x27;，丢掉了 target-specific 的偏好峰，C-Former 在同数据集 0.8276。论文在 XLong 数据集做了更尖锐的对照：C-Former 0.8135、TWIN 0.8154，而 UxSID 拿到 0.8408，差距 2.5–2.7pp 是非常显著的工业级提升。这一 motivation 实际暗示了第三条道路：既不做 item-level 检索 (避免选择偏置和检索延迟)，也不做完全 item-agnostic 压缩 (避免 target 信号被滤掉)。</p>\n<h2>2. 方法详解</h2>\n<p>UxSID 的核心思想是用 Semantic IDs (SIDs) 把&#x27;语义相近的 item 聚合成共享兴趣组&#x27;，再用双层注意力捕捉 target-aware 偏好。具体由两阶段组成：</p>\n<p>(a) SID 构造：用一个 MLLM (论文沿用 Kuaishou 自研 QARM V2 体系) 把每个 item 的多模态属性编码为 z_i ∈ R^d，然后用 Res-KmeansFSQ 做层级量化，公开数据集 codebook shape 是 256×256×256×256 (M=4 层)，工业版本第一层 codebook 大小 4096，embedding 维度 32。只取第一层量化结果 k_1 作为 target SID，作者解释这是 granularity vs. latency 的折中。每个 item 因此都有一个紧凑的 SID 表示，而&#x27;共享同一 SID 的 item 群&#x27;天然形成语义兴趣组。</p>\n<p>(b) 双层注意力：<br>Stage 1 (Item-Agnostic Interest Compression, IAIC)：把原始长序列 B=[b_1,…,b_L] 压缩成 K=16 个可学习的 interest anchors P ∈ R^{K×d}。Cross-attention 公式为 H = Softmax((Q_anc W^Q)(E W^K)^T/√d)(E W^V)。每个 anchor 后接 anchor-specific PFFN (per-token FFN，权重不共享) 防止表示坍塌：p_k = LN(h_k + σ(h_k W_1^(k))W_2^(k))。再加正交损失 L_ortho = ||PP^T/||P||_2² − I||_F，强约束 16 个 anchor 彼此分散。</p>\n<p>Stage 2 (Hierarchical Semantic Probing)：用 target SID c_target 引导分两步探测：</p>\n<ul>\n<li>显式全局探测：e_global = Softmax((c_target W_g^Q)(E W_g^K)^T/√d)(E W_g^V)，直接从原始 ultra-long 序列里抽 target-related 细粒度信号；</li>\n<li>门控隐式探测：先用一个 2 层 sigmoid MLP 得 g_ctx = σ(GatedNet(e_global))，再 q_ref = c_target ⊙ g_ctx (Hadamard) 形成 refined query，最后 e_local = Softmax((q_ref W_l^Q)(P W_l^K)^T/√d)(P W_l^V) 在 16 个 anchor 上探测。</li>\n</ul>\n<p>最终拼接 E^UxSID = [e_global; e_local]，作为一个 2×d=2×32 的 embedding 接入排序模型：p(x) = σ(MLP(E^t; E^u; E^c; E^short; E^UxSID))。损失是 BCE + λ·L_ortho。优化器 Adam，lr=0.001，batch=256，公开数据集用 NVIDIA L20，工业 1k 序列 16 张 A10，10k 序列 40 张 A10。</p>\n<p>值得强调的两点设计：(i) 把 stage 1 设计成 item-agnostic 但加强 anchor 多样性，stage 2 才引入 target 信号，保留了&#x27;压缩 + 探测&#x27;的两段式分工；(ii) gated probing 用 stage 1 的全局上下文调制 target SID，避免直接拿 SID 当 query 在压缩后的 anchor 上做盲探。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) SID-guided 压缩 + 双层 attention 第三条路径：跳出了 SIM/TWIN 检索 vs. C-Former 静态压缩的二元对立。Ablation 显示把 SID 换成 category tag 后 XLong AUC 从 0.8408 掉到 0.8605→0.8205 区段，Interest Recall@50 从 0.1488 降到 0.0543，确认了 SID 的语义聚合作用是核心。</p>\n<p>(2) Dual-stage 探测拆分：去掉 e_global 后 KuaiRec-Big AUC 从 0.8348 降到 0.8302 (-0.0046)、XLong 从 0.8408 降到 0.8370；去掉 e_local 后两数据集分别 -0.0034 / -0.0033。两个分支同等重要，说明全局精细信号 + anchor-level 精探测真是互补。</p>\n<p>(3) 门控 refined probing：去掉 gate 后 XLong AUC 降 0.0032，验证&#x27;用全局上下文调制 target SID&#x27; 比裸 SID query 显著更好。</p>\n<p>(4) 正交锚点：L_ortho 让 16 个 anchor 保持独立兴趣方向，去掉后 XLong AUC -0.0023，从工业实战看这是个低成本但稳定收益的项。</p>\n<h2>4. 实验结果分析</h2>\n<p>公开数据 (Table 1)：UxSID 在 XLong/KuaiRec-Big 两个 ultra-long 数据集相对最强基线 TWIN、C-Former 都拉开 0.7–2.7pp AUC。</p>\n<p>工业数据 (Table 2)：在 Kuaishou 广告 CTR 任务上 AUC 0.8728 (vs. TWIN 0.8712，+0.16pp)，CTCVR AUC 0.8626 (vs. TWIN 0.8609，+0.17pp)。AUC 的工业基线本就很高，0.16pp 在 Kuaishou 这个量级是有意义的。</p>\n<p>在线 A/B (Table 3，Kuaishou 广告 7 天 10% 流量)：曝光 +0.111%，cost +0.231%，<strong>revenue +0.337%</strong>。Revenue 远超曝光增幅说明精准度在提升——同样的曝光带来更高转化效率。</p>\n<p>序列长度 scaling (Figure 3)：UxSID 在 1k→10k 长度上 AUC 单调上升且不收敛，TWIN/SIM 在 2k 之后基本 plateau，C-Former 在长序列上变得不稳定。这是 SID 路线相对 retrieval/compress 路线的关键优势。</p>\n<p>健壮性 (Table 7)：3 个 seed 下 KuaiRec-Big AUC 0.8348±0.0001、XLong 0.8415±0.0023，标准差很小。</p>\n<p>特征注入对照 (Table 8)：单纯给 TWIN 加上 SID 特征只能提升到 0.8296，仍输 UxSID 的 0.8348，说明收益来自架构而非特征加固。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有显式 limitations section，但从工程视角可以总结：(1) 需要先训好 RQ-VAE 风格的多层 codebook (Res-KmeansFSQ)，对 SID 还没成熟的团队是一次性投入；(2) 工业部署需要 ~2.56 TB ES 容量做 UID⊗SID hash 的 embedding cache (Kuaishou ~400M 用户 ×100 SID/用户)，对中小厂可能不容忽视；(3) 论文只取第一层 SID (k_1)，更细粒度的 k_2, k_3 是否能带来额外信息没有实验；(4) 评估场景集中在短视频与电商 CTR，对长视频/音乐/资讯类是否同样有效未知；(5) anchor K=16 是经验最优，λ 也需要按数据集调，迁移到新业务可能要再调参。</p>\n<h2>6. 工业实践意义</h2>\n<p>UxSID 给搜推团队最具操作性的一条建议是：当你已经在召回或生成式推荐链路落地了 SID/RQ-VAE codebook (如 TIGER、KUNLUN、HSTU、QARM 体系)，就可以顺势把它当作&#x27;第三种超长行为序列建模工具&#x27;，避免每条链路各自重训一套语义空间。线上推理上 UxSID 设计了 O(1) hash table 方案——Key=Hash(UID⊕SID)、Value 是预算好的 2×32 embedding，缓存到 Embedding Server，主排序模型只在最后做轻量 attention，论文报告增加约 0.16ms 延迟，几乎可忽略。重的 O(n²) 注意力被 offload 到离线 batch (1k 序列 16 张 A10、10k 序列 40 张 A10，每周刷新一次)，这种 &#x27;离线生产兴趣表征 + 在线轻量查表&#x27; 模式对很多 RTP/特征平台都成熟可复用。</p>\n<p>落地建议：先把 SID 训出来 (利用现有 MLLM 物料信息和 RQ 量化)，然后用 UxSID 框架替换或并联现有 SIM/TWIN 模块。先 16 个 anchor、第一层 SID 这套默认配置跑一遍，观察 CTR/AUC，再考虑加 k_2 探测或更大 anchor 数量。对 UGC/短视频社区，物料语义信息天然丰富 (封面、首帧、标题、tag)，SID 训练比纯 ID 类 ID 场景容易出效果；广告 0.337% revenue lift 在内容场景往往会对应更大的人均时长/留存提升。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2607.26720",
+      "title": "CaIRec: Calibrated Modality Imputation for Incomplete Multimodal Recommendation",
+      "url": "https://arxiv.org/abs/2607.26720",
+      "authors": "Ruiyu Liu, Xiaohao Liu, Miaomiao Cai, Yunshan Ma, See-Kiong Ng",
+      "company": [
+        "SUSTech",
+        "NUS",
+        "SMU"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-29",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "summary": "CaIRec 面向图片或文本缺失的多模态推荐，先以 SIC 从共享潜变量补全模态并校准跨模态结构，再用 PRC 的伪缺失对齐和补全感知物品图适配个性化排序。在 50% 物品缺失一种模态时，三套 Amazon 数据的 12 个指标平均领先最强基线 3.77%；去掉 PRC 后 Clothing Recall@20 下降 10.44%。",
+      "key_insight": "补齐内容表示只是第一步，恢复后的图文关系还必须接受排序监督并重建可传播偏好的邻接结构。社区 UGC 中可用“人为遮蔽已有模态”生成成对训练信号，分别监控完整与缺失内容的 nDCG；若增益只来自完整物品，应警惕补全模块没有真正解决冷启动。",
+      "total_score": 4.1,
+      "adjusted_score": 4.2,
+      "rank": 8
+    },
+    {
+      "id": "web:microsoft-learn-train-recommender-models",
+      "title": "训练推荐模型 - Azure Databricks",
+      "url": "https://learn.microsoft.com/zh-cn/azure/databricks/machine-learning/train-recommender-models",
+      "authors": "Microsoft Learn",
+      "company": [
+        "Microsoft",
+        "Databricks"
+      ],
+      "source": "web_search",
+      "published": "2026-06-01",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 5,
+        "evidence_quality": 2,
+        "timeliness": 2
+      },
+      "preference_bonus": 0.05,
+      "summary": "Microsoft Learn 给出 Azure Databricks 上两类可执行推荐范式：双塔负责从数百万物品中生成数百到数千候选，DLRM/DeepFM 处理稠密与稀疏特征做精排。示例基于 Runtime 14.3 LTS ML，使用 TorchDistributor 多 GPU 编排、TorchRec 扩展嵌入表、MLflow 跟踪参数与检查点。",
+      "key_insight": "这份实践适合作为工程基线而非算法 SOTA：召回与精排应按模型规模、特征类型和候选数量分工，避免用同一网络覆盖全漏斗。社区系统可先复刻双塔加向量索引，再逐步接入 DLRM；多点击、收藏、购买目标并训时要显式监控目标冲突导致的 embedding 质量下降。",
+      "total_score": 3.35,
+      "adjusted_score": 3.4,
+      "rank": 9
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:modelscope/ms-swift",
+      "title": "ms-swift: Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "url": "https://github.com/modelscope/ms-swift",
+      "source": "github",
+      "description": "覆盖 600+ LLM 与 300+ 多模态模型的训练工具链，支持 PEFT、全参训练、SFT、DPO 与 GRPO；近期仍活跃，适合快速验证推荐表征或奖励对齐实验。",
+      "language": "Python",
+      "stars": 15023,
+      "created_at": "2023-08-01"
+    },
+    {
+      "rank": 2,
+      "id": "github:huggingface/transformers",
+      "title": "transformers: 🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "url": "https://github.com/huggingface/transformers",
+      "source": "github",
+      "description": "主流文本、视觉、音频和多模态模型定义框架，可作为推荐内容编码器与多模态特征抽取的通用底座；仓库持续高频更新。",
+      "language": "Python",
+      "stars": 163277,
+      "created_at": "2018-10-29"
+    },
+    {
+      "rank": 3,
+      "id": "github:deepset-ai/haystack",
+      "title": "haystack: Open-source AI orchestration framework for building context-engineered, production-ready LLM applications. Design modular pipelines and agent workflows with explicit control over retrieval, routing, memory, and generation. Built for scalable agents, RAG, multimodal applications, semantic search, and conversational systems.",
+      "url": "https://github.com/deepset-ai/haystack",
+      "source": "github",
+      "description": "面向生产 RAG、语义搜索和 Agent 工作流的模块化编排框架，提供检索、路由、记忆与生成控制；与个性化推荐的实验平台建设相关。",
+      "language": "Python",
+      "stars": 26094,
+      "created_at": "2019-11-14"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash-0731",
+      "title": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
+      "source": "huggingface",
+      "description": "DeepSeek 新近发布的文本生成模型，提供 MIT 许可与 8-bit/FP8 标签；可用于低成本用户意图理解或推荐文本增强实验。",
+      "language": "model",
+      "stars": 1846,
+      "created_at": "2026-07-31"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:internlm/Intern-S2-Preview-397B",
+      "title": "internlm/Intern-S2-Preview-397B",
+      "url": "https://huggingface.co/internlm/Intern-S2-Preview-397B",
+      "source": "huggingface",
+      "description": "397B 规模的图文对话预览模型，采用 Apache-2.0 许可；适合评估多模态内容理解，但上线前需重点核算显存与推理成本。",
+      "language": "model",
+      "stars": 64,
+      "created_at": "2026-07-16"
+    },
+    {
+      "rank": 6,
+      "id": "hf_dataset:moonshotai/PerceptionBench",
+      "title": "moonshotai/PerceptionBench",
+      "url": "https://huggingface.co/datasets/moonshotai/PerceptionBench",
+      "source": "huggingface",
+      "description": "用于评估多模态大模型原子视觉感知能力的数据集，规模为 1K–10K；可辅助选择推荐图像编码器并定位基础感知缺陷。",
+      "language": "dataset",
+      "stars": 33,
+      "created_at": "2026-07-23"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:bytedance-research/GRN",
+      "title": "bytedance-research/GRN",
+      "url": "https://huggingface.co/bytedance-research/GRN",
+      "source": "huggingface",
+      "description": "字节跳动研究团队发布的 MIT 许可模型，关联 arXiv:2604.13030；可作为后续核验其与推荐赛道适配性的候选。",
+      "language": "model",
+      "stars": 26,
+      "created_at": "2026-04-16"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:Alibaba-DAMO-Academy/ClinFusion-8B",
+      "title": "Alibaba-DAMO-Academy/ClinFusion-8B",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/ClinFusion-8B",
+      "source": "huggingface",
+      "description": "基于 Qwen3-VL 的 8B 临床多模态模型，采用 Apache-2.0 许可；虽非推荐专用，但可观察垂直多模态融合与领域适配路线。",
+      "language": "model",
+      "stars": 3,
+      "created_at": "2026-03-05"
+    }
+  ]
+}

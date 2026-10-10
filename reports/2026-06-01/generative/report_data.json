@@ -1,0 +1,248 @@
+{
+  "date": "2026-06-01",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 9,
+    "papers_selected": 9,
+    "score_min": 3.2,
+    "score_max": 3.9
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.23312",
+      "title": "Towards Generalizable and Efficient Large-Scale Generative Recommenders",
+      "url": "https://arxiv.org/abs/2605.23312",
+      "authors": "Qiuling Xu, Ko-Jen Hsiao, Moumita Bhattacharya",
+      "company": [
+        "Netflix"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-22",
+      "total_score": 3.9,
+      "preference_bonus": 0.4,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "论文复盘了把一个生成式推荐主干网络（不含 embedding 与 decoding 层）从 2M 参数扩到 1B 参数的生产经验，场景是工业级的标题推荐。作者发现预训练阶段的收益并不会自动传导到下游应用：任务自身的提升空间（task headroom）、重复训练成本、serving 延迟、item 时效性都会削弱迁移效果。在多个下游任务上观察到“任务相关的 scaling 行为”——部分任务在观测的参数区间内就逼近经验上限，另一些则持续受益于更大容量。",
+      "key_insight": "核心可借鉴点是用“带偏移的 scaling-law 拟合 (offset scaling-law fit)”作为诊断工具，判断某个任务还值不值得继续堆模型容量——这把“盲目堆参数”变成了可量化的投入决策。对要落地生成式推荐/搜索的团队，提醒不能只看离线预训练 loss，要把重复训练成本、在线延迟、内容新鲜度一起纳入 scaling 评估，按任务区分“已到顶”与“仍可扩”的部分再分配算力。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.23312",
+        "title": "Towards Generalizable and Efficient Large-Scale Generative Recommenders",
+        "status": "completed",
+        "content": "## Towards Generalizable and Efficient Large-Scale Generative Recommenders 深度解读\n\n### 1. 问题与动机\n\n论文来自 Netflix 的标题推荐（title recommendation）生产实践，核心问题是：把生成式推荐主干从 2M 扩到 1B 参数，预训练阶段的收益**不会自动**传导到下游应用。作者把\"生产迁移\"拆成多个互相牵制的因素：任务自身的提升空间（task headroom）、重复训练成本、serving 延迟、item 时效性。\n\n量化证据很硬：系统每个刷新周期要在 **2 万亿（2 trillion）行为 token** 上训练，频繁重训使效率成为硬约束；缓存式 serving 带来 staleness——训练标签里的 item 在 serving 时可能已被消费；新标题缺乏可靠的协同 embedding。最关键的观察是\"serving 延迟敏感性因任务而异\"：Task B 在 24 小时 serving 延迟下 MRR 掉 31%、48 小时掉 41%，而 Task A 几乎不受影响（≤4%），Task C 居中（48h 掉 18%）。这说明\"该不该堆模型\"不能一刀切，必须按任务诊断。\n\n### 2. 方法详解\n\n**主干架构**：基于 HSTU（hierarchical sequential transducer）的 Transformer 生成式推荐器，把用户行为编码成 token 序列，每个 event 把 action、context、metadata 压进单个 token。参数 scaling 区间 2M→1B（不含 embedding 与 decoding 层），embedding 维度 4096。\n\n**四个效率配方**是落地关键：\n1. **Sampled softmax**：仅用 1% 均匀采样负样本，且**不做 LogQ 校正**（刻意保持训练 recipe 简单）。\n2. **Projected decoding head**：把维度从 d 投到 d/8（4096→512），在 10^6 词表规模下输出层 FLOPs 降 **35.5×**，10^7 item 规模下约降 **249×**——这是让\"十亿模型反复重训\"在工程上可行的核心。\n3. **Semantic item towers**：用知识图谱 embedding、LLM2Vec 语言表征、人工标注特征，给协同信号弱的 item 兜底。\n4. **Collaborative-embedding masking**：训练时按\"线上冷启动率\"随机替换 item embedding，让模型学会在没有协同 ID 时也能打分。\n\n**训练流程**用\"small-to-large 漏斗\"：先在小主干上验证改动，再上十亿参数，避免直接在 1B 上试错的高成本。\n\n### 3. 核心技术贡献\n\n**贡献一：offset scaling-law 拟合作为诊断工具。** 不同于传统 log-linear 拟合 P=a·log(N)+b，作者对每个任务拟合带偏移的形式 **P(N)=P₀−(N/N₀)^(−a)**，其中 P₀ 是任务相关的饱和上限。在 Table 2 上 offset 形式全面胜出：Task A 的 RMSE 降 48.4%、Task B 降 61.8%、Task C 降 14.9%。诊断结论很直接——Task A P₀=0.311 已接近经验上限，Task C P₀≈1.075（基本被 1.0 截断）几乎饱和。这把\"还要不要继续堆容量\"变成可量化的决策，并区分\"下一步该加容量、还是改目标、还是改 item 表征\"。\n\n**贡献二：Multi-Token Prediction (MTP) 的 serving-horizon 依赖性。** 论文揭示 MTP 不是无脑收益：在 48 小时缓存式 serving 下用优化窗口能涨 MRR，但在 <1s p95 的在线路径上，窗口变大反而伤害顺序敏感的任务。\n\n**贡献三：语义塔 + OOV embedding 处理冷启动。** 把语义证据与协同信号解耦，使新标题在没有协同 ID 时仍可打分。\n\n### 4. 实验结果分析\n\n**MTP 结果（Figure 5）**：48h 缓存 serving + 优化窗口下，Task A +22.1%、Task B +27.8%、Task C +27.9% 相对 MRR；但在线 serving（<1s p95）下，MTP 让 Task A +19.6%，却随窗口增大**损害** Task B/C——印证 MTP 的收益强依赖 serving 时序与是否顺序敏感。\n\n**Production-shadow 评测（Figure 7）**：1M 用户 × 1 周影子流量，1B vs 2M 主干：Task A +22.5%、Task B +11.3%、Task C +7.4% MRR，冷启动标题（词表未见）**+28.1%**。两个对照很说明问题：冷启动收益最大，印证语义塔设计有效；Task C 收益最小，印证 scaling-law 预测的天花板。最终在多个生产 A/B 中取得正向结果。\n\n**消融/趋势**：MRR 为主指标，作者称 Hit Rate、NDCG 趋势一致但未详列。\n\n### 5. 局限与未来方向\n\n作者明确指出：（1）分析只用三个粗粒度任务类别，回避了实现细节；（2）offset law 拟合要求指标有界，对无界目标适用性未知；（3）sampled softmax 省掉 LogQ 校正是为简化，可能引入偏差；（4）production-shadow 衡量的是下游集成质量，不是单面的因果增益；（5）冷启动 masking 概率\"对齐线上冷启动率\"，但具体数值未披露。\n\n### 6. 工业实践意义\n\n对要落地生成式推荐/搜索的团队，这篇是难得的生产真账：\n- **别只看离线 loss**：模型 scale 只是迁移问题的一个分量，必须和 task headroom、解码成本、serving-延迟对齐、item 泛化一起评估。用 offset scaling-law 拟合判断\"哪些任务已到顶、哪些还能扛容量\"，按任务分配算力。\n- **解码层是大模型反复重训的成本瓶颈**：projected head（4096→512，FLOPs 降 35.5×~249×）+ 1% sampled softmax 是让十亿模型可运维的关键，对算力受限团队尤有参考。\n- **MTP 要按 serving horizon 选用**：缓存/可乱序场景受益，顺序敏感的在线路径慎用。\n- **冷启动靠语义塔兜底**：UGC/新内容密集的社区场景，知识图谱+语言表征+OOV embedding 的组合能在协同信号缺失时维持打分质量（此处冷启动 +28.1% 是最大亮点）。\n\n- **时效性是被低估的隐形成本**：Task B 在 48h serving 延迟下掉 41% MRR，说明对时效敏感的任务，缩短训练-serving 链路（更频繁刷新、更短缓存窗口）的收益可能大于堆模型容量；应把\"serving 延迟敏感性\"做成上线前标准画像，避免在已饱和或时效主导的任务上浪费算力。\n\n**部署考量**：十亿主干的可运维性来自两点——projected head 把输出层从 4096 维压到 512 维，使大词表（10^7 item）下解码 FLOPs 降约 249×；small-to-large 漏斗把昂贵的 1B 验证前置到小模型上筛掉无效改动。这套组合让\"在 2 万亿 token 上反复重训十亿模型\"从纸面变成可落地流程，是想复刻 HSTU/生成式推荐 scaling 的团队绕不开的工程账。内存与延迟方面，sampled softmax（1% 负样本、省去 LogQ 校正）进一步压低训练开销，但代价是采样偏差未被显式纠正，落地时需自行评估对长尾排序的影响。",
+        "content_html": "<h2>Towards Generalizable and Efficient Large-Scale Generative Recommenders 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>论文来自 Netflix 的标题推荐（title recommendation）生产实践，核心问题是：把生成式推荐主干从 2M 扩到 1B 参数，预训练阶段的收益<strong>不会自动</strong>传导到下游应用。作者把&quot;生产迁移&quot;拆成多个互相牵制的因素：任务自身的提升空间（task headroom）、重复训练成本、serving 延迟、item 时效性。</p>\n<p>量化证据很硬：系统每个刷新周期要在 <strong>2 万亿（2 trillion）行为 token</strong> 上训练，频繁重训使效率成为硬约束；缓存式 serving 带来 staleness——训练标签里的 item 在 serving 时可能已被消费；新标题缺乏可靠的协同 embedding。最关键的观察是&quot;serving 延迟敏感性因任务而异&quot;：Task B 在 24 小时 serving 延迟下 MRR 掉 31%、48 小时掉 41%，而 Task A 几乎不受影响（≤4%），Task C 居中（48h 掉 18%）。这说明&quot;该不该堆模型&quot;不能一刀切，必须按任务诊断。</p>\n<h3>2. 方法详解</h3>\n<p><strong>主干架构</strong>：基于 HSTU（hierarchical sequential transducer）的 Transformer 生成式推荐器，把用户行为编码成 token 序列，每个 event 把 action、context、metadata 压进单个 token。参数 scaling 区间 2M→1B（不含 embedding 与 decoding 层），embedding 维度 4096。</p>\n<p><strong>四个效率配方</strong>是落地关键：</p>\n<ol>\n<li><strong>Sampled softmax</strong>：仅用 1% 均匀采样负样本，且<strong>不做 LogQ 校正</strong>（刻意保持训练 recipe 简单）。</li>\n<li><strong>Projected decoding head</strong>：把维度从 d 投到 d/8（4096→512），在 10^6 词表规模下输出层 FLOPs 降 <strong>35.5×</strong>，10^7 item 规模下约降 <strong>249×</strong>——这是让&quot;十亿模型反复重训&quot;在工程上可行的核心。</li>\n<li><strong>Semantic item towers</strong>：用知识图谱 embedding、LLM2Vec 语言表征、人工标注特征，给协同信号弱的 item 兜底。</li>\n<li><strong>Collaborative-embedding masking</strong>：训练时按&quot;线上冷启动率&quot;随机替换 item embedding，让模型学会在没有协同 ID 时也能打分。</li>\n</ol>\n<p><strong>训练流程</strong>用&quot;small-to-large 漏斗&quot;：先在小主干上验证改动，再上十亿参数，避免直接在 1B 上试错的高成本。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：offset scaling-law 拟合作为诊断工具。</strong> 不同于传统 log-linear 拟合 P=a·log(N)+b，作者对每个任务拟合带偏移的形式 <strong>P(N)=P₀−(N/N₀)^(−a)</strong>，其中 P₀ 是任务相关的饱和上限。在 Table 2 上 offset 形式全面胜出：Task A 的 RMSE 降 48.4%、Task B 降 61.8%、Task C 降 14.9%。诊断结论很直接——Task A P₀=0.311 已接近经验上限，Task C P₀≈1.075（基本被 1.0 截断）几乎饱和。这把&quot;还要不要继续堆容量&quot;变成可量化的决策，并区分&quot;下一步该加容量、还是改目标、还是改 item 表征&quot;。</p>\n<p><strong>贡献二：Multi-Token Prediction (MTP) 的 serving-horizon 依赖性。</strong> 论文揭示 MTP 不是无脑收益：在 48 小时缓存式 serving 下用优化窗口能涨 MRR，但在 &lt;1s p95 的在线路径上，窗口变大反而伤害顺序敏感的任务。</p>\n<p><strong>贡献三：语义塔 + OOV embedding 处理冷启动。</strong> 把语义证据与协同信号解耦，使新标题在没有协同 ID 时仍可打分。</p>\n<h3>4. 实验结果分析</h3>\n<p><strong>MTP 结果（Figure 5）</strong>：48h 缓存 serving + 优化窗口下，Task A +22.1%、Task B +27.8%、Task C +27.9% 相对 MRR；但在线 serving（&lt;1s p95）下，MTP 让 Task A +19.6%，却随窗口增大<strong>损害</strong> Task B/C——印证 MTP 的收益强依赖 serving 时序与是否顺序敏感。</p>\n<p><strong>Production-shadow 评测（Figure 7）</strong>：1M 用户 × 1 周影子流量，1B vs 2M 主干：Task A +22.5%、Task B +11.3%、Task C +7.4% MRR，冷启动标题（词表未见）<strong>+28.1%</strong>。两个对照很说明问题：冷启动收益最大，印证语义塔设计有效；Task C 收益最小，印证 scaling-law 预测的天花板。最终在多个生产 A/B 中取得正向结果。</p>\n<p><strong>消融/趋势</strong>：MRR 为主指标，作者称 Hit Rate、NDCG 趋势一致但未详列。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确指出：（1）分析只用三个粗粒度任务类别，回避了实现细节；（2）offset law 拟合要求指标有界，对无界目标适用性未知；（3）sampled softmax 省掉 LogQ 校正是为简化，可能引入偏差；（4）production-shadow 衡量的是下游集成质量，不是单面的因果增益；（5）冷启动 masking 概率&quot;对齐线上冷启动率&quot;，但具体数值未披露。</p>\n<h3>6. 工业实践意义</h3>\n<p>对要落地生成式推荐/搜索的团队，这篇是难得的生产真账：</p>\n<ul>\n<li><strong>别只看离线 loss</strong>：模型 scale 只是迁移问题的一个分量，必须和 task headroom、解码成本、serving-延迟对齐、item 泛化一起评估。用 offset scaling-law 拟合判断&quot;哪些任务已到顶、哪些还能扛容量&quot;，按任务分配算力。</li>\n<li><strong>解码层是大模型反复重训的成本瓶颈</strong>：projected head（4096→512，FLOPs 降 35.5×~249×）+ 1% sampled softmax 是让十亿模型可运维的关键，对算力受限团队尤有参考。</li>\n<li><strong>MTP 要按 serving horizon 选用</strong>：缓存/可乱序场景受益，顺序敏感的在线路径慎用。</li>\n<li><strong>冷启动靠语义塔兜底</strong>：UGC/新内容密集的社区场景，知识图谱+语言表征+OOV embedding 的组合能在协同信号缺失时维持打分质量（此处冷启动 +28.1% 是最大亮点）。</li>\n</ul>\n<ul>\n<li><strong>时效性是被低估的隐形成本</strong>：Task B 在 48h serving 延迟下掉 41% MRR，说明对时效敏感的任务，缩短训练-serving 链路（更频繁刷新、更短缓存窗口）的收益可能大于堆模型容量；应把&quot;serving 延迟敏感性&quot;做成上线前标准画像，避免在已饱和或时效主导的任务上浪费算力。</li>\n</ul>\n<p><strong>部署考量</strong>：十亿主干的可运维性来自两点——projected head 把输出层从 4096 维压到 512 维，使大词表（10^7 item）下解码 FLOPs 降约 249×；small-to-large 漏斗把昂贵的 1B 验证前置到小模型上筛掉无效改动。这套组合让&quot;在 2 万亿 token 上反复重训十亿模型&quot;从纸面变成可落地流程，是想复刻 HSTU/生成式推荐 scaling 的团队绕不开的工程账。内存与延迟方面，sampled softmax（1% 负样本、省去 LogQ 校正）进一步压低训练开销，但代价是采样偏差未被显式纠正，落地时需自行评估对长尾排序的影响。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.17779",
+      "title": "Learning Variable-Length Tokenization for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2605.17779",
+      "authors": "Minhao Wang, Bowen Wu, Wei Zhang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 3.9,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "生成式推荐把推荐重写为对离散语义 ID (semantic ID) 的 next-token 预测，但已有方法都用“定长 tokenization”给所有 item 编码，隐含假设了统一的编码容量。作者在 4 个数据集上系统实验，发现“流行度-长度悖论 (Popularity-Length Paradox)”：热门 item 用短 ID 就能达到最优，长尾 item 则需要明显更长的 code 才能刻画区分性语义。原因是热门 item 有充足协同信号、不需要太多语义细节，长尾 item 因交互稀疏必须依赖细粒度内容特征。据此提出 VarLenRec，为不同 item 学习可变长度的 semantic ID。",
+      "key_insight": "把“定长 ID 给所有 item”这一被忽视的默认设计点拆开，是对 semantic ID 范式的一个真问题修正：对长尾内容（社区 UGC 场景里占绝大多数）给更长 code、对头部内容给短 code，本质是把编码预算按信息量分配。对做生成式检索/推荐的团队，这意味着 tokenizer 设计要和 item 流行度分布耦合，而不是统一码本长度——这对短文本、长尾密集的 UGC 召回尤其有参考价值。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.18899",
+      "title": "Don't Let Bandit Feedback Pull Continual LLM-Recommender Updates Off Target",
+      "url": "https://arxiv.org/abs/2605.18899",
+      "authors": "Taesan Kim, Hyeongjun Yun, Jaegul Choo, Chung Park",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-17",
+      "total_score": 3.8,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "生成式 LLM 推荐器 (LLM-Rec) 上线后需要持续更新，但部署日志只能提供“被前一版策略塑形过”的上下文 bandit 反馈：只有被曝光的 item 才有结果，导致曝光偏差 (exposure bias)，且信号是不对称的——正反馈相对可靠、无响应则含义模糊。作者提出 Anchored Bandit Policy Optimization (ABPO)，把 GRPO 与对曝光偏差、反馈歧义的显式处理结合：在每个 GRPO rollout group 里插入“被实际曝光的推荐”作为日志锚点 (logged anchor)，让 group-relative 归一化是相对“前一版策略实际曝光的动作”校准，而不是相对新采样的 rollout。",
+      "key_insight": "这篇直击 LLM 推荐器“持续在线更新”里最现实的坑：你只能从自己曝光过的东西学习，naive 地用 GRPO 会被曝光偏差带偏。把 logged anchor 塞进 rollout group 做相对归一化，是一个轻量、可直接嫁接到现有 GRPO/RLHF 管线的技巧。对任何想把 LLM 排序/推荐做成在线持续学习闭环的团队，这是处理反事实/部分反馈的可落地方案。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.29107",
+      "title": "GEO-Bench: Benchmarking Ranking Manipulation in Generative Engine Optimization",
+      "url": "https://arxiv.org/abs/2605.29107",
+      "authors": "Ojas Nimase, Zhe Chen, Gengpei Qi, Yue Zhao, Xiyang Hu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-27",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "LLM 越来越多地直接为用户 query 排序产品、文档和推荐结果，操纵这种排序（generative engine optimization, GEO）正成为公平性和信息完整性的隐患。已有 GEO 操纵方法各用各的数据集和指标，相对强弱与可检测性无从比较。GEO-Bench 在统一协议下评测排序操纵攻击：涵盖黑盒 prompt 攻击 (TAP、Zero-Shot)、白盒梯度攻击 (STS、RAF、StealthRank) 与 10 种 white-hat C-SEO 策略，在 5 个数据集上针对固定的开放权重 ranker (Llama-3.1-8B-Instruct) 打分，同时用有效性指标 (NRG、Success@α、Promote@α) 和隐蔽性指标 (关键词违规率、困惑度比) 衡量。",
+      "key_insight": "对运营生成式搜索/推荐入口的平台，这是一份现成的“攻防对照表”：它把分散的排序操纵手法统一到同一 ranker 和同一组指标下，让你能评估自己的生成式排序对 prompt 注入式 SEO 的脆弱性。把有效性与隐蔽性分开度量的设计，提示防御侧不能只看“是否被提权”，还要看攻击是否低困惑度、难检测——这对 UGC 社区里对抗刷量、内容操纵的相关性体系有直接借鉴。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.17648",
+      "title": "SAPO: Step-Aligned Policy Optimization for Reasoning-Based Generative Recommendation",
+      "url": "https://arxiv.org/abs/2605.17648",
+      "authors": "Zaiyi Zheng, Guanghui Min, Yaochen Zhu, Liang Wu, Liangjie Hong, Chen Chen, Jundong Li",
+      "company": [
+        "LinkedIn"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-17",
+      "total_score": 3.55,
+      "preference_bonus": 0.25,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "生成式推荐把 next-item 预测当作语义 ID (SID) 的自回归生成，SID 是由粗到细的短 token 序列（早期 token 抓大类语义、后续 token 细化）。近期工作给这一范式加上推理链 (reasoning trace) 并用可验证奖励的 RL 优化，常用 outcome-reward + SID 精确匹配反馈。作者指出问题：大目录推荐里，精确匹配只告诉你最终 item 对不对，一旦 SID 不匹配，outcome-reward 无法定位是哪个 SID-token 出错，会把匹配对的 token 位置和出错位置一起惩罚。SAPO 提出 step-aligned 的策略优化，把奖励对齐到逐个 SID-token 步上做信用分配。",
+      "key_insight": "这是对“给生成式推荐做 RL”的一个精细化修正：把 outcome-level 的粗糙奖励改成 step-level 的 token 信用分配，解决“一错全错、好 token 被连坐”的梯度噪声问题。对采用 coarse-to-fine SID + RL 后训练的生成式推荐/检索系统，按 token 步对齐奖励是提升训练稳定性和样本效率的可借鉴设计，思路与 NLP 里 process-reward / step-level RL 一脉相承。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.21987",
+      "title": "Generative Conversational Recommender System",
+      "url": "https://arxiv.org/abs/2605.21987",
+      "authors": "Sixiao Zhang, Mingrui Liu, Cheng Long",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.55,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "对话式推荐 (CRS) 要通过自然语言交互给个性化推荐，但已有方法要么把推荐和对话生成解耦、要么依赖检索式管线，导致推荐与回复生成割裂、对用户意图建模欠佳。论文提出一个完全生成式的对话推荐系统，用单一自回归框架统一推荐与对话生成：把 item 表示为离散 semantic ID 并直接嵌入生成过程，通过 next-token 建模联合预测 item 与回复。并引入结构化生成范式，把对话推荐分解为一串相互依赖的生成步骤。",
+      "key_insight": "把“推荐”和“回话”塞进同一个自回归生成里，是 LLM-as-recommender 在对话场景的自然延伸：semantic ID 作为可生成的 item 表征，让模型在生成回复的同时直接“说出”要推的 item，省掉了检索式管线的拼接。对要做 AI 搜索助手 / 对话式内容发现的团队，这种 item-token 与语言-token 共享生成空间的设计，是统一意图理解与结果生成的一个可参考架构。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.13433",
+      "title": "TurboGR: An Accelerated Training System for Large-Scale Generative Recommendation",
+      "url": "https://arxiv.org/abs/2605.13433",
+      "authors": "Huichao Chai, Zhixin Wu, Xuemiao Li, Shiqing Fan, et al.",
+      "company": [
+        "Huawei"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 3.35,
+      "preference_bonus": 0.3,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "生成式推荐 (GR) 用统一的 Transformer 模型替代碎片化的场景专用架构，表现出 scaling-law 行为。但在 Ascend NPU 上大规模部署 GR 面临系统级难题：缺少 jagged（不规则变长）算子的高性能实现，且不规则稀疏原语与 NPU 偏向稠密计算的架构存在错配。TurboGR 是面向 Ascend 的训练系统，通过三项核心创新解决瓶颈，其一是 Ascend-affinity 的 jagged 加速，针对变长序列推荐特有的不规则计算做亲和优化。",
+      "key_insight": "这篇的价值在于把生成式推荐落到非 GPU（Ascend NPU）硬件上的工程真账：GR 的核心痛点是变长用户行为序列带来的 jagged tensor 计算，与加速器的稠密计算假设冲突。对国内受限于国产算力、又想上 GR 的团队，jagged 算子亲和优化、稀疏-稠密错配的解法是直接可参考的系统经验；也提醒 GR 的 scaling 红利能不能吃到，很大程度取决于底层不规则算子的实现质量。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.28175",
+      "title": "Mixture-of-Experts Knowledge Graph Retrieval-Augmented Generation for Multi-Agent LLM-based Recommendation",
+      "url": "https://arxiv.org/abs/2605.28175",
+      "authors": "Shijie Wang, Chengyi Liu, Yujuan Ding, Shanru Lin, See-Kiong Ng, Xu Xin, Wenqi Fan",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-27",
+      "total_score": 3.4,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "LLM 推荐器常依赖参数化知识、易过时，因此用知识图谱检索增强生成 (KG-RAG) 把推荐 grounding 到结构化、可更新的 KG 上。但 KG-RAG 在推荐里有两个难点：用户 query 复杂度不一、需要不同粒度的 KG 知识，而现有方法用一刀切的检索策略，对简单 query 过度检索、对复杂 query 检索不足；此外把图结构数据线性化成文本喂给 LLM 会引入噪声。论文用 Mixture-of-Experts 做自适应粒度的 KG 检索，并在多智能体 LLM 推荐框架下组织检索与生成。",
+      "key_insight": "把“检索多少 KG 知识”交给 MoE 按 query 复杂度自适应决定，是对 RAG 推荐里“一刀切检索”这一常见缺陷的针对性修补。对用 KG/RAG 给 LLM 推荐补充时效知识的团队（如社区里需要 grounding 到最新话题、商品、问答的场景），按 query 难度动态调检索粒度、控制图转文本的噪声，是值得借鉴的工程取舍。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2605.30207",
+      "title": "Persona Conditioning of Brand Recommendations in Retrieval-Augmented Commercial Chat: A Prominence-Stratified Cross-Provider Audit",
+      "url": "https://arxiv.org/abs/2605.30207",
+      "authors": "Will Jack, Noah Lehman, Keller Maloney, Sarah Xu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "同一句 prompt（如“最好的 CRM 软件”）会来自语境迥异的买家：个人创业者、企业 VP、英国中小企业主。论文审计了这种语境差异对模型推荐哪些品牌的影响。审计跑了 2000 次，覆盖 10 personas × 8 prompts × 3 模型配置 × N=10 重复（两个 OpenAI cell 全 8-prompt 覆盖，Anthropic sonnet-4.6/low cell 为 4-prompt）。在 user message 前加 persona 前缀，会让推荐集合的相似度 (Jaccard) 相对同 persona 基线下降 Δ = -0.12 到 -0.20（聚类 95% 置信区间均不含 0）。效应呈显著的“显著度分层 (prominence-stratified)”：头部品类领导者受 persona 影响更稳。",
+      "key_insight": "这是一份关于“生成式推荐里 persona/上下文如何重塑结果”的量化审计：persona 前缀能把推荐集 Jaccard 拉低 0.12–0.20，且头部品牌更抗扰、长尾更敏感。对做 RAG/对话式商业推荐的团队，提醒上下文注入既是个性化抓手、也是公平性与一致性风险源；评估生成式推荐系统时应把“同 query 跨 persona 的结果漂移”作为一个独立的稳定性/公平性指标来监控。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:ZJU-LLM-Safety/TRACE",
+      "title": "TRACE: TRACE is a practical agentic jailbreak framework that leverages task decomposition, task-aware disguising scenarios and adaptive self-evolution to investigate emerging security risks of LLM-based agents.",
+      "url": "https://github.com/ZJU-LLM-Safety/TRACE",
+      "source": "github",
+      "description": "TRACE is a practical agentic jailbreak framework that leverages task decomposition, task-aware disguising scenarios and adaptive self-evolution to investigate emerging security risks of LLM-based agents.",
+      "language": "Python",
+      "stars": 9,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 2,
+      "id": "github:theoxfaber/aether",
+      "title": "aether: Heterogeneous compute runtime + LLM inference engine. DAG scheduler, autograd, WGSL fusion, GGUF models.",
+      "url": "https://github.com/theoxfaber/aether",
+      "source": "github",
+      "description": "Heterogeneous compute runtime + LLM inference engine. DAG scheduler, autograd, WGSL fusion, GGUF models.",
+      "language": "Rust",
+      "stars": 8,
+      "created_at": "2026-05-28"
+    }
+  ]
+}

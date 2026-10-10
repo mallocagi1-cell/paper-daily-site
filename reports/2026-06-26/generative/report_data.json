@@ -1,0 +1,159 @@
+{
+  "date": "2026-06-26",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 12,
+    "papers_selected": 2,
+    "score_min": 3.0,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.25496",
+      "title": "Recommendation as Generation: Unifying Personalized Video Generation and Recommendation at Industrial Scale",
+      "url": "https://arxiv.org/abs/2606.25496",
+      "authors": "Yanhua Cheng, Bo Wang, Haotian Zhang, et al.",
+      "company": [
+        "Kuaishou",
+        "Beihang"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-25",
+      "total_score": 4.1,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "快手与北航提出 Recommendation-as-Generation（RaG），把短视频推荐从“在固定池里检索”改为“按推断的用户兴趣实时生成个性化视频”。核心是解耦语义 ID（D-SIDs）：用 Qwen2.5-VL-7B 做指令引导的多模态表征，再用 RQ-KMeans 残差量化成 content 与 creative 两套离散 token；视频生成交给共享 Qwen2.5-32B 的三个角色 Agent，并用 GDPO 做跨域奖励学习。快手 4 亿日活广告场景上线 A/B，相对 DLRM 广告收入 +5.462%，码本碰撞率从 18.24% 降到 2.62%。",
+      "key_insight": "语义 ID 不必是单一码本：把内容语义与风格语义拆成两套 SID，碰撞率从 18.24% 降到 2.62%，兴趣建模与生成可控性同时受益，这一解耦量化思路对纯推荐的 SID 设计也可直接借鉴。SCRL 用 GDPO 把稀疏真实反馈设为主目标、把视频质量与兴趣对齐设为约束，给“多奖励尺度不一致”提供了可复用写法。代价是 VGA 为延迟瓶颈、目前只能 nearline 服务；资源有限的团队可先用 D-SIDs，暂不碰端到端视频生成。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.25496",
+        "title": "Recommendation as Generation: Unifying Personalized Video Generation and Recommendation at Industrial Scale",
+        "status": "completed",
+        "content": "## Recommendation as Generation (RaG) 深度解读\n\n### 1. 问题与动机\n传统短视频推荐是“检索范式”：用户兴趣只能匹配到一个固定的、已生产好的视频池，无法表达细粒度、动态变化的偏好——想看“赛博朋克风格的猫”但池子里没有，就只能退而给近似项。RaG 把问题重述为“生成范式”：直接按推断出的用户兴趣实时生成个性化视频。动机有两点：(1) 固定视频供给是推荐的天花板，生成式可突破供给侧约束；(2) 生成式推荐（GR）已用语义 ID 把 item 表示为离散 token 序列，与视频生成模型天然共享“离散 token→内容”的接口，因此可以把“推荐”和“视频生成”统一在同一套 SID 上。论文同时点明现有 SOTA 视频生成模型虽视觉质量高，但高延迟、高算力成本使其难以直接放进大规模推荐系统——这正是 RaG 要化解的工程张力，也决定了它当前只能 nearline 服务。\n\n### 2. 方法详解\nRaG 的主链路是 “用户上下文 → 预测语义 ID → 生成个性化视频”，由四个部件组成。\n(a) 解耦语义 ID（D-SIDs）。不同于把视频量化成单一码本，RaG 用指令引导的多模态表征学习（backbone 为 Qwen2.5-VL-7B-Instruct）把视频拆成两类因子：content（实体/主题/语义内容）与 creative（风格/节奏/氛围），再用 RQ-KMeans 残差量化成离散 token，每个模态每层码本 8192 项。解耦让“兴趣建模”和“可控生成”各取所需的语义维度。\n(b) 生成式推荐模型（GRM）。一个 7 层 Transformer decoder（hidden 768、词表 8192），自回归预测目标视频的 D-SIDs——即“推荐”这一步在 SID 空间里完成。\n(c) 视频生成 Agent（VGAs）。三个共享同一 Qwen2.5-32B backbone 的角色子 Agent：视觉规划 Agent 产出 clip 级分镜（场景片段 + 时间边界）、音频对齐 Agent 生成时间同步的语音与音乐、特效增强 Agent 加字幕/视觉特效/转场/CTA。它们被推断出的 SID 条件化，做分层规划与精修；通过 KV-cache 复用（append-only 状态）在顺序调用的 Agent 之间降低单请求延迟，并设两轮封顶的反思循环来精修跨模态一致性。\n(d) 协同跨域奖励学习（SCRL）。三类奖励：视频质量（视觉质量、音画一致、特效-画面对齐）、兴趣对齐（指令级 + 表征级一致）、用户反馈（稀疏真实交互 + 稠密 ranking 模型预测）。它被建成约束优化：用户反馈为主目标，兴趣对齐与视频质量为约束；GDPO（Group-Decoupled Policy Optimization）对每个奖励做标准化与组内相对优势，解决多奖励尺度不一致。指令模型（IM）用 Qwen3-8B，由 Gemini2.5 Pro 蒸馏指令模板监督。\n\n### 3. 核心技术贡献\n1) 把“推荐即生成”落到工业级：用共享 SID 把 GR 与视频生成统一，GRM 在 SID 空间出“推荐”，VGA 据此生成视频，形成端到端可优化框架，而不是把推荐和生成当两个割裂系统拼接。\n2) 解耦语义 ID（D-SIDs）：content/creative 双码本把表示空间结构化，相比单码本既降碰撞又提兴趣粒度——消融显示把标准 SID 换成 D-SIDs，广告收入相对 DLRM 从 +3.526% 提到 +4.460%。\n3) 角色化 VGA + KV-cache 复用 + 有界反思：用一个 32B backbone 扮演三种角色，避免三套模型的部署成本，反思两轮即获得相对刚性 workflow 的稳定增益，是“Agent 化生成但控住延迟”的折中。\n4) SCRL/GDPO：把“稀疏真实反馈做主目标、质量与对齐做约束”的约束优化与组解耦策略优化结合，缓解多奖励尺度不一致，这是把 RLHF 思路迁移到多模态生成式推荐的关键一招。\n\n### 4. 实验结果分析\n线上 A/B（快手广告平台，超 4 亿日活）：相对 DLRM 基线，GRM 基线 +3.526%、GRM+D-SIDs +4.460%、完整 RaG +5.462% 广告收入；完整 RaG 相对 GRM 基线再 +1.870%，说明增量主要来自 VGA + SCRL 而不仅是换 SID。\nD-SIDs 质量（Table 2）：语义检索 R@1 0.896（相对 Qwen2.5-VL-7B 基线 0.769 提升 +16.5%）、R@5 0.985、R@10 0.994；压缩率 1.02（优于 QARM 的 1.14），碰撞率 2.62%（QARM 18.24%，降 15.6pp）——碰撞率大降是双码本结构化的直接收益，也是后续生成可控的基础。\nVGA 对比 workflow 基线（Table 3）：自动评分 71.3（+14.3%）、自动胜率 70.1%（+41.4pp）、用户研究胜率 52.9%（+18.5pp）。\n奖励消融（Table 4）：单独视觉奖励把自动胜率 29.3%→50.7%（+21.4pp），音频 24.0%→48.0%（+24.0pp），特效 22.7%→41.3%（+18.6pp），三者合并 37.3%→56.0%（+18.7pp）；兴趣对齐奖励把对齐分 0.707→0.828（+17.1%）。三类质量奖励互补、各自独立有效。\n指令模型配置消融：从 8B/100K 样本的 0.7760 提升到 32B/1M 的 0.8212；最终选 8B + 1M 样本，在解码保真与部署成本间折中。反思循环（2 轮）优于刚性 workflow，体现分层端到端带来的自我纠错收益。\n\n### 5. 局限与未来方向\n作者在结论中明确的核心局限：RaG 目前是 nearline 服务而非实时，VGA 是主要延迟瓶颈。给出的未来方向：把指令模型并入 VGA 以缩短生成路径；用更强蒸馏与推理优化加速 VGA；最终走向真正的 on-the-fly 实时个性化生成。作者亦坦承基础设施约束：当前 SOTA 视频生成模型虽视觉质量强，但高延迟、高算力使其难以直接部署进大规模推荐系统。未明说但显然的局限：评测高度依赖快手广告内部数据与自动评分/人评（1000 实例、20 名标注者做 1000 对比较），跨平台与公开可复现性有限；广告收入增益与内容生态健康、用户长期体验之间的关系也未充分讨论。\n\n### 6. 工业实践意义\n对搜索/推荐团队的可操作启示：\n- 最先可借鉴的是 D-SIDs 的“解耦量化”：把内容与风格（迁到搜索即 query 意图与表达风格）拆成双码本，碰撞率从 18.24% 降到 2.62%，对任何使用 SID 的生成式召回/排序都有价值，而且不依赖视频生成即可落地。\n- SCRL/GDPO 的“主目标 + 约束”多奖励范式可迁到多目标排序/对齐：把核心业务指标设为主目标、把相关性/质量设为约束，再用组解耦标准化解决奖励尺度不一致，比简单加权更稳。\n- VGA 的“单 backbone 多角色 + KV-cache 复用 + 有界反思”是控制 Agent 化生成延迟的实用工程模式，值得做生成式问答/卡片生成的团队参考。\n- 部署上要清醒：完整 RaG 因 VGA 延迟只能 nearline，需要数亿日活级别的算力支撑；中小团队应先取 D-SIDs 与奖励建模思路，端到端实时视频生成短期内并不现实。整体看，这是“生成式推荐从召回 token 走向直接生成内容”的一个工业级样本，但其 ROI 高度依赖平台规模与算力预算。",
+        "content_html": "<h2>Recommendation as Generation (RaG) 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>传统短视频推荐是“检索范式”：用户兴趣只能匹配到一个固定的、已生产好的视频池，无法表达细粒度、动态变化的偏好——想看“赛博朋克风格的猫”但池子里没有，就只能退而给近似项。RaG 把问题重述为“生成范式”：直接按推断出的用户兴趣实时生成个性化视频。动机有两点：(1) 固定视频供给是推荐的天花板，生成式可突破供给侧约束；(2) 生成式推荐（GR）已用语义 ID 把 item 表示为离散 token 序列，与视频生成模型天然共享“离散 token→内容”的接口，因此可以把“推荐”和“视频生成”统一在同一套 SID 上。论文同时点明现有 SOTA 视频生成模型虽视觉质量高，但高延迟、高算力成本使其难以直接放进大规模推荐系统——这正是 RaG 要化解的工程张力，也决定了它当前只能 nearline 服务。</p>\n<h3>2. 方法详解</h3>\n<p>RaG 的主链路是 “用户上下文 → 预测语义 ID → 生成个性化视频”，由四个部件组成。<br>(a) 解耦语义 ID（D-SIDs）。不同于把视频量化成单一码本，RaG 用指令引导的多模态表征学习（backbone 为 Qwen2.5-VL-7B-Instruct）把视频拆成两类因子：content（实体/主题/语义内容）与 creative（风格/节奏/氛围），再用 RQ-KMeans 残差量化成离散 token，每个模态每层码本 8192 项。解耦让“兴趣建模”和“可控生成”各取所需的语义维度。<br>(b) 生成式推荐模型（GRM）。一个 7 层 Transformer decoder（hidden 768、词表 8192），自回归预测目标视频的 D-SIDs——即“推荐”这一步在 SID 空间里完成。<br>(c) 视频生成 Agent（VGAs）。三个共享同一 Qwen2.5-32B backbone 的角色子 Agent：视觉规划 Agent 产出 clip 级分镜（场景片段 + 时间边界）、音频对齐 Agent 生成时间同步的语音与音乐、特效增强 Agent 加字幕/视觉特效/转场/CTA。它们被推断出的 SID 条件化，做分层规划与精修；通过 KV-cache 复用（append-only 状态）在顺序调用的 Agent 之间降低单请求延迟，并设两轮封顶的反思循环来精修跨模态一致性。<br>(d) 协同跨域奖励学习（SCRL）。三类奖励：视频质量（视觉质量、音画一致、特效-画面对齐）、兴趣对齐（指令级 + 表征级一致）、用户反馈（稀疏真实交互 + 稠密 ranking 模型预测）。它被建成约束优化：用户反馈为主目标，兴趣对齐与视频质量为约束；GDPO（Group-Decoupled Policy Optimization）对每个奖励做标准化与组内相对优势，解决多奖励尺度不一致。指令模型（IM）用 Qwen3-8B，由 Gemini2.5 Pro 蒸馏指令模板监督。</p>\n<h3>3. 核心技术贡献</h3>\n<p>1) 把“推荐即生成”落到工业级：用共享 SID 把 GR 与视频生成统一，GRM 在 SID 空间出“推荐”，VGA 据此生成视频，形成端到端可优化框架，而不是把推荐和生成当两个割裂系统拼接。<br>2) 解耦语义 ID（D-SIDs）：content/creative 双码本把表示空间结构化，相比单码本既降碰撞又提兴趣粒度——消融显示把标准 SID 换成 D-SIDs，广告收入相对 DLRM 从 +3.526% 提到 +4.460%。<br>3) 角色化 VGA + KV-cache 复用 + 有界反思：用一个 32B backbone 扮演三种角色，避免三套模型的部署成本，反思两轮即获得相对刚性 workflow 的稳定增益，是“Agent 化生成但控住延迟”的折中。<br>4) SCRL/GDPO：把“稀疏真实反馈做主目标、质量与对齐做约束”的约束优化与组解耦策略优化结合，缓解多奖励尺度不一致，这是把 RLHF 思路迁移到多模态生成式推荐的关键一招。</p>\n<h3>4. 实验结果分析</h3>\n<p>线上 A/B（快手广告平台，超 4 亿日活）：相对 DLRM 基线，GRM 基线 +3.526%、GRM+D-SIDs +4.460%、完整 RaG +5.462% 广告收入；完整 RaG 相对 GRM 基线再 +1.870%，说明增量主要来自 VGA + SCRL 而不仅是换 SID。<br>D-SIDs 质量（Table 2）：语义检索 R@1 0.896（相对 Qwen2.5-VL-7B 基线 0.769 提升 +16.5%）、R@5 0.985、R@10 0.994；压缩率 1.02（优于 QARM 的 1.14），碰撞率 2.62%（QARM 18.24%，降 15.6pp）——碰撞率大降是双码本结构化的直接收益，也是后续生成可控的基础。<br>VGA 对比 workflow 基线（Table 3）：自动评分 71.3（+14.3%）、自动胜率 70.1%（+41.4pp）、用户研究胜率 52.9%（+18.5pp）。<br>奖励消融（Table 4）：单独视觉奖励把自动胜率 29.3%→50.7%（+21.4pp），音频 24.0%→48.0%（+24.0pp），特效 22.7%→41.3%（+18.6pp），三者合并 37.3%→56.0%（+18.7pp）；兴趣对齐奖励把对齐分 0.707→0.828（+17.1%）。三类质量奖励互补、各自独立有效。<br>指令模型配置消融：从 8B/100K 样本的 0.7760 提升到 32B/1M 的 0.8212；最终选 8B + 1M 样本，在解码保真与部署成本间折中。反思循环（2 轮）优于刚性 workflow，体现分层端到端带来的自我纠错收益。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者在结论中明确的核心局限：RaG 目前是 nearline 服务而非实时，VGA 是主要延迟瓶颈。给出的未来方向：把指令模型并入 VGA 以缩短生成路径；用更强蒸馏与推理优化加速 VGA；最终走向真正的 on-the-fly 实时个性化生成。作者亦坦承基础设施约束：当前 SOTA 视频生成模型虽视觉质量强，但高延迟、高算力使其难以直接部署进大规模推荐系统。未明说但显然的局限：评测高度依赖快手广告内部数据与自动评分/人评（1000 实例、20 名标注者做 1000 对比较），跨平台与公开可复现性有限；广告收入增益与内容生态健康、用户长期体验之间的关系也未充分讨论。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐团队的可操作启示：</p>\n<ul>\n<li>最先可借鉴的是 D-SIDs 的“解耦量化”：把内容与风格（迁到搜索即 query 意图与表达风格）拆成双码本，碰撞率从 18.24% 降到 2.62%，对任何使用 SID 的生成式召回/排序都有价值，而且不依赖视频生成即可落地。</li>\n<li>SCRL/GDPO 的“主目标 + 约束”多奖励范式可迁到多目标排序/对齐：把核心业务指标设为主目标、把相关性/质量设为约束，再用组解耦标准化解决奖励尺度不一致，比简单加权更稳。</li>\n<li>VGA 的“单 backbone 多角色 + KV-cache 复用 + 有界反思”是控制 Agent 化生成延迟的实用工程模式，值得做生成式问答/卡片生成的团队参考。</li>\n<li>部署上要清醒：完整 RaG 因 VGA 延迟只能 nearline，需要数亿日活级别的算力支撑；中小团队应先取 D-SIDs 与奖励建模思路，端到端实时视频生成短期内并不现实。整体看，这是“生成式推荐从召回 token 走向直接生成内容”的一个工业级样本，但其 ROI 高度依赖平台规模与算力预算。</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.09698",
+      "title": "Evaluating Scene-based In-Situ Item Labeling for Immersive Conversational Recommendation",
+      "url": "https://arxiv.org/abs/2604.09698",
+      "authors": "Jiazhou Liang, Yifan Simon Liu, David Guo, Minqi Sun, Yilun Jiang, Scott Sanner",
+      "company": [
+        "UofT"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-06",
+      "total_score": 3.0,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.0,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "多伦多大学把对话式推荐（CRS）扩展到 XR 沉浸场景，提出 Immersive CRS：推荐项直接高亮在用户视野中并叠加“就地标签（in-situ label）”。论文把信息需求分为“显式意图满足”和“主动信息需求”两类，据此定义标签选择的评测指标，在 fashion/movie/retail 三个场景上对比 IR、LLM、VLM 三类方法，指出现有方法未利用场景特定模态、给出视觉可推断的冗余信息、且仅凭对话难以预判主动信息需求。",
+      "key_insight": "评测/问题定义型论文，对社区搜索的价值在评测方法：把“呈现什么信息”与“推荐什么物品”拆开评估，并区分显式意图与主动需求，可迁移到搜索结果摘要/卡片的信息取舍。它实测出 LLM/VLM 在场景模态利用与冗余抑制上的系统性不足，提醒做对话式/生成式搜索别只靠对话文本。局限是聚焦 XR 沉浸交互、与 UGC 文本搜索差距较大，借鉴点更多在评测范式层面。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:yyh-001/llm-value-rankings",
+      "title": "llm-value-rankings: Daily LLM value rankings - compare 300+ models by intelligence, speed and price. OpenRouter + Artificial Analysis. 大模型性价比排行榜",
+      "url": "https://github.com/yyh-001/llm-value-rankings",
+      "source": "github",
+      "description": "Daily LLM value rankings - compare 300+ models by intelligence, speed and price. OpenRouter + Artificial Analysis. 大模型性价比排行榜",
+      "language": "JavaScript",
+      "stars": 5,
+      "created_at": "2026-06-23"
+    },
+    {
+      "rank": 2,
+      "id": "github:MG-Cafe/claudecode-glm-stack",
+      "title": "claudecode-glm-stack: Run GLM-5.2 inside Claude Code through Z.ai with isolated settings",
+      "url": "https://github.com/MG-Cafe/claudecode-glm-stack",
+      "source": "github",
+      "description": "Run GLM-5.2 inside Claude Code through Z.ai with isolated settings",
+      "language": "",
+      "stars": 5,
+      "created_at": "2026-06-21"
+    },
+    {
+      "rank": 3,
+      "id": "github:poetony/FinAgents",
+      "title": "FinAgents: Multi-agent LLM-powered financial analysis framework for stocks.",
+      "url": "https://github.com/poetony/FinAgents",
+      "source": "github",
+      "description": "Multi-agent LLM-powered financial analysis framework for stocks.",
+      "language": "Python",
+      "stars": 14,
+      "created_at": "2026-06-21"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Qwen/Qwen-AgentWorld-35B-A3B",
+      "title": "Qwen/Qwen-AgentWorld-35B-A3B",
+      "url": "https://huggingface.co/Qwen/Qwen-AgentWorld-35B-A3B",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, qwen3_5_moe, image-text-to-text, qwen, world-model, agent, environment-simulation",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:Qwen/AgentWorldBench",
+      "title": "Qwen/AgentWorldBench",
+      "url": "https://huggingface.co/datasets/Qwen/AgentWorldBench",
+      "source": "huggingface",
+      "description": "AgentWorldBench AgentWorldBench is a comprehensive evaluation benchmark for language world models, constructed from real-world observations of frontier model trajectories on established benchmarks such as Tool Decathlon, Terminal-Bench 1.0 & 2.0, and OSWorld-Verified. Every evalu; tags: task_categories:text-generation, language:en, license:apache-2.0, size_categories:1K<n<10K, format:json, modality:tabular, modality:text, library:datasets",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 6,
+      "id": "hf_dataset:internlm/RNGBench-Game-Trajectories",
+      "title": "internlm/RNGBench-Game-Trajectories",
+      "url": "https://huggingface.co/datasets/internlm/RNGBench-Game-Trajectories",
+      "source": "huggingface",
+      "description": "RNGBench-Game-Trajectories SFT (supervised fine-tuning) trajectory data accompanying RNGBench · Reconstructive Non-Markov Games — an evaluation framework that tests whether multimodal language models can reconstruct hidden state from memory and act on it in closed-loop environmen; tags: task_categories:image-text-to-text, language:en, license:mit, size_categories:10K<n<100K, format:json, modality:text, library:datasets, library:pandas",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, arxiv:2606.19348, license:mit, eval-results",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-06-16"
+    }
+  ]
+}

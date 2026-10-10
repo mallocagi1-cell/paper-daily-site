@@ -1,0 +1,431 @@
+{
+  "date": "2026-07-17",
+  "track": "personalization",
+  "scenario": "社区搜索（UGC 短文本搜索）：用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性（nDCG）和点击率（CTR），关注语义匹配、query 理解、短文本召回、排序模型及 LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 68,
+    "papers_selected": 5,
+    "score_min": 3.3,
+    "score_max": 4.7
+  },
+  "coverage": {
+    "status": "pass",
+    "core_paper": "TMallGS: Scaling Unified Feature and Sequence Modeling for Generative E-commerce Search",
+    "industry_practice": "Personalizing Incremental Video Search with Hybrid Text and ID Embeddings",
+    "recent_paper": "TMallGS: Scaling Unified Feature and Sequence Modeling for Generative E-commerce Search",
+    "source_distribution": {
+      "arxiv": 0.6,
+      "web_search": 0.4
+    },
+    "chinese_source": true
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2607.13398",
+      "title": "TMallGS: Scaling Unified Feature and Sequence Modeling for Generative E-commerce Search",
+      "url": "https://arxiv.org/abs/2607.13398",
+      "authors": "Zhentao Song, Yufeng Gao, Xing Fang, Jing Wang, Guangxin Song, Bokang Wang, Yipin Dai, He Guo",
+      "company": [
+        "Alibaba",
+        "Southeast University",
+        "Peking University"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-15",
+      "total_score": 4.7,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.85,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "针对工业 CTR 排序把异构特征一律 token 化后出现的信号稀释问题，TmallGS 组合分布校准投影、字段自适应门控 Transformer、FiLM 晚融合、偏差解耦与渐进训练。在 5 亿级天猫搜索样本上，离线 AUC、GAUC 分别提升 1.12%、1.26%；30 天线上实验使 UCTCVR 提升 1.38%、GMV 提升 1.52%。",
+      "key_insight": "推荐排序的扩展重点不只是增大参数，而是按字段分布保留显式交叉信号并抑制行为噪声。其投影计算量降低约 33%，线上仅增加 6ms 延迟；对 UGC 搜索可借鉴“短而宽”的主干、长序列优先扩展和 FiLM 晚融合，在吞吐约束下同时吸收 query、内容与用户历史。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2607.13398",
+        "title": "TMallGS: Scaling Unified Feature and Sequence Modeling for Generative E-commerce Search",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n天猫搜索精排正在从传统 DLRM 转向计算密集型 Transformer，但直接照搬 LLM 的“全部 token 化”并不适合工业排序。搜索输入同时包含 query、候选商品、用户超长行为序列、统计特征、显式匹配分和位置等偏差特征，它们的分布、维度和更新频率差异很大。OneTrans 一类统一骨干把这些信号塞进同一个注意力流后，高频且强判别的显式交叉信号容易被深层注意力的低通效应稀释；传统 DLRM 又受稀疏 embedding 随机访存限制，现代 GPU Tensor Core 利用率低，继续加宽 MLP 很快遇到 scaling ceiling。论文因此提出一个更具体的问题：能否在保留异构特征归纳偏置的前提下，把精排主干改造成可预测扩展、能高效吃算力且满足线上延迟约束的 Transformer。\n\n实验数据也体现了这一难点：天猫搜索日志覆盖连续 31 天、约 5 亿样本、1300 万用户和 7400 万商品，用户序列平均长度为 1500，显著高于常见工业设置的 200 以内。前 30 天共 4.84 亿样本用于训练，第 31 天 1600 万样本用于测试，严格按时间切分。模型既要在超长行为中抽取兴趣，又不能损伤同一 query 会话内候选的相对次序，这也是论文将 GAUC 作为主要离线指标的原因。\n\n## 2. 方法详解\n\nTmallGS 的第一步是“分层分布校准 token 化”。对第 i 个字段的序列矩阵，先做 Field-wise Saliency Reweighting：池化字段得到摘要，经一个轻量 squeeze/excitation 式网络产生字段内显著性权重，再逐元素重标定原特征；随后 Distribution-Calibrated Projection 不使用重型 SwiGLU，而是按字段统计分布投影到统一维度。该组合相对 SwiGLU-FFN 将投影 FLOPs 降低约 33%，性能差距小于 0.03%。不同字段仍保留独立投影，不会因统一维度而丢失来源信息。\n\n第二步构造异构序列，将 query、上下文、候选商品和用户行为按字段组装。候选商品同时评分时使用 Context-Dominant Visibility Mask：公共上下文可以被所有候选读取，候选之间则隔离，避免同一 batch 内的信息泄漏。主干的每层采用 Per-Field Q/K/V 投影，让不同字段学习各自的语义变换；Noise-Adaptive Gated Attention 再根据 token 内容控制注意力输出，抑制长行为序列中的噪声和 attention sink。移除门控后 GAUC 下降 0.16%，说明它不是装饰性模块。\n\n第三步是 Decoupled FiLM Late Fusion。显式交叉、匹配分等高频信号不穿过所有 Transformer 层，而是在主干产生语义表示后，以缩放和偏移的方式调制表示。与简单拼接相比，FiLM 的乘性调制更能恢复精排所需的强交互；去掉 FiLM 时 GAUC 下降 0.32%，改为加法拼接也下降 0.24%。Context-Aware Bias Net 则单独用全局上下文估计系统性偏差，使位置、曝光等偏差信号与真实用户意图解耦。\n\n训练采用 Error-Aware Progressive Training：根据层级预测误差动态加权困难样本，并联合 pointwise 与会话内 pairwise 排序目标。消融中去掉 pairwise loss，GAUC 下降 0.87%，但全局 AUC 基本稳定，清楚说明会话内排序目标不可替代。为继承历史稀疏 embedding，论文先冻结稀疏表、对齐新稠密主干，再端到端联合微调；两阶段 warm-up 相比直接加载带来 AUC +1.42%、GAUC +1.09%。训练运行在 16 张高性能 NVIDIA GPU 上，全局 batch size 4096，学习率 2e-4；稀疏参数用 Adam，稠密 Transformer 与 MLP 用 AdamW，以适应两类参数不同的收敛与正则需求。\n\n线上模型没有盲目追求十亿参数。Scaling-law 分析后，作者优先增加序列长度而非层数，最终配置为 4 层、hidden size 1024、8 个头、序列长度 1500，稠密主干约 0.05B 参数。这个“浅而宽、长上下文”的形态能提高 GPU 并行度，并将新增平均延迟控制在 6ms。\n\n## 3. 核心技术贡献\n\n第一，论文把“统一架构”重新定义为共享计算骨干而非抹平所有字段。字段独立 QKV、分布校准投影和显式信号晚融合共同保留异构性，使 Transformer 既能做全局交互又不会吞掉排序领域的强先验；相对生产基线，离线 AUC 与 GAUC 分别提升 1.12% 和 1.26%。\n\n第二，方法将扩展效率与排序正确性一起设计。FSR+DCP 降低约 33% 投影 FLOPs，Context-Dominant Mask 防止多候选泄漏，门控注意力抑制长序列噪声，解决了只扩模型但 MFU 和精排质量不同步的问题。\n\n第三，两阶段 warm-up 与拆分优化器为旧 DLRM 迁移到计算密集主干提供了可执行路径。它不是从零训练一个孤立模型，而是显式处理海量历史 embedding 与新主干的流形错位，因此更适合已有生产系统渐进替换。\n\n第四，论文用 30 天线上实验验证架构收益，而非只报告离线 AUC。最终 GMV +1.52%、UCTCVR +1.38%，说明 scaling-law 导向的主干在严格 SLA 下能够转化成商业指标。\n\n## 4. 实验结果分析\n\n| 模型/设置 | ΔAUC | ΔGAUC | 线上结果 |\n|---|---:|---:|---:|\n| DIN 生产基线 | 0.00% | 0.00% | — |\n| TmallGS | +1.12% | +1.26% | UCTCVR +1.38%，GMV +1.52% |\n| 去掉 FiLM | — | -0.32% | — |\n| FiLM 改为加法拼接 | — | -0.24% | — |\n| 去掉噪声自适应门控 | — | -0.16% | — |\n| 去掉 pairwise loss | 基本稳定 | -0.87% | — |\n\n最关键的结果不是某一个离线百分点，而是各项消融与设计动机一致。FiLM 的降幅最大之一，证明统一 Transformer 确实会稀释显式匹配；pairwise loss 对 GAUC 的影响远大于 AUC，说明全局点击预测好不等于同一搜索会话内排得好。FSR+DCP 在性能几乎不变时减少约三分之一投影计算，也说明效率优化没有靠牺牲精度换取。\n\n线上 30 天 A/B 结果均达到 p<0.05。除了 UCTCVR 和 GMV，表中另有两个核心指标分别提升 0.79% 与 0.34%；论文重点解释 GMV 与 UCTCVR，因为它们更直接反映用户满意度和转化效率。新增 6ms 延迟仍在生产 SLA 内，这使 50M 稠密主干成为现实可部署点。需要注意，实验只使用天猫私有数据，虽然样本规模大、线上证据强，但无法由外部团队完整复现。\n\n## 5. 局限与未来方向\n\n作者没有单列正式 limitations 章节，但在部署与结论中明确承认：高 QPS、低延迟搜索目前不适合直接部署十亿参数 LLM，因此线上只使用约 0.05B 的浅宽模型；公开数据集也缺少同时包含超长行为和 query-item 显式匹配的数据，实验只能在天猫私有日志上进行。论文计划继续探索十亿参数级扩展和多模态生成能力，但这会重新带来延迟、成本及在线稳定性问题。\n\n论文未充分讨论的限制包括：所有结果来自单一电商平台，UGC、短视频或新闻推荐中的特征分布可能不同；30 天实验能证明短中期收益，尚不能回答长期兴趣固化、流行度偏差和生态多样性；Context-Aware Bias Net 的因果可识别性也未被验证，所谓“偏差解耦”更接近预测性正则而非严格因果校正。\n\n## 6. 工业实践意义\n\n对搜索/推荐团队，最值得采用的不是完整复制五个模块，而是三条迁移原则。第一，先按字段盘点信号：query 与内容语义适合深交互，位置、统计分和强交叉适合旁路晚融合，稀疏 ID 与稠密主干应使用不同优化器。第二，在扩深度前先扩有效历史长度；TmallGS 的线上选择是 4 层、1024 维、1500 序列，而不是更深模型，说明对行为建模，覆盖更长时间跨度可能比增加层数更划算。第三，离线必须同时看 AUC 与按会话分组的 GAUC，并保留 pairwise 目标，否则模型可能提高全局点击预测却破坏单次 query 下的候选次序。\n\n对社区 UGC 搜索，可将帖子文本、作者、话题、互动统计和用户历史分别建字段；文本与历史进入门控 Transformer，BM25/语义匹配分、作者关系和时效分通过 FiLM 晚融合。上线应从 4 层级别的小主干开始，记录 MFU、P95/P99 延迟、GAUC、CTR 与停留时长，并按序列长度做 scaling sweep。需要避免两种做法：把所有特征无差别 token 化，以及只用全局 AUC 判断精排收益。若已有大型 embedding 表，优先复用论文的“冻结稀疏表对齐主干—联合微调”两阶段迁移，可显著降低替换旧模型的风险。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>天猫搜索精排正在从传统 DLRM 转向计算密集型 Transformer，但直接照搬 LLM 的“全部 token 化”并不适合工业排序。搜索输入同时包含 query、候选商品、用户超长行为序列、统计特征、显式匹配分和位置等偏差特征，它们的分布、维度和更新频率差异很大。OneTrans 一类统一骨干把这些信号塞进同一个注意力流后，高频且强判别的显式交叉信号容易被深层注意力的低通效应稀释；传统 DLRM 又受稀疏 embedding 随机访存限制，现代 GPU Tensor Core 利用率低，继续加宽 MLP 很快遇到 scaling ceiling。论文因此提出一个更具体的问题：能否在保留异构特征归纳偏置的前提下，把精排主干改造成可预测扩展、能高效吃算力且满足线上延迟约束的 Transformer。</p>\n<p>实验数据也体现了这一难点：天猫搜索日志覆盖连续 31 天、约 5 亿样本、1300 万用户和 7400 万商品，用户序列平均长度为 1500，显著高于常见工业设置的 200 以内。前 30 天共 4.84 亿样本用于训练，第 31 天 1600 万样本用于测试，严格按时间切分。模型既要在超长行为中抽取兴趣，又不能损伤同一 query 会话内候选的相对次序，这也是论文将 GAUC 作为主要离线指标的原因。</p>\n<h2>2. 方法详解</h2>\n<p>TmallGS 的第一步是“分层分布校准 token 化”。对第 i 个字段的序列矩阵，先做 Field-wise Saliency Reweighting：池化字段得到摘要，经一个轻量 squeeze/excitation 式网络产生字段内显著性权重，再逐元素重标定原特征；随后 Distribution-Calibrated Projection 不使用重型 SwiGLU，而是按字段统计分布投影到统一维度。该组合相对 SwiGLU-FFN 将投影 FLOPs 降低约 33%，性能差距小于 0.03%。不同字段仍保留独立投影，不会因统一维度而丢失来源信息。</p>\n<p>第二步构造异构序列，将 query、上下文、候选商品和用户行为按字段组装。候选商品同时评分时使用 Context-Dominant Visibility Mask：公共上下文可以被所有候选读取，候选之间则隔离，避免同一 batch 内的信息泄漏。主干的每层采用 Per-Field Q/K/V 投影，让不同字段学习各自的语义变换；Noise-Adaptive Gated Attention 再根据 token 内容控制注意力输出，抑制长行为序列中的噪声和 attention sink。移除门控后 GAUC 下降 0.16%，说明它不是装饰性模块。</p>\n<p>第三步是 Decoupled FiLM Late Fusion。显式交叉、匹配分等高频信号不穿过所有 Transformer 层，而是在主干产生语义表示后，以缩放和偏移的方式调制表示。与简单拼接相比，FiLM 的乘性调制更能恢复精排所需的强交互；去掉 FiLM 时 GAUC 下降 0.32%，改为加法拼接也下降 0.24%。Context-Aware Bias Net 则单独用全局上下文估计系统性偏差，使位置、曝光等偏差信号与真实用户意图解耦。</p>\n<p>训练采用 Error-Aware Progressive Training：根据层级预测误差动态加权困难样本，并联合 pointwise 与会话内 pairwise 排序目标。消融中去掉 pairwise loss，GAUC 下降 0.87%，但全局 AUC 基本稳定，清楚说明会话内排序目标不可替代。为继承历史稀疏 embedding，论文先冻结稀疏表、对齐新稠密主干，再端到端联合微调；两阶段 warm-up 相比直接加载带来 AUC +1.42%、GAUC +1.09%。训练运行在 16 张高性能 NVIDIA GPU 上，全局 batch size 4096，学习率 2e-4；稀疏参数用 Adam，稠密 Transformer 与 MLP 用 AdamW，以适应两类参数不同的收敛与正则需求。</p>\n<p>线上模型没有盲目追求十亿参数。Scaling-law 分析后，作者优先增加序列长度而非层数，最终配置为 4 层、hidden size 1024、8 个头、序列长度 1500，稠密主干约 0.05B 参数。这个“浅而宽、长上下文”的形态能提高 GPU 并行度，并将新增平均延迟控制在 6ms。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文把“统一架构”重新定义为共享计算骨干而非抹平所有字段。字段独立 QKV、分布校准投影和显式信号晚融合共同保留异构性，使 Transformer 既能做全局交互又不会吞掉排序领域的强先验；相对生产基线，离线 AUC 与 GAUC 分别提升 1.12% 和 1.26%。</p>\n<p>第二，方法将扩展效率与排序正确性一起设计。FSR+DCP 降低约 33% 投影 FLOPs，Context-Dominant Mask 防止多候选泄漏，门控注意力抑制长序列噪声，解决了只扩模型但 MFU 和精排质量不同步的问题。</p>\n<p>第三，两阶段 warm-up 与拆分优化器为旧 DLRM 迁移到计算密集主干提供了可执行路径。它不是从零训练一个孤立模型，而是显式处理海量历史 embedding 与新主干的流形错位，因此更适合已有生产系统渐进替换。</p>\n<p>第四，论文用 30 天线上实验验证架构收益，而非只报告离线 AUC。最终 GMV +1.52%、UCTCVR +1.38%，说明 scaling-law 导向的主干在严格 SLA 下能够转化成商业指标。</p>\n<h2>4. 实验结果分析</h2>\n<table><thead><tr><th>模型/设置</th><th>ΔAUC</th><th>ΔGAUC</th><th>线上结果</th></tr></thead><tbody><tr><td>DIN 生产基线</td><td>0.00%</td><td>0.00%</td><td>—</td></tr><tr><td>TmallGS</td><td>+1.12%</td><td>+1.26%</td><td>UCTCVR +1.38%，GMV +1.52%</td></tr><tr><td>去掉 FiLM</td><td>—</td><td>-0.32%</td><td>—</td></tr><tr><td>FiLM 改为加法拼接</td><td>—</td><td>-0.24%</td><td>—</td></tr><tr><td>去掉噪声自适应门控</td><td>—</td><td>-0.16%</td><td>—</td></tr><tr><td>去掉 pairwise loss</td><td>基本稳定</td><td>-0.87%</td><td>—</td></tr></tbody></table>\n<p>最关键的结果不是某一个离线百分点，而是各项消融与设计动机一致。FiLM 的降幅最大之一，证明统一 Transformer 确实会稀释显式匹配；pairwise loss 对 GAUC 的影响远大于 AUC，说明全局点击预测好不等于同一搜索会话内排得好。FSR+DCP 在性能几乎不变时减少约三分之一投影计算，也说明效率优化没有靠牺牲精度换取。</p>\n<p>线上 30 天 A/B 结果均达到 p&lt;0.05。除了 UCTCVR 和 GMV，表中另有两个核心指标分别提升 0.79% 与 0.34%；论文重点解释 GMV 与 UCTCVR，因为它们更直接反映用户满意度和转化效率。新增 6ms 延迟仍在生产 SLA 内，这使 50M 稠密主干成为现实可部署点。需要注意，实验只使用天猫私有数据，虽然样本规模大、线上证据强，但无法由外部团队完整复现。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者没有单列正式 limitations 章节，但在部署与结论中明确承认：高 QPS、低延迟搜索目前不适合直接部署十亿参数 LLM，因此线上只使用约 0.05B 的浅宽模型；公开数据集也缺少同时包含超长行为和 query-item 显式匹配的数据，实验只能在天猫私有日志上进行。论文计划继续探索十亿参数级扩展和多模态生成能力，但这会重新带来延迟、成本及在线稳定性问题。</p>\n<p>论文未充分讨论的限制包括：所有结果来自单一电商平台，UGC、短视频或新闻推荐中的特征分布可能不同；30 天实验能证明短中期收益，尚不能回答长期兴趣固化、流行度偏差和生态多样性；Context-Aware Bias Net 的因果可识别性也未被验证，所谓“偏差解耦”更接近预测性正则而非严格因果校正。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队，最值得采用的不是完整复制五个模块，而是三条迁移原则。第一，先按字段盘点信号：query 与内容语义适合深交互，位置、统计分和强交叉适合旁路晚融合，稀疏 ID 与稠密主干应使用不同优化器。第二，在扩深度前先扩有效历史长度；TmallGS 的线上选择是 4 层、1024 维、1500 序列，而不是更深模型，说明对行为建模，覆盖更长时间跨度可能比增加层数更划算。第三，离线必须同时看 AUC 与按会话分组的 GAUC，并保留 pairwise 目标，否则模型可能提高全局点击预测却破坏单次 query 下的候选次序。</p>\n<p>对社区 UGC 搜索，可将帖子文本、作者、话题、互动统计和用户历史分别建字段；文本与历史进入门控 Transformer，BM25/语义匹配分、作者关系和时效分通过 FiLM 晚融合。上线应从 4 层级别的小主干开始，记录 MFU、P95/P99 延迟、GAUC、CTR 与停留时长，并按序列长度做 scaling sweep。需要避免两种做法：把所有特征无差别 token 化，以及只用全局 AUC 判断精排收益。若已有大型 embedding 表，优先复用论文的“冻结稀疏表对齐主干—联合微调”两阶段迁移，可显著降低替换旧模型的风险。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2607.13493",
+      "title": "Personalizing Incremental Video Search with Hybrid Text and ID Embeddings",
+      "url": "https://arxiv.org/abs/2607.13493",
+      "authors": "Vivek Kanojiya, Vishalaksh Aggarwal, Daeho Baek, Lyndon Kennedy, Xuetao Yin",
+      "company": [
+        "Apple"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-15",
+      "total_score": 4.7,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.8,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "Apple TV 将对比学习的多语言文本向量与交互训练的 ID 协同向量汇成用户近期历史特征，再把两类余弦相似度注入 pairwise XGBoost 排序器。离线 NDCG@10、MRR 分别提升 2.99%、3.30%，1–3 字符前缀的 NDCG@10 增益达 8.63%；三周线上实验使点击率和转化率提升 1.14%、1.23%。",
+      "key_insight": "个性化最有价值的阶段是意图尚未成形时：短前缀增益远高于完整查询的 1.46%，且历史 51–100 条用户的 NDCG 增益达 4.37%。社区短文本搜索可直接复用“语义向量保覆盖、ID 向量保精度、轻量树模型做晚融合”的架构，并按 query 长度与历史丰富度控制个性化强度。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2607.13493",
+        "title": "Personalizing Incremental Video Search with Hybrid Text and ID Embeddings",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n增量视频搜索在用户每输入一个字符后都要刷新结果，1–3 字符前缀通常同时对应大量候选，纯词法相关性无法确定真实意图。传统个性化搜索依赖用户长期画像，但流媒体目录还面临新内容冷启动、行为稀疏、共享账号和曝光偏差：只用协同 ID 向量无法覆盖新片，只用文本向量又捕捉不到“文本看似不同但被同一群体共同观看”的关系。论文聚焦 Apple TV 搜索的这个低词法信息区间，提出一个务实问题：能否在不重建既有多阶段召回与 XGBoost 精排栈的前提下，用互补的语义和协同信号改善每次按键后的排序。\n\n结果验证了问题选择：有历史用户的总体 NDCG@10 提升 2.99%、MRR@10 提升 3.30%，但 1–3 字符前缀的 NDCG@10 增益达到 8.63%，长查询仅 1.46%。也就是说，个性化不是所有 query 都应同等增强，而应在当前文本不足以区分候选时补足信息。\n\n## 2. 方法详解\n\n系统离线训练两个共享维度的 item embedding。TextEmb 是 Siamese 多语言文本编码器：标题、类型、演员/创作者、实体类别等字段分别定长 token 化，经同一个多语言 Transformer 编码，再拼接字段表示，通过 BatchNorm—Linear—ReLU—BatchNorm—Linear 投影头并 L2 归一化。编码器在训练中保持可更新，使通用语义表征适应媒体搜索。IdEmb 则完全不使用文本，以 item ID 查表得到高维向量，再经小型 MLP 投影到相同空间，专门学习共同观看和受众亲和关系。\n\n两种模型使用相同的搜索日志训练样本。若两个内容在同一用户的搜索驱动互动历史中、指定时间窗内连续被观看或转化，就构成正样本；负样本来自当前 mini-batch。作者刻意不使用规模更大的通用播放日志，因为首页推荐和曝光会引入更强噪声。核心损失是 pairwise hinge loss：L=max(0, m-cos(phi(anchor),phi(positive))+cos(phi(anchor),phi(negative)))，要求正样本相似度至少比负样本高 margin m。TextEmb 使用多 GPU 混合精度训练多个 epoch，batch size 与学习率计划在验证集调优；论文未披露具体数值，这是复现上的信息缺口。\n\n在线侧将两类 item embedding 离线计算并写入两个位置：按 item ID 索引的低延迟 KV 存储，以及搜索索引的文档元数据。用户历史也保存在定期刷新 KV 中，只保留长时间窗内有限数量的最近播放，剧集映射到母剧，重复内容只保留最近一次。查询时分别对历史内容的 TextEmb 和 IdEmb 做均值池化，形成两个用户向量，再计算用户—候选的两个余弦相似度。它们作为新增特征，与词法和行为特征一起输入现有 XGBoost `rank:pairwise` 排序器；无历史或退出个性化的用户把特征置为 missing，模型结构无需分叉。\n\n混合设计同时承担覆盖与精度。TextEmb 对 session 和用户覆盖均为 100%；IdEmb 因未见 item 无法查表，session 覆盖 87.70%、用户覆盖 86.65%。约 12%–13% 的缺口由文本向量兜底。作者还构建了一个仅用于评估的 LLM 标注语料：从不同流行度分位均匀抽 anchor，根据标题、类型、演员等元数据判断内容相似性，以减少点击和曝光偏差；线上训练和服务均不调用 LLM。\n\n## 3. 核心技术贡献\n\n第一，论文把语义覆盖与协同精度做成并行信号，而非二选一。TextEmb 对新内容和长尾稳健，IdEmb 对头部、中腰部以及跨类型受众关系更准；最终精排而不是单一 embedding 指标决定是否部署两者。\n\n第二，它提供了低侵入工业集成方式：用户向量只需均值池化，item 向量预计算并随索引返回，在线增加两项余弦特征即可继续使用成熟的 pairwise XGBoost。相较端到端重训大型序列模型，工程风险和延迟成本更低。\n\n第三，论文系统展示了个性化收益的条件性。短前缀 NDCG 增益 8.63%，长 query 仅 1.46%；历史 1–5 条用户增益 2.13%，历史 51–100 条用户达 4.37%。这些切片比单一总体指标更能指导何时开启和增强个性化。\n\n第四，三周用户级随机 A/B 证明离线增益能转化成业务指标：tap-through rate +1.14%，conversion rate +1.23%，转化内容平均排名改善 2.91%，两项主指标校正后 p<0.001。\n\n## 4. 实验结果分析\n\n| 设置 | NDCG@10 | MRR@10 | 转化内容平均位置 |\n|---|---:|---:|---:|\n| 无个性化 | 0.7113 | 0.6667 | 4.7306 |\n| 仅 TextEmb | 0.7307 | 0.6868 | 4.0464 |\n| 仅 IdEmb | 0.7311 | 0.6873 | 4.0587 |\n| TextEmb + IdEmb | 0.7326 | 0.6887 | 3.9802 |\n\n两个单信号都明显优于基线，而混合模型在三项指标上最好，证明二者互补而非冗余。独立 embedding 评估揭示了有趣反转：在 LLM 依据元数据判断的 triplet 上，TextEmb 准确率 89.50%，高于 IdEmb 的 86.02%；在真实 session 的 converted-item 检索中，IdEmb 的平均排名 10.81，略好于 TextEmb 的 11.05。原因是前者评估语义相似，后者评估行为亲和，指标天然偏向与自身标签生成机制一致的向量。\n\n用户历史切片也很重要。NDCG 增益从 1–5 条历史的 2.13% 单调增至 51–100 条的 4.37%，MRR 增益从 1.59% 增至 2.98%；与此同时长历史组的基线 NDCG 从 0.733 降到 0.680，说明个性化恰好在默认排序较弱的人群上贡献更大。三周 A/B 采用用户级等流量分组、单一区域、多主要客户端；点击率增益 1.14% 的 95% CI 为 [0.95%,1.32%]，转化率增益 1.23% 的区间为 [0.97%,1.50%]，均完全高于零。\n\n## 5. 局限与未来方向\n\n作者明确列出五点限制：线上实验只在一个区域进行，跨地区泛化尚未验证；离线数据仍受曝光偏差影响；稀疏历史用户收益小于丰富历史用户；均值池化无法建模时间动态和当前 session 意图；训练/服务偏移与 embedding 新鲜度会削弱离线到线上的一致性，因为在线历史更新和离线快照并不同步。IdEmb 对未见 item 没有表示也是结构性限制，虽然 TextEmb 提供兜底，但混合模型对纯冷启动 item 的高精度协同信号仍不存在。\n\n未来工作包括序列化、query-aware 用户模型，多模态 item embedding，以及显式探索机制。论文未讨论的现实问题还包括共享账号会混合家庭成员偏好、LLM 标注语料本身可能继承模型偏差，以及均值池化在超长历史中会稀释近期兴趣。更复杂的用户模型应与额外延迟、状态更新频率和隐私成本一起评估。\n\n## 6. 工业实践意义\n\n这篇论文适合已有检索/排序栈、希望低风险加入个性化的团队。第一阶段可离线训练文本与 ID 两套 item 向量，把它们写入索引和 KV；用户向量先用最近历史均值即可，不必一开始就上大型序列 Transformer。第二阶段只向现有 GBDT/LambdaMART 增加两项余弦相似度，并保留 missing 值路径，保证无历史、隐私退出和冷启动用户仍走相关性优先的基础排序。第三阶段按 query 长度、历史条数和内容流行度做切片，而不是只看总体 NDCG。\n\n对社区 UGC 搜索，TextEmb 可由帖子标题、正文、话题、作者简介等构建，IdEmb 从共同点击、收藏、评论或关注序列学习。短 query、歧义 query 和内容型探索 query 可提高个性化特征权重；导航型、明确实体 query 应让词法/语义相关性占主导，避免“越个性化越偏题”。上线指标至少包含 NDCG/MRR、点击率、转化或深度互动、首个有效结果位置，并监控新内容覆盖和历史新鲜度。最值得避免的是只比较两套 embedding 的单一离线准确率：论文证明语义标注会偏向 TextEmb，session 标签会偏向 IdEmb，真正的选择标准应是下游排序与在线实验。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>增量视频搜索在用户每输入一个字符后都要刷新结果，1–3 字符前缀通常同时对应大量候选，纯词法相关性无法确定真实意图。传统个性化搜索依赖用户长期画像，但流媒体目录还面临新内容冷启动、行为稀疏、共享账号和曝光偏差：只用协同 ID 向量无法覆盖新片，只用文本向量又捕捉不到“文本看似不同但被同一群体共同观看”的关系。论文聚焦 Apple TV 搜索的这个低词法信息区间，提出一个务实问题：能否在不重建既有多阶段召回与 XGBoost 精排栈的前提下，用互补的语义和协同信号改善每次按键后的排序。</p>\n<p>结果验证了问题选择：有历史用户的总体 NDCG@10 提升 2.99%、MRR@10 提升 3.30%，但 1–3 字符前缀的 NDCG@10 增益达到 8.63%，长查询仅 1.46%。也就是说，个性化不是所有 query 都应同等增强，而应在当前文本不足以区分候选时补足信息。</p>\n<h2>2. 方法详解</h2>\n<p>系统离线训练两个共享维度的 item embedding。TextEmb 是 Siamese 多语言文本编码器：标题、类型、演员/创作者、实体类别等字段分别定长 token 化，经同一个多语言 Transformer 编码，再拼接字段表示，通过 BatchNorm—Linear—ReLU—BatchNorm—Linear 投影头并 L2 归一化。编码器在训练中保持可更新，使通用语义表征适应媒体搜索。IdEmb 则完全不使用文本，以 item ID 查表得到高维向量，再经小型 MLP 投影到相同空间，专门学习共同观看和受众亲和关系。</p>\n<p>两种模型使用相同的搜索日志训练样本。若两个内容在同一用户的搜索驱动互动历史中、指定时间窗内连续被观看或转化，就构成正样本；负样本来自当前 mini-batch。作者刻意不使用规模更大的通用播放日志，因为首页推荐和曝光会引入更强噪声。核心损失是 pairwise hinge loss：L=max(0, m-cos(phi(anchor),phi(positive))+cos(phi(anchor),phi(negative)))，要求正样本相似度至少比负样本高 margin m。TextEmb 使用多 GPU 混合精度训练多个 epoch，batch size 与学习率计划在验证集调优；论文未披露具体数值，这是复现上的信息缺口。</p>\n<p>在线侧将两类 item embedding 离线计算并写入两个位置：按 item ID 索引的低延迟 KV 存储，以及搜索索引的文档元数据。用户历史也保存在定期刷新 KV 中，只保留长时间窗内有限数量的最近播放，剧集映射到母剧，重复内容只保留最近一次。查询时分别对历史内容的 TextEmb 和 IdEmb 做均值池化，形成两个用户向量，再计算用户—候选的两个余弦相似度。它们作为新增特征，与词法和行为特征一起输入现有 XGBoost <code>rank:pairwise</code> 排序器；无历史或退出个性化的用户把特征置为 missing，模型结构无需分叉。</p>\n<p>混合设计同时承担覆盖与精度。TextEmb 对 session 和用户覆盖均为 100%；IdEmb 因未见 item 无法查表，session 覆盖 87.70%、用户覆盖 86.65%。约 12%–13% 的缺口由文本向量兜底。作者还构建了一个仅用于评估的 LLM 标注语料：从不同流行度分位均匀抽 anchor，根据标题、类型、演员等元数据判断内容相似性，以减少点击和曝光偏差；线上训练和服务均不调用 LLM。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文把语义覆盖与协同精度做成并行信号，而非二选一。TextEmb 对新内容和长尾稳健，IdEmb 对头部、中腰部以及跨类型受众关系更准；最终精排而不是单一 embedding 指标决定是否部署两者。</p>\n<p>第二，它提供了低侵入工业集成方式：用户向量只需均值池化，item 向量预计算并随索引返回，在线增加两项余弦特征即可继续使用成熟的 pairwise XGBoost。相较端到端重训大型序列模型，工程风险和延迟成本更低。</p>\n<p>第三，论文系统展示了个性化收益的条件性。短前缀 NDCG 增益 8.63%，长 query 仅 1.46%；历史 1–5 条用户增益 2.13%，历史 51–100 条用户达 4.37%。这些切片比单一总体指标更能指导何时开启和增强个性化。</p>\n<p>第四，三周用户级随机 A/B 证明离线增益能转化成业务指标：tap-through rate +1.14%，conversion rate +1.23%，转化内容平均排名改善 2.91%，两项主指标校正后 p&lt;0.001。</p>\n<h2>4. 实验结果分析</h2>\n<table><thead><tr><th>设置</th><th>NDCG@10</th><th>MRR@10</th><th>转化内容平均位置</th></tr></thead><tbody><tr><td>无个性化</td><td>0.7113</td><td>0.6667</td><td>4.7306</td></tr><tr><td>仅 TextEmb</td><td>0.7307</td><td>0.6868</td><td>4.0464</td></tr><tr><td>仅 IdEmb</td><td>0.7311</td><td>0.6873</td><td>4.0587</td></tr><tr><td>TextEmb + IdEmb</td><td>0.7326</td><td>0.6887</td><td>3.9802</td></tr></tbody></table>\n<p>两个单信号都明显优于基线，而混合模型在三项指标上最好，证明二者互补而非冗余。独立 embedding 评估揭示了有趣反转：在 LLM 依据元数据判断的 triplet 上，TextEmb 准确率 89.50%，高于 IdEmb 的 86.02%；在真实 session 的 converted-item 检索中，IdEmb 的平均排名 10.81，略好于 TextEmb 的 11.05。原因是前者评估语义相似，后者评估行为亲和，指标天然偏向与自身标签生成机制一致的向量。</p>\n<p>用户历史切片也很重要。NDCG 增益从 1–5 条历史的 2.13% 单调增至 51–100 条的 4.37%，MRR 增益从 1.59% 增至 2.98%；与此同时长历史组的基线 NDCG 从 0.733 降到 0.680，说明个性化恰好在默认排序较弱的人群上贡献更大。三周 A/B 采用用户级等流量分组、单一区域、多主要客户端；点击率增益 1.14% 的 95% CI 为 [0.95%,1.32%]，转化率增益 1.23% 的区间为 [0.97%,1.50%]，均完全高于零。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出五点限制：线上实验只在一个区域进行，跨地区泛化尚未验证；离线数据仍受曝光偏差影响；稀疏历史用户收益小于丰富历史用户；均值池化无法建模时间动态和当前 session 意图；训练/服务偏移与 embedding 新鲜度会削弱离线到线上的一致性，因为在线历史更新和离线快照并不同步。IdEmb 对未见 item 没有表示也是结构性限制，虽然 TextEmb 提供兜底，但混合模型对纯冷启动 item 的高精度协同信号仍不存在。</p>\n<p>未来工作包括序列化、query-aware 用户模型，多模态 item embedding，以及显式探索机制。论文未讨论的现实问题还包括共享账号会混合家庭成员偏好、LLM 标注语料本身可能继承模型偏差，以及均值池化在超长历史中会稀释近期兴趣。更复杂的用户模型应与额外延迟、状态更新频率和隐私成本一起评估。</p>\n<h2>6. 工业实践意义</h2>\n<p>这篇论文适合已有检索/排序栈、希望低风险加入个性化的团队。第一阶段可离线训练文本与 ID 两套 item 向量，把它们写入索引和 KV；用户向量先用最近历史均值即可，不必一开始就上大型序列 Transformer。第二阶段只向现有 GBDT/LambdaMART 增加两项余弦相似度，并保留 missing 值路径，保证无历史、隐私退出和冷启动用户仍走相关性优先的基础排序。第三阶段按 query 长度、历史条数和内容流行度做切片，而不是只看总体 NDCG。</p>\n<p>对社区 UGC 搜索，TextEmb 可由帖子标题、正文、话题、作者简介等构建，IdEmb 从共同点击、收藏、评论或关注序列学习。短 query、歧义 query 和内容型探索 query 可提高个性化特征权重；导航型、明确实体 query 应让词法/语义相关性占主导，避免“越个性化越偏题”。上线指标至少包含 NDCG/MRR、点击率、转化或深度互动、首个有效结果位置，并监控新内容覆盖和历史新鲜度。最值得避免的是只比较两套 embedding 的单一离线准确率：论文证明语义标注会偏向 TextEmb，session 标签会偏向 IdEmb，真正的选择标准应是下游排序与在线实验。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "web:paper-archivist:poem-2026-06-29",
+      "title": "POEM: Partial Order Enhanced Real-time Sequential Modeling for Recommendation",
+      "url": "https://www.paper-archivist.com/reading/2026/poem-partial-order-enhanced-real-time-sequential-modeling-fo/",
+      "authors": "Linxiao Che, Yijia Sun, Siyuan Lou, Shanshan Huang, Qiang Luo, Ruiming Tang, Han Li, Kun Gai",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "web_search",
+      "published": "2026-06-29",
+      "total_score": 4.5,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.6,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 3
+      },
+      "summary": "POEM 利用推荐级联链路中实时产生的 CTR、观看时长等多任务分数，经归一化逆排名加权构造动态偏序序列，再用系统偏好正样本、用户反馈正样本和图挖掘硬负样本训练双编码兴趣模型。该方法已在快手全量部署，KS 单列页与极速版的人均观看时长分别提升 0.249% 和 0.213%。",
+      "key_insight": "排序链路的中间分数不仅用于最终融合，也能作为每次请求更新用户兴趣的结构化监督。对社区推荐与搜索，可把 CTR、停留、点赞、评论等异质目标转成偏序而非强行校准到同一数值空间，再用 margin-based pairwise loss 学习，既贴近实时意图，又避免纯时间序列忽略系统当前判断。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2607.13418",
+      "title": "Can We Steer the Black-Box? Towards Controllability-Centric Evaluation of Recommender Systems with Collaborative Agents",
+      "url": "https://arxiv.org/abs/2607.13418",
+      "authors": "Jiwen Zhou, Xiang Liu, Mingming Li, Pengbo Mo, Jiao Dai, Honglei Lv, Jizhong Han, Songlin Hu",
+      "company": [
+        "Chinese Academy of Sciences",
+        "UCAS"
+      ],
+      "source": "arxiv",
+      "published": "2026-07-15",
+      "total_score": 4.1,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "CtrlBench-Rec 用协作多智能体评估黑盒推荐系统的可控性，覆盖目标内容发现、兴趣画像塑造与流行度偏差缓解三类任务，并通过进化式融合得到专门化探针。在 Amazon 的 BGE 环境中，20 轮覆盖率约 22.5%，是随机小探针的 1.8 倍；但 200 轮后最好覆盖率仍仅约 55%，暴露长尾内容的结构性不可达。",
+      "key_insight": "推荐评估不应只看准确率，还要测用户指令能否真正改变召回与画像。框架发现 4–6 条种子行为已足够启动有效探测，但 Film-Noir 等仅占 1.1% 的长尾类别覆盖率只有 6.8%；实践中可把这套多轮探针加入离线审计，区分“模型不理解意图”与“候选空间根本不可控”。"
+    },
+    {
+      "rank": 5,
+      "id": "web:doi:10.1145/3818611",
+      "title": "Towards Multi-Behavior Multi-Task Recommendation via Behavior-Informed Graph Embedding Learning",
+      "url": "https://doi.org/10.1145/3818611",
+      "authors": "Wenhao Lai, Weike Pan, Zhong Ming",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-07-09",
+      "total_score": 3.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "BiGEL 面向点击、收藏、加购、购买等多行为多任务推荐，在级联 LightGCN 上加入目标行为反馈门控、全局上下文增强与对比偏好对齐，避免只优化购买而损伤辅助任务。它在 JD 与 UB 两个公开数据集、10 个强基线和 4 项 Top-K 指标上验证；JD 购买任务的 NDCG@5 达 0.0739，优于次优 0.0696。",
+      "key_insight": "多行为任务的关键不是简单共享底座，而是让目标行为反向校正辅助行为，同时用全局图防止级联传播丢失整体偏好。对社区业务可将点击、收藏、评论、关注作为不同任务，保留各自损失并增加全局偏好对齐；不过论文在极稀疏收藏任务上并非始终领先，部署前应单独评估低频行为。"
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:singhand-labs/scrapewright",
+      "title": "scrapewright: LLM-powered web scraping platform. Build reusable scraping services as step-graph state machines via an AI-guided wizard, expose them through a local   HTTP API. Chrome Extension (MV3) + Node.js native messaging host. Data never leaves your machine.",
+      "authors": "singhand-labs",
+      "abstract": "LLM-powered web scraping platform. Build reusable scraping services as step-graph state machines via an AI-guided wizard, expose them through a local   HTTP API. Chrome Extension (MV3) + Node.js native messaging host. Data never leaves your machine.",
+      "url": "https://github.com/singhand-labs/scrapewright",
+      "source": "github",
+      "published": "2026-07-15",
+      "discovered_at": "2026-07-16",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "singhand-labs/scrapewright",
+        "owner": "singhand-labs",
+        "description": "LLM-powered web scraping platform. Build reusable scraping services as step-graph state machines via an AI-guided wizard, expose them through a local   HTTP API. Chrome Extension (MV3) + Node.js native messaging host. Data never leaves your machine.",
+        "created_at": "2026-07-15T05:20:41Z",
+        "updated_at": "2026-07-16",
+        "pushed_at": "2026-07-16",
+        "stargazers_count": 7,
+        "language": "JavaScript",
+        "topics": [
+          "agent",
+          "ai-agent",
+          "ai-web-scraper",
+          "anti-crawl",
+          "browser-automation",
+          "chrome-extension",
+          "crawler",
+          "data-extraction",
+          "llm",
+          "llm-agents",
+          "manifest-v3",
+          "natural-language-processing",
+          "no-code",
+          "rpa",
+          "scrape",
+          "scraping-api",
+          "self-hosted",
+          "web-crawler",
+          "web-scraping"
+        ]
+      },
+      "description": "LLM-powered web scraping platform. Build reusable scraping services as step-graph state machines via an AI-guided wizard, expose them through a local   HTTP API. Chrome Extension (MV3) + Node.js native messaging host. Data never leaves your machine.",
+      "language": "JavaScript",
+      "stars": 7,
+      "created_at": "2026-07-15",
+      "rank": 1
+    },
+    {
+      "id": "github:perinchiang/kimi-code-dashboard",
+      "title": "kimi-code-dashboard: Flask web dashboard for monitoring Kimi Code CLI usage, token quota, tool/skill calls, and memory status",
+      "authors": "perinchiang",
+      "abstract": "Flask web dashboard for monitoring Kimi Code CLI usage, token quota, tool/skill calls, and memory status",
+      "url": "https://github.com/perinchiang/kimi-code-dashboard",
+      "source": "github",
+      "published": "2026-07-11",
+      "discovered_at": "2026-07-16",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "perinchiang/kimi-code-dashboard",
+        "owner": "perinchiang",
+        "description": "Flask web dashboard for monitoring Kimi Code CLI usage, token quota, tool/skill calls, and memory status",
+        "created_at": "2026-07-11T14:52:30Z",
+        "updated_at": "2026-07-16",
+        "pushed_at": "2026-07-15",
+        "stargazers_count": 5,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "Flask web dashboard for monitoring Kimi Code CLI usage, token quota, tool/skill calls, and memory status",
+      "language": "Python",
+      "stars": 5,
+      "created_at": "2026-07-11",
+      "rank": 2
+    },
+    {
+      "id": "github:17nbist/jobApplier",
+      "title": "jobApplier: Local-first job-application copilot: MV3 browser extension for resume tailoring, cover letters, and ATS form autofill via OpenRouter (GLM 5.2). No server.",
+      "authors": "17nbist",
+      "abstract": "Local-first job-application copilot: MV3 browser extension for resume tailoring, cover letters, and ATS form autofill via OpenRouter (GLM 5.2). No server.",
+      "url": "https://github.com/17nbist/jobApplier",
+      "source": "github",
+      "published": "2026-07-15",
+      "discovered_at": "2026-07-16",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "17nbist/jobApplier",
+        "owner": "17nbist",
+        "description": "Local-first job-application copilot: MV3 browser extension for resume tailoring, cover letters, and ATS form autofill via OpenRouter (GLM 5.2). No server.",
+        "created_at": "2026-07-15T21:06:14Z",
+        "updated_at": "2026-07-16",
+        "pushed_at": "2026-07-15",
+        "stargazers_count": 5,
+        "language": "JavaScript",
+        "topics": []
+      },
+      "description": "Local-first job-application copilot: MV3 browser extension for resume tailoring, cover letters, and ATS form autofill via OpenRouter (GLM 5.2). No server.",
+      "language": "JavaScript",
+      "stars": 5,
+      "created_at": "2026-07-15",
+      "rank": 3
+    },
+    {
+      "id": "hf_space:deepseek-ai/Janus-Pro-7B",
+      "title": "deepseek-ai/Janus-Pro-7B",
+      "authors": "deepseek-ai",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/deepseek-ai/Janus-Pro-7B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 2015,
+      "language": "space",
+      "created_at": "2025-01-27",
+      "updated_at": "2026-07-14",
+      "published": "2025-01-27",
+      "discovered_at": "2026-07-16",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "deepseek-ai/Janus-Pro-7B",
+        "likes": 2015,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2025-01-27T12:30:34.000Z",
+        "last_modified": "2026-07-14T07:56:38.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "authors": "zai-org",
+      "description": "pipeline: image-to-video; tags: scail-2, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2606.10804, license:mit",
+      "abstract": "pipeline: image-to-video; tags: scail-2, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2606.10804, license:mit",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 301,
+      "language": "model",
+      "created_at": "2026-06-09",
+      "updated_at": "2026-07-15",
+      "published": "2026-06-09",
+      "discovered_at": "2026-07-16",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/SCAIL-2",
+        "likes": 301,
+        "downloads": 42345,
+        "pipeline_tag": "image-to-video",
+        "tags": [
+          "scail-2",
+          "character-animation",
+          "video-generation",
+          "pose-driven",
+          "diffusion",
+          "image-to-video",
+          "arxiv:2606.10804",
+          "license:mit",
+          "region:us"
+        ],
+        "created_at": "2026-06-09T07:18:27.000Z",
+        "last_modified": "2026-07-15T12:11:45.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_space:moonshotai/Kimi-VL-A3B-Thinking",
+      "title": "moonshotai/Kimi-VL-A3B-Thinking",
+      "authors": "moonshotai",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/moonshotai/Kimi-VL-A3B-Thinking",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 200,
+      "language": "space",
+      "created_at": "2025-04-10",
+      "updated_at": "2026-07-14",
+      "published": "2025-04-10",
+      "discovered_at": "2026-07-16",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "moonshotai/Kimi-VL-A3B-Thinking",
+        "likes": 200,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2025-04-10T02:53:08.000Z",
+        "last_modified": "2026-07-14T10:21:50.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_space:deepseek-ai/Janus-1.3B",
+      "title": "deepseek-ai/Janus-1.3B",
+      "authors": "deepseek-ai",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/deepseek-ai/Janus-1.3B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 161,
+      "language": "space",
+      "created_at": "2024-10-20",
+      "updated_at": "2026-07-14",
+      "published": "2024-10-20",
+      "discovered_at": "2026-07-16",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "deepseek-ai/Janus-1.3B",
+        "likes": 161,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2024-10-20T13:23:42.000Z",
+        "last_modified": "2026-07-14T07:45:01.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:bytedance-research/GRN",
+      "title": "bytedance-research/GRN",
+      "authors": "bytedance-research",
+      "description": "tags: arxiv:2604.13030, license:mit, region:us",
+      "abstract": "tags: arxiv:2604.13030, license:mit, region:us",
+      "url": "https://huggingface.co/bytedance-research/GRN",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 26,
+      "language": "model",
+      "created_at": "2026-04-16",
+      "updated_at": "2026-07-14",
+      "published": "2026-04-16",
+      "discovered_at": "2026-07-16",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "bytedance-research/GRN",
+        "likes": 26,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "arxiv:2604.13030",
+          "license:mit",
+          "region:us"
+        ],
+        "created_at": "2026-04-16T09:01:34.000Z",
+        "last_modified": "2026-07-14T06:49:41.000Z"
+      },
+      "rank": 8
+    }
+  ]
+}

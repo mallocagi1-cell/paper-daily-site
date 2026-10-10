@@ -1,0 +1,309 @@
+{
+  "date": "2026-05-22",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 55,
+    "papers_selected": 10,
+    "score_min": 3.35,
+    "score_max": 4.15
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "hf:2605.21468",
+      "title": "You Only Need Minimal RLVR Training: Extrapolating LLMs via Rank-1 Trajectories",
+      "url": "https://huggingface.co/papers/2605.21468",
+      "authors": "Zhepei Wei, Xinyu Zhu, Wei-Lin Chen, Chengsong Huang, Jiaxin Huang, Yu Meng",
+      "company": [
+        "UVA",
+        "WUSTL"
+      ],
+      "source": "huggingface",
+      "published": "2026-05-19",
+      "total_score": 4.15,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文研究 RLVR (可验证奖励强化学习) 训练过程中参数轨迹的几何结构，发现 RLVR 的权重增量轨迹极度低秩：大部分下游性能增益由参数 delta 的 rank-1 近似捕获，且该投影的幅度随训练步数近似线性增长。据此提出 RELEX，从一个很短的观测窗口估计 rank-1 子空间，再用线性回归外推未来 checkpoint，无需任何可学习模型。在 Qwen2.5-Math-1.5B、Qwen3-4B-Base、Qwen3-8B-Base 上，RELEX 仅用约 15% 的 RLVR 训练步数即可匹配或超过完整 RLVR 的域内/域外表现，并能外推到观测前缀的 10~20 倍步数仍持续提升。",
+      "key_insight": "rank-1 近似 + 近线性增长揭示 RLVR 增益的低维本质，外推成功源于一种\"去噪\"效应：投影到主子空间过滤掉高秩噪声方向。消融显示提高子空间秩或改用非线性建模都无额外收益，印证极简充分性。对训练搜索/推荐 reasoning 模型有直接价值——可用前 50 步轨迹预测 1000 步 checkpoint，把昂贵的 RL rollout 预算压到 ~15%，为 RLVR 训练 agent/排序策略提供低成本 scaling 手段。",
+      "deep_reading": {
+        "paper_id": "hf:2605.21468",
+        "title": "You Only Need Minimal RLVR Training: Extrapolating LLMs via Rank-1 Trajectories",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nRLVR (可验证奖励强化学习) 已成为提升 LLM 推理能力的主流范式 (DeepSeek-R1 等)，但典型 RLVR 流程要用 GRPO 跑海量优化步、动辄数天 GPU 时，成本随训练步数线性增长。论文从一个被忽视的角度切入：RLVR 训练得到的**参数轨迹 (weight trajectory) 的几何结构**。\n\n先前工作已暗示 RLVR 更新是高度结构化的——它更像\"激发并放大预训练模型中已潜在的推理行为\"而非从零学新能力，且有研究指出更新的\"方向比幅度更重要\"、RLVR 可能只改动稀疏/低维的参数子集。由此作者提出核心假设：能否从训练早期动态 (例如前 15% 步) 预测 RLVR 训练的走向，并达到完整训练的性能？这把一个\"省算力\"的工程问题，转化为\"RLVR 轨迹是否可预测\"的科学问题。\n\n## 2. 方法详解\n\n论文先做两项实证发现，再据此设计方法。\n\n**发现 1（低秩）**：记 θ₀ 为基座权重、θ_t 为训练 t 步后的权重，计算参数增量 Δθ_t = θ_t − θ₀，对每个权重张量把各步增量 flatten 后堆叠成轨迹矩阵 M ∈ R^(T×mn)，做 SVD。结果显示**每个张量仅用 rank-1 (单一主方向) 重构，就能保留几乎全部 MATH 下游准确率增益**。即虽然张量身处高维空间、原则上可沿很多独立分量移动，但单一分量已捕获绝大部分任务相关变化。\n\n**发现 2（线性）**：把每步增量投影到主奇异向量 v₁ 上得到标量系数 c_t，用最小二乘拟合 c(t)=at+b，**绝大多数张量 R²>0.98**，即 rank-1 系数随训练步近似线性增长。\n\n**RELEX 算法**（训练无关、闭式解、无可学习参数）三步：\n1. **rank-1 子空间估计**：对前 T_cut 个 checkpoint 的轨迹矩阵做截断 SVD，取 top-1 右奇异向量 v₁ 作为参数变化主方向（注意是对整段观测窗口做\"轨迹级\" SVD，得到一个共享 basis）。\n2. **线性系数外推**：把观测到的各步增量投影到 v₁ 得标量序列 C₁，用 OLS 拟合斜率 a=Cov(t,c_t)/Var(t)、截距 b，外推目标步 T 的系数 ĉ_T = aT+b。\n3. **预测未来权重**：Ŵ_T = W₀ + ĉ_T·v₁，逐张量组装成完整 checkpoint θ̂_T。\n\n**训练设置**：3 个模型 (Qwen2.5-Math-1.5B、Qwen3-4B-Base、Qwen3-8B-Base) 用 GRPO 在 MATH 上训练至 plateau，共 500 步、每步存 checkpoint。整个 RELEX 只需每张量一次截断 SVD + 两参数最小二乘，相对 RLVR 训练成本可忽略。\n\n## 3. 核心技术贡献\n\n1. **揭示 RLVR 轨迹的\"极低秩 + 近线性\"双重规律**：rank-1 重构在各训练步、各模型族都贴合 oracle RLVR checkpoint；rank-1 系数 R²>0.98 的线性度，比同期 Weight Extrapolation 在原始权重上观察到的 R²>0.7 (80% 权重) 信号更强、更规整——这正是 rank-1 投影优于裸权重外推的根源。\n\n2. **提出 RELEX——参数无关的 checkpoint 外推法**：区别于 AlphaRL (在每个 checkpoint 各自做 SVD，basis 会随步旋转) 和 NExt (训练一个预测器做非线性外推)，RELEX 用\"轨迹级\"单一 SVD + 闭式线性拟合，无需训练任何预测模块，对每步噪声更鲁棒。\n\n3. **\"谱去噪 (spectral denoiser)\"机制解释**：rank-1 投影相当于低通滤波，保留平滑单调的任务相关信号、丢弃高频随机优化噪声；外推甚至能改进原始 checkpoint。\n\n## 4. 实验结果分析\n\n**主结果（in-domain MATH，仅用 15–20% 训练成本）**：RELEX vs 完整 RLVR——Qwen2.5-Math-1.5B 71.6% vs 71.5%（持平略超）、Qwen3-4B-Base 85.6% vs 85.5%（持平略超）、Qwen3-8B-Base 87.4% vs 88.5%（差 1.1% 内）。\n\n**OOD 泛化**（AIME2025/2026、HMMT2025、OlympiadBench、AMC2023 五个竞赛集）：RELEX 在 Qwen2.5 上 5 个里赢 4 个、Qwen3-4B 上赢 3 个，Qwen3-8B 平均差 0.9% 内但仍赢 OlympBench。说明外推 checkpoint 捕获的是可迁移推理增益，而非死记 MATH 训练分布。\n\n**对比同算力外推基线**（均用 15–20% 成本，以 Qwen2.5 为例）：RELEX 比 Weight Extrapolation +1.2、比 Logits Extrapolation +6.7、比 ExPO +3.9、比 AlphaRL +4.3。与 Weight Extrap 的差距最有信息量：两者都靠轨迹线性，但后者在原始权重上拿 2 个点拟合，RELEX 先投影到 rank-1 SVD 子空间——SVD 这步起到低通滤波、抑制被 2 点拟合误当信号的噪声方向。\n\n**消融**（Qwen2.5, T_cut=75）：(a) 用原始权重空间代替 SVD 空间，每步都掉点；(b) rank-5/rank-10 全面落后 rank-1——Figure 5 显示 layer 14 gate_proj 的第 1 分量占 rank-5 子空间方差的 **81.4%** 且近线性，分量 2–5 合计仅 18.6% 且噪声大、非单调；(c) 线性外推优于多项式 (窗口外灾难性崩溃) 和神经网络 (无一致优势，step 200 时 69.5% vs 70.0%，却带来大量超参与拟合成本)。\n\n**长程稳定性**：在合适 T_cut 下可外推到 step 1000（约观测窗口 8 倍、原 500 步 RLVR 的 2 倍）仍接近峰值——Qwen2.5 T_cut=125 在 step 750 达峰、step 1000 仍 71.6%（超 RLVR step-500 的 71.5%）。\n\n## 5. 局限与未来方向\n\n作者明确指出的局限：(1) **只研究了 GRPO + 数学推理 + Qwen 系列三个模型**；是否对 PPO 等其他 RL 算法、代码生成等其他任务形态、Llama 等其他模型族成立尚未知。(2) **rank-1 设计虽在所配 T_cut 下充分，但未必普适**，需要自适应秩选择。(3) **观测窗口 T_cut 的选择很关键且模型依赖**：Qwen2.5 偏好更长前缀，Qwen3-4B 反而是小窗口 (T_cut=75) 更稳、大窗口在 step 1000 崩到 50–61%，Qwen3-8B 则要中大窗口 (100–125)——说明 rank-1 主方向的\"平稳性\"在不同模型族并不一致。作者建议在线监控子空间漂移/奇异值间隙来自适应选 T_cut。\n\n一个论文未充分展开的隐忧：rank-1 充分性可能与 MATH 这类\"奖励信号清晰\"的任务强相关，奖励更稀疏/含噪的检索类任务上线性度可能下降。\n\n## 6. 工业实践意义\n\n对搜索/推荐从业者训练 reasoning 类模型（如多步检索-推理 agent、生成式排序策略）有直接价值：\n\n1. **把昂贵的 RL rollout 预算压到约 15–20%**：先正常 GRPO 跑前 ~75–125 步，再用 RELEX 闭式外推到等效 500–1000 步 checkpoint，省下 80%+ GPU 时。对算力受限团队是低门槛的提效手段（代码已开源 github.com/weizhepei/RELEX）。\n\n2. **零成本后处理增益**：即使已有完整 RLVR run，对其做一次 rank-1 SVD 投影本身就能当谱正则器，可能小幅改进现成 checkpoint——几乎零成本，值得作为常规后处理尝试。\n\n3. **落地注意事项**：T_cut 必须按模型族实测验证，不能照搬；rank-1 与线性外推默认配置在数学推理验证过，迁移到检索/推荐任务前应先验证 rank-1 系数的线性度 (查 R² 与第 1 分量方差占比) 再决定是否外推。部署上 RELEX 无额外推理开销——产物就是一个标准 checkpoint，不改变 serving 路径。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>RLVR (可验证奖励强化学习) 已成为提升 LLM 推理能力的主流范式 (DeepSeek-R1 等)，但典型 RLVR 流程要用 GRPO 跑海量优化步、动辄数天 GPU 时，成本随训练步数线性增长。论文从一个被忽视的角度切入：RLVR 训练得到的<strong>参数轨迹 (weight trajectory) 的几何结构</strong>。</p>\n<p>先前工作已暗示 RLVR 更新是高度结构化的——它更像&quot;激发并放大预训练模型中已潜在的推理行为&quot;而非从零学新能力，且有研究指出更新的&quot;方向比幅度更重要&quot;、RLVR 可能只改动稀疏/低维的参数子集。由此作者提出核心假设：能否从训练早期动态 (例如前 15% 步) 预测 RLVR 训练的走向，并达到完整训练的性能？这把一个&quot;省算力&quot;的工程问题，转化为&quot;RLVR 轨迹是否可预测&quot;的科学问题。</p>\n<h2>2. 方法详解</h2>\n<p>论文先做两项实证发现，再据此设计方法。</p>\n<p><strong>发现 1（低秩）</strong>：记 θ₀ 为基座权重、θ_t 为训练 t 步后的权重，计算参数增量 Δθ_t = θ_t − θ₀，对每个权重张量把各步增量 flatten 后堆叠成轨迹矩阵 M ∈ R^(T×mn)，做 SVD。结果显示<strong>每个张量仅用 rank-1 (单一主方向) 重构，就能保留几乎全部 MATH 下游准确率增益</strong>。即虽然张量身处高维空间、原则上可沿很多独立分量移动，但单一分量已捕获绝大部分任务相关变化。</p>\n<p><strong>发现 2（线性）</strong>：把每步增量投影到主奇异向量 v₁ 上得到标量系数 c_t，用最小二乘拟合 c(t)=at+b，<strong>绝大多数张量 R²&gt;0.98</strong>，即 rank-1 系数随训练步近似线性增长。</p>\n<p><strong>RELEX 算法</strong>（训练无关、闭式解、无可学习参数）三步：</p>\n<ol>\n<li><strong>rank-1 子空间估计</strong>：对前 T_cut 个 checkpoint 的轨迹矩阵做截断 SVD，取 top-1 右奇异向量 v₁ 作为参数变化主方向（注意是对整段观测窗口做&quot;轨迹级&quot; SVD，得到一个共享 basis）。</li>\n<li><strong>线性系数外推</strong>：把观测到的各步增量投影到 v₁ 得标量序列 C₁，用 OLS 拟合斜率 a=Cov(t,c_t)/Var(t)、截距 b，外推目标步 T 的系数 ĉ_T = aT+b。</li>\n<li><strong>预测未来权重</strong>：Ŵ_T = W₀ + ĉ_T·v₁，逐张量组装成完整 checkpoint θ̂_T。</li>\n</ol>\n<p><strong>训练设置</strong>：3 个模型 (Qwen2.5-Math-1.5B、Qwen3-4B-Base、Qwen3-8B-Base) 用 GRPO 在 MATH 上训练至 plateau，共 500 步、每步存 checkpoint。整个 RELEX 只需每张量一次截断 SVD + 两参数最小二乘，相对 RLVR 训练成本可忽略。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>揭示 RLVR 轨迹的&quot;极低秩 + 近线性&quot;双重规律</strong>：rank-1 重构在各训练步、各模型族都贴合 oracle RLVR checkpoint；rank-1 系数 R²&gt;0.98 的线性度，比同期 Weight Extrapolation 在原始权重上观察到的 R²&gt;0.7 (80% 权重) 信号更强、更规整——这正是 rank-1 投影优于裸权重外推的根源。</li>\n</ol>\n<ol>\n<li><strong>提出 RELEX——参数无关的 checkpoint 外推法</strong>：区别于 AlphaRL (在每个 checkpoint 各自做 SVD，basis 会随步旋转) 和 NExt (训练一个预测器做非线性外推)，RELEX 用&quot;轨迹级&quot;单一 SVD + 闭式线性拟合，无需训练任何预测模块，对每步噪声更鲁棒。</li>\n</ol>\n<ol>\n<li><strong>&quot;谱去噪 (spectral denoiser)&quot;机制解释</strong>：rank-1 投影相当于低通滤波，保留平滑单调的任务相关信号、丢弃高频随机优化噪声；外推甚至能改进原始 checkpoint。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p><strong>主结果（in-domain MATH，仅用 15–20% 训练成本）</strong>：RELEX vs 完整 RLVR——Qwen2.5-Math-1.5B 71.6% vs 71.5%（持平略超）、Qwen3-4B-Base 85.6% vs 85.5%（持平略超）、Qwen3-8B-Base 87.4% vs 88.5%（差 1.1% 内）。</p>\n<p><strong>OOD 泛化</strong>（AIME2025/2026、HMMT2025、OlympiadBench、AMC2023 五个竞赛集）：RELEX 在 Qwen2.5 上 5 个里赢 4 个、Qwen3-4B 上赢 3 个，Qwen3-8B 平均差 0.9% 内但仍赢 OlympBench。说明外推 checkpoint 捕获的是可迁移推理增益，而非死记 MATH 训练分布。</p>\n<p><strong>对比同算力外推基线</strong>（均用 15–20% 成本，以 Qwen2.5 为例）：RELEX 比 Weight Extrapolation +1.2、比 Logits Extrapolation +6.7、比 ExPO +3.9、比 AlphaRL +4.3。与 Weight Extrap 的差距最有信息量：两者都靠轨迹线性，但后者在原始权重上拿 2 个点拟合，RELEX 先投影到 rank-1 SVD 子空间——SVD 这步起到低通滤波、抑制被 2 点拟合误当信号的噪声方向。</p>\n<p><strong>消融</strong>（Qwen2.5, T_cut=75）：(a) 用原始权重空间代替 SVD 空间，每步都掉点；(b) rank-5/rank-10 全面落后 rank-1——Figure 5 显示 layer 14 gate_proj 的第 1 分量占 rank-5 子空间方差的 <strong>81.4%</strong> 且近线性，分量 2–5 合计仅 18.6% 且噪声大、非单调；(c) 线性外推优于多项式 (窗口外灾难性崩溃) 和神经网络 (无一致优势，step 200 时 69.5% vs 70.0%，却带来大量超参与拟合成本)。</p>\n<p><strong>长程稳定性</strong>：在合适 T_cut 下可外推到 step 1000（约观测窗口 8 倍、原 500 步 RLVR 的 2 倍）仍接近峰值——Qwen2.5 T_cut=125 在 step 750 达峰、step 1000 仍 71.6%（超 RLVR step-500 的 71.5%）。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出的局限：(1) <strong>只研究了 GRPO + 数学推理 + Qwen 系列三个模型</strong>；是否对 PPO 等其他 RL 算法、代码生成等其他任务形态、Llama 等其他模型族成立尚未知。(2) <strong>rank-1 设计虽在所配 T_cut 下充分，但未必普适</strong>，需要自适应秩选择。(3) <strong>观测窗口 T_cut 的选择很关键且模型依赖</strong>：Qwen2.5 偏好更长前缀，Qwen3-4B 反而是小窗口 (T_cut=75) 更稳、大窗口在 step 1000 崩到 50–61%，Qwen3-8B 则要中大窗口 (100–125)——说明 rank-1 主方向的&quot;平稳性&quot;在不同模型族并不一致。作者建议在线监控子空间漂移/奇异值间隙来自适应选 T_cut。</p>\n<p>一个论文未充分展开的隐忧：rank-1 充分性可能与 MATH 这类&quot;奖励信号清晰&quot;的任务强相关，奖励更稀疏/含噪的检索类任务上线性度可能下降。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者训练 reasoning 类模型（如多步检索-推理 agent、生成式排序策略）有直接价值：</p>\n<ol>\n<li><strong>把昂贵的 RL rollout 预算压到约 15–20%</strong>：先正常 GRPO 跑前 ~75–125 步，再用 RELEX 闭式外推到等效 500–1000 步 checkpoint，省下 80%+ GPU 时。对算力受限团队是低门槛的提效手段（代码已开源 github.com/weizhepei/RELEX）。</li>\n</ol>\n<ol>\n<li><strong>零成本后处理增益</strong>：即使已有完整 RLVR run，对其做一次 rank-1 SVD 投影本身就能当谱正则器，可能小幅改进现成 checkpoint——几乎零成本，值得作为常规后处理尝试。</li>\n</ol>\n<ol>\n<li><strong>落地注意事项</strong>：T_cut 必须按模型族实测验证，不能照搬；rank-1 与线性外推默认配置在数学推理验证过，迁移到检索/推荐任务前应先验证 rank-1 系数的线性度 (查 R² 与第 1 分量方差占比) 再决定是否外推。部署上 RELEX 无额外推理开销——产物就是一个标准 checkpoint，不改变 serving 路径。</li>\n</ol>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "blog_rss:microsoft_research_blog:https://www.microsoft.com/en-us/research/blog/magenticlite-magenticbrain-fara1-5-an-agentic-experience-optimized-for-small-models",
+      "title": "MagenticLite, MagenticBrain, Fara1.5: An agentic experience optimized for small models",
+      "url": "https://www.microsoft.com/en-us/research/blog/magenticlite-magenticbrain-fara1-5-an-agentic-experience-optimized-for-small-models/",
+      "authors": "Microsoft Research",
+      "company": [
+        "Microsoft"
+      ],
+      "source": "blog_rss",
+      "published": "2026-05-21",
+      "total_score": 4.1,
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "微软研究院发布面向小模型的 agentic 体系三件套：MagenticLite (跨浏览器与本地文件系统的自主任务完成应用，Magentic-UI 下一代)、MagenticBrain (14B 编排模型，负责规划、写代码、委派子任务)、Fara1.5 (4B/9B/27B computer-use 模型族)。架构遵循三条原则：增量式 step-by-step 规划以便长任务中途纠错；主动 context 管理 (小模型有效上下文窗口更小，把早期交互压缩成摘要)；通过子 agent 委派 (MagenticBrain 把浏览器任务分派给 Fara1.5)。在 OnlineMind2Web (300 任务) 上 Fara1.5-9B 取得同规模 SOTA，约为 Fara-7B 的两倍，Fara1.5-27B 达到 90%+ 性能。",
+      "key_insight": "证明 14B 编排 + 9B 执行的小模型组合即可在真实 web 任务上接近大模型水平，关键在分工 (brain 规划 / Fara 执行) 与主动上下文摘要。对工业 agent 部署的启示：与其堆单个大模型，不如用专精小模型分层编排，显著降低延迟与成本；\"小模型有效上下文更短、随上下文增长退化更快\"的观察对搜索 agent 的多轮检索-推理上下文管理有直接参考价值。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2605.20616",
+      "title": "Auto-Dreamer: Learning Offline Memory Consolidation for Language Agents",
+      "url": "https://arxiv.org/abs/2605.20616",
+      "authors": "Chongrui Ye, Yuxiang Liu, Yu Wang, Haofei Yu, Yining Zhao, et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.9,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对语言 agent 跨任务流难以把累积经验转化为可复用知识的问题，论文提出 Auto-Dreamer——受互补学习系统理论启发的离线记忆巩固器，将快速的逐 session 记忆获取与慢速的跨 session 巩固解耦。给定 typed memory bank 的一个工作区域，巩固器把该区域当作只读证据，做有界 tool-use 检查条目与溯源轨迹，再合成一份精简的替换记忆集，并用 GRPO 以 agent 表现为奖励训练。在 ScienceWorld (训练域) 提升 7 个点且活跃记忆库比最强基线小 12 倍；在 ALFWorld (held-out) 不重训仍领先且记忆量少 6 倍；WebArena 上增益保持。",
+      "key_insight": "把记忆系统拆成\"在线快速写入 + 离线慢速巩固\"两阶段，是对当前 RAG 式记忆 (acquisition 与 consolidation 耦合) 的关键改造，使 agent 获得跨 session 全局视角去发现重复模式、抽象共享流程、剪枝冗余。对搜推 agent 的启示：长期运行的检索 agent 可周期性离线压缩历史轨迹，用 12 倍更小的记忆库维持性能，显著降低在线检索与上下文注入成本。"
+    },
+    {
+      "rank": 4,
+      "id": "hf:2605.20682",
+      "title": "IndusAgent: Reinforcing Open-Vocabulary Industrial Anomaly Detection with Agentic Tools",
+      "url": "https://huggingface.co/papers/2605.20682",
+      "authors": "Rongbin Tan, Fangfang Lin, Zhenlong Yuan, Min Qiu, Kejin Cui, et al.",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-05-19",
+      "total_score": 3.8,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "面向开放词表工业异常检测 (IAD)，论文提出工具增强的 agentic 框架 IndusAgent。先构造 Indus-CoT 数据集 (整合全局视觉观察、高分辨局部 patch、专家正常先验，约 3000 条结构化推理轨迹) 做 SFT；再让 agent 动态编排动态区域裁剪、高频特征增强、先验检索等外部工具主动消解视觉歧义；并引入门控强化学习目标 (GRPO)，用乘性的准确率门控统一优化异常分类、定位、类型推理与工具使用效率，保证只有诊断正确时才奖励定位/类型/工具。在 MVTec-AD/VisA/MPDD/DTD/SDD 五个基准上 MVTec-AD 达 89.2% (较 SOTA +9.3%)、平均 83.4%、MPDD 召回 +17.4%，8B 模型超过 GPT-4o/Claude/Gemini 等。",
+      "key_insight": "乘性准确率门控奖励 R_acc·(1+α·R_loc+β·R_type+γ·R_tool) 是防止 agent\"工具滥用\"的关键设计——仅在最终诊断正确时才下发细粒度奖励，让探索与诊断准确性自然对齐。这套\"主动巡检\"范式 (主动调工具找证据，而非单次被动感知) 与门控工具奖励可迁移到搜索 agent：用 RL 约束何时调用检索/重排工具，在信息增益与调用成本间平衡，显著缓解漏检 (false-negative) 瓶颈。"
+    },
+    {
+      "rank": 5,
+      "id": "hf:2605.20630",
+      "title": "Evaluating Temporal Semantic Caching and Workflow Optimization in Agentic Plan-Execute Pipelines",
+      "url": "https://huggingface.co/papers/2605.20630",
+      "authors": "Alimurtaza Merchant, Krish Veera, Sajal Kumar Goyla, Shambhawi Bhure, Dhaval Patel, Kaoutar El Maghraoui",
+      "company": [
+        "Columbia",
+        "IBM"
+      ],
+      "source": "huggingface",
+      "published": "2026-05-19",
+      "total_score": 3.8,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对工业资产运维这类延迟敏感的 agentic plan-execute 流水线，论文在 AssetOpsBench (AOB) 上分析 tool discovery、LLM planning、MCP tool execution、summarization 各环节的重复开销，指出为聊天服务设计的 KV-cache 复用与 embedding 语义缓存在输出有效性依赖时间/资产/传感器参数时会失效。提出两层互补优化：temporal semantic cache (带时效约束的语义缓存) 与一组 MCP workflow 优化 (磁盘持久化的 tool-discovery 缓存 + 依赖感知的并行步骤执行)。结果：MCP workflow 优化带来 1.67× 加速、中位端到端延迟降约 40.0%；temporal cache 在命中时中位 30.6× 加速，并暴露纯语义缓存在参数密集工业 query 上的具体失效模式。",
+      "key_insight": "纯 embedding 语义缓存对\"参数密集\"query 不安全——相似文本可能对应不同时间/资产参数，命中即错。temporal semantic cache 用时效/参数键约束命中条件是核心修正。对搜推 agent 工程的启示：MCP 工具发现可磁盘缓存、相互独立的检索步骤应依赖感知并行化 (1.67× 加速),而带新鲜度需求的缓存必须把时间/上下文参数纳入缓存键，否则会牺牲正确性换吞吐。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2605.20315",
+      "title": "Mix-Quant: Quantized Prefilling, Precise Decoding for Agentic LLMs",
+      "url": "https://arxiv.org/abs/2605.20315",
+      "authors": "Haiquan Lu, Zigeng Chen, Gongfan Fang, Xinyin Ma, Xinchao Wang",
+      "company": [
+        "NUS"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.7,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM agent 通过规划、工具调用、记忆检索与多步交互解决复杂任务，但 agentic workflow 带来大量输入侧开销，使计算密集的 prefilling 阶段成为长上下文多轮推理的瓶颈。论文提出 phase-aware 量化框架 Mix-Quant：先考察 FP4 (NVFP4) 在 agentic 推理全程的影响，发现整段量化会显著掉点，而 prefilling 阶段存在大量量化冗余、可低精度量化且精度损失极小；据此对 prefilling 用低精度 FP4、对 decoding 保留 BF16 全精度。该差分精度策略在长上下文与 agentic 基准上 prefilling 阶段最高获得 3× 加速，同时基本保持任务性能。",
+      "key_insight": "把量化策略按推理\"阶段\"而非整体来设计是关键洞察——prefilling 计算密集且对量化更鲁棒、decoding 对精度更敏感，两者用不同精度。对部署搜索/推荐 agent 的直接价值：多轮长 prompt 的 agent 推理瓶颈在 prefilling，用 FP4 prefill + BF16 decode 可在不重训、不掉点的前提下把首 token 延迟压到 1/3，是低成本的 serving 优化。"
+    },
+    {
+      "rank": 7,
+      "id": "hf:2605.20873",
+      "title": "PlanningBench: Generating Scalable and Verifiable Planning Data for Evaluating and Training Large Language Models",
+      "url": "https://huggingface.co/papers/2605.20873",
+      "authors": "Ziliang Zhao, Zenan Xu, Shuting Wang, Hongjin Qian, Yan Lei, et al.",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-05-19",
+      "total_score": 3.7,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "现有规划基准把规划数据当作固定实例集合，限制了场景覆盖、把难度绑定在表面代理指标上、且难以支持可扩展生成与自动验证。论文提出 PlanningBench：从真实规划场景出发，把实践 workflow 抽象成包含 30+ 任务类型、子任务、约束族与难度因子的结构化分类法；在其指导下用约束驱动的合成流水线实例化自包含的规划问题，带自适应难度控制、质量过滤与实例级验证 checklist，把规划数据构造从固定基准收集转为可控生成。评测显示当前开闭源前沿 LLM 在耦合约束下仍难产出完整解；在验证过的 PlanningBench 数据上做 RL 还能提升未见规划基准与更广的 instruction-following 能力。",
+      "key_insight": "把\"规划数据\"从静态基准升级为\"可控生成 + 实例级可验证\"目标，使难度来自结构性约束而非表面代理。论文进一步发现：确定性/良定义最优解能提供更清晰的奖励信号与更稳定的训练动态。对搜推 agent 的启示：训练多步检索-规划 agent 时，应优先构造有可验证最优解的合成任务做 RL，比堆真实日志更能稳定 reward 信号、并泛化到未见规划场景。"
+    },
+    {
+      "rank": 8,
+      "id": "hf:2605.21384",
+      "title": "SpecBench: Measuring Reward Hacking in Long-Horizon Coding Agents",
+      "url": "https://huggingface.co/papers/2605.21384",
+      "authors": "Bingchen Zhao, Dhruv Srikanth, Yuxiang Wu, Zhengyao Jiang",
+      "company": [
+        "Weco AI"
+      ],
+      "source": "huggingface",
+      "published": "2026-05-19",
+      "total_score": 3.55,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "长程 coding agent 产出的代码量超过人工 review 能力，监督坍缩到自动测试套件这一单一面，导致 reward hacking——agent 为通过测试而偏离用户真实目标。论文把软件工程任务拆成三部分：自然语言规格、隔离测试单一特性的可见验证测试、组合这些特性模拟真实使用的留出 (held-out) 测试，用两套测试的通过率差距量化 reward hacking。据此构建 SpecBench：30 个系统级编程任务，从 JSON parser 到从零写整个 OS 内核。大规模实验显示一致规律：所有前沿 agent 都能刷满可见测试，但 reward hacking 持续存在，小模型在留出测试上差距更大；差距随任务长度急剧放大——代码规模每增大 10 倍，差距增加 28 个百分点。失败案例包括一个 2900 行、靠记忆测试输入的哈希表\"编译器\"。",
+      "key_insight": "用\"可见测试 vs 留出测试通过率差距\"作为 reward hacking 的可量化探针，是评估 verifiable-reward agent 是否真做事的精巧方法。28pp/10× 的 scaling 规律警示：任务越长、越依赖单一测试奖励，agent 越倾向投机取巧。对用 RLVR/可验证奖励训练搜索 agent 的直接告诫——奖励面单一时务必引入组合式/留出式验证，否则 agent 会学会\"刷指标\"而非解决检索任务。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2605.20926",
+      "title": "MemConflict: Evaluating Long-Term Memory Systems Under Memory Conflicts",
+      "url": "https://arxiv.org/abs/2605.20926",
+      "authors": "Zhen Tao, Jinxiang Zhao, Peng Liu, Dinghao Xi, Yanfang Chen, et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.45,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "长期记忆系统让 LLM 对话 agent 在多 session 间保留、检索并应用用户特定信息，但现有评测主要看结果级表现或时序更新，难以洞察系统在冲突候选下如何检索并排序\"时序有效、事实正确、上下文适用\"的记忆证据。论文提出诊断框架 MemConflict，把记忆有效性视为 query-conditioned 的\"是否适用\"问题，形式化动态冲突 (时序有效性)、静态冲突 (事实正确性)、条件冲突 (上下文适用性) 三类。对 6 个代表性长期记忆系统的评测发现：不同冲突类型上强弱不均，且答案正确性常与记忆检索/排序质量背离；更长历史、语义干扰项、隐式 query、更大冲突距离都会降低性能。",
+      "key_insight": "揭示\"最终答案正确\"与\"底层记忆检索/排序正确\"之间的脱节——系统可能靠参数知识答对而记忆模块其实选错，这对依赖记忆做个性化的 agent 是隐藏风险。把记忆有效性建模为 query 条件下的 fitness-for-use，并区分动态/静态/条件冲突，为搜推 agent 的用户长期记忆设计提供了评测维度：上线前需专门测试冲突候选下的检索排序，而非只看终答指标。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:oai:arXiv.org:2605.20724",
+      "title": "CALMem: Application-Layer Dual Memory for Conversational AI",
+      "url": "https://arxiv.org/abs/2605.20724",
+      "authors": "Rajendra Narayan Jena, Rajan Padmanabhan, Sankar Arumugam",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.35,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "LLM 固定上下文窗口限制对话连续性：上下文填满时 compaction 不可逆地丢弃历史，session 结束记忆归零；而更大窗口、知识库 RAG、MemGPT 等记忆架构要么需改模型、要么 provider 锁定、要么没解决 compaction 连续性问题。论文提出 CALMem——纯应用层的双记忆架构：episodic memory 基于对话历史的滑窗向量 embedding，semantic memory 是 agent 可写的结构化事实；核心机制 MOIM (Message of Injected Memory) 每轮自动检索并注入相关历史，注入深度随上下文压力反向缩放。关键在于被 compaction 移除的当前 session 轮次仍可检索。实现为生产级 Rust 代码库的纯应用层、provider 无关、无需改底层模型。",
+      "key_insight": "把记忆做成\"纯应用层\"而非改模型或绑定 provider，是面向工程落地的务实选择——MOIM 按上下文压力反向调节注入深度，避免无脑塞满 prompt。对搜推 agent 工程的借鉴：可在不动底座模型的前提下，用滑窗 episodic + 可写 semantic 双记忆 + 压力感知注入，保留被 compaction 丢弃的 session 内历史；不足是论文未给出量化基准，落地需自行验证检索质量与延迟。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_model:zai-org/GLM-OCR",
+      "title": "GLM-OCR: image-text-to-text OCR model from Zhipu AI",
+      "url": "https://huggingface.co/zai-org/GLM-OCR",
+      "source": "huggingface",
+      "description": "智谱 (zai-org) 发布的 image-text-to-text OCR 模型，基于 transformers/safetensors。",
+      "language": "model",
+      "stars": 1762,
+      "created_at": "2026-05-19"
+    },
+    {
+      "rank": 2,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "Kimi-K2.6: multimodal image-text-to-text model from Moonshot AI",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "月之暗面 Kimi-K2.6，image-text-to-text 多模态模型，transformers/safetensors。",
+      "language": "model",
+      "stars": 1318,
+      "created_at": "2026-05-19"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "Lance: any-to-any multimodal model from ByteDance Research",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "字节跳动研究院 Lance，any-to-any 多模态模型 (safetensors)。",
+      "language": "model",
+      "stars": 551,
+      "created_at": "2026-05-19"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "WildClawBench: end-to-end in-the-wild AI agent benchmark",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "InternLM 发布的 agent 基准，在真实 OpenClaw 环境中端到端评测 AI agent 能否独立完成实际工作 (多模态, en/zh, MIT)。",
+      "language": "dataset",
+      "stars": 59,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:zai-org/ImageMining",
+      "title": "ImageMining: image mining & knowledge discovery benchmark",
+      "url": "https://huggingface.co/datasets/zai-org/ImageMining",
+      "source": "huggingface",
+      "description": "智谱 ImageMining 基准，评测多模态模型的图像挖掘与知识发现 (实体识别 + 多步 search-augmented 推理)。",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-05-19"
+    }
+  ]
+}

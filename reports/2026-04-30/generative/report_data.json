@@ -1,0 +1,229 @@
+{
+  "date": "2026-04-30",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 76,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.25683",
+      "title": "K-CARE: Knowledge-driven Symmetrical Contextual Anchoring and Analogical Prototype Reasoning for E-commerce Relevance",
+      "url": "https://arxiv.org/abs/2604.25683",
+      "authors": "Chen Yifei, Tian Zhixing, Wang Chenyang, Cheng Ziguang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-29",
+      "total_score": 4.3,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文针对电商搜索相关性中 LLM 在工业场景里持续遭遇的 corner case 问题，指出主要瓶颈不是推理路径而是知识边界——参数化记忆缺乏对小众 query/商品的领域知识。作者提出 K-CARE 框架，包含两个互补模块：Symmetrical Contextual Anchoring (SCA) 用对称双向锚点把外部知识填入 LLM 的认知盲区；以及 Analogical Prototype Reasoning，通过原型类比把已知商品的判断模式迁移到不熟悉的长尾商品上。在多个工业相关性数据集上方法相比纯 RL 优化推理路径的基线取得显著提升。",
+      "key_insight": "对社区 UGC 短文本搜索极具启发：当 query 是小众话题或新兴 slang 时，单靠 RL 微调推理链条是不够的，根本问题是 LLM 不认识这些实体。可借鉴的设计是把 UGC 主题词典、热点事件、用户行话等作为外挂知识库，通过对称锚点机制注入到相关性判断中；并用类比推理让模型把熟悉话题上的判断范式迁移到冷启动话题。这是把“检索增强 + 大模型相关性”工业落地的实用范式。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.25683",
+        "title": "K-CARE: Knowledge-driven Symmetrical Contextual Anchoring and Analogical Prototype Reasoning for E-commerce Relevance",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nK-CARE 直击工业级电商搜索相关性中 LLM 落地的真实瓶颈：当 query 是冷僻俚语、长尾品牌或新词时，纯参数化 LLM 仍频繁误判。论文作者来自京东 (JD.com)，做的错误分析揭示一个反直觉但很本质的结论——**60% 以上的持续失败案例不是因为推理链条糟糕，而是因为模型对相关领域知识的边界外推（domain knowledge boundary）能力不足**。这是对当前主流通过 DPO/KTO/GRPO 优化推理路径（如 LREF、TaoSR1、SHE、TaoSR-AGRL 等同期工作）的直接批评。论文进一步指出工业搜索里两类典型知识缺口：(a) **semantic void**——模型不认识小众品牌或长尾品类对应的概念；(b) **ambiguous decision boundary**——即便理解了语义，也对细粒度匹配标准（如 Perfect 与 Passable 的边界）判断不稳。RL 优化推理轨迹无法解决前者，因为参数没有这部分知识可供\"展开\"。\n\n## 2. 方法详解\n\nK-CARE 由两大互补模块组成。**Symmetrical Contextual Anchoring (SCA)** 通过双向锚点把行为信号注入 LLM 上下文：QSAP 用搜索系统当前的排序输出（\"silver standard\"）作为 query 的语义锚——top-ranked 商品反向解释 query 含义，覆盖了纯点击日志在长尾上的稀疏性问题；PSAQ 训练一个 product-to-query (P2Q) 生成模型，给每个商品反推 5–6 条潜在意图 query，对小众商品也能填上语义锚。SCA 还包含 **Task-Guided Knowledge Ingestion (TGKI)**——四个辅助训练任务 {query 理解、query 预测、product 理解、product 预测}，由 GPT-5.2 教师模型合成推理轨迹，目的是先让 LLM 学会\"如何利用\"被注入的隐式上下文，再做主任务 fine-tune（解耦训练防止梯度干扰）。\n\n**Analogical Prototype Reasoning (APR)** 解决决策边界问题：构建一个高质量原型库 D_proto，每条记录是四元组 ⟨q,p,l,r⟩。生成 pipeline 是四阶段：(1) 用次优模型挑出预测与人工标签不一致的硬例 D_hard；(2) Multi-Model Proposal——异质模型集合 {M_1,…M_n} 各自给出 (judge_i, r_i) 对人工标签做交叉验证；(3) Cross-Proposal Arbitration——高容量模型 M_arb 综合所有 proposal 仲裁，只保留 judge*=1 的 D_cons；(4) Linguistic QA——质量模型 M_qa 对 r* 做语言审核得到 r_final。推理时用 embedding 检索最相似原型注入 prompt，让 LLM 借助 in-context analogy 校准判断边界。\n\n训练设置：基模 Qwen3-8B；32 张 Ascend 910B NPU，每卡 batch 16；AdamW，lr=1e-5，weight_decay=0.1；DeepSpeed Stage 2；max_len=690，1 个 epoch。推理用 vLLM 温度=0。\n\n## 3. 核心技术贡献\n\n**贡献 1：知识边界 vs 推理路径的诊断**。论文用错误分析数据（60% 失败来自上下文 void）反驳了\"持续 RL 优化推理轨迹就能解决工业难例\"的主流叙事。这是一个真正的 framing 创新——把 RAG 范式从开放问答迁移到电商相关性，并指明该领域应该检索\"两类知识\"：行为隐式知识 + 专家原型知识。\n\n**贡献 2：双向语义锚 (QSAP+PSAQ)**。比传统单边 query 改写或 product enrichment 更对称，巧妙利用搜索系统自身的排序输出当 silver standard 解决 query 锚的覆盖率，又用预训练的 P2Q 生成模型解决 product 锚在小众商品上的稀疏。两路一起构成 high-coverage 的语义注入。\n\n**贡献 3：TGKI 解耦训练**。直接把 SCA 注入到主任务 fine-tune 中会有梯度干扰，TGKI 用四个辅助任务先做\"知识消化\"训练，再 fine-tune 主任务，是 SCA 实际涨点关键（消融可见 +0.39 Macro F1）。\n\n**贡献 4：四阶段原型库合成 pipeline**。多模型异质交叉验证 + 仲裁 + 语言质检，相比单 LLM 蒸馏更适合产生\"专家级\"边界判例，避免单模型的系统性偏置。\n\n## 4. 实验结果分析\n\n测试集 124,056 query-product 对（JD 真实日志，多轮人工标注），三档分布 Bad 46.02% / Passable 11.83% / Perfect 42.14%。主要对比表（基于 Qwen3-8B）：\n\n| 模型 | Macro F1 | Weighted F1 | Accuracy | Bad-Precision | Bad-Recall | Bad-F1 |\n|------|----------|------|------|------|------|------|\n| LLM Base (Qwen3-8B 零样本) | 52.94 | 60.29 | 59.73 | 92.42 | 39.72 | 55.56 |\n| LLM SFT | 80.97 | 86.82 | 86.95 | 89.91 | 90.30 | 90.11 |\n| LLM GRPO | 81.18 | 87.04 | 87.17 | 89.66 | 91.30 | 90.48 |\n| K-CARE w/ SCA(QSAP) | 82.00 | 87.53 | 87.61 | 90.70 | 90.78 | 90.74 |\n| K-CARE w/ SCA(QSAP+PSAQ) | 82.16 | 87.66 | 87.73 | 90.61 | 91.07 | 90.84 |\n| K-CARE w/ SCA(全部) | 82.39 | 87.85 | 87.94 | 90.49 | 91.50 | 90.99 |\n| **K-CARE 完整 (SCA+APR)** | **82.58** | **87.99** | **88.05** | 90.68 | **91.51** | **91.09** |\n\n**关键观察 1**：LLM Base 的 Bad-Precision 极高 (92.42%) 但 Recall 只有 39.72%——这正是论文反复提到的\"乐观偏置\"：通用 LLM 倾向把多数样本判 Perfect，漏掉大量 Bad。SFT 后 Recall 跳升至 90.30%，是质变的 alignment 收益。\n\n**关键观察 2**：从 LLM GRPO（81.18 Macro F1）到 K-CARE 完整版（82.58）只有约 +1.4 个绝对百分点，看似不大，但在 124K 工业测试集 + 已经做过 GRPO 的强基线上获得这种绝对涨幅，意味实际错例数量明显减少。消融的内部细节更具说服力：QSAP 单加就给 +0.82 Macro F1，是单组件最大涨幅；PSAQ +0.16；TGKI 再 +0.23；APR 收尾 +0.19。每一层都正向，没有 cancel-out 现象。\n\n**关键观察 3 (在线 A/B)**：JD.com 真实流量 10,000 query，三槽并行（Base1/Base2/K-CARE 蒸馏 BERT）。Bad Case Rate（top-10 中至少一个 Bad 商品的 query 比例）从 12.10% 降到 11.39%，**5.87% 相对下降**。注意线上模型并非直接部署 8B teacher，而是蒸馏到 BERT student 上承担推理（用 K-CARE teacher 在大量未标注数据上生成伪标签作为蒸馏目标），延迟降一个数量级。这是同时拿到效果和延迟的关键工程取舍。\n\n**Case Study 报告了四类难题**：QSAP（近音品牌区分）、PSAQ（标题堆砌的 product intent）、TGKI（行为锚点利用）、APR（匹配规则边界），每种 case 都给出了对应模块如何带来 fix。\n\n## 5. 局限与未来方向\n\n作者**显式承认**的限制：(a) silver standard 锚（搜索系统排序输出）必然带有噪声，方法依赖 LLM 的 noise-tolerance 能力；(b) APR 原型库依赖人工标注 + 多模型合成，构建成本不低；(c) P2Q 模型本身需要大量历史点击数据训练，纯冷启动场景仍难。\n\n**未明说但可见的限制**：(a) 全实验只在 Qwen3-8B 单一基模上做，是否在更小模型（4B/3B）或非 Qwen 系列上同样收益未验证；(b) 在线指标只报 Bad Case Rate，没有给 GMV 或 CTR 的直接转化；(c) 蒸馏到 BERT 后的 student 性能损失（BERT vs 8B teacher）没有汇报，难判断线上落地的真实损失。\n\n## 6. 工业实践意义\n\n**对社区/UGC 短文本搜索（用户业务场景）的高度可迁移启示**：\n\n**应该采纳**：(1) **silver standard 反向锚定** 思想完全适用于社区搜索——可以用现有线上排序结果（包括用户点击 + 互动）反过来作为 query 的\"行为定义\"，给 LLM 提供 query 是个什么意图的隐式知识。(2) **PSAQ 类似的 P2Q 模型** 可改造为\"帖子 → 高意图 query\"反向模型，让冷启动帖子也能拿到隐式语义锚。(3) **TGKI 解耦训练** 是落地关键 trick——直接把 anchor 拼进主任务训练 prompt 容易学不稳，先训知识消化辅助任务再训主任务可借鉴。\n\n**应该试点**：APR 原型库范式很贵，但对社区\"边界 case\"（高争议帖子/敏感话题）很合适。可以先小规模建一个百量级原型库，覆盖 top 10 类争议判断，再在线观测 reranker 命中率。\n\n**应该警惕**：直接部署 8B LLM 做 query/document 相关性几乎不现实——latency、QPS、成本都难承受。**K-CARE 选择\"8B teacher 离线打高质量伪标签 → BERT student 在线服务\"是工业落地的事实标准**，比起强行蒸馏 8B → 8B 更清晰可控。社区搜索如果要上 LLM 做相关性，应该照搬这个 teacher-student 拓扑，而不是直接上线 LLM。\n\n**部署考量**：训练用 32 张 910B NPU 训 1 epoch（max_len 690）就拿到主要收益，相比一些需要训 5-10 个 epoch 的方法效率不错；推理 BERT student 完全在现有相关性基础设施上即可。整体落地复杂度集中在 SCA 的离线 anchor 生产 pipeline 与 APR 的原型合成 pipeline，两者均可批量离线跑，对线上服务无侵入。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>K-CARE 直击工业级电商搜索相关性中 LLM 落地的真实瓶颈：当 query 是冷僻俚语、长尾品牌或新词时，纯参数化 LLM 仍频繁误判。论文作者来自京东 (JD.com)，做的错误分析揭示一个反直觉但很本质的结论——<strong>60% 以上的持续失败案例不是因为推理链条糟糕，而是因为模型对相关领域知识的边界外推（domain knowledge boundary）能力不足</strong>。这是对当前主流通过 DPO/KTO/GRPO 优化推理路径（如 LREF、TaoSR1、SHE、TaoSR-AGRL 等同期工作）的直接批评。论文进一步指出工业搜索里两类典型知识缺口：(a) <strong>semantic void</strong>——模型不认识小众品牌或长尾品类对应的概念；(b) <strong>ambiguous decision boundary</strong>——即便理解了语义，也对细粒度匹配标准（如 Perfect 与 Passable 的边界）判断不稳。RL 优化推理轨迹无法解决前者，因为参数没有这部分知识可供&quot;展开&quot;。</p>\n<h2>2. 方法详解</h2>\n<p>K-CARE 由两大互补模块组成。<strong>Symmetrical Contextual Anchoring (SCA)</strong> 通过双向锚点把行为信号注入 LLM 上下文：QSAP 用搜索系统当前的排序输出（&quot;silver standard&quot;）作为 query 的语义锚——top-ranked 商品反向解释 query 含义，覆盖了纯点击日志在长尾上的稀疏性问题；PSAQ 训练一个 product-to-query (P2Q) 生成模型，给每个商品反推 5–6 条潜在意图 query，对小众商品也能填上语义锚。SCA 还包含 <strong>Task-Guided Knowledge Ingestion (TGKI)</strong>——四个辅助训练任务 {query 理解、query 预测、product 理解、product 预测}，由 GPT-5.2 教师模型合成推理轨迹，目的是先让 LLM 学会&quot;如何利用&quot;被注入的隐式上下文，再做主任务 fine-tune（解耦训练防止梯度干扰）。</p>\n<p><strong>Analogical Prototype Reasoning (APR)</strong> 解决决策边界问题：构建一个高质量原型库 D_proto，每条记录是四元组 ⟨q,p,l,r⟩。生成 pipeline 是四阶段：(1) 用次优模型挑出预测与人工标签不一致的硬例 D_hard；(2) Multi-Model Proposal——异质模型集合 {M_1,…M_n} 各自给出 (judge_i, r_i) 对人工标签做交叉验证；(3) Cross-Proposal Arbitration——高容量模型 M_arb 综合所有 proposal 仲裁，只保留 judge<em>=1 的 D_cons；(4) Linguistic QA——质量模型 M_qa 对 r</em> 做语言审核得到 r_final。推理时用 embedding 检索最相似原型注入 prompt，让 LLM 借助 in-context analogy 校准判断边界。</p>\n<p>训练设置：基模 Qwen3-8B；32 张 Ascend 910B NPU，每卡 batch 16；AdamW，lr=1e-5，weight_decay=0.1；DeepSpeed Stage 2；max_len=690，1 个 epoch。推理用 vLLM 温度=0。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：知识边界 vs 推理路径的诊断</strong>。论文用错误分析数据（60% 失败来自上下文 void）反驳了&quot;持续 RL 优化推理轨迹就能解决工业难例&quot;的主流叙事。这是一个真正的 framing 创新——把 RAG 范式从开放问答迁移到电商相关性，并指明该领域应该检索&quot;两类知识&quot;：行为隐式知识 + 专家原型知识。</p>\n<p><strong>贡献 2：双向语义锚 (QSAP+PSAQ)</strong>。比传统单边 query 改写或 product enrichment 更对称，巧妙利用搜索系统自身的排序输出当 silver standard 解决 query 锚的覆盖率，又用预训练的 P2Q 生成模型解决 product 锚在小众商品上的稀疏。两路一起构成 high-coverage 的语义注入。</p>\n<p><strong>贡献 3：TGKI 解耦训练</strong>。直接把 SCA 注入到主任务 fine-tune 中会有梯度干扰，TGKI 用四个辅助任务先做&quot;知识消化&quot;训练，再 fine-tune 主任务，是 SCA 实际涨点关键（消融可见 +0.39 Macro F1）。</p>\n<p><strong>贡献 4：四阶段原型库合成 pipeline</strong>。多模型异质交叉验证 + 仲裁 + 语言质检，相比单 LLM 蒸馏更适合产生&quot;专家级&quot;边界判例，避免单模型的系统性偏置。</p>\n<h2>4. 实验结果分析</h2>\n<p>测试集 124,056 query-product 对（JD 真实日志，多轮人工标注），三档分布 Bad 46.02% / Passable 11.83% / Perfect 42.14%。主要对比表（基于 Qwen3-8B）：</p>\n<table><thead><tr><th>模型</th><th>Macro F1</th><th>Weighted F1</th><th>Accuracy</th><th>Bad-Precision</th><th>Bad-Recall</th><th>Bad-F1</th></tr></thead><tbody><tr><td>LLM Base (Qwen3-8B 零样本)</td><td>52.94</td><td>60.29</td><td>59.73</td><td>92.42</td><td>39.72</td><td>55.56</td></tr><tr><td>LLM SFT</td><td>80.97</td><td>86.82</td><td>86.95</td><td>89.91</td><td>90.30</td><td>90.11</td></tr><tr><td>LLM GRPO</td><td>81.18</td><td>87.04</td><td>87.17</td><td>89.66</td><td>91.30</td><td>90.48</td></tr><tr><td>K-CARE w/ SCA(QSAP)</td><td>82.00</td><td>87.53</td><td>87.61</td><td>90.70</td><td>90.78</td><td>90.74</td></tr><tr><td>K-CARE w/ SCA(QSAP+PSAQ)</td><td>82.16</td><td>87.66</td><td>87.73</td><td>90.61</td><td>91.07</td><td>90.84</td></tr><tr><td>K-CARE w/ SCA(全部)</td><td>82.39</td><td>87.85</td><td>87.94</td><td>90.49</td><td>91.50</td><td>90.99</td></tr><tr><td><strong>K-CARE 完整 (SCA+APR)</strong></td><td><strong>82.58</strong></td><td><strong>87.99</strong></td><td><strong>88.05</strong></td><td>90.68</td><td><strong>91.51</strong></td><td><strong>91.09</strong></td></tr></tbody></table>\n<p><strong>关键观察 1</strong>：LLM Base 的 Bad-Precision 极高 (92.42%) 但 Recall 只有 39.72%——这正是论文反复提到的&quot;乐观偏置&quot;：通用 LLM 倾向把多数样本判 Perfect，漏掉大量 Bad。SFT 后 Recall 跳升至 90.30%，是质变的 alignment 收益。</p>\n<p><strong>关键观察 2</strong>：从 LLM GRPO（81.18 Macro F1）到 K-CARE 完整版（82.58）只有约 +1.4 个绝对百分点，看似不大，但在 124K 工业测试集 + 已经做过 GRPO 的强基线上获得这种绝对涨幅，意味实际错例数量明显减少。消融的内部细节更具说服力：QSAP 单加就给 +0.82 Macro F1，是单组件最大涨幅；PSAQ +0.16；TGKI 再 +0.23；APR 收尾 +0.19。每一层都正向，没有 cancel-out 现象。</p>\n<p><strong>关键观察 3 (在线 A/B)</strong>：JD.com 真实流量 10,000 query，三槽并行（Base1/Base2/K-CARE 蒸馏 BERT）。Bad Case Rate（top-10 中至少一个 Bad 商品的 query 比例）从 12.10% 降到 11.39%，<strong>5.87% 相对下降</strong>。注意线上模型并非直接部署 8B teacher，而是蒸馏到 BERT student 上承担推理（用 K-CARE teacher 在大量未标注数据上生成伪标签作为蒸馏目标），延迟降一个数量级。这是同时拿到效果和延迟的关键工程取舍。</p>\n<p><strong>Case Study 报告了四类难题</strong>：QSAP（近音品牌区分）、PSAQ（标题堆砌的 product intent）、TGKI（行为锚点利用）、APR（匹配规则边界），每种 case 都给出了对应模块如何带来 fix。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者<strong>显式承认</strong>的限制：(a) silver standard 锚（搜索系统排序输出）必然带有噪声，方法依赖 LLM 的 noise-tolerance 能力；(b) APR 原型库依赖人工标注 + 多模型合成，构建成本不低；(c) P2Q 模型本身需要大量历史点击数据训练，纯冷启动场景仍难。</p>\n<p><strong>未明说但可见的限制</strong>：(a) 全实验只在 Qwen3-8B 单一基模上做，是否在更小模型（4B/3B）或非 Qwen 系列上同样收益未验证；(b) 在线指标只报 Bad Case Rate，没有给 GMV 或 CTR 的直接转化；(c) 蒸馏到 BERT 后的 student 性能损失（BERT vs 8B teacher）没有汇报，难判断线上落地的真实损失。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>对社区/UGC 短文本搜索（用户业务场景）的高度可迁移启示</strong>：</p>\n<p><strong>应该采纳</strong>：(1) <strong>silver standard 反向锚定</strong> 思想完全适用于社区搜索——可以用现有线上排序结果（包括用户点击 + 互动）反过来作为 query 的&quot;行为定义&quot;，给 LLM 提供 query 是个什么意图的隐式知识。(2) <strong>PSAQ 类似的 P2Q 模型</strong> 可改造为&quot;帖子 → 高意图 query&quot;反向模型，让冷启动帖子也能拿到隐式语义锚。(3) <strong>TGKI 解耦训练</strong> 是落地关键 trick——直接把 anchor 拼进主任务训练 prompt 容易学不稳，先训知识消化辅助任务再训主任务可借鉴。</p>\n<p><strong>应该试点</strong>：APR 原型库范式很贵，但对社区&quot;边界 case&quot;（高争议帖子/敏感话题）很合适。可以先小规模建一个百量级原型库，覆盖 top 10 类争议判断，再在线观测 reranker 命中率。</p>\n<p><strong>应该警惕</strong>：直接部署 8B LLM 做 query/document 相关性几乎不现实——latency、QPS、成本都难承受。<strong>K-CARE 选择&quot;8B teacher 离线打高质量伪标签 → BERT student 在线服务&quot;是工业落地的事实标准</strong>，比起强行蒸馏 8B → 8B 更清晰可控。社区搜索如果要上 LLM 做相关性，应该照搬这个 teacher-student 拓扑，而不是直接上线 LLM。</p>\n<p><strong>部署考量</strong>：训练用 32 张 910B NPU 训 1 epoch（max_len 690）就拿到主要收益，相比一些需要训 5-10 个 epoch 的方法效率不错；推理 BERT student 完全在现有相关性基础设施上即可。整体落地复杂度集中在 SCA 的离线 anchor 生产 pipeline 与 APR 的原型合成 pipeline，两者均可批量离线跑，对线上服务无侵入。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.25707",
+      "title": "From Citation Selection to Citation Absorption: A Measurement Framework for Generative Engine Optimization Across AI Search Platforms",
+      "url": "https://arxiv.org/abs/2604.25707",
+      "authors": "Zhang Kai, Yao Jingang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-29",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "面向 ChatGPT、Google AI Overview/Gemini、Perplexity 等生成式搜索引擎，论文提出“引用选择 + 引用吸收”两阶段测量框架，量化一篇网页是仅被检索到、被引用，还是真正被吸收进生成答案的语言/证据/事实结构。基于公开 geo-citation-lab 数据集（602 个受控 prompt、21,143 条搜索层引用、23,745 条引用级特征记录、18,151 个成功抓取页面、72 个特征）实证分析，发现引用广度与深度发散：Perplexity/Google 引用源更多但平均吸收率低，ChatGPT 引用源少但单源吸收率显著更高。",
+      "key_insight": "对社区平台是核心的“分发 vs 内容被消费”洞察：生成式搜索时代，UGC 内容能否被 AI 答案吸收取决于结构化、证据密度、措辞清晰度，不仅仅是被检索到。可借鉴的工程方向：(1) 给社区内容做“AI 友好度”评分（事实密度、可引用片段、结构化标签），(2) 监测站内内容在外部生成式搜索中的吸收率作为内容质量信号反哺排序，(3) 借鉴该论文 72 个特征体系做内容侧 GEO 优化。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.25605",
+      "title": "Health System Scale Semantic Search Across Unstructured Clinical Notes",
+      "url": "https://arxiv.org/abs/2604.25605",
+      "authors": "Faith Wavinya Mutinda, Spandana Makeneni, Anna Lin, Shivaji Dutta, et al.",
+      "company": [
+        "CHOP"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-29",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "工业部署型论文：在大型儿童医院落地了一套语义搜索系统，索引 1.68 亿患者的 1.66 亿条临床笔记、4.84 亿条向量。系统使用 instruction-tuned qwen3-embedding-0.6B 嵌入模型，向量存储在 storage-optimized 索引的托管数据库，全文元数据放在低延迟 KV 库，整体运行在 HIPAA 合规治理框架下。论文报告了 embedding 模型与 chunking 策略选型实验、医师标注的相关性评估、以及在跨笔记检索任务上的工程开销和可运营性数据。",
+      "key_insight": "对社区搜索语义召回的工程参考价值极高：qwen3-embedding 0.6B 在 4.84 亿向量级别可用，远低于很多团队默认的 1B+ 模型；chunking 策略与 instruction-tuned 提示工程对召回质量影响巨大。社区可借鉴的设计：把帖子按段落 + 评论楼层做混合 chunking，配合短指令版 embedding 提升 nDCG；同时用“廉价 0.6B + 重 reranker”两阶段架构控制成本，避免直接上 7B+ embedding 带来的索引爆炸。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.03384",
+      "title": "BridgeRAG: Training-Free Bridge-Conditioned Retrieval for Multi-Hop Question Answering",
+      "url": "https://arxiv.org/abs/2604.03384",
+      "authors": "Andre Bacellar",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-29",
+      "total_score": 4.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "多跳检索本质上不是单步相关性问题，但既有 RAG 方案常用对原 query 的相似度统一打分，导致后跳证据被错误排序。BridgeRAG 提出一个 training-free、graph-free 的检索方法，核心是三元打分器 s(q, b, c)（query, bridge, candidate），把“覆盖”与“打分”显式解耦：dual-entity ANN 扩展第二跳候选池保覆盖，bridge-conditioned LLM 判官在并发的推理链中选出正确链条做精排。在四个受控实验中显示该 conditioning 信号有选择性（并行链 query +2.55pp p<0.001、单链子集 ~0）且不可替代（用 LLM 生成的 SVO 文本替换检索段落性能崩盘）。",
+      "key_insight": "把“扩召回”和“判别推理链”显式分开，是一个非常清晰的 RAG 工程范式：召回阶段不要做太聪明的事，靠 entity ANN 把候选池搞大；判别阶段交给 LLM 做条件打分。社区搜索可类比：复杂 query（“x 和 y 的对比体验”）也可以拆成 bridge 实体 + 候选段落，让 LLM 判官在 dual-entity 候选里选最相关的桥接证据。最大的启发是 training-free 也能拿到显著增量，节省了维护 graph 索引的运维成本。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.24978",
+      "title": "Don't Stop Early: Scalable Enterprise Deep Research with Controlled Information Flow and Evidence-Aware Termination",
+      "url": "https://arxiv.org/abs/2604.24978",
+      "authors": "Prafulla Kumar Choubey, Kung-Hsiang Huang, Pranav Narayanan Venkit, Jiaxin Zhang, Vaibhav Vats, Yu Li, Xiangyu Peng, Chien-Sheng Wu",
+      "company": [
+        "Salesforce"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-29",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对企业深度研究 agent 频繁出现的“信息覆盖不均、context 爆炸、过早终止”三类失败模式，论文提出 EDR (Enterprise Deep Research) 架构。核心三件套：(1) 用 outline + reflection 把请求拆成覆盖驱动的目标列表；(2) 依赖图引导的执行 + 显式跨子任务信息共享，把 context 局部化；(3) 基于证据充分性的完成判定，强制 agent 持续收集直到达标。在内部销售赋能任务和公开 DeepResearch Bench 上整体优于多种深度研究基线，结果显示 dependency-controlled context 与显式证据充分性可以同时减少 premature stop 并提升报告深度与一致性。",
+      "key_insight": "对搜推团队做“AI 答主/搜索体验报告”等长程查询场景的设计参考：把 agent 的“何时停”从启发式（stagnation 信号）改成证据驱动（覆盖 + 充分性双门槛）能显著降低浅答比例。可借鉴的是 dependency-guided execution，把多步检索做成显式 DAG 而不是裸 tool-loop，避免 context 互相污染；以及 outline-reflection 拆解策略，对应 query 改写场景里的“先列大纲再分批召回”模式，比一次大召回更稳。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.25665",
+      "title": "LLM-ReSum: A Framework for LLM Reflective Summarization through Self-Evaluation",
+      "url": "https://arxiv.org/abs/2604.25665",
+      "authors": "Huyen Nguyen, Haoxuan Zhang, Yang Zhang, Junhua Ding, Haihua Chen",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-29",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "首先做一次大规模 meta 评估：14 个自动摘要指标 × 7 个数据集 × 5 个领域（短新闻到 2K-27K 词的科学/政府/法律长文）× 1500+ 人工标注摘要。核心结论：ROUGE/BLEU 这类词面重合指标与人类判断弱相关甚至负相关，task-specific 神经指标和 LLM-as-judge 评估器对齐度显著更高，尤其在语言质量维度。基于此提出 LLM-ReSum 框架，无需微调，把 LLM 评估器与 LLM 生成器闭环耦合：生成 → 自评 → 反思修改，端到端做迭代摘要质量提升。",
+      "key_insight": "对 UGC 内容理解链路（标题改写、答案抽取、热门帖摘要）有直接应用价值：ROUGE 类离线指标对 LLM 生成内容的判别力已经失灵，应该把 LLM-as-judge 加进离线评估流水线。可借鉴 ReSum 的闭环范式做自动质检——生成的标题/摘要由独立 LLM 判官打分，低分自动反思修改，全程不需要新训练数据。值得注意的是该路径在模型规模较小时也跑得通，部署成本可控。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.25917",
+      "title": "Recursive Multi-Agent Systems",
+      "url": "https://arxiv.org/abs/2604.25917",
+      "authors": "Xiyuan Yang, Jiaru Zou, Rui Pan, Ruizhong Qiu, Pan Lu",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-04-27",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "把 looped/recursive language model 这一新兴 scaling 维度从单模型扩展到多 agent。提出 RecursiveMAS 框架，把整个多 agent 系统统一建模为隐空间递归计算：用轻量 RecursiveLink 模块连接异构 agent 形成协作循环，支持隐式思维生成与跨 agent 隐状态传递；并设计了 inner-outer loop 学习算法做整系统协同优化（共享梯度跨递归轮做 credit assignment）。理论分析显示比纯文本通信的多 agent 系统计算复杂度更优，实验侧报告在多个推理任务上以更少 token 取得更强表现。",
+      "key_insight": "为搜索推荐里日益常见的“多模块协作 LLM 流水线”（query 改写 + 召回 + 重排 + 解释）提供了一个新思路：与其用文本互相 prompt（token 成本爆炸），不如让模块在隐空间共享中间状态。短期落地有难度（需要异构模型对齐隐表示），但中长期对降低 agent 推理延迟、提升迭代深度有想象空间。可作为研究跟进的方向，先在内部一致体系（同源模型 head 共享）上小步试。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.25256",
+      "title": "AutoResearchBench: Benchmarking AI Agents on Complex Scientific Literature Discovery",
+      "url": "https://huggingface.co/papers/2604.25256",
+      "authors": "Lei Xiong, Kun Luo, Ziyi Xia, Wenbo Zhang, Jin-Ge Yao",
+      "company": [
+        "BAAI"
+      ],
+      "source": "huggingface",
+      "published": "2026-04-27",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "AutoResearchBench 是面向自主科研 agent 的文献发现 benchmark，包含两类互补任务：Deep Research（通过渐进多步探测精确定位某篇目标论文）与 Wide Research（综合收集满足条件的论文集合）。相比已有的 agent 浏览基准，该 benchmark 更突出研究导向（要求理解科学概念）、文献聚焦（细粒度文献利用）、复杂度（多步推理 + 海量证据综合），用以测试当前主流 agent 框架在科学文献场景下的真实能力上限。",
+      "key_insight": "对内部“AI 搜索答主”或“专家级查询”场景的评估体系建设有借鉴：现有 agent 基准多偏 web 通用浏览，离社区垂直领域（如学术/医疗/技术问答）的真实任务还有较大 gap。可参考 Deep / Wide 两类任务结构，自建社区版“目标定位 + 综合归纳”评测集——既测召回完整性，又测多步推理。该方法论比单纯看 nDCG 更能驱动 agentic search 产品迭代。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2604.25390",
+      "title": "GeoSearch: Augmenting Worldwide Geolocalization with Web-Scale Reverse Image Search and Image Matching",
+      "url": "https://arxiv.org/abs/2604.25390",
+      "authors": "Tung-Duong Le-Duc, Hoang-Quoc Nguyen-Son, Minh-Son Dao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-29",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "面向全球图像地理定位任务，传统 RAG + LMM 方法依赖固定参考库，对库外场景泛化弱。GeoSearch 把 web-scale 反向图像搜索集成到 RAG 流水线：用图搜从公开网页获取候选坐标 + 网页文本证据，作为额外上下文增强 LMM 提示。为抑制噪声，引入两层过滤——先做图像匹配筛选视觉相关页面，再用置信度门控丢弃不可靠证据。在 Im2GPS3k 与 YFCC4k 在去除数据泄漏的评估协议下显著优于既有基线。",
+      "key_insight": "对多模态 UGC 搜索（图片帖子、视频缩略图）有迁移意义：固定 embedding 库 + RAG 是当前主流，但社区图像分布快速漂移，开放域反向图搜可以补“长尾未见”场景。可借鉴的工程模式是“双层过滤管道”——视觉匹配先粗筛 + 置信度二次门控，避免低质 web 页面污染 LMM 上下文。该思路也适用于文本侧：当内部知识库缺位时，通过受控外部搜索 + 二次证据校验补足。"
+    },
+    {
+      "rank": 10,
+      "id": "blog:google_research:empirical-research-assistance-2026-04",
+      "title": "Four ways Google Research scientists have been using Empirical Research Assistance",
+      "url": "https://research.google/blog/four-ways-google-research-scientists-have-been-using-empirical-research-assistance/",
+      "authors": "Google Research",
+      "company": [
+        "Google"
+      ],
+      "source": "blog_rss",
+      "published": "2026-04-29",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "Google Research 博客分享了内部 Empirical Research Assistance（ERA）系统的四类使用方式：科研人员让 LLM agent 协助跑实验、分析数据、查找/综述文献、复现先前工作。文章给出一线团队的真实案例，说明 LLM agent 不是替代研究者而是把“调研 + 数据探查 + 实验配置”等耗时环节自动化，让科研聚焦在假设设计与结论解读上。属于对生成式 AI 在专业知识工作的内部最佳实践分享。",
+      "key_insight": "对“AI 答主/技术问答”产品的产品形态有启示：与其追求“一问一答的全能 agent”，不如把搜推工程师/研究员日常工作流（数据探索、文献调研、实验复现）拆成可由 agent 加速的独立 chunk，用更窄但更高完成质量的工具体验赢得用户。社区 UGC 平台可类比：让 agent 帮用户做“前置调研 + 经验汇总”而不是直接生成答案，在专业场景下更可控、更易获得用户信任。"
+    }
+  ],
+  "code_projects": []
+}

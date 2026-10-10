@@ -1,0 +1,224 @@
+{
+  "date": "2026-06-05",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 90,
+    "papers_selected": 5,
+    "score_min": 3.45,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.04448",
+      "title": "Bridging Short Videos and Live Streams: Reasoning-Guided Multimodal LLMs for Cross-Domain Representation Learning",
+      "url": "https://arxiv.org/abs/2606.04448",
+      "authors": "Le Zhang, Xiaolan Zhu, Yuchen Wang, Shilong Kang, ..., Lantao Hu, Kun Gai",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-04",
+      "total_score": 4.1,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.25,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对直播推荐行为稀疏、冷启严重的问题，快手提出 RGCD-Rep，把短视频域的用户兴趣迁移到直播域。方法分两阶段：先用冻结的多模态大模型（MLLM）作 teacher 生成结构化的跨域推理知识，蒸馏进一个轻量 student；再把 item 表征拆成「可迁移表征」与「域残差表征」，全部离线预计算后接入下游推荐，serving 端不需实时跑 MLLM。已在快手直播推荐系统部署、服务日活 4 亿+ 用户，A/B 实验在多个核心业务指标上取得显著正向。",
+      "key_insight": "把 MLLM 推理当成离线信号源、而把 serving 端做成零 MLLM 推理，是当前工业界用大模型做表征的主流落地姿势：teacher 推理→蒸馏→离线预存表征。短视频→直播的「可迁移/域残差」表征拆分，本质是把跨域共享兴趣与场景特有信号解耦，对社区里「主帖兴趣→问答/评论冷启场景」的兴趣迁移有直接借鉴：用富行为域的信号补稀疏行为域的冷启。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.04448",
+        "title": "Bridging Short Videos and Live Streams: Reasoning-Guided Multimodal LLMs for Cross-Domain Representation Learning",
+        "status": "completed",
+        "content": "## RGCD-Rep 深度解读：用 MLLM 推理把短视频兴趣迁移到直播冷启\n\n### 1. 问题与动机\n\n快手要解决的是直播推荐的稀疏与冷启问题。论文给出明确量化对比：短视频域人均 224.93 次交互，直播域人均仅 20.78 次；数据量上短视频 2463.5 万次交互（10.95 万用户、378.7 万 item），直播只有 227.6 万次（9.19 万 item），约为短视频的 9.2%。更棘手的是高价值行为（关注 follow、虚拟礼物 gifting）极度稀疏，测试集里 14.65% 的用户完全没有直播历史，尾部 item 占 50% 的 item 却只贡献 10.90% 的交互。已有多模态跨域方法依赖静态特征、缺乏对多模态内容的深层语义推理，无法解释\"为什么两个域的 item 在行为上可迁移\"，导致迁移信号不可靠、易引入负迁移。RGCD-Rep 的出发点是：把\"可迁移性\"这件事显式地交给大 MLLM 去推理判断，而不是让模型隐式地从稀疏行为里猜。\n\n### 2. 方法详解\n\nRGCD-Rep 分两阶段。**阶段一 推理感知蒸馏（Reasoning-Aware Distillation）**：用一个冻结的 35B Qwen3.6 MLLM 作 teacher，对从同一时间窗用户日志构造的\"行为-协同对\"(sᵢ, lᵢ) 生成结构化推理。迁移强度 bᵢ 由行为共现频率与行为强度（视频侧看时长/完播率/点赞/评论/分享，直播侧看时长/送礼/关注/点赞）算出。teacher 把每个 item 沿三个语义维度 K={垂类 vertical, 关键主体 key subject, 内容话题 content topic} 拆解，每个维度输出语义标签+证据描述+对级匹配 mᵢᵏ∈{0,1}，并得语义迁移分 rᵢ=(1/|K|)Σmᵢᵏ。这些对级推理再拆成 item 级样本（让任意单个视频/直播都能被独立编码），蒸馏进一个轻量 **2B Qwen2-VL student**：student 用 16 个可学习的 chorus tokens 聚合多模态语义，输出隐状态 Hₓ∈ℝ^(16×d)，训练目标是标准 NTP（next-token prediction）让 student 复现 teacher 的结构化推理文本。这一步的关键是把 35B 的推理能力压到 2B，既保住推理质量又能上线。\n\n**阶段二 迁移性引导的跨域表征学习**：双域共享同一 student MLLM 编码器映射到统一语义空间。用两个可学习 query 向量从 chorus tokens 抽取双视图——可迁移视图 z^T 与域残差视图 z^R，均为 α=softmax(Hₓq/√d) 加权聚合后做 Norm。跨域对比损失 L_con=½(L_{s→l}+L_{l→s})，把行为-协同对作正样本、batch 内未匹配 item 作负样本，余弦相似度、温度 τ=0.05。为防负迁移，引入**迁移路由**：按 qᵢ=bᵢ+rᵢ（行为+语义迁移性）排序，Top 20% 设为高纯度对 π=1、Bottom 20% 低纯度 π=0，中间丢弃；路由概率 P_T=σ(γ(s_T−s_R))（γ=10，s_T/s_R 分别是对在可迁移/残差空间的相似度），路由损失 L_route=−mean[π·logP_T+(1−π)·log(1−P_T)] 把高纯度对推向可迁移空间、低纯度对推向残差空间。总目标 L_stage2=L_con+0.05·L_route。最终可迁移表征 z^T（1536 维）对全量 item 离线预计算并建近邻索引，serving 阶段只查索引、零 MLLM 推理。训练用 8 张 H800，LoRA rank=32，阶段一 batch 8 / lr 1e-4 / 6 万样本，阶段二 batch 64 / lr 1e-4 / 25 万样本。\n\n### 3. 核心技术贡献\n\n(1) **首个把大 MLLM 推理引入跨域推荐（CDR）的工作**，且推理带显式迁移性判断，而非泛化的内容描述。(2) **推理感知蒸馏**：把 35B teacher 的链式推理沿三语义维度拆解后蒸到 2B student，兼顾推理质量与可部署性。(3) **行为接地（behavior-grounded）框架**：监督信号同时来自真实行为共现与语义推理，抑制 MLLM 产生与任务无关的解读。(4) **可迁移-残差解耦 + 路由**：显式区分跨域共享信号与域特有信号，并用 Top/Bottom 20% 硬路由防负迁移——消融显示这是性能主力。\n\n### 4. 实验结果分析\n\n离线 HR@10 / NDCG@10：最强基线 UniEmbedding 为 0.0216 / 0.0097，RGCD-Rep 达 0.0254 / 0.0127，分别 +17.59% / +30.93%；其余基线 FREEDOM(0.0040/0.0018)、SMORE(0.0089/0.0032) 差距更大。消融最有说服力：去掉阶段二 HR 暴跌到 0.0101（约 −60%），去掉阶段二的 MLLM 微调降到 0.0189（−26%），而去掉阶段一只掉到 0.0249（约 −2%）——说明跨域表征学习（阶段二）是主力，蒸馏（阶段一）是锦上添花。尾部 item 与冷启用户（14.65%）上增益更明显，印证兴趣迁移对稀疏侧的价值。线上一周 A/B（快手主站/极速版双端）：曝光 +0.37%/+0.38%，点击 +0.34%/+0.13%，有效进房 +0.28%/+0.22%，**关注 follow +0.83%/+0.93%**——follow 提升最大，正好对应\"帮用户发现冷启主播\"这一目标，也说明迁移来的是真实兴趣信号而非曝光偏置。\n\n### 5. 局限与未来方向\n\n作者未单列局限。可观察到的约束：训练成本不低（8×H800，虽然部署轻量）；高度依赖高质量行为-协同对，对极稀疏域效果未知；只验证了短视频→直播的单向迁移，反向未探索；三个固定语义维度（垂类/主体/话题）未必适配所有内容类型，跨品类泛化待验证。\n\n### 6. 工业实践意义\n\n最值得借鉴的是落地姿势：**teacher 推理→蒸馏到小 student→阶段二对全量 item 离线算 1536 维表征→建近邻索引，serving 端零大模型推理**，已在快手服务日活 4 亿+，召回（matching）阶段用跨域近邻索引、亚毫秒级查表。这套范式对任何想用 MLLM 做表征但卡在线上延迟的团队都适用。对社区搜索，\"主帖/长内容富行为域 → 问答/评论稀疏冷启域\"的兴趣迁移可直接套用可迁移-残差解耦 + 路由防负迁移的设计；行为接地（用真实共现+强度构造监督，而非纯让 LLM 描述内容）也比纯语义匹配更稳，能抑制大模型的任务无关幻觉。需要注意迁移路由的 Top/Bottom 20% 硬切分、温度 τ=0.05、γ=10、λ_route=0.05 等超参需按业务重调，且离线预存 1536 维全量 item 表征对存储与索引更新链路有要求。",
+        "content_html": "<h2>RGCD-Rep 深度解读：用 MLLM 推理把短视频兴趣迁移到直播冷启</h2>\n<h3>1. 问题与动机</h3>\n<p>快手要解决的是直播推荐的稀疏与冷启问题。论文给出明确量化对比：短视频域人均 224.93 次交互，直播域人均仅 20.78 次；数据量上短视频 2463.5 万次交互（10.95 万用户、378.7 万 item），直播只有 227.6 万次（9.19 万 item），约为短视频的 9.2%。更棘手的是高价值行为（关注 follow、虚拟礼物 gifting）极度稀疏，测试集里 14.65% 的用户完全没有直播历史，尾部 item 占 50% 的 item 却只贡献 10.90% 的交互。已有多模态跨域方法依赖静态特征、缺乏对多模态内容的深层语义推理，无法解释&quot;为什么两个域的 item 在行为上可迁移&quot;，导致迁移信号不可靠、易引入负迁移。RGCD-Rep 的出发点是：把&quot;可迁移性&quot;这件事显式地交给大 MLLM 去推理判断，而不是让模型隐式地从稀疏行为里猜。</p>\n<h3>2. 方法详解</h3>\n<p>RGCD-Rep 分两阶段。<strong>阶段一 推理感知蒸馏（Reasoning-Aware Distillation）</strong>：用一个冻结的 35B Qwen3.6 MLLM 作 teacher，对从同一时间窗用户日志构造的&quot;行为-协同对&quot;(sᵢ, lᵢ) 生成结构化推理。迁移强度 bᵢ 由行为共现频率与行为强度（视频侧看时长/完播率/点赞/评论/分享，直播侧看时长/送礼/关注/点赞）算出。teacher 把每个 item 沿三个语义维度 K={垂类 vertical, 关键主体 key subject, 内容话题 content topic} 拆解，每个维度输出语义标签+证据描述+对级匹配 mᵢᵏ∈{0,1}，并得语义迁移分 rᵢ=(1/|K|)Σmᵢᵏ。这些对级推理再拆成 item 级样本（让任意单个视频/直播都能被独立编码），蒸馏进一个轻量 <strong>2B Qwen2-VL student</strong>：student 用 16 个可学习的 chorus tokens 聚合多模态语义，输出隐状态 Hₓ∈ℝ^(16×d)，训练目标是标准 NTP（next-token prediction）让 student 复现 teacher 的结构化推理文本。这一步的关键是把 35B 的推理能力压到 2B，既保住推理质量又能上线。</p>\n<p><strong>阶段二 迁移性引导的跨域表征学习</strong>：双域共享同一 student MLLM 编码器映射到统一语义空间。用两个可学习 query 向量从 chorus tokens 抽取双视图——可迁移视图 z^T 与域残差视图 z^R，均为 α=softmax(Hₓq/√d) 加权聚合后做 Norm。跨域对比损失 L_con=½(L_{s→l}+L_{l→s})，把行为-协同对作正样本、batch 内未匹配 item 作负样本，余弦相似度、温度 τ=0.05。为防负迁移，引入<strong>迁移路由</strong>：按 qᵢ=bᵢ+rᵢ（行为+语义迁移性）排序，Top 20% 设为高纯度对 π=1、Bottom 20% 低纯度 π=0，中间丢弃；路由概率 P_T=σ(γ(s_T−s_R))（γ=10，s_T/s_R 分别是对在可迁移/残差空间的相似度），路由损失 L_route=−mean[π·logP_T+(1−π)·log(1−P_T)] 把高纯度对推向可迁移空间、低纯度对推向残差空间。总目标 L_stage2=L_con+0.05·L_route。最终可迁移表征 z^T（1536 维）对全量 item 离线预计算并建近邻索引，serving 阶段只查索引、零 MLLM 推理。训练用 8 张 H800，LoRA rank=32，阶段一 batch 8 / lr 1e-4 / 6 万样本，阶段二 batch 64 / lr 1e-4 / 25 万样本。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) <strong>首个把大 MLLM 推理引入跨域推荐（CDR）的工作</strong>，且推理带显式迁移性判断，而非泛化的内容描述。(2) <strong>推理感知蒸馏</strong>：把 35B teacher 的链式推理沿三语义维度拆解后蒸到 2B student，兼顾推理质量与可部署性。(3) <strong>行为接地（behavior-grounded）框架</strong>：监督信号同时来自真实行为共现与语义推理，抑制 MLLM 产生与任务无关的解读。(4) <strong>可迁移-残差解耦 + 路由</strong>：显式区分跨域共享信号与域特有信号，并用 Top/Bottom 20% 硬路由防负迁移——消融显示这是性能主力。</p>\n<h3>4. 实验结果分析</h3>\n<p>离线 HR@10 / NDCG@10：最强基线 UniEmbedding 为 0.0216 / 0.0097，RGCD-Rep 达 0.0254 / 0.0127，分别 +17.59% / +30.93%；其余基线 FREEDOM(0.0040/0.0018)、SMORE(0.0089/0.0032) 差距更大。消融最有说服力：去掉阶段二 HR 暴跌到 0.0101（约 −60%），去掉阶段二的 MLLM 微调降到 0.0189（−26%），而去掉阶段一只掉到 0.0249（约 −2%）——说明跨域表征学习（阶段二）是主力，蒸馏（阶段一）是锦上添花。尾部 item 与冷启用户（14.65%）上增益更明显，印证兴趣迁移对稀疏侧的价值。线上一周 A/B（快手主站/极速版双端）：曝光 +0.37%/+0.38%，点击 +0.34%/+0.13%，有效进房 +0.28%/+0.22%，<strong>关注 follow +0.83%/+0.93%</strong>——follow 提升最大，正好对应&quot;帮用户发现冷启主播&quot;这一目标，也说明迁移来的是真实兴趣信号而非曝光偏置。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者未单列局限。可观察到的约束：训练成本不低（8×H800，虽然部署轻量）；高度依赖高质量行为-协同对，对极稀疏域效果未知；只验证了短视频→直播的单向迁移，反向未探索；三个固定语义维度（垂类/主体/话题）未必适配所有内容类型，跨品类泛化待验证。</p>\n<h3>6. 工业实践意义</h3>\n<p>最值得借鉴的是落地姿势：<strong>teacher 推理→蒸馏到小 student→阶段二对全量 item 离线算 1536 维表征→建近邻索引，serving 端零大模型推理</strong>，已在快手服务日活 4 亿+，召回（matching）阶段用跨域近邻索引、亚毫秒级查表。这套范式对任何想用 MLLM 做表征但卡在线上延迟的团队都适用。对社区搜索，&quot;主帖/长内容富行为域 → 问答/评论稀疏冷启域&quot;的兴趣迁移可直接套用可迁移-残差解耦 + 路由防负迁移的设计；行为接地（用真实共现+强度构造监督，而非纯让 LLM 描述内容）也比纯语义匹配更稳，能抑制大模型的任务无关幻觉。需要注意迁移路由的 Top/Bottom 20% 硬切分、温度 τ=0.05、γ=10、λ_route=0.05 等超参需按业务重调，且离线预存 1536 维全量 item 表征对存储与索引更新链路有要求。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.04944",
+      "title": "Dual-Stream MLP is All You Need for CTR Prediction",
+      "url": "https://arxiv.org/abs/2606.04944",
+      "authors": "Kesha Ou, Zhen Tian, Wayne Xin Zhao, Long Zhang, Sheng Chen, Ji-Rong Wen",
+      "company": [
+        "RUC"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-04",
+      "total_score": 4.1,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "人大 RUCAIBox 提出 DS-MLP，质疑 CTR 模型里复杂特征交互模块的必要性。现有双流架构有两个毛病：显式特征交互复杂度高、易过拟合；显式/隐式两路输出不平衡，一路常主导最终预测。DS-MLP 用知识蒸馏把「学习显式特征交互」的能力压进一个主 MLP 网络，再用一条并行 MLP 捕获隐式交互，整体结构就是纯 MLP。在三个公开 benchmark 上达到 SOTA，论文已被 TKDD 接收，代码开源在 RUCAIBox/DS-MLP。",
+      "key_insight": "用知识蒸馏把显式特征交互的归纳偏置注入纯 MLP，绕开 cross-network / attention 这类高复杂度算子，是在推理延迟敏感的排序场景里值得试的简化路径。纯 MLP 主干对 serving 友好（算子简单、易量化、易上 GPU/CPU），对社区搜索这种 QPS 高、特征维度大的排序链路尤其有吸引力——先用复杂 teacher 训出交互能力，再蒸馏到轻量 student 上线。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.04944",
+        "title": "Dual-Stream MLP is All You Need for CTR Prediction",
+        "status": "completed",
+        "content": "## DS-MLP 深度解读：用知识蒸馏把特征交互压进纯 MLP\n\n### 1. 问题与动机\n\nCTR 预估里主流是\"双流\"架构（一路显式特征交互、一路隐式 DNN），但人大 RUCAIBox 指出两个毛病。其一**高复杂度**：直接枚举预定义阶数内的所有特征组合，特征空间随阶数指数膨胀，高阶交互建模代价极高且易过拟合。其二**两路融合失衡**：显式交互的输出数值范围会随参与特征数增多而被放大，隐式交互的输出则趋于衰减，导致某一路在特定情形下主导最终预测、压制另一路。作者由此质疑：是否真的需要专门的复杂交互算子，还是可以用结构最简单、工业最友好的 MLP 把交互能力\"学过来\"，从而在保住精度的同时大幅简化 serving。\n\n### 2. 方法详解\n\nDS-MLP 两阶段训练。**阶段一 知识蒸馏**：用一个强 teacher（GDCN，门控深度交叉网络，φ_GDCN=φ_GCN+φ_DNN）去教一个轻量主 MLP（student，三层 [600,600,600]）。蒸馏损失在 teacher 与 student 的目标知识间最小化 BCE，联合目标 L=L_CTR+λ·L_KD，λ 在 {0.1,0.5,1.0,1.5,10} 搜索。这一阶段把\"显式特征交互\"的归纳偏置注入主 MLP，teacher 冻结、只更新 student。**阶段二 双 MLP 对齐**：再加一条并行 MLP 捕获主流忽略的隐式交互，预测 ŷ_dual=σ((y_M+y_P)/2)。为防一路主导，设计两类对齐：(a) 隐状态对齐——对中间层做 batch normalization，把两路隐状态拉到可比尺度；(b) 预测对齐——分支各自的 CTR 损失强制一致性。组合损失 L=L_CTR+α·L_M+β·L_P，α,β∈[0.5,1.5]。梯度流上，主 MLP 只在阶段一更新（teacher 冻结），两路都在阶段二对齐阶段更新，利于分布式训练。整体框架 teacher-agnostic，可换任意 SOTA CTR 模型当 teacher；论文还给理论：在光滑性与过参数化假设下，MLP 可通过蒸馏以有界近似误差恢复显式特征交互——这是\"MLP is all you need\"标题的支撑。\n\n### 3. 核心技术贡献\n\n(1) **teacher 无关框架**：可插任意 SOTA CTR 模型作 teacher，保证方法不过时（future-proof）。(2) **知识固化**：用蒸馏把显式交互模式搬进主 MLP，不引入额外结构复杂度，单 embedding 表即可。(3) **双流对齐损失**：用隐状态 BN + 分支预测一致性两类对齐，解决输出主导、保证两路互补（主 MLP 学蒸馏来的显式交互，并行 MLP 学数据驱动的隐式交互）。(4) **理论支撑**：给出 MLP 在光滑性假设下恢复显式交互的有界误差论证。\n\n### 4. 实验结果分析\n\n三个公开基准：Criteo（4580 万样本、39 域、210 万特征）、Avazu（4040 万、22 域、150 万）、MovieLens（200 万、3 域、9 万），对比 20+ 方法（DCNv2、FinalMLP、GDCN、xDeepFM、AutoInt+、WuKong、SFG 等）。AUC/LogLoss：Criteo DS-MLP 0.8152/0.4366 优于 FinalMLP 0.8147、GDCN 0.8137；Avazu 0.7670/0.3657 优于 FinalMLP 0.7659；MovieLens 0.9752/0.1971 优于 FinalMLP 0.9716、GDCN 0.9685。绝对 AUC 增益 +0.0015(Criteo)/+0.0022(Avazu)/+0.0036(MovieLens)——在 CTR 领域 0.001 AUC 即被视为显著。消融（MovieLens）：去对齐损失 −0.49% AUC（影响最大）、去 student MLP −0.83%、去并行 MLP −0.62%、去 KD −0.37%，四个组件都不可省，对齐损失最关键，说明\"防两路失衡\"比\"加一路\"更重要。兼容性实验换 5 个 teacher（AutoInt 0.9688→0.9734、DCNv2 0.9690→0.9728、FinalMLP 0.9716→0.9752 等）均稳定提升（RelaImpr 0.4–3.6%）。效率上 DS-MLP 延迟 59.43ms(Criteo)/25.89ms(Avazu)，与 FinalMLP(56.71/21.03ms) 同量级，相对 teacher GDCN(45.02ms) 仅小幅开销。可扩展性上 GDCN 随参数增长饱和甚至下降，DS-MLP 通过加宽/加深隐层持续提升，显示更抗过拟合、scaling 更可控。\n\n### 5. 局限与未来方向\n\n作者未明列局限。可见约束：效果上界受 teacher 容量限制（teacher 弱则 student 弱）；λ、α、β 需按数据集调（Criteo/Avazu/MovieLens 各不同）；两阶段训练 + 并行 MLP 推理带来一定开销；理论保证依赖\"充分光滑\"与过参数化假设，实际不一定满足；缺少工业大规模在线 A/B 验证，目前为公开数据集结果。\n\n### 6. 工业实践意义\n\n对延迟敏感的排序链路，这是一条务实简化路径：**先用复杂 teacher（GDCN 等）训出交互能力，再蒸馏到纯 MLP student 上线**。纯 MLP 主干在现代深度学习库里高度优化、算子简单、易量化、易上 GPU/CPU，单 embedding 表即可，实现与维护成本低，延迟≤60ms（4580 万样本级），对社区搜索这种 QPS 高、特征维度大的排序场景尤其友好。可直接复用的设计点：用 teacher-agnostic 蒸馏替代手工设计交互算子，未来换更强 teacher 即可平滑升级；用隐状态 BN + 分支预测一致性两类对齐防止显式/隐式两路失衡——后者是很多双流模型上线后效果不稳的常见根因。代码已开源 RUCAIBox/DS-MLP，可低成本复现验证。落地需注意 λ/α/β 要在自有数据上重搜，且两阶段训练流程比单模型略重，需在训练管线里预留 teacher 训练与蒸馏两步。",
+        "content_html": "<h2>DS-MLP 深度解读：用知识蒸馏把特征交互压进纯 MLP</h2>\n<h3>1. 问题与动机</h3>\n<p>CTR 预估里主流是&quot;双流&quot;架构（一路显式特征交互、一路隐式 DNN），但人大 RUCAIBox 指出两个毛病。其一<strong>高复杂度</strong>：直接枚举预定义阶数内的所有特征组合，特征空间随阶数指数膨胀，高阶交互建模代价极高且易过拟合。其二<strong>两路融合失衡</strong>：显式交互的输出数值范围会随参与特征数增多而被放大，隐式交互的输出则趋于衰减，导致某一路在特定情形下主导最终预测、压制另一路。作者由此质疑：是否真的需要专门的复杂交互算子，还是可以用结构最简单、工业最友好的 MLP 把交互能力&quot;学过来&quot;，从而在保住精度的同时大幅简化 serving。</p>\n<h3>2. 方法详解</h3>\n<p>DS-MLP 两阶段训练。<strong>阶段一 知识蒸馏</strong>：用一个强 teacher（GDCN，门控深度交叉网络，φ_GDCN=φ_GCN+φ_DNN）去教一个轻量主 MLP（student，三层 [600,600,600]）。蒸馏损失在 teacher 与 student 的目标知识间最小化 BCE，联合目标 L=L_CTR+λ·L_KD，λ 在 {0.1,0.5,1.0,1.5,10} 搜索。这一阶段把&quot;显式特征交互&quot;的归纳偏置注入主 MLP，teacher 冻结、只更新 student。<strong>阶段二 双 MLP 对齐</strong>：再加一条并行 MLP 捕获主流忽略的隐式交互，预测 ŷ_dual=σ((y_M+y_P)/2)。为防一路主导，设计两类对齐：(a) 隐状态对齐——对中间层做 batch normalization，把两路隐状态拉到可比尺度；(b) 预测对齐——分支各自的 CTR 损失强制一致性。组合损失 L=L_CTR+α·L_M+β·L_P，α,β∈[0.5,1.5]。梯度流上，主 MLP 只在阶段一更新（teacher 冻结），两路都在阶段二对齐阶段更新，利于分布式训练。整体框架 teacher-agnostic，可换任意 SOTA CTR 模型当 teacher；论文还给理论：在光滑性与过参数化假设下，MLP 可通过蒸馏以有界近似误差恢复显式特征交互——这是&quot;MLP is all you need&quot;标题的支撑。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) <strong>teacher 无关框架</strong>：可插任意 SOTA CTR 模型作 teacher，保证方法不过时（future-proof）。(2) <strong>知识固化</strong>：用蒸馏把显式交互模式搬进主 MLP，不引入额外结构复杂度，单 embedding 表即可。(3) <strong>双流对齐损失</strong>：用隐状态 BN + 分支预测一致性两类对齐，解决输出主导、保证两路互补（主 MLP 学蒸馏来的显式交互，并行 MLP 学数据驱动的隐式交互）。(4) <strong>理论支撑</strong>：给出 MLP 在光滑性假设下恢复显式交互的有界误差论证。</p>\n<h3>4. 实验结果分析</h3>\n<p>三个公开基准：Criteo（4580 万样本、39 域、210 万特征）、Avazu（4040 万、22 域、150 万）、MovieLens（200 万、3 域、9 万），对比 20+ 方法（DCNv2、FinalMLP、GDCN、xDeepFM、AutoInt+、WuKong、SFG 等）。AUC/LogLoss：Criteo DS-MLP 0.8152/0.4366 优于 FinalMLP 0.8147、GDCN 0.8137；Avazu 0.7670/0.3657 优于 FinalMLP 0.7659；MovieLens 0.9752/0.1971 优于 FinalMLP 0.9716、GDCN 0.9685。绝对 AUC 增益 +0.0015(Criteo)/+0.0022(Avazu)/+0.0036(MovieLens)——在 CTR 领域 0.001 AUC 即被视为显著。消融（MovieLens）：去对齐损失 −0.49% AUC（影响最大）、去 student MLP −0.83%、去并行 MLP −0.62%、去 KD −0.37%，四个组件都不可省，对齐损失最关键，说明&quot;防两路失衡&quot;比&quot;加一路&quot;更重要。兼容性实验换 5 个 teacher（AutoInt 0.9688→0.9734、DCNv2 0.9690→0.9728、FinalMLP 0.9716→0.9752 等）均稳定提升（RelaImpr 0.4–3.6%）。效率上 DS-MLP 延迟 59.43ms(Criteo)/25.89ms(Avazu)，与 FinalMLP(56.71/21.03ms) 同量级，相对 teacher GDCN(45.02ms) 仅小幅开销。可扩展性上 GDCN 随参数增长饱和甚至下降，DS-MLP 通过加宽/加深隐层持续提升，显示更抗过拟合、scaling 更可控。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者未明列局限。可见约束：效果上界受 teacher 容量限制（teacher 弱则 student 弱）；λ、α、β 需按数据集调（Criteo/Avazu/MovieLens 各不同）；两阶段训练 + 并行 MLP 推理带来一定开销；理论保证依赖&quot;充分光滑&quot;与过参数化假设，实际不一定满足；缺少工业大规模在线 A/B 验证，目前为公开数据集结果。</p>\n<h3>6. 工业实践意义</h3>\n<p>对延迟敏感的排序链路，这是一条务实简化路径：<strong>先用复杂 teacher（GDCN 等）训出交互能力，再蒸馏到纯 MLP student 上线</strong>。纯 MLP 主干在现代深度学习库里高度优化、算子简单、易量化、易上 GPU/CPU，单 embedding 表即可，实现与维护成本低，延迟≤60ms（4580 万样本级），对社区搜索这种 QPS 高、特征维度大的排序场景尤其友好。可直接复用的设计点：用 teacher-agnostic 蒸馏替代手工设计交互算子，未来换更强 teacher 即可平滑升级；用隐状态 BN + 分支预测一致性两类对齐防止显式/隐式两路失衡——后者是很多双流模型上线后效果不稳的常见根因。代码已开源 RUCAIBox/DS-MLP，可低成本复现验证。落地需注意 λ/α/β 要在自有数据上重搜，且两阶段训练流程比单模型略重，需在训练管线里预留 teacher 训练与蒸馏两步。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2510.10127",
+      "title": "Breaking the Likelihood Trap: Consistent Generative Recommendation with Graph-structured Model",
+      "url": "https://arxiv.org/abs/2510.10127",
+      "authors": "Qiya Yang, Xiaoxi Liang, Zeping Xiao, Ying Cao, Yingjie Deng, Yuxin Ren, Yalong Wang, Yongqi Liu",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-04",
+      "total_score": 4.0,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "重排（reranking）决定最终曝光。生成式重排把重排建模成整段序列生成，但存在「似然陷阱」：高似然序列往往重复单调、人感知质量差，反而压低用户参与。快手提出 CONGRATS：用图结构模型替代线性自回归解码，通过图上多路径探索扩大解码空间、提升序列多样性，同时用图转移显式建模 item 间依赖来提升预测准确性；再配一个可微的一致性训练（带 evaluator）直接从用户偏好学习。离线优于现有重排方法，已在快手（日活 3 亿+）线上验证，论文被 KDD 2026 接收。",
+      "key_insight": "似然陷阱是生成式重排/生成式推荐的共性坑：最大似然解码偏好「安全但重复」的序列，与真实用户体验（要多样、要新鲜）背离。CONGRATS 把自回归链式解码换成图结构多路径解码 + 用 evaluator 做偏好对齐，相当于在生成端同时引入多样性与一致性约束。对做生成式重排/list-wise 排序的团队，这是一个直接可借鉴的解码结构改造，而非简单加多样性正则。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.04547",
+      "title": "Beyond Retrieval: Learning Compact User Representations for Scalable LLM Personalization",
+      "url": "https://arxiv.org/abs/2606.04547",
+      "authors": "Heng Cao, Fan Zhang, Jian Yao, Yujie Zheng, ..., Wangze Ni, Xuyan Mo",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-04",
+      "total_score": 4.0,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM 个性化现有两条路都有短板：输入级（检索用户历史 / 拼 profile prompt）依赖检索质量和 prompt 设计；参数级（每个用户存一个 PEFT 模块）存储维护成本随用户量线性增长。本文提出 TAP-PER（Temporal Attentive Prefix for PERsonalization），把用户偏好编码成可学习的 prefix 表征，省掉显式 prompt 构造，也用轻量「用户状态 prefix embedding」替代每用户一个 adapter，并把用户建模拆成 user-state 与 query-conditioned 两部分、引入时序信号捕获兴趣演化。在 6 个 LaMP 任务（分类/打分/生成）上优于基线，per-user 参数比 OPPU 少 130×，千用户规模下总参数量约为 PER-PCS 的一半。",
+      "key_insight": "把「每用户一个 adapter」换成「每用户一个轻量 prefix 表征」，是 LLM 个性化在大规模用户下控存储成本的关键设计——参数从 O(用户数 × adapter) 降到 O(用户数 × prefix 维度)。user-state（长期偏好）与 query-conditioned（当前意图）解耦 + 时序 attention，思路和推荐里的长期/短期兴趣建模一致。对社区做个性化 LLM 搜索/问答的场景，这套 prefix 化用户状态的方案比拼长 prompt 更省 token、更易扩展。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.04514",
+      "title": "SAILRec: Steering LLM Attention to Dual-Side Semantically Aligned Collaborative Embeddings for Recommendation",
+      "url": "https://arxiv.org/abs/2606.04514",
+      "authors": "Xi Wu, Jiale Wang, Zihan Wang, Yichen Gao, Xiaocui Yang, Shi Feng, Daling Wang, Yifei Zhang",
+      "company": [
+        "Northeastern University"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-04",
+      "total_score": 3.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM 推荐里给模型喂了协同过滤 embedding，不等于模型在推理时真用上了它。作者做了一个 attention 诊断分析，发现协同 embedding 的利用是深度依赖、对齐敏感的：浅层会过早引入协同干扰，深层才该让协同证据起决策作用。SAILRec 据此做两件事：双侧语义对齐（item 侧 embedding 对齐 item 文本语义，user 侧对齐基于 codebook 的语义画像）+ 分层注意力引导（抑制浅层协同干扰、强化深层协同证据）。在 MovieLens-1M 和 Amazon-Book 上稳定优于代表性基线。",
+      "key_insight": "把协同信号塞给 LLM，和 LLM 真正在正确的层用上协同信号，是两回事——这个 attention 诊断视角对所有做 LLM+ID / 协同 embedding 融合的工作都有提示：融合位置和层次比是否融合更关键。双侧对齐（item 对文本、user 对语义画像 codebook）+ 分层注意力引导，提供了一个让协同 embedding 在 LLM 内部「该浅则抑、该深则用」的可操作机制。当前为公开学术数据集验证，工业级规模与在线效果尚待检验。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:zaydmulani09/mnemo",
+      "title": "mnemo: Local-first AI memory layer for any LLM. Persistent knowledge graph, entity extraction, semantic retrieval. Works with Ollama, OpenAI, Anthropic, or any OpenAI-compatible backend.",
+      "url": "https://github.com/zaydmulani09/mnemo",
+      "source": "github",
+      "description": "Local-first AI memory layer for any LLM. Persistent knowledge graph, entity extraction, semantic retrieval. Works with Ollama, OpenAI, Anthropic, or any OpenAI-compatible backend.",
+      "language": "Rust",
+      "stars": 149,
+      "created_at": "2026-06-02"
+    },
+    {
+      "rank": 2,
+      "id": "github:SaqlainXoas/llm-system-patterns",
+      "title": "llm-system-patterns: A docs-first guide to LLM system design — hybrid search, embedding pipelines, reranking, and LLM-as-judge patterns.",
+      "url": "https://github.com/SaqlainXoas/llm-system-patterns",
+      "source": "github",
+      "description": "A docs-first guide to LLM system design — hybrid search, embedding pipelines, reranking, and LLM-as-judge patterns.",
+      "language": "",
+      "stars": 11,
+      "created_at": "2026-06-04"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "language": "model",
+      "stars": 106,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash",
+      "title": "stepfun-ai/Step-3.7-Flash",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, step3p7, text-generation, vision-language, multimodal, moe, image-text-to-text",
+      "language": "model",
+      "stars": 249,
+      "created_at": "2026-05-23"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:internlm/Intern-S2-Preview",
+      "title": "internlm/Intern-S2-Preview",
+      "url": "https://huggingface.co/internlm/Intern-S2-Preview",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, intern_s2_preview, image-text-to-text, conversational, custom_code, license:apache-2.0, eval-results",
+      "language": "model",
+      "stars": 103,
+      "created_at": "2026-05-15"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-NVFP4",
+      "title": "stepfun-ai/Step-3.7-Flash-NVFP4",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-NVFP4",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, step3p7, text-generation, vision-language, multimodal, moe, image-text-to-text",
+      "language": "model",
+      "stars": 41,
+      "created_at": "2026-05-27"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-FP8",
+      "title": "stepfun-ai/Step-3.7-Flash-FP8",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-FP8",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, step3p7, text-generation, vision-language, multimodal, moe, image-text-to-text",
+      "language": "model",
+      "stars": 13,
+      "created_at": "2026-05-23"
+    }
+  ]
+}

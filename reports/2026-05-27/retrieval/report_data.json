@@ -1,0 +1,295 @@
+{
+  "date": "2026-05-27",
+  "track": "retrieval",
+  "scenario": "搜索相关性与召回/重排：query understanding、dense/sparse retrieval、embedding 模型、learning to rank、re-ranking、semantic matching",
+  "stats": {
+    "papers_scored": 66,
+    "papers_selected": 10,
+    "score_min": 3.3,
+    "score_max": 4.2
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2605.25486",
+      "title": "RAG-Match: Retrieval-Augmented Knowledge Injection and Hierarchical Reasoning for Calibrated Semantic Relevance",
+      "url": "https://arxiv.org/abs/2605.25486",
+      "authors": "Hengjie Cao 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 4.2,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "针对知识密集型场景中相关性判别需要背景知识、多步推理和决策校准的痛点，论文提出 RAG-Match 三阶段框架：第一阶段做知识增强预训练，将检索到的外部知识与 query 一同注入，强化以 query 为中心的语义 grounding；第二阶段做分层推理对齐，将相关性判别拆为「事实/语义/意图」三层逐步对齐；第三阶段在难分边界样本上做 preference-based 偏好校准，纠正模型在 4 档相关性等级之间的决策抖动。在真实搜索相关性数据集上一致优于 BERT、cross-encoder 与直接 prompt LLM 的基线。",
+      "key_insight": "把「相关性判别」拆成 grounding→reasoning→calibration 三阶段，是当前 LLM 用于搜索精排的一个很值得借鉴的范式：第一阶段解决「知识不全」，第二阶段解决「推理跳跃」，第三阶段解决「边界抖动」。对实际搜索系统而言，最具落地性的是第三阶段——大多数 LLM relevance scorer 上线时都会在 3 vs 4 这种相邻档之间出现一致性问题，论文用偏好对样本做 DPO-style 校准的做法可以直接复用到现有 cross-encoder 上而无需重训主干。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.25486",
+        "title": "RAG-Match: Retrieval-Augmented Knowledge Injection and Hierarchical Reasoning for Calibrated Semantic Relevance",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n论文聚焦的是知识密集型搜索场景下的「语义相关性判别」问题——既要做 query-doc 语义匹配，又要同时具备背景知识 grounding、多步推理与决策边界校准三种能力。作者明确点出当前两类方法的失效模式：传统神经精排在改写、隐式意图、事实等价上吃力；直接 prompt LLM 则表现出「intermediate reasoning 不稳定、幻觉式约束、对关键词高重合文档过度打分」三种典型病。另外，作者驳斥了「只靠 inference-time RAG 就能解决」的直觉——context window 长度、推理延迟和「短暂性 in-context 知识」让 RAG 提示无法成为可上线的精排方案。论文的核心定位是：把外部知识在训练期注入模型权重，把多步推理在中期对齐到一套结构化框架，再用偏好优化修正最后的决策抖动，从而能直接出一个不依赖 runtime RAG 的可上线 8B reranker。\n\n## 2. 方法详解\n\nRAG-Match 是三阶段框架，主干用 Qwen3-Reranker-8B。\n\n**Phase I：Query-to-Synthesized-Document 预训练。** 用 1,000 万条历史 query，对每条 q_i 用召回器拿 top-k 证据 ℰ_i，然后由 RAG generator G_RAG 合成一段 query-centered 文档 s_i = G_RAG(q_i, ℰ_i)。训练目标是标准的条件自回归似然：ℒ_pre = -E[Σ_t log p_θ(s_t | s_{<t}, q)]。作者强调这一步不是把模型变成 generator，而是用「query→合成文档」的生成式监督把外部知识沉淀到权重里，得到比纯对比学习更密、更结构化的信号。\n\n**Phase II：Hierarchical Reasoning Alignment（25,102 样本，GPT-5.2 当 teacher）。** 拆成两段。Stage A（KIG，Knowledge-Infused Grounding）把 (q, s) 映射为 6 字段结构化表示 𝐆 = [I, T, O, E, C, S]：意图 I、答案类型 T、核心对象 O、最小答案元素 E、关键约束 C、知识概要 S。Stage B（HMDA）输入候选 d 与 𝐆，沿 Intent Consistency / Entity Fidelity / Logical Completeness / Information Density 四个维度产出 alignment rationale 𝐀。最终 SFT 目标是 ℒ_sft = -E log p_θ(t|x)，其中 x=(q,d)、t=(𝐆,𝐀,y)，让模型同时学到 grounding 框架、分维度推理过程和最终标签。\n\n**Phase III：Discrepancy-Guided Preference Optimization（DGPO，3,000 人工标注样本）。** 构造「相邻等级混淆」偏好对：preferred 轨迹 (y_w, r_w) 与 gold 一致、dispreferred 轨迹 (y_l, r_l) 看似合理但等级偏移。使用 DPO 损失 ℒ_dpo = -E log σ(β·h(y_w,r_w) - β·h(y_l,r_l))，其中 h(y,r) = log[π_θ(y,r|q,d) / π_ref(y,r|q,d)]，β=0.1。作者额外加了一个 auxiliary 标签预测项 ℒ_dpo+ = ℒ_dpo - E log π_θ(y_w|q,d) 来锐化决策边界。\n\n## 3. 核心技术贡献\n\n（1）**Query-to-Synthesized-Document 预训练目标**：用 G_RAG 合成「query-centered」长文档作为预训练目标，比直接拿被检索文档做 MLM 更对齐相关性任务，从消融上看单 Phase I 带来 +0.029 NDCG@1（相对 Phase II baseline）。\n（2）**6 字段 KIG + 4 维 HMDA 的层次推理对齐**：把模糊的「相关性判断」结构化为「先抽 query 6 要素，再分 4 维评估候选」。Stage A 单独贡献 +0.013 NDCG@1、+0.011 nPNR，证明 query 侧的结构化 grounding 不只是中间产物，确实改善了最终决策。\n（3）**Discrepancy-Guided Preference Optimization**：精准对准「相邻档混淆」而非泛化偏好，OverScore Rate 从 0.5023 降到 0.3356，Mean Score Bias 从 0.5602 砍到 0.2378，UnderScore Rate 小幅上升到 0.1423——典型的「拉直了过度乐观」的校准曲线。\n（4）**teacher 不会被噪声拖垮的训练范式**：GPT-5.2 teacher 的 CoT 准确率 93.3% 但最终标签准确率只有 76.6%；论文用 Phase II 学高质量推理路径、用 Phase III 用人工标注做最终校准，分工明确，避开了「teacher label 噪声直接传递给 student」的陷阱。\n\n## 4. 实验结果分析\n\n测试集 1,728 条 query-doc pair 来自 300 条 query，标签分布 Excellent 13.6% / Good 32.2% / Fair 23.7% / Irrelevant 30.6%。主结果对比四个同量级 8-9B 模型（DeepSeek-R1-0528、GLM-4-9B-0414、MiniMax-SynLogic、Qwen3-8B-Reranker，均做 label-only SFT）：\n\n| Model | NDCG@1 | NDCG@3 | NDCG@10 | nPNR |\n|---|---|---|---|---|\n| GLM-4-9B（最强 baseline）| 0.846 | 0.877 | 0.915 | 0.801 |\n| Qwen3-8B-Reranker | 0.826 | 0.878 | 0.912 | 0.796 |\n| **RAG-Match (8B)** | **0.902** | **0.907** | **0.935** | **0.833** |\n\nNDCG@1 相对最强 baseline +0.056（+6.6%），nPNR +0.032（+4.0%）。\n\n消融（Table 3）有几个反直觉的数：\n- 纯 Qwen3-8B-Reranker（label-only SFT）：NDCG@1 = 0.826；\n- 加 Phase II Hierarchical Reasoning：→ 0.853（+0.027）；\n- 再加 Phase I 预训练：→ 0.882（+0.029），nPNR 反而原地（0.809），说明 Phase I 主要在「头部 NDCG」上发力；\n- 再加 Phase III DGPO：→ 0.902、nPNR 0.833（+0.024）。\n\nPhase III 的校准表（Table 5）是这篇最有说服力的一组数：OverScore 50.23%→33.56%，Mean Bias 0.5602→0.2378，UnderScore 0.0683→0.1423。模型从「系统性给高分」转向「平衡但略保守」，这正是上线相关性模型最需要的特性——分数分布稳，才能稳定阈值与降级策略。\n\n## 5. 局限与未来方向\n\n作者自己列了四条：（1）召回噪声会同时污染 grounding 和 reasoning；（2）多阶段训练 + teacher 生成监督的标注/计算成本远高于单阶段 SFT；（3）极难样本仍有残余不确定性，尤其在证据不全或相关性边界本身模糊时；（4）作者侧重训练侧设计，对推理期延迟未做系统讨论——Phase II 让模型必须输出 6 字段 grounding + 4 维 alignment rationale + 标签，长度远超直接 label-only reranker，对在线 latency 是个明显隐忧。论文没提的另一个隐忧是 GPT-5.2 teacher 的可获得性：把 25K 样本的 CoT 委托给商用大模型在公司侧合规与成本上都不轻松，社区复现还要看是否能换成 Qwen3-235B-Instruct 或类似自家模型。\n\n## 6. 工业实践意义\n\n对搜索/推荐精排团队，这篇有三条可立刻借鉴的技术资产：\n\n（1）**「相邻档校准」单点最值钱**。即便不重做 Phase I/II，仅用 3K 人工标注做 DPO 风格的 boundary calibration，就能把 OverScore Rate 砍掉约 17 个百分点。任何已经上线的 LLM-as-reranker，下一步都应该做这件事——可以直接套用论文的偏好对构造方式：保留模型自己的 CoT 当 trajectory，只翻转最终 label。\n\n（2）**KIG 6 字段（I/T/O/E/C/S）是非常通用的 query understanding 中间表征**。把它落到自家 query understanding 服务里，对下游召回、改写、阶层路由都是好用的结构。即便不上 RAG-Match 整套，单独蒸馏出一个 8B 的 KIG 模型也比传统 NER+intent 分类器表达力强。\n\n（3）**Phase I 的「query→合成文档」预训练目标值得对齐到自家场景**。如果有几千万真实 query log，可以用现成 RAG 流水线合成 query-centered 文档，再拿 LLM 做 continual pretraining，作为 reranker 主干的初始化。比直接拿原始 doc 做 MLM 更接近最终任务。\n\n部署侧需要注意：8B 模型 + 长 rationale 输出在线 latency 不便宜；上线方式建议是 (a) 离线做 top-K 集中精排或人工标注辅助，(b) 在线只用蒸馏后的轻量版本，或者只在 top-K 极小（K≤20）的链路里启用。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>论文聚焦的是知识密集型搜索场景下的「语义相关性判别」问题——既要做 query-doc 语义匹配，又要同时具备背景知识 grounding、多步推理与决策边界校准三种能力。作者明确点出当前两类方法的失效模式：传统神经精排在改写、隐式意图、事实等价上吃力；直接 prompt LLM 则表现出「intermediate reasoning 不稳定、幻觉式约束、对关键词高重合文档过度打分」三种典型病。另外，作者驳斥了「只靠 inference-time RAG 就能解决」的直觉——context window 长度、推理延迟和「短暂性 in-context 知识」让 RAG 提示无法成为可上线的精排方案。论文的核心定位是：把外部知识在训练期注入模型权重，把多步推理在中期对齐到一套结构化框架，再用偏好优化修正最后的决策抖动，从而能直接出一个不依赖 runtime RAG 的可上线 8B reranker。</p>\n<h2>2. 方法详解</h2>\n<p>RAG-Match 是三阶段框架，主干用 Qwen3-Reranker-8B。</p>\n<p><strong>Phase I：Query-to-Synthesized-Document 预训练。</strong> 用 1,000 万条历史 query，对每条 q_i 用召回器拿 top-k 证据 ℰ_i，然后由 RAG generator G_RAG 合成一段 query-centered 文档 s_i = G_RAG(q_i, ℰ_i)。训练目标是标准的条件自回归似然：ℒ_pre = -E[Σ_t log p_θ(s_t | s_{&lt;t}, q)]。作者强调这一步不是把模型变成 generator，而是用「query→合成文档」的生成式监督把外部知识沉淀到权重里，得到比纯对比学习更密、更结构化的信号。</p>\n<p><strong>Phase II：Hierarchical Reasoning Alignment（25,102 样本，GPT-5.2 当 teacher）。</strong> 拆成两段。Stage A（KIG，Knowledge-Infused Grounding）把 (q, s) 映射为 6 字段结构化表示 𝐆 = [I, T, O, E, C, S]：意图 I、答案类型 T、核心对象 O、最小答案元素 E、关键约束 C、知识概要 S。Stage B（HMDA）输入候选 d 与 𝐆，沿 Intent Consistency / Entity Fidelity / Logical Completeness / Information Density 四个维度产出 alignment rationale 𝐀。最终 SFT 目标是 ℒ_sft = -E log p_θ(t|x)，其中 x=(q,d)、t=(𝐆,𝐀,y)，让模型同时学到 grounding 框架、分维度推理过程和最终标签。</p>\n<p><strong>Phase III：Discrepancy-Guided Preference Optimization（DGPO，3,000 人工标注样本）。</strong> 构造「相邻等级混淆」偏好对：preferred 轨迹 (y_w, r_w) 与 gold 一致、dispreferred 轨迹 (y_l, r_l) 看似合理但等级偏移。使用 DPO 损失 ℒ_dpo = -E log σ(β·h(y_w,r_w) - β·h(y_l,r_l))，其中 h(y,r) = log[π_θ(y,r|q,d) / π_ref(y,r|q,d)]，β=0.1。作者额外加了一个 auxiliary 标签预测项 ℒ_dpo+ = ℒ_dpo - E log π_θ(y_w|q,d) 来锐化决策边界。</p>\n<h2>3. 核心技术贡献</h2>\n<p>（1）<strong>Query-to-Synthesized-Document 预训练目标</strong>：用 G_RAG 合成「query-centered」长文档作为预训练目标，比直接拿被检索文档做 MLM 更对齐相关性任务，从消融上看单 Phase I 带来 +0.029 NDCG@1（相对 Phase II baseline）。<br>（2）<strong>6 字段 KIG + 4 维 HMDA 的层次推理对齐</strong>：把模糊的「相关性判断」结构化为「先抽 query 6 要素，再分 4 维评估候选」。Stage A 单独贡献 +0.013 NDCG@1、+0.011 nPNR，证明 query 侧的结构化 grounding 不只是中间产物，确实改善了最终决策。<br>（3）<strong>Discrepancy-Guided Preference Optimization</strong>：精准对准「相邻档混淆」而非泛化偏好，OverScore Rate 从 0.5023 降到 0.3356，Mean Score Bias 从 0.5602 砍到 0.2378，UnderScore Rate 小幅上升到 0.1423——典型的「拉直了过度乐观」的校准曲线。<br>（4）<strong>teacher 不会被噪声拖垮的训练范式</strong>：GPT-5.2 teacher 的 CoT 准确率 93.3% 但最终标签准确率只有 76.6%；论文用 Phase II 学高质量推理路径、用 Phase III 用人工标注做最终校准，分工明确，避开了「teacher label 噪声直接传递给 student」的陷阱。</p>\n<h2>4. 实验结果分析</h2>\n<p>测试集 1,728 条 query-doc pair 来自 300 条 query，标签分布 Excellent 13.6% / Good 32.2% / Fair 23.7% / Irrelevant 30.6%。主结果对比四个同量级 8-9B 模型（DeepSeek-R1-0528、GLM-4-9B-0414、MiniMax-SynLogic、Qwen3-8B-Reranker，均做 label-only SFT）：</p>\n<table><thead><tr><th>Model</th><th>NDCG@1</th><th>NDCG@3</th><th>NDCG@10</th><th>nPNR</th></tr></thead><tbody><tr><td>GLM-4-9B（最强 baseline）</td><td>0.846</td><td>0.877</td><td>0.915</td><td>0.801</td></tr><tr><td>Qwen3-8B-Reranker</td><td>0.826</td><td>0.878</td><td>0.912</td><td>0.796</td></tr><tr><td><strong>RAG-Match (8B)</strong></td><td><strong>0.902</strong></td><td><strong>0.907</strong></td><td><strong>0.935</strong></td><td><strong>0.833</strong></td></tr></tbody></table>\n<p>NDCG@1 相对最强 baseline +0.056（+6.6%），nPNR +0.032（+4.0%）。</p>\n<p>消融（Table 3）有几个反直觉的数：</p>\n<ul>\n<li>纯 Qwen3-8B-Reranker（label-only SFT）：NDCG@1 = 0.826；</li>\n<li>加 Phase II Hierarchical Reasoning：→ 0.853（+0.027）；</li>\n<li>再加 Phase I 预训练：→ 0.882（+0.029），nPNR 反而原地（0.809），说明 Phase I 主要在「头部 NDCG」上发力；</li>\n<li>再加 Phase III DGPO：→ 0.902、nPNR 0.833（+0.024）。</li>\n</ul>\n<p>Phase III 的校准表（Table 5）是这篇最有说服力的一组数：OverScore 50.23%→33.56%，Mean Bias 0.5602→0.2378，UnderScore 0.0683→0.1423。模型从「系统性给高分」转向「平衡但略保守」，这正是上线相关性模型最需要的特性——分数分布稳，才能稳定阈值与降级策略。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者自己列了四条：（1）召回噪声会同时污染 grounding 和 reasoning；（2）多阶段训练 + teacher 生成监督的标注/计算成本远高于单阶段 SFT；（3）极难样本仍有残余不确定性，尤其在证据不全或相关性边界本身模糊时；（4）作者侧重训练侧设计，对推理期延迟未做系统讨论——Phase II 让模型必须输出 6 字段 grounding + 4 维 alignment rationale + 标签，长度远超直接 label-only reranker，对在线 latency 是个明显隐忧。论文没提的另一个隐忧是 GPT-5.2 teacher 的可获得性：把 25K 样本的 CoT 委托给商用大模型在公司侧合规与成本上都不轻松，社区复现还要看是否能换成 Qwen3-235B-Instruct 或类似自家模型。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐精排团队，这篇有三条可立刻借鉴的技术资产：</p>\n<p>（1）<strong>「相邻档校准」单点最值钱</strong>。即便不重做 Phase I/II，仅用 3K 人工标注做 DPO 风格的 boundary calibration，就能把 OverScore Rate 砍掉约 17 个百分点。任何已经上线的 LLM-as-reranker，下一步都应该做这件事——可以直接套用论文的偏好对构造方式：保留模型自己的 CoT 当 trajectory，只翻转最终 label。</p>\n<p>（2）<strong>KIG 6 字段（I/T/O/E/C/S）是非常通用的 query understanding 中间表征</strong>。把它落到自家 query understanding 服务里，对下游召回、改写、阶层路由都是好用的结构。即便不上 RAG-Match 整套，单独蒸馏出一个 8B 的 KIG 模型也比传统 NER+intent 分类器表达力强。</p>\n<p>（3）<strong>Phase I 的「query→合成文档」预训练目标值得对齐到自家场景</strong>。如果有几千万真实 query log，可以用现成 RAG 流水线合成 query-centered 文档，再拿 LLM 做 continual pretraining，作为 reranker 主干的初始化。比直接拿原始 doc 做 MLM 更接近最终任务。</p>\n<p>部署侧需要注意：8B 模型 + 长 rationale 输出在线 latency 不便宜；上线方式建议是 (a) 离线做 top-K 集中精排或人工标注辅助，(b) 在线只用蒸馏后的轻量版本，或者只在 top-K 极小（K≤20）的链路里启用。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2605.25092",
+      "title": "AgentIR: A Workload-Adaptive Cascade Retrieval Substrate for Long-Term Conversational Memory",
+      "url": "https://arxiv.org/abs/2605.25092",
+      "authors": "Aojie Lian 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "面向长程对话记忆这种「索引在线增长、query 类型 session 内漂移、单次检索预算 sub-10ms」的非经典 IR 负载，论文提出 AgentIR：在 BM25/Dense/RRF/agent-aware RRF 这四种 fusion 中按 query 自适应路由，并用一个 confidence-triggered cascade router 仅基于 BM25 top-k margin 决定是否调用 ~52ms 的 dense channel。在 LongMemEval (n=500) 上，cascade 在等价 LLM-as-judge 准确率下跳过 63% 的 query，整体提速 2.67×（双 judge bootstrap p≥0.88）；按 qtype 调阈值后提速进一步到 5.76×；在 LoCoMo 上同样验证了该结论。",
+      "key_insight": "「dense channel 不是每个 query 都值得跑」这件事在工业搜索其实早就被验证过（粗排-精排截断），但 AgentIR 把它进一步精细化为「仅看 BM25 top-k margin 就能预测 dense 是否会改变结论」，并给出了无需重训、可跨 workload 迁移的简单阈值。对接入 Agent 长期记忆的检索系统而言，这是把 latency 预算从「每 query 都付 dense 钱」改成「仅 37% 付钱」的现成路径——按目前 vector retrieval QPS 成本结构，单这一项就能砍掉一半以上的在线推理预算。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.25092",
+        "title": "AgentIR: A Workload-Adaptive Cascade Retrieval Substrate for Long-Term Conversational Memory",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n经典 IR 的核心假设——索引是静态的、查询是 stateless 的、查询延迟可以摊到 ~200ms 网络搜索预算——在 Agent 长程记忆场景下全部失效：\n\n- **索引非静态**：Memory 随对话流单调增长，Agent 每步写入一条记录，繁忙时段 10+ 条/分钟，破坏 Lucene-class 引擎的\"构建-查询分离\"摊销假设。\n- **查询非平稳**：单个 800 轮的 session 内会混杂事实查找、多跳推理、时间推理三类查询，\"没有任何单一融合策略能在三者上同时最优\"。\n- **延迟预算极紧**：Agent 推理循环每步会调用 5–20 次检索，单次必须 ≤10ms，而 web search 通常给的预算是 200ms。\n\n定量证据：LongMemEval 上 gold session 的中位数归一化排名仅 0.20–0.27（temporal / knowledge / multi-session 三类问题），说明 Agent 记忆查询在时间维度高度集中，经典引擎完全没有利用这一结构。\n\n## 2. 方法详解\n\nAgentIR 在两条决策轴上设计：\n\n**第一轴：哪种融合策略**——BM25 alone / Dense (HNSW) / RRF / agent-aware RRF（融合词法+语义+时间衰减）。\n**第二轴：是否触发约 52ms 的 dense 通道**——用最廉价的 BM25 top-k margin 信号判定：\n\n```\nΔ = s₁ − s₂ ≥ τc  → 跳过 dense，直接返回 BM25\nΔ < τc           → 升级到 Dense + RRF + recency\n```\n\nAgent-aware 评分函数为加性结构：\n\n```\nscore(d, q) = RRF(r_sparse, r_dense) + α · exp(−Δt / τ) + β · w_d\n```\n\n其中 Δt 是文档年龄，τ 是衰减时间尺度，w_d ∈ [0,1] 是 per-record 重要性。α 选择远小于 max(RRF)，让 recency 项只起 tie-breaker 作用。\n\n**温度分区索引（Theorem 4.1）**：在指数 recency 偏置 πᵢ ∝ e^(−λ(K−i)) 下，搜索到累计概率 1−ε 的期望工作量为 W(ε) ≤ ⌈log(1/ε)/λ⌉ · max|Tᵢ|，与全语料大小无关。在 5M 记录、7 天为一分区时，实测 λ≈1.7，ε=0.05 下只需查 k*≈3 个分区。\n\n实现栈：CPU 路径用 SIMD（AVX2）+ MaxScore + 8 线程；GPU 路径用 NVIDIA A100；dense 编码用 BGE-small；LLM 评判用 gpt-4o-mini 和 gpt-4o。\n\n## 3. 核心技术贡献\n\n1. **Workload-conditional fusion**：把\"用哪种 fusion / 跑不跑 dense\"作为 per-query 决策，而不是系统级超参。这一抽象是后续两个收益的前提。\n2. **BM25-margin 级联触发器**：用 top-1/top-2 BM25 分差 Δ 做触发，无需训练任何分类器、无需特征工程，跨 workload 自适应。在 LongMemEval 上拿到 2.67× 提速，在 LoCoMo 同样的 trigger 自动选择 BM25-only 跳过 dense，拿到 132× 提速——同一组件，两套行为。\n3. **温度分区 + 期望工作量定理**：把\"近期记忆更可能被检索\"这一经验事实形式化为可证明的 sublinear scaling，5M 文档对比顺序扫描达到 1769× 加速，且 corpus 增大 1234× 时延迟只增 3.6×。\n4. **CPU SIMD + MaxScore + 多线程组合优化**：让 commodity 8 核 x86 在 BEIR 上相对 Pyserini Lucene 8T 拿到 10× 几何平均提速，nDCG@10 仍在 ±0.020 内。\n\n## 4. 实验结果分析\n\n**BEIR 检索质量**（vs Pyserini Lucene 8T）：AgentIR BM25 在 5 个数据集胜出（TREC-COVID +0.051、ArguAna +0.077），4 个数据集差 0.003–0.020（FiQA/Quora/NQ/MS MARCO，源于 NLTK Porter vs. Lucene StandardTokenizer 差异）。RRF + BGE-small dense 相对 BM25-only 平均 +0.033 nDCG@10。\n\n**LongMemEval (n=500)**：\n- 基线 RRF+Recency：R@10=0.978，LLM-Acc=0.254\n- TF-IDF Router：LLM-Acc=0.262，分类器开销 <<1ms\n- TF-IDF + BGE：LLM-Acc=0.300（达到 gpt-4o 的 oracle bound）\n- 单阈值级联（τc=0.10）：19.9ms vs 53.2ms always-hybrid → **2.67× 加速**，准确率与 agent_rrf 基线持平，跳过率 63%\n- 分 qtype 阈值（5-fold CV）：9.2ms 均值 → **5.76× 加速**，准确率仍在 noise band 内；不同 qtype 最优 τ 差异大（multi-session 需要 τ≥120d，其他 <60d）\n\n**LoCoMo 自动调优**：同一 trigger 自动落到 BM25-only，跳过率 100%，Hit@5 提升 +0.089，**132× 加速**——展示跨 workload 零重训迁移能力。\n\n**温度分区扩展实验（合成 80/20 recency）**：4K→5M 文档时，sequential 159ms→延迟，temporal 仅 90µs，**1769×** 加速。\n\n**800 轮 session 模拟**（Table 3）：sequential 459.2s 总耗时、75.5% step 超 200ms 预算；temporal partition 仅 0.43s 总耗时、p99=1.23ms、**0% 超预算**——这是 Agent 推理循环唯一能用的策略。\n\n**正确性验证**：CPU vs GPU 在 8 个 BEIR 数据集上 nDCG@10 差异 ≤0.0002，top-10 集合在 1T/4T/8T 配置下完全一致。\n\n**消融**（NQ, 2.7M）：scalar baseline 67.6ms → +SIMD 6.6ms (10.2×) → +MaxScore 4.2ms (1.6×) → +8T 1.4ms (3×)，累计 **49×**。\n\n## 5. 局限与未来方向\n\n作者明确指出的限制：\n\n1. **Recency 假设依赖**：温度分区只在指数 recency skew 下有效；对 flat 分布（LoCoMo 的单 session 查询）需要回退到非分区索引。\n2. **Tokenization gap**：NLTK Porter 词干化与 Lucene StandardTokenizer 在数字 ticker / 所有格 / 连字符上行为不同，导致 FiQA/Quora/NQ/MS MARCO 上 0.003–0.020 的 nDCG 损失。\n3. **GPU 显存瓶颈**：MS MARCO 8.8M 文档 k=100 时超过 16GB 单卡 batch，需要 multi-GPU sharding（未做）。\n4. **Dense 编码本身是瓶颈**：BGE-small CPU 编码 ~170ms，让 cascade gating 几乎是必需而非可选。\n5. **Per-qtype 阈值需要标注**：每类需要 50–100 条带 label query 做 5-fold CV，cross-corpus τ 迁移未验证。\n6. **Trigger 简洁性的代价**：BM25-margin-only 触发器可解释但可能错过 learned router 能捕获的特征；soft router 加上 <1ms 但需要部署侧标签。\n\n## 6. 工业实践意义\n\n对工业搜推团队的具体启示：\n\n- **Agent / 长程记忆检索可直接用 BM25-margin 路由**：不需要训练任何 routing model，单纯 top-1 vs top-2 BM25 分差 + 一个阈值，就能在两类截然不同的 workload（LongMemEval / LoCoMo）上自动选出合适策略，2.67× 与 132× 的提速来自同一行代码。这是当前工业 RAG / Agent 链路最被低估的低成本收益。\n- **温度分区适用范围**：客服对话、电商搜索 session 记忆、广告短期意图——只要存在指数级 recency skew，分区索引就能拿到 1000× 量级提速。但商品搜索、问答库等 flat 分布场景不要硬上。\n- **多目标 RL Agent 训练循环**：每步 retrieval 必须 ≤10ms，AgentIR 的 cascade 是当前唯一被证明能保住 0% over-budget 的方案；如果你的 Agent 一步要调用 5–20 次检索，传统 Lucene/Elasticsearch 在 800 轮 session 上会 75% 超预算。\n- **CPU SIMD + MaxScore + 多线程**：BEIR 上 10× 提速、质量在 ±0.020 内的工程组合，是 commodity 硬件部署的高性价比方案，相对 GPU 路径在中小 corpus 上有 cost/latency 优势。\n- **部署注意事项**：用 BGE-small 时 CPU encoding ~170ms 是端到端瓶颈，必须把 cascade gating 当作上线门槛而非可选优化；要对接 Lucene 历史数据时需要保留 StandardTokenizer 兼容路径。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>经典 IR 的核心假设——索引是静态的、查询是 stateless 的、查询延迟可以摊到 ~200ms 网络搜索预算——在 Agent 长程记忆场景下全部失效：</p>\n<ul>\n<li><strong>索引非静态</strong>：Memory 随对话流单调增长，Agent 每步写入一条记录，繁忙时段 10+ 条/分钟，破坏 Lucene-class 引擎的&quot;构建-查询分离&quot;摊销假设。</li>\n<li><strong>查询非平稳</strong>：单个 800 轮的 session 内会混杂事实查找、多跳推理、时间推理三类查询，&quot;没有任何单一融合策略能在三者上同时最优&quot;。</li>\n<li><strong>延迟预算极紧</strong>：Agent 推理循环每步会调用 5–20 次检索，单次必须 ≤10ms，而 web search 通常给的预算是 200ms。</li>\n</ul>\n<p>定量证据：LongMemEval 上 gold session 的中位数归一化排名仅 0.20–0.27（temporal / knowledge / multi-session 三类问题），说明 Agent 记忆查询在时间维度高度集中，经典引擎完全没有利用这一结构。</p>\n<h2>2. 方法详解</h2>\n<p>AgentIR 在两条决策轴上设计：</p>\n<p><strong>第一轴：哪种融合策略</strong>——BM25 alone / Dense (HNSW) / RRF / agent-aware RRF（融合词法+语义+时间衰减）。<br><strong>第二轴：是否触发约 52ms 的 dense 通道</strong>——用最廉价的 BM25 top-k margin 信号判定：</p>\n<pre><code>Δ = s₁ − s₂ ≥ τc  → 跳过 dense，直接返回 BM25\nΔ &lt; τc           → 升级到 Dense + RRF + recency</code></pre>\n<p>Agent-aware 评分函数为加性结构：</p>\n<pre><code>score(d, q) = RRF(r_sparse, r_dense) + α · exp(−Δt / τ) + β · w_d</code></pre>\n<p>其中 Δt 是文档年龄，τ 是衰减时间尺度，w_d ∈ [0,1] 是 per-record 重要性。α 选择远小于 max(RRF)，让 recency 项只起 tie-breaker 作用。</p>\n<p><strong>温度分区索引（Theorem 4.1）</strong>：在指数 recency 偏置 πᵢ ∝ e^(−λ(K−i)) 下，搜索到累计概率 1−ε 的期望工作量为 W(ε) ≤ ⌈log(1/ε)/λ⌉ · max|Tᵢ|，与全语料大小无关。在 5M 记录、7 天为一分区时，实测 λ≈1.7，ε=0.05 下只需查 k*≈3 个分区。</p>\n<p>实现栈：CPU 路径用 SIMD（AVX2）+ MaxScore + 8 线程；GPU 路径用 NVIDIA A100；dense 编码用 BGE-small；LLM 评判用 gpt-4o-mini 和 gpt-4o。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>Workload-conditional fusion</strong>：把&quot;用哪种 fusion / 跑不跑 dense&quot;作为 per-query 决策，而不是系统级超参。这一抽象是后续两个收益的前提。</li>\n<li><strong>BM25-margin 级联触发器</strong>：用 top-1/top-2 BM25 分差 Δ 做触发，无需训练任何分类器、无需特征工程，跨 workload 自适应。在 LongMemEval 上拿到 2.67× 提速，在 LoCoMo 同样的 trigger 自动选择 BM25-only 跳过 dense，拿到 132× 提速——同一组件，两套行为。</li>\n<li><strong>温度分区 + 期望工作量定理</strong>：把&quot;近期记忆更可能被检索&quot;这一经验事实形式化为可证明的 sublinear scaling，5M 文档对比顺序扫描达到 1769× 加速，且 corpus 增大 1234× 时延迟只增 3.6×。</li>\n<li><strong>CPU SIMD + MaxScore + 多线程组合优化</strong>：让 commodity 8 核 x86 在 BEIR 上相对 Pyserini Lucene 8T 拿到 10× 几何平均提速，nDCG@10 仍在 ±0.020 内。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p><strong>BEIR 检索质量</strong>（vs Pyserini Lucene 8T）：AgentIR BM25 在 5 个数据集胜出（TREC-COVID +0.051、ArguAna +0.077），4 个数据集差 0.003–0.020（FiQA/Quora/NQ/MS MARCO，源于 NLTK Porter vs. Lucene StandardTokenizer 差异）。RRF + BGE-small dense 相对 BM25-only 平均 +0.033 nDCG@10。</p>\n<p><strong>LongMemEval (n=500)</strong>：</p>\n<ul>\n<li>基线 RRF+Recency：R@10=0.978，LLM-Acc=0.254</li>\n<li>TF-IDF Router：LLM-Acc=0.262，分类器开销 &lt;&lt;1ms</li>\n<li>TF-IDF + BGE：LLM-Acc=0.300（达到 gpt-4o 的 oracle bound）</li>\n<li>单阈值级联（τc=0.10）：19.9ms vs 53.2ms always-hybrid → <strong>2.67× 加速</strong>，准确率与 agent_rrf 基线持平，跳过率 63%</li>\n<li>分 qtype 阈值（5-fold CV）：9.2ms 均值 → <strong>5.76× 加速</strong>，准确率仍在 noise band 内；不同 qtype 最优 τ 差异大（multi-session 需要 τ≥120d，其他 &lt;60d）</li>\n</ul>\n<p><strong>LoCoMo 自动调优</strong>：同一 trigger 自动落到 BM25-only，跳过率 100%，Hit@5 提升 +0.089，<strong>132× 加速</strong>——展示跨 workload 零重训迁移能力。</p>\n<p><strong>温度分区扩展实验（合成 80/20 recency）</strong>：4K→5M 文档时，sequential 159ms→延迟，temporal 仅 90µs，<strong>1769×</strong> 加速。</p>\n<p><strong>800 轮 session 模拟</strong>（Table 3）：sequential 459.2s 总耗时、75.5% step 超 200ms 预算；temporal partition 仅 0.43s 总耗时、p99=1.23ms、<strong>0% 超预算</strong>——这是 Agent 推理循环唯一能用的策略。</p>\n<p><strong>正确性验证</strong>：CPU vs GPU 在 8 个 BEIR 数据集上 nDCG@10 差异 ≤0.0002，top-10 集合在 1T/4T/8T 配置下完全一致。</p>\n<p><strong>消融</strong>（NQ, 2.7M）：scalar baseline 67.6ms → +SIMD 6.6ms (10.2×) → +MaxScore 4.2ms (1.6×) → +8T 1.4ms (3×)，累计 <strong>49×</strong>。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出的限制：</p>\n<ol>\n<li><strong>Recency 假设依赖</strong>：温度分区只在指数 recency skew 下有效；对 flat 分布（LoCoMo 的单 session 查询）需要回退到非分区索引。</li>\n<li><strong>Tokenization gap</strong>：NLTK Porter 词干化与 Lucene StandardTokenizer 在数字 ticker / 所有格 / 连字符上行为不同，导致 FiQA/Quora/NQ/MS MARCO 上 0.003–0.020 的 nDCG 损失。</li>\n<li><strong>GPU 显存瓶颈</strong>：MS MARCO 8.8M 文档 k=100 时超过 16GB 单卡 batch，需要 multi-GPU sharding（未做）。</li>\n<li><strong>Dense 编码本身是瓶颈</strong>：BGE-small CPU 编码 ~170ms，让 cascade gating 几乎是必需而非可选。</li>\n<li><strong>Per-qtype 阈值需要标注</strong>：每类需要 50–100 条带 label query 做 5-fold CV，cross-corpus τ 迁移未验证。</li>\n<li><strong>Trigger 简洁性的代价</strong>：BM25-margin-only 触发器可解释但可能错过 learned router 能捕获的特征；soft router 加上 &lt;1ms 但需要部署侧标签。</li>\n</ol>\n<h2>6. 工业实践意义</h2>\n<p>对工业搜推团队的具体启示：</p>\n<ul>\n<li><strong>Agent / 长程记忆检索可直接用 BM25-margin 路由</strong>：不需要训练任何 routing model，单纯 top-1 vs top-2 BM25 分差 + 一个阈值，就能在两类截然不同的 workload（LongMemEval / LoCoMo）上自动选出合适策略，2.67× 与 132× 的提速来自同一行代码。这是当前工业 RAG / Agent 链路最被低估的低成本收益。</li>\n<li><strong>温度分区适用范围</strong>：客服对话、电商搜索 session 记忆、广告短期意图——只要存在指数级 recency skew，分区索引就能拿到 1000× 量级提速。但商品搜索、问答库等 flat 分布场景不要硬上。</li>\n<li><strong>多目标 RL Agent 训练循环</strong>：每步 retrieval 必须 ≤10ms，AgentIR 的 cascade 是当前唯一被证明能保住 0% over-budget 的方案；如果你的 Agent 一步要调用 5–20 次检索，传统 Lucene/Elasticsearch 在 800 轮 session 上会 75% 超预算。</li>\n<li><strong>CPU SIMD + MaxScore + 多线程</strong>：BEIR 上 10× 提速、质量在 ±0.020 内的工程组合，是 commodity 硬件部署的高性价比方案，相对 GPU 路径在中小 corpus 上有 cost/latency 优势。</li>\n<li><strong>部署注意事项</strong>：用 BGE-small 时 CPU encoding ~170ms 是端到端瓶颈，必须把 cascade gating 当作上线门槛而非可选优化；要对接 Lucene 历史数据时需要保留 StandardTokenizer 兼容路径。</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2605.24938",
+      "title": "Your Embedding Model is SMARTer Than You Think",
+      "url": "https://arxiv.org/abs/2605.24938",
+      "authors": "Jianren Wang 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "针对单向量检索器丢失细粒度局部证据、而多向量方法又必须重训这一矛盾，论文提出 SMART：理论与实验表明在 pooled embedding 上的标准对比学习其实通过梯度流隐式地塑造了前序 hidden states 的检索几何；因此可以冻结模型，在推理期直接对最后几层 hidden states 做 late-interaction（类似 ColBERT 的 MaxSim），无需任何额外训练。在多模态检索上对包括 SOTA 模型在内的多种 backbone 都带来一致提升，作为 plug-and-play 升级。",
+      "key_insight": "这个结论对所有已经上线 dense retrieval 的团队都极具诱惑：不动训练流水线，仅在推理侧把 mean-pool 换成「最后几层 token 上的 late-interaction」，就能拿到接近多向量的精度收益。代价是索引大小与计算量上涨，但论文给出的几何分析说明梯度本来就把这部分信息「免费」编码进了 hidden states，没有充分利用就是浪费。落地路径很直接——先在召回环节用 ANN 拿 top-K，再用 SMART 的 late-interaction 做粗排，可以在不引入 cross-encoder 延迟的前提下提升 Recall 上界。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2605.24914",
+      "title": "MVR-cache: Optimizing Semantic Caching via Multi-Vector Retrieval and Learned Prompt Segmentation",
+      "url": "https://arxiv.org/abs/2605.24914",
+      "authors": "Ali Nikkhah 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "LLM 语义缓存的瓶颈在于「相似但不等价」的 prompt 判别：传统单向量相似度容易过宽匹配，造成错误命中。MVR-cache 用一个可学习的 segmentation 模型把 prompt 切成多段，再用 MaxSim 做细粒度相似度比较；训练目标从理论分析推出，可证明优化它等价于在「严格正确性约束」下最大化命中率。由于目标涉及不可微的组合优化，论文用 RL 训练策略以理论目标为 reward。在公开基准上 cache hit 与正确性同时优于单向量基线。",
+      "key_insight": "把 ColBERT 式的 MaxSim 从「文档检索」搬到「prompt 缓存」是一个被低估的方向——LLM serving 链路上 cache miss 的代价远大于 retrieval miss，每减少 1% 的误命中可能就是上百万 token 的复算成本。MVR-cache 给出的「learned segmentation + MaxSim」是一个比 chunking + cosine 严谨得多的范式，对正在做 Agent/RAG 系统的团队尤其有价值：把 prompt 看作多语义片段而非整段向量，可以直接接入 vLLM/SGLang 的 prefix cache 之外，做语义级别的二级缓存。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2605.24764",
+      "title": "Spectral Retrieval: Multi-Scale Sinc Convolution over Token Embeddings for Localized Retrieval in LLM Multi-Agent Systems",
+      "url": "https://arxiv.org/abs/2605.24764",
+      "authors": "Andreas Sotirakis 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.65,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "针对「相关性集中在文档某个短 span 时 mean-pool 把信号平均成噪声」的失效模式，论文提出 Spectral Retrieval：复用 late-interaction 索引中的 per-token embedding，对其做多尺度归一化 sinc 卷积，在所有位置和所有尺度上取最大 cosine 作为最终得分。理论上 L=1 等价于 per-token MaxSim、L→∞ 等价于 mean pooling，因此该得分可证明不弱于任一端点。在控制实验（1000 文档、单位置脉冲）上 mean-pool 几乎是随机水平 (Recall@10 ~ 0.02)，Spectral Retrieval 接近 Recall@1 上限。",
+      "key_insight": "Spectral Retrieval 的核心洞察是把 dense retrieval 看成一种「在 token 序列上做带宽可调的滤波」，从而把 ColBERT（窄带）与 mean-pool（直流）统一在同一个公式下，并自然外推到多尺度。这对长文档检索（法律/学术/代码）非常有意义——传统单向量在长文档上之所以掉点，正是因为局部命中的信号被全局平均稀释。落地上唯一的代价是需要保留 per-token 表示，对已经存了 ColBERT 索引的系统几乎是免费升级；对只存 mean-pool 向量的系统则需要重建索引。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2605.24297",
+      "title": "Benchmarking Patent Embeddings: A Multi-Task Evaluation of 22 Models Across Retrieval, Classification, and Clustering",
+      "url": "https://arxiv.org/abs/2605.24297",
+      "authors": "Amirhossein Tebbifakhr 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "summary": "在 113,148 篇 WIPO 辅助科技专利、46,069 条引用图检索 query 以及 DAPFAM 公开数据集上，论文系统评测了 22 个 embedding 模型（22M 编码器到 12B instruction-tuned LLM），覆盖引用检索、稀疏-稠密混合融合、五数据集多标签分类、无监督聚类、六种文本切片以及四模型的领域自适应微调。核心结果：fine-tuning 高度任务相关——单一专利 landscape 上的微调能提升内部分数，却往往损害另一 landscape 的检索效果；并非「领域数据越多越好」。",
+      "key_insight": "这是少见的把 embedding 模型在 22M→12B 量级、retrieval/classification/clustering 三任务、in-domain/out-of-domain 两 landscape 下都跑通的全景对照。对正在选型 embedding 模型的团队，最重要的两个结论是：（1）大模型并非全面占优，尤其在 cluster-level retrieval 上中型 BGE/E5 类编码器仍很强；（2）做领域微调时要警惕「分布外迁移损失」，单一来源数据训出来的 embedding 容易过拟合该 landscape 的引用模式。落地建议：上线前必须用一个 held-out landscape 做 sanity check，否则线上跨场景检索会掉点。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2605.24556",
+      "title": "The Multilingual Curse at the Retrieval Layer: Evidence from Amharic",
+      "url": "https://arxiv.org/abs/2605.24556",
+      "authors": "Yosef Worku Alemneh 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "summary": "在 dense、late-interaction、learned sparse、cross-encoder 四种范式下共享 passage 检索协议，论文比较了 zero-shot 多语 retriever、Amharic 微调的多语 retriever 与单语 Amharic retriever。最强的 zero-shot 多语模型相对最强单语 Amharic 一阶段检索器 MRR@10 落后 23%；两个近期多语 embedding 模型在相同 Amharic 监督下微调能拿到 32–60% 相对 MRR@10 提升，但仍达不到原生单语模型水平。结论是当前多语 retriever 在欠表征、形态丰富语言上的 zero-shot 数字被高估，迁移并不可靠。",
+      "key_insight": "对走国际化的搜索/RAG 团队，这篇是一面冷水：MTEB/MIRACL 上 zero-shot 多语 retriever 的高分主要由高资源语言贡献，对低资源、形态学复杂语言（Amharic、Tagalog、Swahili 等）会出现系统性 23%+ 的 MRR 落差。可借鉴的工程做法是：（1）部署前必须按目标语种分层评测，不能只看 MIRACL 总分；（2）有目标语种 query log 的话，哪怕只做 10–50K 量级的对比学习微调，也能拿到 30–60% 的相对提升，ROI 远高于继续投资多语预训练。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2605.24236",
+      "title": "MeVer at CheckThat! 2026: Cluster-Aware Hard-Negative Mining for Multilingual Scientific-Source Retrieval",
+      "url": "https://arxiv.org/abs/2605.24236",
+      "authors": "Juli Bakagianni 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.4,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "针对「短而口语化的多语社交媒体 claim 去匹配大规模科学文献，语义近邻易成 false negative」的训练痛点，论文提出 cluster-aware hard-negative mining：先对候选池做语义聚类，再分别构造「同簇局部负例」与「跨簇广义负例」两种结构。实验显示二者引导出截然不同的检索行为——局部簇内负例倾向 precision，跨簇负例对召回更友好。论文同时给出 dense retrieval + reranking 多阶段流水线的具体配置。",
+      "key_insight": "这篇是一个简洁但被很多团队忽视的工程经验：hard negative 不是越「难」越好，而是要按目标指标定制。如果系统瓶颈是 Recall@k（召回不全），应该用跨簇广负例做训练；如果瓶颈是 Precision@1（topN 不准），应该用簇内局部负例。这个二分法在做电商/内容搜索的 dense retrieval 训练时非常实用——大多数线上案例里两个指标并不会同时提升，明确「优化谁、采样哪种负例」可以避免负例采样策略来回反复。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2605.24660",
+      "title": "How Many Tools Should an LLM Agent See? A Chance-Corrected Answer",
+      "url": "https://arxiv.org/abs/2605.24660",
+      "authors": "Vyzantios Pothos 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "Tool retrieval 的关键问题是「给 Agent 看多少候选工具」：给多了 LLM 选不动，给少了正确工具不在列表里。现有系统都用固定 shortlist 长度。论文把「shortlist 长度」本身当成评估对象，引入 chance-corrected 指标 Bits-over-Random (BoR)：在给定 depth 上的成功率相对随机选择有多少 bit 增益。BoR 在三个 tool-selection benchmark、多种 scorer、20–3251 个工具规模的 registry 上稳定刻画 depth-quality 关系；再把它作为 RL reward 训练一个简单的 per-query depth selector。",
+      "key_insight": "把 tool retrieval 评估从「Recall@K」升级为「Bits-over-Random」这一步很关键：Recall@K 对 K 不敏感（K 越大越容易满）、且不能反映「LLM 看到长 list 选不动」的实际损失。BoR 的 chance-corrected 视角能把「depth 选错」的代价直接量化为 bit。对 MCP / function calling 体系正在膨胀的实际系统（每个 Agent 注册成百上千工具），按 query 自适应 depth 比固定 top-50/top-100 更合理，论文 RL probe 给出了最小可用的实现路径。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:oai:arXiv.org:2605.25701",
+      "title": "Neural Router: Semantic Content Matching for Agentic AI",
+      "url": "https://arxiv.org/abs/2605.25701",
+      "authors": "Lauri Lovén 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "论文把 LLM 当作 content-based pub/sub broker 的语义匹配引擎，用于跨 edge-cloud 的 Agent 通信；目标是弥合关键词与 embedding 过滤器都失效时的语义/模态鸿沟。在 social media、legal、smart-home 传感三个公开数据集（6 个 LLM、7 个 baseline）上以 offline 多标签检索的形式评测，核心贡献是两条 crossover 曲线：解析型 context-window crossover 之下，CoverAndMerge 压缩流水线能减少 LLM 调用；经验型 discrimination-capacity crossover 之上，匹配精度会与 context budget 无关地崩塌——崩塌点由模型参数量与训练代际共同决定。",
+      "key_insight": "这篇把「LLM 作为语义路由器」的能力边界用两条 crossover 量化出来，对正在搭 Agent 总线/事件总线的团队很有价值。结论可直接应用：（1）小模型 + 大 context 不能弥补判别能力，盲目堆 context 反而无效；（2）压缩-然后-LLM 的混合流水线有最优工作区间，需要按模型 size 标定 crossover 点。落地建议——把「semantic routing」和「semantic retrieval」分开评估，前者评 cost-accuracy crossover、后者评 Recall@K，不要套同一个 benchmark。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:rusty4444/hermes-voice-ha-integration",
+      "title": "hermes-voice-ha-integration: 本地化语音控制 Home Assistant 集成（wake → STT → LLM → TTS）",
+      "url": "https://github.com/rusty4444/hermes-voice-ha-integration",
+      "source": "github",
+      "description": "Home Assistant voice stack integration for Hermes Agent — on-device voice control, wake word → STT → LLM → TTS → HA media_player. No cloud. No latency. No subscription.",
+      "language": "Python",
+      "stars": 0,
+      "created_at": "2026-05-22"
+    },
+    {
+      "rank": 2,
+      "id": "hf_space:Qwen/Qwen-Image",
+      "title": "Qwen/Qwen-Image",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image",
+      "source": "huggingface",
+      "description": "Qwen-Image 在线 Space",
+      "language": "space",
+      "stars": 0,
+      "created_at": "2026-05-22"
+    },
+    {
+      "rank": 3,
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "description": "Qwen3-TTS 在线 Space",
+      "language": "space",
+      "stars": 0,
+      "created_at": "2026-05-22"
+    },
+    {
+      "rank": 4,
+      "id": "hf_space:deepseek-ai/Janus-Pro-7B",
+      "title": "deepseek-ai/Janus-Pro-7B",
+      "url": "https://huggingface.co/spaces/deepseek-ai/Janus-Pro-7B",
+      "source": "huggingface",
+      "description": "DeepSeek Janus-Pro-7B 多模态在线 Space",
+      "language": "space",
+      "stars": 0,
+      "created_at": "2025-01-27"
+    },
+    {
+      "rank": 5,
+      "id": "hf_space:TencentARC/InstantMesh",
+      "title": "TencentARC/InstantMesh",
+      "url": "https://huggingface.co/spaces/TencentARC/InstantMesh",
+      "source": "huggingface",
+      "description": "InstantMesh 在线 Space",
+      "language": "space",
+      "stars": 0,
+      "created_at": "2026-05-22"
+    },
+    {
+      "rank": 6,
+      "id": "hf_space:zai-org/CogVideoX-5B-Space",
+      "title": "zai-org/CogVideoX-5B-Space",
+      "url": "https://huggingface.co/spaces/zai-org/CogVideoX-5B-Space",
+      "source": "huggingface",
+      "description": "CogVideoX-5B 在线 Space",
+      "language": "space",
+      "stars": 0,
+      "created_at": "2026-05-22"
+    }
+  ]
+}

@@ -1,0 +1,290 @@
+{
+  "date": "2026-05-08",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 80,
+    "papers_selected": 10,
+    "score_min": 3.55,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2605.04496",
+      "title": "SCOUT: Active Information Foraging for Long-Text Understanding with Decoupled Epistemic States",
+      "url": "https://arxiv.org/abs/2605.04496",
+      "authors": "Zhenliang Zhang et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-07",
+      "total_score": 4.4,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对百万 token 级长文本理解任务，论文指出端到端 long-context LLM 存在 token 消耗过高、注意力稀释问题，而传统专用 LTU 智能体（如图构建、索引）又会因任务无关的抽象牺牲精度。作者提出 SCOUT，一种从被动处理转向主动信息觅食（active information foraging）的新范式：把文档视为可探索环境，由「状态级 gap 诊断」驱动，自适应地在粗粒度浏览与细粒度精读间切换，从一个紧凑的、带可追溯证据的 epistemic state 中作答。该范式在长文本 QA 任务上同时提升了推理保真度与计算效率。",
+      "key_insight": "SCOUT 把长文本 QA 拆分为「主动取证 + 显式信念状态」两层，对社区搜索极具启发：长帖子/长问答的精读不必加载全文，可让 Agent 用 query-relevance 驱动的稀疏觅食策略仅触达必要片段。状态级 gap 诊断机制类似于 ReAct 的 think-act-observe 循环但更结构化（明确「哪里还缺信息」），可直接迁移到 RAG 搜索 Agent 中替代固定步数检索；epistemic state 解耦推理与上下文，使得 token 成本可控、推理过程可审计，是工业级 Agentic Search 的重要原语。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2605.04496",
+        "title": "SCOUT: Active Information Foraging for Long-Text Understanding with Decoupled Epistemic States",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n百万 token 级长文本理解（LTU）面临作者称为\"LTU 三难困境\"的张力：极致可扩展性、高保真信息保留与推理效率三者难以同时实现。前沿长上下文模型如 Gemini-3-Pro、GPT-5.1 端到端处理百万 token 时遭遇注意力稀释和计算量二次增长，token 成本随上下文长度呈数量级上升；而 GraphReader、ReadAgent、MemAgent 等专用长文本智能体则通过任务无关的预索引（图构建、记忆压缩）牺牲了保真度，在结构构建过程中丢失答案关键细节；传统 RAG 的 chunking 策略破坏全局连贯与长程依赖。\n\n作者提出关键洞察：对给定 query，回答所需信息通常是文档中一个稀疏的「query-sufficient subset」。因此高效系统不应被动地处理整个上下文，而应主动「觅食」该最小子集。这一信息稀疏假设直接挑战了\"上下文越长越好\"的工业默认范式，并为 LTU 提供了新设计原则。\n\n## 2. 方法详解\n\nSCOUT 的核心架构创新是「状态解耦」：把 ReAct 风格的交互历史拆为两部分：\n\n**Procedural Trace ℋₜ**：记录 Agent 在哪里探索（动作序列）。\n**Epistemic State ℰₜ**：仅维护已被确立为 query 相关的知识。\n\n硬性约束（公式 4）：最终答案的生成只能访问 ℰₜ，而不能访问完整的交互历史 ℋₜ。这一设计阻止了探索噪音污染推理过程，也使最终回答的「证据集」是审计闭包。\n\n**Epistemic State 表示**：ℰₜ = {e₁, …, eₘₜ}，每个元素 eⱼ 是二元组 ⟨cⱼ, αⱼ⟩。cⱼ 是蒸馏后的原子陈述，αⱼ 是溯源锚点（指向文档具体位置）。这种 provenance-anchored 设计保证了任何用于推理的陈述都能追溯到源文本。\n\n**动作空间**分为两类：\n- 觅食动作 𝒜forage：Grep/Scan（词法级粗定位）、Read（局部精读，支持预算）。\n- 状态管理动作 𝒜state：Update（提交 provenance-anchored 单元）、Evaluate（执行状态级 gap 诊断）、View（查看当前 ℰₜ）。\n\n**Gap Diagnosis 机制**是 SCOUT 的\"灵魂\"：Evaluate 不是简单的\"是否终止\"启发式，而是在状态层面分析「为可靠回答 q 还缺什么」，输出明确的下一轮觅食目标。这驱动了迭代式的 diagnose-acquire-commit 循环直至 query 满足。\n\n**算法 1 推理流程**：(a) 初始化空 ℋ 和 ℰ；(b) 在步数预算内：从策略 πθ(a|q, ℋₜ, ℰₜ) 采样动作；若是觅食动作则在文档上执行，ℰₜ 不变；若是状态管理动作则更新 ℰ 或诊断 gap；将动作及结果追加到 ℋ；(c) 当 gap 关闭或步数耗尽，仅基于 ℰₜ 生成答案。\n\n**训练设置**：开源权重实验在 Qwen2.5-72B-Instruct 上做 60M optimization tokens 预算的 SFT，并对比 DAPO（policy gradient）变体；统一评估时所有对比方法（包括前沿大模型与现有 LTU agent）都用 Claude-Sonnet-4.5 作为统一 backbone 以保证公平。\n\n## 3. 核心技术贡献\n\n**(1) 状态解耦的 LTU 范式**：把\"探索轨迹\"与\"已确认知识\"显式分离，是首次把 LTU 形式化为「带可读 epistemic state 的 POMDP」式问题。比单纯的 ReAct（动作历史不区分价值）更结构化，比 GraphRAG（先建索引再查）更动态。机制本质：阻断噪声反向通道，让最终生成只面对一个干净、紧凑、可审计的证据集。\n\n**(2) Provenance-Anchored 知识单元**：每个 epistemic 单元都带溯源锚 αⱼ，使下游推理具备可解释性与可校验性，是工业可部署的关键 — 在线诊断时可直接定位\"哪个片段支撑了这个回答\"。\n\n**(3) State-Level Gap Diagnosis**：把\"下一步去哪儿觅食\"从动作级（动作选择即决策）抽离到状态级（先诊断缺什么、再决定如何获取），相比 ReAct 的隐式 reasoning，更易做离线 reward 设计与监督蒸馏。\n\n**(4) 训练-时-架构协同**：开源 SFT 大幅超过 LLM-only SFT（LooGLE-v2 上 +27.1% vs +1.2%），表明 LTU 瓶颈不是参数化知识而是长程交互与状态控制能力，这是 RL/SFT 时代的新发现。\n\n## 4. 实验结果分析\n\n**主表 1（LooGLE-v2 + ∞Bench）**：\n\n| 模型 | LooGLE-v2 Acc | LooGLE-v2 Cost | ∞Bench Acc | ∞Bench Cost |\n| --- | --- | --- | --- | --- |\n| SCOUT | 78.7% | 29.7K | 85.6% | 21.4K |\n| Gemini-3-Pro | 68.5% | 273.9K | 83.9% | 259.1K |\n| GPT-5.1 | 58.6% | 135.9K | 73.0% | 96.6K |\n| GraphReader | 46.0% | 302.6K | 68.1% | 264.0K |\n| ReadAgent | 27.7% | — | 42.3% | 481.8K |\n\nSCOUT 同时取得最高准确率和最低 token 成本，在 LooGLE-v2 上 token 效率（Acc/Cost）2.63、∞Bench 上 4.01，分别是 Gemini-3-Pro 的约 8× 提升。\n\n**Scaling 鲁棒性（Figure 3）**：把上下文从 64K 拉到 1M+，前沿单体模型在 256K 之后准确率骤降（\"long-horizon breakdown\"），token 成本指数级增长；SCOUT 的准确率与 token 成本几乎保持平稳。\n\n**消融（Table 2，LooGLE-v2）**：\n- 完整 SCOUT：78.2%\n- 去 ℰₜ（退化为 ReAct-style）：70.5%（-7.7%）— 证明状态解耦本身的价值\n- 去觅食动作（只剩 epistemic 操作）：17.7%（-60.5%）— 觅食是不可或缺的\"输入\"\n- 去文件工具：74.2%（-4.0%）\n- 去 grounding（去除 αⱼ）：75.5%（-2.7%）— 溯源带来稳定增益\n\n最关键的消融是「去 ℰₜ」与「去 grounding」：它们共同证明 SCOUT 的两层设计（解耦状态 + 溯源锚）都是有贡献的，单独砍掉任一部分都会显著下降。\n\n**开源训练增益（Table 3）**：在 Qwen2.5-72B-Instruct 上 60M token 预算下 SFT，LLM-only 几乎不动（LooGLE-v2 +1.2%、∞Bench -0.7%），而 SCOUT-SFT 分别 +27.1% / +25.1%。这是非常强的证据，说明同样训练预算下，SCOUT 提供的结构化交互范式才是开源模型 LTU 能力的关键瓶颈。\n\n## 5. 局限与未来方向\n\n作者明确承认三点：\n\n**(1) 单 query wall-clock latency 较高**：SCOUT 多步交互比单次端到端推理在 wall-clock 上更慢（虽然 token cost 更低）；并行觅食优化是未来工作。这对线上低延迟场景（如社区搜索 P99 <500ms）是硬约束。\n\n**(2) 跨 query 复用缺失**：每个 query 独立处理同一文档，没有摊销预处理。对于\"同一长文档被多个 query 反复访问\"的场景（如客服 FAQ、产品手册问答），SCOUT 不如索引式方法经济。\n\n**(3) 评测局限**：仅在文本、信息稀疏的长文档上验证；信息密集（如代码评审、密集表格）和多模态长文档（图文交错）的场景未覆盖。\n\n显见但未点出的局限：策略 πθ 在工业部署时仍依赖 SOTA 闭源大模型作 backbone，开源 72B 虽然能 SFT 到接近，但训练 60M token 的成本依然不低；线上\"主动觅食\"还可能因外部检索 API 延迟波动而方差较大。\n\n## 6. 工业实践意义\n\n对搜索/推荐 Agent 团队的具体启示：\n\n**(1) 长帖子/长问答 RAG 的范式重塑**：社区平台普遍存在长帖、专栏、专业问答这类 5K-50K token 的内容。直接全文喂给 LLM 不仅贵且容易稀释。SCOUT 的「主动觅食 + epistemic state」范式可以直接照搬：让搜索 Agent 用 Grep/Read/Update/Evaluate 这套动作集围绕用户 query 在长帖中觅食，输出带溯源的精炼证据集。落地路径上，可从 Claude/Qwen 这类支持 tool-use 的模型起步，先用 prompt-engineering 实现 SCOUT 风格 ReAct 循环，验证后再做 SFT。\n\n**(2) Epistemic State 作为可审计原语**：把\"模型已知什么\"显式化为带溯源的结构化状态，对线上诊断与 reward 设计是关键改进。建议搜索 Agent 在每步显式输出 ⟨陈述, 文档锚点⟩ 二元组，便于线下评估\"哪个证据导致回答正确/错误\"，也便于做 process reward。\n\n**(3) 不必用最大上下文模型**：实验显示 SCOUT 在 Claude-Sonnet-4.5 上即可达成 SOTA，且 token 成本下降 8 倍。对于成本敏感的搜索场景（社区每日 query 数千万级），这个换算下来是巨大的推理预算节省。\n\n**(4) 对开源 backbone 的启示**：72B 模型 LLM-only SFT 几乎没收益，而 SCOUT-SFT +27.1%。这意味着对于自研搜索 LLM 的团队，「先把 Agent 框架定好、再用 SFT/RL 让模型适应该框架」比「单纯增大数据量做指令微调」更有效。\n\n**(5) 部署考虑**：多步交互意味着 P99 latency 高于单次推理，这对在线场景需要并行化（多步骤同时尝试不同动作）或离线预计算（针对热门长文档先 forage 出常见 query 的 ℰₜ）。后者实际上是把 SCOUT 与索引式方法结合的混合范式，可能是下一步工程价值最高的方向。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>百万 token 级长文本理解（LTU）面临作者称为&quot;LTU 三难困境&quot;的张力：极致可扩展性、高保真信息保留与推理效率三者难以同时实现。前沿长上下文模型如 Gemini-3-Pro、GPT-5.1 端到端处理百万 token 时遭遇注意力稀释和计算量二次增长，token 成本随上下文长度呈数量级上升；而 GraphReader、ReadAgent、MemAgent 等专用长文本智能体则通过任务无关的预索引（图构建、记忆压缩）牺牲了保真度，在结构构建过程中丢失答案关键细节；传统 RAG 的 chunking 策略破坏全局连贯与长程依赖。</p>\n<p>作者提出关键洞察：对给定 query，回答所需信息通常是文档中一个稀疏的「query-sufficient subset」。因此高效系统不应被动地处理整个上下文，而应主动「觅食」该最小子集。这一信息稀疏假设直接挑战了&quot;上下文越长越好&quot;的工业默认范式，并为 LTU 提供了新设计原则。</p>\n<h2>2. 方法详解</h2>\n<p>SCOUT 的核心架构创新是「状态解耦」：把 ReAct 风格的交互历史拆为两部分：</p>\n<p><strong>Procedural Trace ℋₜ</strong>：记录 Agent 在哪里探索（动作序列）。<br><strong>Epistemic State ℰₜ</strong>：仅维护已被确立为 query 相关的知识。</p>\n<p>硬性约束（公式 4）：最终答案的生成只能访问 ℰₜ，而不能访问完整的交互历史 ℋₜ。这一设计阻止了探索噪音污染推理过程，也使最终回答的「证据集」是审计闭包。</p>\n<p><strong>Epistemic State 表示</strong>：ℰₜ = {e₁, …, eₘₜ}，每个元素 eⱼ 是二元组 ⟨cⱼ, αⱼ⟩。cⱼ 是蒸馏后的原子陈述，αⱼ 是溯源锚点（指向文档具体位置）。这种 provenance-anchored 设计保证了任何用于推理的陈述都能追溯到源文本。</p>\n<p><strong>动作空间</strong>分为两类：</p>\n<ul>\n<li>觅食动作 𝒜forage：Grep/Scan（词法级粗定位）、Read（局部精读，支持预算）。</li>\n<li>状态管理动作 𝒜state：Update（提交 provenance-anchored 单元）、Evaluate（执行状态级 gap 诊断）、View（查看当前 ℰₜ）。</li>\n</ul>\n<p><strong>Gap Diagnosis 机制</strong>是 SCOUT 的&quot;灵魂&quot;：Evaluate 不是简单的&quot;是否终止&quot;启发式，而是在状态层面分析「为可靠回答 q 还缺什么」，输出明确的下一轮觅食目标。这驱动了迭代式的 diagnose-acquire-commit 循环直至 query 满足。</p>\n<p><strong>算法 1 推理流程</strong>：(a) 初始化空 ℋ 和 ℰ；(b) 在步数预算内：从策略 πθ(a|q, ℋₜ, ℰₜ) 采样动作；若是觅食动作则在文档上执行，ℰₜ 不变；若是状态管理动作则更新 ℰ 或诊断 gap；将动作及结果追加到 ℋ；(c) 当 gap 关闭或步数耗尽，仅基于 ℰₜ 生成答案。</p>\n<p><strong>训练设置</strong>：开源权重实验在 Qwen2.5-72B-Instruct 上做 60M optimization tokens 预算的 SFT，并对比 DAPO（policy gradient）变体；统一评估时所有对比方法（包括前沿大模型与现有 LTU agent）都用 Claude-Sonnet-4.5 作为统一 backbone 以保证公平。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>(1) 状态解耦的 LTU 范式</strong>：把&quot;探索轨迹&quot;与&quot;已确认知识&quot;显式分离，是首次把 LTU 形式化为「带可读 epistemic state 的 POMDP」式问题。比单纯的 ReAct（动作历史不区分价值）更结构化，比 GraphRAG（先建索引再查）更动态。机制本质：阻断噪声反向通道，让最终生成只面对一个干净、紧凑、可审计的证据集。</p>\n<p><strong>(2) Provenance-Anchored 知识单元</strong>：每个 epistemic 单元都带溯源锚 αⱼ，使下游推理具备可解释性与可校验性，是工业可部署的关键 — 在线诊断时可直接定位&quot;哪个片段支撑了这个回答&quot;。</p>\n<p><strong>(3) State-Level Gap Diagnosis</strong>：把&quot;下一步去哪儿觅食&quot;从动作级（动作选择即决策）抽离到状态级（先诊断缺什么、再决定如何获取），相比 ReAct 的隐式 reasoning，更易做离线 reward 设计与监督蒸馏。</p>\n<p><strong>(4) 训练-时-架构协同</strong>：开源 SFT 大幅超过 LLM-only SFT（LooGLE-v2 上 +27.1% vs +1.2%），表明 LTU 瓶颈不是参数化知识而是长程交互与状态控制能力，这是 RL/SFT 时代的新发现。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>主表 1（LooGLE-v2 + ∞Bench）</strong>：</p>\n<table><thead><tr><th>模型</th><th>LooGLE-v2 Acc</th><th>LooGLE-v2 Cost</th><th>∞Bench Acc</th><th>∞Bench Cost</th></tr></thead><tbody><tr><td>SCOUT</td><td>78.7%</td><td>29.7K</td><td>85.6%</td><td>21.4K</td></tr><tr><td>Gemini-3-Pro</td><td>68.5%</td><td>273.9K</td><td>83.9%</td><td>259.1K</td></tr><tr><td>GPT-5.1</td><td>58.6%</td><td>135.9K</td><td>73.0%</td><td>96.6K</td></tr><tr><td>GraphReader</td><td>46.0%</td><td>302.6K</td><td>68.1%</td><td>264.0K</td></tr><tr><td>ReadAgent</td><td>27.7%</td><td>—</td><td>42.3%</td><td>481.8K</td></tr></tbody></table>\n<p>SCOUT 同时取得最高准确率和最低 token 成本，在 LooGLE-v2 上 token 效率（Acc/Cost）2.63、∞Bench 上 4.01，分别是 Gemini-3-Pro 的约 8× 提升。</p>\n<p><strong>Scaling 鲁棒性（Figure 3）</strong>：把上下文从 64K 拉到 1M+，前沿单体模型在 256K 之后准确率骤降（&quot;long-horizon breakdown&quot;），token 成本指数级增长；SCOUT 的准确率与 token 成本几乎保持平稳。</p>\n<p><strong>消融（Table 2，LooGLE-v2）</strong>：</p>\n<ul>\n<li>完整 SCOUT：78.2%</li>\n<li>去 ℰₜ（退化为 ReAct-style）：70.5%（-7.7%）— 证明状态解耦本身的价值</li>\n<li>去觅食动作（只剩 epistemic 操作）：17.7%（-60.5%）— 觅食是不可或缺的&quot;输入&quot;</li>\n<li>去文件工具：74.2%（-4.0%）</li>\n<li>去 grounding（去除 αⱼ）：75.5%（-2.7%）— 溯源带来稳定增益</li>\n</ul>\n<p>最关键的消融是「去 ℰₜ」与「去 grounding」：它们共同证明 SCOUT 的两层设计（解耦状态 + 溯源锚）都是有贡献的，单独砍掉任一部分都会显著下降。</p>\n<p><strong>开源训练增益（Table 3）</strong>：在 Qwen2.5-72B-Instruct 上 60M token 预算下 SFT，LLM-only 几乎不动（LooGLE-v2 +1.2%、∞Bench -0.7%），而 SCOUT-SFT 分别 +27.1% / +25.1%。这是非常强的证据，说明同样训练预算下，SCOUT 提供的结构化交互范式才是开源模型 LTU 能力的关键瓶颈。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确承认三点：</p>\n<p><strong>(1) 单 query wall-clock latency 较高</strong>：SCOUT 多步交互比单次端到端推理在 wall-clock 上更慢（虽然 token cost 更低）；并行觅食优化是未来工作。这对线上低延迟场景（如社区搜索 P99 &lt;500ms）是硬约束。</p>\n<p><strong>(2) 跨 query 复用缺失</strong>：每个 query 独立处理同一文档，没有摊销预处理。对于&quot;同一长文档被多个 query 反复访问&quot;的场景（如客服 FAQ、产品手册问答），SCOUT 不如索引式方法经济。</p>\n<p><strong>(3) 评测局限</strong>：仅在文本、信息稀疏的长文档上验证；信息密集（如代码评审、密集表格）和多模态长文档（图文交错）的场景未覆盖。</p>\n<p>显见但未点出的局限：策略 πθ 在工业部署时仍依赖 SOTA 闭源大模型作 backbone，开源 72B 虽然能 SFT 到接近，但训练 60M token 的成本依然不低；线上&quot;主动觅食&quot;还可能因外部检索 API 延迟波动而方差较大。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐 Agent 团队的具体启示：</p>\n<p><strong>(1) 长帖子/长问答 RAG 的范式重塑</strong>：社区平台普遍存在长帖、专栏、专业问答这类 5K-50K token 的内容。直接全文喂给 LLM 不仅贵且容易稀释。SCOUT 的「主动觅食 + epistemic state」范式可以直接照搬：让搜索 Agent 用 Grep/Read/Update/Evaluate 这套动作集围绕用户 query 在长帖中觅食，输出带溯源的精炼证据集。落地路径上，可从 Claude/Qwen 这类支持 tool-use 的模型起步，先用 prompt-engineering 实现 SCOUT 风格 ReAct 循环，验证后再做 SFT。</p>\n<p><strong>(2) Epistemic State 作为可审计原语</strong>：把&quot;模型已知什么&quot;显式化为带溯源的结构化状态，对线上诊断与 reward 设计是关键改进。建议搜索 Agent 在每步显式输出 ⟨陈述, 文档锚点⟩ 二元组，便于线下评估&quot;哪个证据导致回答正确/错误&quot;，也便于做 process reward。</p>\n<p><strong>(3) 不必用最大上下文模型</strong>：实验显示 SCOUT 在 Claude-Sonnet-4.5 上即可达成 SOTA，且 token 成本下降 8 倍。对于成本敏感的搜索场景（社区每日 query 数千万级），这个换算下来是巨大的推理预算节省。</p>\n<p><strong>(4) 对开源 backbone 的启示</strong>：72B 模型 LLM-only SFT 几乎没收益，而 SCOUT-SFT +27.1%。这意味着对于自研搜索 LLM 的团队，「先把 Agent 框架定好、再用 SFT/RL 让模型适应该框架」比「单纯增大数据量做指令微调」更有效。</p>\n<p><strong>(5) 部署考虑</strong>：多步交互意味着 P99 latency 高于单次推理，这对在线场景需要并行化（多步骤同时尝试不同动作）或离线预计算（针对热门长文档先 forage 出常见 query 的 ℰₜ）。后者实际上是把 SCOUT 与索引式方法结合的混合范式，可能是下一步工程价值最高的方向。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "industry:meituan-longcat-flash-thinking",
+      "title": "Meituan LongCat-Flash-Thinking-2601: Open-Source SOTA on Agentic Search & Tool Use",
+      "url": "https://tech.meituan.com/",
+      "authors": "Meituan LongCat Team",
+      "company": [
+        "Meituan"
+      ],
+      "source": "industry_blog",
+      "published": "2026-04-15",
+      "total_score": 4.3,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "美团 LongCat 团队对外发布并开源 LongCat-Flash-Thinking-2601 模型，在 Agentic Search（智能体搜索）、Agentic Tool Use（智能体工具调用）、TIR（Tool-Interaction Reasoning）等核心评测基准上均达到开源模型 SOTA。配套发布 VitaBench（Versatile Interactive Tasks Benchmark）评测集，以外卖点餐、餐厅就餐、旅游出行三大高频生活场景为载体，构建了包含 66 个工具的交互式评测环境，要求 Agent 在多轮对话中规划、调用工具、纠错并完成真实任务。",
+      "key_insight": "中国互联网团队首次以「Agentic Search + Agentic Tool Use + TIR」三轴定义开源 SOTA，并以本地生活高频任务（外卖、餐饮、旅游）为评测，是搜推业务团队最贴近的「智能体搜索」参考实现。社区搜索可直接借用 VitaBench 思路：把 UGC 检索任务拆解成「工具集 + 多轮交互」——例如给 Agent 暴露相关性召回、热度排序、用户画像、内容审核等工具接口，让 LLM 在 ReAct 循环中规划调用顺序。LongCat-Flash-Thinking 的开源权重也意味着可基于其继续做 SFT/RL，而不必从 70B 通用模型起步。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2605.04449",
+      "title": "GEM: Graph-Enhanced Mixture-of-Experts with ReAct Agents for Dialogue State Tracking",
+      "url": "https://arxiv.org/abs/2605.04449",
+      "authors": "Ziqi Yu et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-07",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对多领域对话状态追踪（DST），作者提出 GEM 框架：一个智能 router 在 GNN（捕捉对话结构和 turn 间依赖）与 finetuned T5-Small 编码-解码器（序列建模）之间动态路由，对复杂槽位生成任务则集成 ReAct Agent 进行结构化推理。在 MultiWOZ 2.2 上实现 65.19% Joint Goal Accuracy，相对端到端 LLM 方法的最佳 38.43% 大幅提升，并超越当前 SOTA。",
+      "key_insight": "GEM 给出了「轻量专家 + ReAct Agent」分工的工程化模板：对结构性强的子任务用专用小模型（GNN/T5），仅在复杂、需要外部知识或多步推理的子任务上才升级到 LLM Agent。这种「按需调用 ReAct」的路由策略在社区搜索中也很关键——大多数 query 用召回+排序的传统流水线已足够，只有长尾、模糊或多意图 query 才走 Agent 路径，能在保持 P99 延迟的同时获得 LLM 的推理红利。MoE-router 框架同样可推广到搜索 Agent 中做「工具选择」。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.20486",
+      "title": "ProMMSearchAgent: A Generalizable Multimodal Search Agent Trained with Process-Oriented Rewards",
+      "url": "https://arxiv.org/abs/2604.20486",
+      "authors": "(arXiv 2604.20486)",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-28",
+      "total_score": 3.95,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "ProMMSearchAgent 提出了一种 introspective Process-Oriented Reward 机制，用以解决多模态 Agent 训练中「奖励-动作不匹配」的关键问题。系统训练了一个可泛化的多模态搜索智能体，能够进行复杂的多步推理、证据验证以及在视觉与文本模态间的主动搜索。",
+      "key_insight": "Process-Oriented Reward 把「过程可解释性」当作 reward 信号——这是一种比 outcome reward 更稳定的训练范式，对长视觉/文本搜索链路尤为关键。社区搜索的图文检索（帖子常含图片+正文）可直接借鉴：将「是否点击有效图文片段」、「是否调用了正确的多模态检索工具」作为过程奖励，构造从外部 RM 过来的稀疏 reward 之外的稠密信号，让 RL 训练更稳。同时 introspective 信号也能在线上线下评估时复用。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2605.04065",
+      "title": "Free Energy-Driven Reinforcement Learning with Adaptive Advantage Shaping for Unsupervised Reasoning in LLMs",
+      "url": "https://arxiv.org/abs/2605.04065",
+      "authors": "Yimin Zhang et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-07",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对无监督 RL 训练 LLM 时奖励信号无法适应模型不断进化的推理能力的问题，作者提出 FREIA 算法，由两个核心创新组成：(1) Free Energy-Driven Reward (FER) 基于自由能原理在共识与探索之间动态平衡奖励；(2) Adaptive Advantage Shaping (AAS) 根据采样奖励的统计特征自适应调整学习信号。在 9 个数据集、3 类推理任务上的实验显示 FREIA 显著超越其他无监督 RL 基线，尤其在数学推理上表现突出。",
+      "key_insight": "FREIA 把贝叶斯/自由能原理引入 RL reward 设计，是「无 ground truth 时如何继续 RL」的一个值得关注的解法。对搜索 Agent 训练特别有用：线上社区 query 大多没有标准答案，无法靠 RLHF/RLVR；用 FER 风格的「模型-自由能」作为奖励，可以让搜索 Agent 在没有人工标注的真实流量上做 self-play 式自我提升。AAS 的统计自适应也能缓解搜索 RL 中常见的「reward 方差爆炸」问题，是工业 RL Pipeline 可借鉴的稳定化技巧。"
+    },
+    {
+      "rank": 6,
+      "id": "hf:2605.02910",
+      "title": "CreativityBench: Evaluating Agent Creative Reasoning via Affordance-Based Tool Repurposing",
+      "url": "https://huggingface.co/papers/2605.02910",
+      "authors": "Cheng Wang et al.",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-05-05",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文以「创造性工具使用」切入 Agent 推理评测：模型必须基于物体的 affordance（可供性）和属性把现有工具用于非典型用途，而非依赖标准用法。为此构建了一个含 4K 实体、150K+ affordance 标注的大规模知识库，并据此生成 14K 个有约束、有非显然但物理上合理解的任务。在 10 个开源/闭源 SOTA LLM 上的评测显示，模型常能选出「看似可行」的对象，但在识别正确的物体部件、属性或具体动作组合上仍大量失败。",
+      "key_insight": "CreativityBench 把工具调用从「是否调对 API」提升到「是否能在工具不完备时创造性组合」——这是 Agent 由「工程化产品」迈向「通用智能体」的关键评测。对社区搜索 Agent 的启示：当用户 query 模糊或现有召回工具无法直接命中时，Agent 应能「重组工具链」——例如组合标签搜索 + 用户画像 + 时间衰减来回答 long-tail 需求，而不是简单调单一工具。Affordance-based 的评测视角也可以反向用于线上评估，诊断 Agent 是否仅在 happy path 上工作。"
+    },
+    {
+      "rank": 7,
+      "id": "hf:2605.04637",
+      "title": "SWE-WebDevBench: Evaluating Coding Agent Application Platforms as Virtual Software Agencies",
+      "url": "https://huggingface.co/papers/2605.04637",
+      "authors": "Siddharth et al.",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-05-05",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对 vibe coding 平台（用户用自然语言描述应用，AI Agent 自动生成全栈软件）的评测空白，作者提出 SWE-WebDevBench：一个 68 指标评测框架，覆盖 25 个主指标和 43 个诊断指标，组织为 7 个分组、3 个维度（Interaction Mode / Agency Angle / Complexity Tier）。对 6 个主流平台、3 个领域、18 个评测单元的评估揭示当前 AI App Builder 的 4 大短板：规格瓶颈、架构决策弱、对迭代修改不鲁棒、商业就绪度不足。",
+      "key_insight": "把 AI App Builder 当作「虚拟软件公司（Virtual Software Agency）」评估，是 Agent 评测从单点 task 转向多角色协作流程的代表性工作。对搜索 Agent 类似的启示：评测维度应该不只是「答对/答错」，还应包括 Agent 在多轮、多角色（产品-工程-运营）下的可迭代性，例如能否对用户的「再修改一下」请求做正确的局部更新。建议在搜索 Agent 内测时引入「修改请求（AMR）」评测维度，专门看模型是否能在最小化变动下满足新需求。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2605.04066",
+      "title": "Adapt to Thrive! Adaptive Power-Mean Policy Optimization for Improved LLM Reasoning",
+      "url": "https://arxiv.org/abs/2605.04066",
+      "authors": "Yimin Zhang et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-07",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对 RLVR（Reinforcement Learning with Verifiable Rewards）中静态策略优化目标与模型推理能力进化不匹配的问题，作者提出 APMPO，包含两项创新：Power-Mean Policy Optimization (PMPO) 通过广义 Power-Mean 目标使模型自适应地从「信号放大」的算术均值行为过渡到「一致性强化」的几何均值行为；Feedback-Adaptive Clipping (FAC) 基于实时奖励统计自适应调整 clipping 边界，克服静态机制的局限。两者结合显著改善了 RLVR 训练动态与推理表现。",
+      "key_insight": "PMPO 的「Power-Mean 一族目标可在算术-几何之间连续插值」是 RL 调参的实用洞察：训练前期重信号放大（探索），后期重一致性（利用），这恰好对应搜索 Agent 在线学习的不同阶段。FAC 的「实时统计驱动的 clipping」对工业级 RL 也很关键——线上 query 流量分布漂移会让静态 PPO clip 失效，FAC 思路可直接迁移。两者都是无需额外标注、可复用现有 reward 信号的「软」创新，部署成本低，是 RL Pipeline 可叠加的稳定化模块。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2605.04539",
+      "title": "RLearner-LLM: Balancing Logical Grounding and Fluency in LLMs via Hybrid DPO",
+      "url": "https://arxiv.org/abs/2605.04539",
+      "authors": "Qimin Yang et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-07",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "传统 DPO 依赖人类或 LLM-judge 提供偏好信号，但二者都偏向流畅而非逻辑正确，导致 SFT 模型 NLI 蕴含分仅 0.05–0.22。作者提出 RLearner-LLM with Hybrid-DPO：用 DeBERTa-v3 NLI 信号 + verifier LLM 评分融合作自动偏好流水线，免人工标注且克服单信号优化的「alignment tax」。在 5 个学术领域 × 3 种基座（LLaMA-2-13B / Qwen3-8B / Gemma 4 E4B-it）下，最高带来 6× NLI 提升、15 个评测格中 11 个 NLI 改善并伴随 answer-coverage 增益。Hybrid-DPO 在 4.5B Gemma 上效果尤为突出。",
+      "key_insight": "Hybrid-DPO 的核心思想——用一个细粒度的「事实/逻辑判别器」（NLI 模型）+ 一个粗粒度的「verifier LLM」组合监督，本质是把 reward model 拆为「硬判别 + 软评分」。这一思路非常契合搜索 RAG 场景：可以用 query-doc NLI 模型当硬判别（doc 是否真支持答案），LLM-judge 当软评分（回答是否流畅可读），从而在 RAG Agent 训练时同时纠正幻觉与提升可读性。该方案完全去除人工标注成本，是工业搜索团队可立即试点的对齐路线。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:oai:arXiv.org:2605.04507",
+      "title": "Distilling Bayesian Belief States into Language Models for Auditable Negotiation",
+      "url": "https://arxiv.org/abs/2605.04507",
+      "authors": "Zongqi Wang et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-07",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对端到端 LLM 谈判 Agent 的「对手信念隐式、不可审计」问题，作者提出 BOND（Bayesian Opponent-belief Negotiation Distillation）：由一个 LLM-based Bayesian Teacher 对 6 种对手优先级排序进行评分、维护后验分布并基于后验做菜单决策；再蒸馏到 8B 学生模型，让学生输出谈判动作的同时以 tagged text 形式输出归一化后验信念。在 CaSiNo 谈判数据集上 BOND 超越 SOTA，对手优先级后验的 Brier 分数为 0.085，蒸馏后的小学生在很大程度上保留了信念表达能力。",
+      "key_insight": "BOND 的「贝叶斯信念以可读文本形式输出」是 Agent 可审计性的关键设计：模型不仅给出动作，还给出「我认为对方在乎什么」的概率分布。对搜索 Agent 同样可迁移——例如让 RAG Agent 在每一步显式输出「我目前对 query 意图的信念分布 + 缺失证据」，便于线上诊断和 reward 设计。蒸馏到 8B 表明这一显式信念表达对部署友好的小模型也能保留，工业落地不需依赖巨型 teacher。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:R0MADEV/lexis",
+      "title": "lexis: Lexical + structural code search MCP server for AI assistants",
+      "url": "https://github.com/R0MADEV/lexis",
+      "source": "github",
+      "description": "Lexical + structural code search MCP server for Claude Code, Cursor, Windsurf and any MCP client. Gives AI assistants 28 precise search tools so they find the right code fast — 80% fewer tokens per task. No vectors, no embeddings, just ripgrep.",
+      "language": "TypeScript",
+      "stars": 9,
+      "created_at": "2026-05-03"
+    },
+    {
+      "rank": 2,
+      "id": "github:rcsb/foldmatch",
+      "title": "foldmatch: Embedding methods for structure similarity search",
+      "url": "https://github.com/rcsb/foldmatch",
+      "source": "github",
+      "description": "Embedding methods for structure similarity search.",
+      "language": "Python",
+      "stars": 11,
+      "created_at": "2025-02-26"
+    },
+    {
+      "rank": 3,
+      "id": "github:braingeneers/cytoverse",
+      "title": "cytoverse: Search and display cells in foundation model embedding space",
+      "url": "https://github.com/braingeneers/cytoverse",
+      "source": "github",
+      "description": "Search and display cells in foundation model embedding space.",
+      "language": "Jupyter Notebook",
+      "stars": 9,
+      "created_at": "2025-06-16"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "WildClawBench: end-to-end agent benchmark in the wild",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "Hard, practical, end-to-end evaluation for AI agents — drops agents into a live OpenClaw environment to test real, multi-step work without hand-holding.",
+      "language": "dataset",
+      "stars": 54,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "DeepSeek-V4-Pro: text-generation foundation model",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "DeepSeek V4 Pro text-generation conversational LLM (FP8, 8-bit).",
+      "language": "model",
+      "stars": 3713,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "DeepSeek-V4-Flash: lightweight text-generation model",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "DeepSeek V4 Flash, the lightweight variant of V4-Pro for low-latency conversational use.",
+      "language": "model",
+      "stars": 978,
+      "created_at": "2026-04-22"
+    }
+  ]
+}

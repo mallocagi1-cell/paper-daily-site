@@ -1,0 +1,296 @@
+{
+  "date": "2026-05-22",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 9,
+    "papers_selected": 8,
+    "score_min": 3.0,
+    "score_max": 4.7
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2605.20683",
+      "title": "Layer-wise Token Compression for Efficient Document Reranking",
+      "url": "https://arxiv.org/abs/2605.20683",
+      "authors": "Shengyao Zhuang, zhichao Xu, Ivano Lauriola",
+      "company": [
+        "Amazon"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 4.7,
+      "base_score": 4.65,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.7,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对 Transformer cross-encoder 重排序器推理成本高的问题，提出 Layer-wise Token Compression (LTC)，把自适应 token 池化放到中间层而非输入层。在 MS MARCO passage/document 排序上，中间层压缩在保持排序质量的同时把 QPS 最多提升 25%（passage）和 116%（document），并可直接扩展到 listwise LLM 重排，长上下文场景收益更大。",
+      "key_insight": "双塔检索常用的输入层 token 压缩对 cross-encoder 无效，把压缩挪到中间层是关键发现；更意外的是用短 passage 训练、压缩后的模型在长文档排序上反超未压缩版本，说明压缩起到了鼓励长度无关表征的正则作用。对线上重排降本与跨长度泛化都有借鉴价值。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2605.20683",
+        "title": "Layer-wise Token Compression for Efficient Document Reranking",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nTransformer cross-encoder 重排序器是现代 IR 系统的核心组件，但要把 query 与 document 拼成长序列一起过 Transformer，推理成本高、QPS 受限。一个已知的提速思路是 token compression——在 embedding 层把相邻 token 聚合，减少有效 token 数。这一招在双塔（bi-encoder）检索器上被证明有效，但作者通过实验发现：直接搬到 cross-encoder 上会失效。证据很硬：沿用 Jasper 的 embedding 层压缩虽然带来 25% 的 QPS 提升，却让 nDCG@10 从基线 0.727 暴跌到 DL19 的 0.5832、DL20 从 0.665 跌到 0.4975，约 20% 的效果损失。\n\n作者给出的根因假设是：cross-encoder 的相关性信号来自 query/document token 之间细粒度的交互，而这些交互从最早的 Transformer 层就开始发生；在 embedding 层就把 token 压掉，等于在交互发生之前抹掉了信号。双塔则是独立编码、只在向量层比相似度，所以对 token 压缩不敏感。这个观察直接引出本文的设计动机：压缩不能在交互之前做，而要等交互充分进行之后再做。\n\n## 2. 方法详解\n\nLTC（Layer-wise Token Compression）的核心是把 1D 自适应平均池化从 embedding 层挪到中间 Transformer 层。形式化为 H_compressed^(l) = C(H^(l), r)，输出 token 数 n' = ⌊n·r⌋，压缩比 r ∈ (0,1]。具体实现：在目标层 l*∈{1,…,L} 之前的 1 到 l*-1 层处理完整序列；从 l* 层起，沿 token 维做自适应平均池化，把相邻 token 表征合并，同时更新 attention mask 与位置索引；l* 到 L 层在压缩后的短序列上计算。池化用「相邻 token 平均」而非丢弃，尽量保留语义结构。\n\n对 listwise reranker，作者额外引入 document mask M∈{0,1}^(n×k)，只允许文档内池化、禁止跨文档压缩，并保护 instruction prompt 与 query 不被压。\n\n训练设置很关键：pointwise 用 Qwen3-0.6B-Base（28 层 decoder + 分类头），在 MS MARCO passage（约 880 万 passage、50 万训练 query，用 Tevatron 取 hard negative）上训练，损失为 1 正 + 5 hard negative 的交叉熵，3 epoch、batch 32、lr 1e-5、AdamW，且压缩在训练阶段就施加以让模型适应。listwise 用 Mistral-7B-Instruct-v0.3（取首生成 token 的 logits），RankZephyr/FIRST 数据（每 query 20 篇 GPT-4 排序文档），语言建模 + ListMLE 联合损失、LoRA rank 16。QPS 在单张 NVIDIA L40S 上测。\n\n一个非常重要的非显然结论：压缩必须「compression-aware training」。把压缩只在推理时加到未经压缩训练的模型上会灾难性掉点——r=0.2、layer 2 时 nDCG@10 从 0.728 跌到 0.287（相对下降 60%），说明未经训练的中间层表征不具备对 token 缩减的鲁棒性。\n\n## 3. 核心技术贡献\n\n第一，定位并解释了「embedding 层压缩对 cross-encoder 失效」这一现象，给出 token 交互时机的机理解释，纠正了从双塔直接迁移的错误直觉。第二，提出中间层自适应池化 LTC，把压缩点作为可调超参 l* 与压缩比 r 的二维设计空间，实验找到 layer 8–14 的「甜区」：既保排序质量又显著提速。第三，把方法无缝扩展到 listwise LLM reranker，用 document mask 实现文档内压缩、保护 prompt/query，长上下文 listwise 收益更大（27–73% QPS）。第四，意外发现压缩在长文档泛化上起到正则作用——用短 passage 训练、压缩后的模型迁移到长文档排序时反超未压缩版本。\n\n## 4. 实验结果分析\n\nPointwise passage（Qwen3-0.6B，TREC DL19/DL20）：基线 DL19 nDCG@10=0.727、QPS=5.35。最优 LTC（r=0.4、layer 8）DL19 nDCG@10=0.7274 与基线持平，QPS 5.35→6.69，提速 25%。消融揭示规律：早层压缩伤害大（layer 2、r=0.2 跌到 0.638，降 12.2%，p<0.001）；中层 8–14 中等压缩保质量且显著提速；后层 14–20 轻压缩（r=0.8）甚至略超基线（0.7314 vs 0.727，不显著），印证正则效应。\n\nPointwise document（512 token 截断）：r=0.4、layer 20 在 DL19 上 nDCG@10=0.663，反超基线 0.651——压缩鼓励长度无关表征。文档排序因序列更长，QPS 提升最高可达 116%。\n\nBEIR 六数据集（NFCorpus、FiQA、ScIDocs、SciFact、TREC-COVID、ArguAna，BM25 top-100 重排）零样本：无压缩 avg nDCG@10=0.422；r=0.8/layer20 为 0.424（+9% QPS）；r=0.6/layer14 为 0.420（+18%）；r=0.4/layer8 为 0.416（+25%），最激进压缩也仅相对降 1.4%。Listwise（Mistral-7B）passage 在无显著掉点下获 27–73% QPS 提升，document 提速空间更大。\n\n最值得警惕的反面结果是 zero-shot 压缩的崩盘（0.728→0.287），它把「必须压缩感知训练」这条工程红线划得很清楚。\n\n## 5. 局限与未来方向\n\n作者明确列出的局限：(1) 目标层 l* 与压缩比 r 目前靠人工 sweep，未来可用 NAS 自动选择以降低部署成本；(2) 基线对比偏窄，主要对 Jasper，缺与 MRL-Reranker、prompt compression、KV-cache 压缩、early-exit 等的系统比较；(3) 激进压缩依赖压缩感知微调，完全 training-free 的变体仍开放；(4) 正则化假设还需表征级分析（隐状态范数、attention 稀疏度随长度变化）与 runtime 拆解来确证。除作者所述，评测主要在 MS MARCO/BEIR 学术集，缺真实线上 A/B 与多语种、短文本 UGC 场景验证。\n\n## 6. 工业实践意义\n\n对搜索重排的直接启示：cross-encoder 想降本，不要在输入层砍 token，而应在中间层（经验上 8–14 层）做自适应池化，并务必在训练阶段就加入压缩。落地收益清晰——passage 重排 +25% QPS、长文档重排最高 +116% QPS，且质量基本无损；这对 query-document 序列偏长、重排算力吃紧的线上系统很有吸引力。压缩比 r 与压缩层 l* 构成「质量-时延」可调旋钮：要更激进提速就早压、要更稳就晚压且轻压。\n\n值得借鉴的还有两点：其一，「压缩即正则」的现象提示，用短文本训练、压缩部署，可能换来对长文档/长 query 更好的泛化，适合 UGC 长短文混合的检索场景；其二，listwise LLM reranker 用 document mask 做文档内压缩、保护 instruction 与 query，是把 LLM 重排搬上线时控成本的实用模式。部署注意：必须重训（compression-aware），不能对存量模型推理期直接加压；层/比例需离线 sweep 选定，建议结合自身延迟预算与 nDCG 容忍度确定甜区。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>Transformer cross-encoder 重排序器是现代 IR 系统的核心组件，但要把 query 与 document 拼成长序列一起过 Transformer，推理成本高、QPS 受限。一个已知的提速思路是 token compression——在 embedding 层把相邻 token 聚合，减少有效 token 数。这一招在双塔（bi-encoder）检索器上被证明有效，但作者通过实验发现：直接搬到 cross-encoder 上会失效。证据很硬：沿用 Jasper 的 embedding 层压缩虽然带来 25% 的 QPS 提升，却让 nDCG@10 从基线 0.727 暴跌到 DL19 的 0.5832、DL20 从 0.665 跌到 0.4975，约 20% 的效果损失。</p>\n<p>作者给出的根因假设是：cross-encoder 的相关性信号来自 query/document token 之间细粒度的交互，而这些交互从最早的 Transformer 层就开始发生；在 embedding 层就把 token 压掉，等于在交互发生之前抹掉了信号。双塔则是独立编码、只在向量层比相似度，所以对 token 压缩不敏感。这个观察直接引出本文的设计动机：压缩不能在交互之前做，而要等交互充分进行之后再做。</p>\n<h2>2. 方法详解</h2>\n<p>LTC（Layer-wise Token Compression）的核心是把 1D 自适应平均池化从 embedding 层挪到中间 Transformer 层。形式化为 H_compressed^(l) = C(H^(l), r)，输出 token 数 n&#x27; = ⌊n·r⌋，压缩比 r ∈ (0,1]。具体实现：在目标层 l<em>∈{1,…,L} 之前的 1 到 l</em>-1 层处理完整序列；从 l<em> 层起，沿 token 维做自适应平均池化，把相邻 token 表征合并，同时更新 attention mask 与位置索引；l</em> 到 L 层在压缩后的短序列上计算。池化用「相邻 token 平均」而非丢弃，尽量保留语义结构。</p>\n<p>对 listwise reranker，作者额外引入 document mask M∈{0,1}^(n×k)，只允许文档内池化、禁止跨文档压缩，并保护 instruction prompt 与 query 不被压。</p>\n<p>训练设置很关键：pointwise 用 Qwen3-0.6B-Base（28 层 decoder + 分类头），在 MS MARCO passage（约 880 万 passage、50 万训练 query，用 Tevatron 取 hard negative）上训练，损失为 1 正 + 5 hard negative 的交叉熵，3 epoch、batch 32、lr 1e-5、AdamW，且压缩在训练阶段就施加以让模型适应。listwise 用 Mistral-7B-Instruct-v0.3（取首生成 token 的 logits），RankZephyr/FIRST 数据（每 query 20 篇 GPT-4 排序文档），语言建模 + ListMLE 联合损失、LoRA rank 16。QPS 在单张 NVIDIA L40S 上测。</p>\n<p>一个非常重要的非显然结论：压缩必须「compression-aware training」。把压缩只在推理时加到未经压缩训练的模型上会灾难性掉点——r=0.2、layer 2 时 nDCG@10 从 0.728 跌到 0.287（相对下降 60%），说明未经训练的中间层表征不具备对 token 缩减的鲁棒性。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，定位并解释了「embedding 层压缩对 cross-encoder 失效」这一现象，给出 token 交互时机的机理解释，纠正了从双塔直接迁移的错误直觉。第二，提出中间层自适应池化 LTC，把压缩点作为可调超参 l* 与压缩比 r 的二维设计空间，实验找到 layer 8–14 的「甜区」：既保排序质量又显著提速。第三，把方法无缝扩展到 listwise LLM reranker，用 document mask 实现文档内压缩、保护 prompt/query，长上下文 listwise 收益更大（27–73% QPS）。第四，意外发现压缩在长文档泛化上起到正则作用——用短 passage 训练、压缩后的模型迁移到长文档排序时反超未压缩版本。</p>\n<h2>4. 实验结果分析</h2>\n<p>Pointwise passage（Qwen3-0.6B，TREC DL19/DL20）：基线 DL19 nDCG@10=0.727、QPS=5.35。最优 LTC（r=0.4、layer 8）DL19 nDCG@10=0.7274 与基线持平，QPS 5.35→6.69，提速 25%。消融揭示规律：早层压缩伤害大（layer 2、r=0.2 跌到 0.638，降 12.2%，p&lt;0.001）；中层 8–14 中等压缩保质量且显著提速；后层 14–20 轻压缩（r=0.8）甚至略超基线（0.7314 vs 0.727，不显著），印证正则效应。</p>\n<p>Pointwise document（512 token 截断）：r=0.4、layer 20 在 DL19 上 nDCG@10=0.663，反超基线 0.651——压缩鼓励长度无关表征。文档排序因序列更长，QPS 提升最高可达 116%。</p>\n<p>BEIR 六数据集（NFCorpus、FiQA、ScIDocs、SciFact、TREC-COVID、ArguAna，BM25 top-100 重排）零样本：无压缩 avg nDCG@10=0.422；r=0.8/layer20 为 0.424（+9% QPS）；r=0.6/layer14 为 0.420（+18%）；r=0.4/layer8 为 0.416（+25%），最激进压缩也仅相对降 1.4%。Listwise（Mistral-7B）passage 在无显著掉点下获 27–73% QPS 提升，document 提速空间更大。</p>\n<p>最值得警惕的反面结果是 zero-shot 压缩的崩盘（0.728→0.287），它把「必须压缩感知训练」这条工程红线划得很清楚。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出的局限：(1) 目标层 l* 与压缩比 r 目前靠人工 sweep，未来可用 NAS 自动选择以降低部署成本；(2) 基线对比偏窄，主要对 Jasper，缺与 MRL-Reranker、prompt compression、KV-cache 压缩、early-exit 等的系统比较；(3) 激进压缩依赖压缩感知微调，完全 training-free 的变体仍开放；(4) 正则化假设还需表征级分析（隐状态范数、attention 稀疏度随长度变化）与 runtime 拆解来确证。除作者所述，评测主要在 MS MARCO/BEIR 学术集，缺真实线上 A/B 与多语种、短文本 UGC 场景验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索重排的直接启示：cross-encoder 想降本，不要在输入层砍 token，而应在中间层（经验上 8–14 层）做自适应池化，并务必在训练阶段就加入压缩。落地收益清晰——passage 重排 +25% QPS、长文档重排最高 +116% QPS，且质量基本无损；这对 query-document 序列偏长、重排算力吃紧的线上系统很有吸引力。压缩比 r 与压缩层 l* 构成「质量-时延」可调旋钮：要更激进提速就早压、要更稳就晚压且轻压。</p>\n<p>值得借鉴的还有两点：其一，「压缩即正则」的现象提示，用短文本训练、压缩部署，可能换来对长文档/长 query 更好的泛化，适合 UGC 长短文混合的检索场景；其二，listwise LLM reranker 用 document mask 做文档内压缩、保护 instruction 与 query，是把 LLM 重排搬上线时控成本的实用模式。部署注意：必须重训（compression-aware），不能对存量模型推理期直接加压；层/比例需离线 sweep 选定，建议结合自身延迟预算与 nDCG 容忍度确定甜区。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2605.20689",
+      "title": "DIVE: Embedding Compression via Self-Limiting Gradient Updates",
+      "url": "https://arxiv.org/abs/2605.20689",
+      "authors": "Dongfang Zhao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 4.15,
+      "base_score": 4.1,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LLM 高维 embedding 给向量检索带来存储与算力压力。已有压缩适配器（Matryoshka-Adaptor、Search-Adaptor、SMEC）在标注稀缺时严重过拟合，效果反低于冻结基线。DIVE 用自限制 hinge 三元组损失（满足 margin 后梯度归零，限制对预训练空间的扰动）加 head-wise NT-Xent 多视图对比损失，在 6 个 BEIR 数据集、所有压缩比上均超过三个基线适配器，实现仅 14M 参数且开源。",
+      "key_insight": "核心思路是“少改动”：自限制损失避免小数据上破坏预训练 embedding 分布，多视图对比损失补偿三元组信号稀疏。对需要给召回向量降维、又缺乏大量领域标注的搜索场景有直接价值——14M 适配器可挂在现成 embedding 上，无需重训基座。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2605.20684",
+      "title": "Beyond Semantic Similarity: A Two-Phase Non-Parametric Retrieval Workflow for Corporate Credit Underwriting",
+      "url": "https://arxiv.org/abs/2605.20684",
+      "authors": "Linus Ng Junjia, Ezekiel Tee Kongquan, Kelvin Heng, Kenneth Zhu Ke, Zhao Jing Yuan",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.9,
+      "base_score": 3.75,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "标准 RAG 按语义相似度检索，常召回话题相关但对决策无用的段落（作者称为 similarity-utility gap）。提出两阶段非参数检索：第一阶段用词法加稠密多语检索构建高召回候选池；第二阶段用自适应检索控制器按 query 意图与文档结构过滤，再用 LLM-as-a-Judge 按“分析有用性”而非语义接近度排序。在 800 多名信贷分析师的生产部署中，文档审阅时间从数小时降到约 3 分钟。",
+      "key_insight": "把“相关”与“有用”拆成两个阶段、用 LLM-as-Judge 做 utility 重排，是对纯向量相似度排序的有益补充，尤其适合长文档、决策导向的检索。全程本地部署满足数据合规要求，对企业内搜索与 RAG 落地有参考意义。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2605.20254",
+      "title": "Efficient Table QA via TableGrid Navigation and Progressive Inference Prompting",
+      "url": "https://arxiv.org/abs/2605.20254",
+      "authors": "Amritansh Maurya, Navjot Singh, Mohammed Javed, Omar Moured",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.65,
+      "base_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "表格问答需要精确的单元格检索与多步结构化推理。提出免训练的两套结构化提示：TableGrid Navigation (TGN) 用三模块循环迭代遍历行列定位证据并修正答案；Progressive Inference Prompting (PIP) 强制按 query 先识别列再渐进选行。在 17 个 LLM、6 个基线上评测，TableBench 上 TGN 比最强基线高 3.8 分，FeTaQa 上 PIP 超过 ReAct 与 CoT 达到 SOTA。",
+      "key_insight": "不微调、靠结构化提示约束模型“怎么在表里找证据”，并能作为蒸馏小模型的监督模板缩小与大模型的差距。对涉及结构化数据（表格、属性字段）的搜索与问答场景，提供了一种低成本、可验证检索路径的实现思路。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2605.20815",
+      "title": "GraphRAG on Consumer Hardware: Benchmarking Local LLMs for Healthcare EHR Schema Retrieval",
+      "url": "https://arxiv.org/abs/2605.20815",
+      "authors": "Peter Fernandes, Ria Kanjilal",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.45,
+      "base_score": 3.3,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "系统评测 GraphRAG 在消费级硬件（单张 8GB 显存 GPU、Ollama 部署）上做 EHR schema 检索的可行性，对比 Llama 3.1 8B、Mistral 7B、Qwen 2.5 7B、Phi-4-mini 3.8B。结果：Llama 3.1 构建的知识图谱实体最多（1172 个），Qwen 2.5 答案质量最高（3.3/5），Phi-4-mini 因结构化输出错误无法跑通；约 7B 以下模型难以稳定产出有效结构化输出。",
+      "key_insight": "关键发现是 local 检索在延迟与事实 grounding 上持续优于 global 摘要、且幻觉更低，indexing 质量与答案质量在不同模型间是解耦的。对在隐私敏感、资源受限环境落地 GraphRAG 的团队，给出了模型选型（不低于 7B）与检索模式（优先 local）的实证依据。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2601.14348",
+      "title": "Legal Retrieval for Public Defenders",
+      "url": "https://arxiv.org/abs/2601.14348",
+      "authors": "Dominik Stammbach, Kylie Zhang, Patty Liu, Nimra Nadeem, Inyoung Cheong, Lucia Zheng, Peter Henderson",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.35,
+      "base_score": 3.35,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "与新泽西公设辩护人办公室合作，构建 NJ BriefBank——检索相关上诉状以辅助法律检索与写作。发现现有检索 benchmark 无法迁移到真实公设辩护检索，而加入领域知识能提升质量：包括用法律推理做 query 扩展、领域专用数据、以及人工筛选的合成样本。同时发布了贴近真实辩护人查询的 taxonomy 与人工标注评测集，与专家标注的私有集高度相关。",
+      "key_insight": "现成检索 benchmark 与真实业务存在显著分布差异；query 扩展（注入推理）加领域合成数据是弥合差距的实用手段。对垂直领域搜索冷启动、缺乏标注时如何评测与提升检索，提供了可操作的方法论参考。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2605.21057",
+      "title": "SG-LegalCite: A Principle-Augmented Benchmark for Legal Citation Retrieval in Singapore Law",
+      "url": "https://arxiv.org/abs/2605.21057",
+      "authors": "Shannon Lee Yueh Ern, Kaidong Feng, Yingpeng Du, Chloe Lee En Jia, Zhu Sun",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.3,
+      "base_score": 3.3,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "普通法系的法律引用不仅看事实相似，还取决于先例确立的“法律原则”，而现有 benchmark 多以案件事实或引用上下文为输入，原则常缺失或被上下文淹没，导致检索到事实相似但法理无关的先例。提出 principle-augmented 检索范式：用“案件事实加显式法律原则”作为 query 排序被引案例，并构建 SG-LegalCite（8523 份新加坡最高法院判决、100,890 对 case-principle），11 个基线验证显式原则提供强判别信号。",
+      "key_insight": "把隐含的“为何相关”显式化进 query，是提升检索精度的通用思路，对社区搜索同样适用：若能把用户意图或原因结构化进 query 表示，可减少“话题相似但无关”的召回。该范式与构建带原因标注检索数据集的做法值得借鉴。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2605.20478",
+      "title": "Stage-Audit: Auditable Source-Frontier Discovery for Cross-Wiki Tables",
+      "url": "https://arxiv.org/abs/2605.20478",
+      "authors": "Chen Shen",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-21",
+      "total_score": 3.0,
+      "base_score": 3.0,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.0,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LLM 整理的表格可能“看似有出处”实则包含来自参数记忆、事后硬贴引用的无支撑行。Stage-Audit 针对 Seed2Frontier（从种子页发现互补维基页面以拼表）任务，用 curator-auditor 写权限分离、行级 source-citation 门控、以及覆盖 key/schema/角色/基数/范围的 12 项审计 taxonomy。在 51 实例、15 个领域的评测集上，source-frontier 精度从 0.356 提升到 0.505（相对 +42%），F1 从 0.334 到 0.451（+35%）。",
+      "key_insight": "把“生成”与“审计”角色分离、对每一行强制可追溯的来源门控，是对抗 LLM 检索与整理结果幻觉的有效机制。对需要保证召回结果可溯源、可审计的搜索与知识构建场景（如带引用的 RAG），其行级 grounding 校验思路可迁移。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:Doorman11991/MarrowScript",
+      "title": "MarrowScript: MarrowScript compiler. Welcome to deterministic typed LLM orchestration as a compile-time concern",
+      "url": "https://github.com/Doorman11991/MarrowScript",
+      "source": "github",
+      "description": "MarrowScript compiler. Welcome to deterministic typed LLM orchestration as a compile-time concern",
+      "language": "TypeScript",
+      "stars": 14,
+      "created_at": "2026-05-17"
+    },
+    {
+      "rank": 2,
+      "id": "github:hourizon/sysu-lms-script-version-2-",
+      "title": "sysu-lms-script-version-2-: 中山大学（SYSU）LMS 学习助手。全自动秒刷课、LLM 答题、自动跳转。提供油猴脚本和控制台版本。",
+      "url": "https://github.com/hourizon/sysu-lms-script-version-2-",
+      "source": "github",
+      "description": "中山大学（SYSU）LMS 学习助手。全自动秒刷课、LLM 答题、自动跳转。提供油猴脚本和控制台版本。",
+      "language": "JavaScript",
+      "stars": 10,
+      "created_at": "2026-05-19"
+    },
+    {
+      "rank": 3,
+      "id": "github:hqygtr-prog/repro-agent",
+      "title": "repro-agent: LLM-driven autonomous research reproduction agent",
+      "url": "https://github.com/hqygtr-prog/repro-agent",
+      "source": "github",
+      "description": "LLM-driven autonomous research reproduction agent",
+      "language": "Python",
+      "stars": 10,
+      "created_at": "2026-05-20"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "WildClawBench Hard, practical, end-to-end evaluation for AI agents — in the wild. WildClawBench is an agent benchmark that tests what actually matters: can an AI agent do real work, end-to-end, without hand-holding? We drop agents into a live OpenClaw environment — the same open-; tags: benchmark:of",
+      "language": "dataset",
+      "stars": 59,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:zai-org/ImageMining",
+      "title": "zai-org/ImageMining",
+      "url": "https://huggingface.co/datasets/zai-org/ImageMining",
+      "source": "huggingface",
+      "description": "Dataset Card for ImageMining Dataset Description ImageMining is a benchmark for evaluating image mining and knowledge discovery capabilities of multimodal models. Given an image, the task requires models to identify entities, perform multi-step reasoning (often with search-augmen; tags: task_categor",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-05-05"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:zai-org/GLM-OCR",
+      "title": "zai-org/GLM-OCR",
+      "url": "https://huggingface.co/zai-org/GLM-OCR",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm_ocr, image-text-to-text, conversational, zh, en, fr",
+      "language": "model",
+      "stars": 1762,
+      "created_at": "2026-01-30"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "model",
+      "stars": 1318,
+      "created_at": "2026-04-14"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "pipeline: any-to-any; tags: Lance, safetensors, multimodal, image-generation, video-generation, image-editing, video-understanding, any-to-any",
+      "language": "model",
+      "stars": 550,
+      "created_at": "2026-05-15"
+    }
+  ]
+}

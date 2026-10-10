@@ -1,0 +1,553 @@
+{
+  "date": "2026-10-01",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索)：帖子、问答、评论的语义匹配、query 理解、短文本召回和排序；核心指标 nDCG 与 CTR。",
+  "stats": {
+    "papers_scored": 57,
+    "papers_selected": 10,
+    "score_min": 3.0,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "id": "hf:2609.37725",
+      "title": "Context Language Models",
+      "authors": "Rulin Shao, Shannon Zejiang Shen, Junjie Oscar Yin, Yuetai Li, Minheng Wang",
+      "abstract": "We introduce Context Language Models (CLMs), language models that natively manage their own context. We implement this by treating the context as a file and allowing the model to make unrestricted updates to this file. This allows the model to learn what is most important to maintain in context, and naturally extends to multi-agent systems where multiple agent contexts coexist as files. Building CLMs zero-shot with existing models outperforms SOTA context management strategies across a variety of tasks: 11.4% higher accuracy with 21.5% fewer FLOPs on BrowseComp-Plus, 5% higher scores with 59% fewer FLOPs on 12-hour EdgeBench, and 65% greater improvement with the same compute on a 24-hour multi-repository agent-swarm task. Moreover, by shifting context management from external harness control to intrinsic model behavior, CLMs naturally enable both in-context and parametric learning of context-management strategies. We show that CLMs can be steered with natural-language instructions evol",
+      "url": "https://huggingface.co/papers/2609.37725",
+      "source": "huggingface",
+      "published": "2026-09-29",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.4,
+      "company": [
+        "Meta",
+        "UW",
+        "MIT",
+        "Trillium Labs"
+      ],
+      "summary": "模型把实时上下文视为可编辑文件，按任务进展删除、改写或外存证据，并通过强化学习学习管理策略。BrowseComp-Plus 上准确率达到 59.4%，相对最强摘要基线提升 11.4%，前缀复用计算量减少 21.5%；训练后的 9B 模型从 28.8% 提升至 42.5%。",
+      "key_insight": "社区复杂搜索可把查询约束、引用证据和未解决子问题写入可编辑工作区，避免反复总结导致关键原文丢失。先比较固定摘要与模型管理上下文，再单独测试缓存复用；论文计算节约以 FLOPs 衡量，不能直接当作端到端延迟或线上 nDCG 收益。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.45,
+      "evidence_file": "fulltext_36.txt",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "hf:2609.37725",
+        "title": "Context Language Models",
+        "status": "completed",
+        "content": "# Context Language Models：把上下文管理交给模型\n\n正文来源：https://arxiv.org/html/2609.37725 。以下分析依据方法、结果、讨论及附录 B、E、F；本地正文快照为 fulltext_36.txt。论文作者来自 UW、Meta、MIT 等机构。本报告评分 4.40，社区搜索中的主要价值是多轮证据管理与复杂检索的计算效率。\n\n## 1. 问题与动机\n\n复杂检索常常不是一次召回即可完成：系统要保留问题约束、搜索过哪些方向、有哪些证据相互冲突，以及还缺什么信息。传统上下文管理由执行框架规定，达到长度阈值后统一总结，或暴露预定义的压缩、外存、检索操作。论文指出，这些办法限制了模型决定信息如何保留的空间。摘要可能遗漏原文，也可能在改写时引入不存在的事实；局部状态更新却要重新生成整个状态，更浪费计算。\n\n作者构造 ContextBench 来隔离上下文管理能力，包含原文保留、数独状态编辑、键值存储和日志筛选四类任务，窗口固定为 32K，输入压力最高达到窗口的 24 倍。它们不要求复杂领域知识，但现有方法仍无法全部正确完成。这个诊断说明，限制不仅在模型能否推理，也在执行框架能否让模型持续维护合适的输入。CLM 延续模型控制压缩时机的研究，却把控制权进一步扩展到编辑整个实时上下文。\n\n## 2. 方法详解\n\n标准语言模型的上下文转移是“旧上下文加新输出”。CLM 则允许模型自己构造下一轮上下文：旧输入不仅可追加，也可删除、替换、压缩和重新组织。实现上，执行框架把当前上下文镜像成一个文件，并在系统提示中给出路径。模型通过通用 Bash 或代码接口编辑文件，执行框架把修改同步到下一次模型调用。若没有编辑，仍采用普通的追加行为。这要求修改的是实际发送给模型的实时输入，而不是仅维护一个外部笔记文件。\n\n因此，最低限度的复现流程是：初始化上下文文件；模型生成普通回答或工具调用；执行工具；检测上下文文件变化；解析更新后的轮次及角色；将其作为下一轮输入；保留完整的编辑与工具日志供验证。这里列出的执行顺序是对论文实现机制的实践归纳，产品化时还需处理异常编辑与回滚。多 Agent 扩展让多个上下文文件各自同步到对应模型会话，创建或删除文件可对应子任务的开始和结束。论文观察到模型自行维护进度表、修改内部备注角色，并编写可重复调用的压缩函数。\n\n策略学习有两条路径。文本演化在训练划分上生成轨迹，由提出者模型据此改写技能说明，在开发集上选择下一轮策略，最终只在保留测试集上评估一次。参数学习使用 stepwise GRPO：每个完整轨迹的结果优势分配给各次模型调用。单纯奖励删去 token 容易诱导模型丢证据，因此作者只在成功轨迹之间计算效率优势。每条成功轨迹的奖励取决于其计算量相对同组成功轨迹平均计算量的减少比例，裁剪到 [-1,1]；失败轨迹不拿效率奖励，同组成功轨迹少于两条时也不计算。最后把任务优势与效率优势相加。\n\n附录 E 的训练设置是 Qwen3.5-9B、3,040 条 OpenResearcher 提示、70 步，每步 8 条提示，每条采样 32 条轨迹。学习率为 10^-6，权重衰减为 0.1，低方差 KL 系数为 0.01，裁剪范围为 [0.2,0.28]；使用截断重要性采样和移除无奖励差异组的动态采样。生成温度 0.7、top-p 0.95，每轮最多生成 4,096 tokens。CLM 窗口预算 28K，并预留 2,048 tokens，最多 80 个非编辑轮次。策略训练使用 16 张 H200，轨迹生成使用 48 张 H200。正文未在这些设置中明确给出优化器名称，不能自行补为 AdamW。\n\n任务二元奖励来自 GPT-5.4-nano 依照 DeepSearchQA 规则判断，效率优势权重为 0.25，作用于上下文管理 tokens，并处罚失败工具调用和格式错误。用 500 道保留验证题挑检查点，再评估全部 830 道 BrowseComp-Plus 题。这一资源配置显著大于一般业务团队的轻量试验，因此零样本改造比完整复现 RL 更适合作为第一步。\n\n## 3. 核心技术贡献\n\n第一项贡献是把管理上下文定义为模型的原生能力。相较 Self-Compact、ACM 等预定义工具，CLM 不规定只能“压缩”或“外存”，允许模型自己设计操作及其组合。正文图 3 的实际轨迹显示，它可用循环剔除无关搜索结果、保留已搜索查询，或用函数将详细观测替换为进度笔记。一个编排例子进行 163 次原位修改，却把实时上下文维持在 6–8K tokens；这是机制实例，不代表所有任务都有相同比例的压缩收益。\n\n第二项贡献是将正确性和效率联合优化，同时防止“删得多就得分”的奖励漏洞。成功门控使模型先解决任务，再在正确轨迹中减少计算。训练后 9B CLM 的 BrowseComp-Plus 准确率提高 13.7 个百分点，计算从 1.52 降到 1.34 PFLOPs/题。重要的是，未训练小模型在该训练比较中落后摘要执行框架，说明上下文自由并不自动产生优秀策略。\n\n第三项贡献是 Suffix Cache Reuse，解决中间编辑破坏前缀匹配导致重新预填充的问题。上下文从 [A,B,C] 改成 [A,B',C] 时，普通缓存只能复用 A；SCR 找到编辑后仍存活的片段，按长度优先迁移最多 6 段 KV 状态，对键的旋转位置编码重新定位，再插入新上下文。只有 B' 和新增 tokens 需要预填充。迁移状态放在会话私有缓存槽，避免污染共享 radix tree；分配失败就退回普通预填充。因为 C 的状态仍带有旧前缀信息，这是近似复用，不是严格等价的注意力计算。在报告实验里维持性能的同时，计算下降约 35%。\n\n## 4. 实验结果分析\n\n下表整理正文表 2、图 5、图 8 的数值。计算指标为考虑前缀缓存匹配的理论或实测计算量，不是请求耗时；不同任务及模型之间不能直接比较 PFLOPs 的绝对大小。\n\n| 任务及模型 | 方法 | 效果 | 计算 |\n|---|---|---:|---:|\n| BrowseComp-Plus，Qwen3.5-9B，训练前 | 摘要框架 | 34.7% | 4.01 PFLOPs/题 |\n| 同上，训练后 | 摘要框架 | 42.1% | 2.19 PFLOPs/题 |\n| BrowseComp-Plus，Qwen3.5-9B，训练前 | CLM | 28.8% | 1.52 PFLOPs/题 |\n| 同上，训练后 | CLM | 42.5% | 1.34 PFLOPs/题 |\n| TBLite，Qwen3.6-27B，零样本 | 摘要框架 | 67.0% | 相对基准 100% |\n| 同上 | CLM | 73.7% | 相对基准 91% |\n| EdgeBench-10，Qwen3.6-27B，32K | 摘要框架 | 42.3 | 437 PFLOPs/试验 |\n| 同上 | CLM | 44.6 | 179 PFLOPs/试验 |\n| 同上 | CLM 加子 Agent | 44.2 | 181 PFLOPs/试验 |\n\n在零样本复杂研究任务中，27B CLM 的 BrowseComp-Plus 准确率是 59.4%，比最强摘要基线相对高 11.4%，计算低 21.5%。这与表内 9B 强化学习实验不同，不能混成同一设置。训练后的 CLM 相对训练后的摘要模型只高 0.4 个百分点，但每题计算从 2.19 降到 1.34，减少约 38.8%。因此它在这个比较中的突出收益主要是相近准确率下的效率，而非大幅超过所有训练基线。\n\n消融和对照提供了几条更具体的判断。正文及附录的奖励曲线显示，增加计算奖励进一步降低推理成本，没有清晰可见的准确率损失；论文没有给出可直接抄录的全部曲线端点数值，所以这里不估读图片来声称某个精确提升。32K 单仓库任务里增加子 Agent 从 44.6 变为 44.2，并未改善表现。128K 下，子 Agent 达到 50.2，高于单 CLM 的 47.3，但消耗 219 而非 142 PFLOPs。是否并行探索取决于任务结构和预算，不应只因支持子 Agent 就默认开启。\n\n模型规模也影响策略质量：在 TerminalBench 2.1，9B 模型平均编辑 1.4 次，半数任务一次都不编辑；27B 平均编辑 2.6 次。二者峰值上下文中位数分别为 30.2K 和 17.6K，说明小模型更容易把窗口用满。技能演化的 KV Store 保留测试集从 38.3% 到 74.2%，提高 35.9 个百分点；开发集从 22.3% 到 83.8%，这些划分不能混用。正文还报告六仓库协作的下游速度改善幅度相对基线多 65%，它是特定软件优化目标，不能解读为搜索问答准确率提高 65%。\n\n## 5. 局限与未来方向\n\n作者在讨论中明确指出，可编辑上下文会增加安全攻击面：提示注入和模型自行生成的指令可能写入后续轮次持续使用的上下文。文章引用摘要压缩中插入未授权指令的先例，要求研究保持完整性的防护。未来方向包括扩大 CLM 的强化学习规模，以及把已有执行框架的过程策略转写成 CLM 动作，再吸收到模型参数。作者把执行框架看成程序性记忆，提出外部开发后再内部学习的路线，并没有声称当前版本已能完全替代所有框架规则。\n\n作为实践观察，还应关注正文未直接覆盖的业务风险：社区搜索的点击率、nDCG、实时响应延迟及用户可信度并未进行线上 A/B 验证；FLOPs 更少也可能被文件同步、缓存匹配或额外工具往返抵消。SCR 使用旧上下文下的后缀状态，需要针对大量事实修改的场景测试残留信息影响。RL 奖励依赖模型裁判，正确性定义与真实社区任务有距离。这些是迁移评估问题，不是论文已经测出的负面结论。\n\n## 6. 工业实践意义\n\n适合先试点的场景是需要多次检索与核查的社区问题，例如综合不同帖子判断某种产品的使用条件，或追踪一个主题随时间变化的意见。可让模型维护“问题约束、已确认事实、原文片段及引用、分歧、失败搜索、待验证项”工作区，把过长工具返回外存但留下来源定位。这个工作区字段设计是本解读的业务建议；论文证明的是开放编辑机制及其基准效果，并未验证上述社区字段。\n\n试验应固定模型、检索器、候选池与时间预算，把固定摘要和 CLM 两组放在同一查询集上比较。准确性看相关性、证据支持率和约束完成率，效率看工具调用数、输入输出 tokens、重复搜索、实际端到端耗时。还要抽查原文被错误删除或改写的比例，特别是用户否定约束和帖子日期。先给轻量模型配自然语言策略并测试，不必立即投入 64 张 H200 复现训练。\n\n工程实现必须保存可回放的上下文版本；系统级边界、用户授权与外部证据应有独立完整性保护，避免模型编辑把检索材料升格为指令。可限制试点访问范围并测量恢复能力，但不要假定这些限制已经由 CLM 论文自动提供。缓存层应作为第二个独立变量：先证明编辑策略改善质量与成本，再引入 SCR，记录回退率、显存占用与请求延迟。若只能调用不暴露 KV 状态的托管接口，可采用文件上下文机制，但不能宣称获得论文 SCR 的 35% 收益。\n\n最后，本文没有社区搜索线上收益。对 nDCG 和 CTR 的作用应通过受控业务试验确认；它更直接的启示是让模型在多轮检索中保留正确而紧凑的证据状态，并使管理成本可测、策略可学习、每次改写可追溯。",
+        "content_html": "<h1>Context Language Models：把上下文管理交给模型</h1>\n<p>正文来源：https://arxiv.org/html/2609.37725 。以下分析依据方法、结果、讨论及附录 B、E、F；本地正文快照为 fulltext_36.txt。论文作者来自 UW、Meta、MIT 等机构。本报告评分 4.40，社区搜索中的主要价值是多轮证据管理与复杂检索的计算效率。</p>\n<h2>1. 问题与动机</h2>\n<p>复杂检索常常不是一次召回即可完成：系统要保留问题约束、搜索过哪些方向、有哪些证据相互冲突，以及还缺什么信息。传统上下文管理由执行框架规定，达到长度阈值后统一总结，或暴露预定义的压缩、外存、检索操作。论文指出，这些办法限制了模型决定信息如何保留的空间。摘要可能遗漏原文，也可能在改写时引入不存在的事实；局部状态更新却要重新生成整个状态，更浪费计算。</p>\n<p>作者构造 ContextBench 来隔离上下文管理能力，包含原文保留、数独状态编辑、键值存储和日志筛选四类任务，窗口固定为 32K，输入压力最高达到窗口的 24 倍。它们不要求复杂领域知识，但现有方法仍无法全部正确完成。这个诊断说明，限制不仅在模型能否推理，也在执行框架能否让模型持续维护合适的输入。CLM 延续模型控制压缩时机的研究，却把控制权进一步扩展到编辑整个实时上下文。</p>\n<h2>2. 方法详解</h2>\n<p>标准语言模型的上下文转移是“旧上下文加新输出”。CLM 则允许模型自己构造下一轮上下文：旧输入不仅可追加，也可删除、替换、压缩和重新组织。实现上，执行框架把当前上下文镜像成一个文件，并在系统提示中给出路径。模型通过通用 Bash 或代码接口编辑文件，执行框架把修改同步到下一次模型调用。若没有编辑，仍采用普通的追加行为。这要求修改的是实际发送给模型的实时输入，而不是仅维护一个外部笔记文件。</p>\n<p>因此，最低限度的复现流程是：初始化上下文文件；模型生成普通回答或工具调用；执行工具；检测上下文文件变化；解析更新后的轮次及角色；将其作为下一轮输入；保留完整的编辑与工具日志供验证。这里列出的执行顺序是对论文实现机制的实践归纳，产品化时还需处理异常编辑与回滚。多 Agent 扩展让多个上下文文件各自同步到对应模型会话，创建或删除文件可对应子任务的开始和结束。论文观察到模型自行维护进度表、修改内部备注角色，并编写可重复调用的压缩函数。</p>\n<p>策略学习有两条路径。文本演化在训练划分上生成轨迹，由提出者模型据此改写技能说明，在开发集上选择下一轮策略，最终只在保留测试集上评估一次。参数学习使用 stepwise GRPO：每个完整轨迹的结果优势分配给各次模型调用。单纯奖励删去 token 容易诱导模型丢证据，因此作者只在成功轨迹之间计算效率优势。每条成功轨迹的奖励取决于其计算量相对同组成功轨迹平均计算量的减少比例，裁剪到 [-1,1]；失败轨迹不拿效率奖励，同组成功轨迹少于两条时也不计算。最后把任务优势与效率优势相加。</p>\n<p>附录 E 的训练设置是 Qwen3.5-9B、3,040 条 OpenResearcher 提示、70 步，每步 8 条提示，每条采样 32 条轨迹。学习率为 10^-6，权重衰减为 0.1，低方差 KL 系数为 0.01，裁剪范围为 [0.2,0.28]；使用截断重要性采样和移除无奖励差异组的动态采样。生成温度 0.7、top-p 0.95，每轮最多生成 4,096 tokens。CLM 窗口预算 28K，并预留 2,048 tokens，最多 80 个非编辑轮次。策略训练使用 16 张 H200，轨迹生成使用 48 张 H200。正文未在这些设置中明确给出优化器名称，不能自行补为 AdamW。</p>\n<p>任务二元奖励来自 GPT-5.4-nano 依照 DeepSearchQA 规则判断，效率优势权重为 0.25，作用于上下文管理 tokens，并处罚失败工具调用和格式错误。用 500 道保留验证题挑检查点，再评估全部 830 道 BrowseComp-Plus 题。这一资源配置显著大于一般业务团队的轻量试验，因此零样本改造比完整复现 RL 更适合作为第一步。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是把管理上下文定义为模型的原生能力。相较 Self-Compact、ACM 等预定义工具，CLM 不规定只能“压缩”或“外存”，允许模型自己设计操作及其组合。正文图 3 的实际轨迹显示，它可用循环剔除无关搜索结果、保留已搜索查询，或用函数将详细观测替换为进度笔记。一个编排例子进行 163 次原位修改，却把实时上下文维持在 6–8K tokens；这是机制实例，不代表所有任务都有相同比例的压缩收益。</p>\n<p>第二项贡献是将正确性和效率联合优化，同时防止“删得多就得分”的奖励漏洞。成功门控使模型先解决任务，再在正确轨迹中减少计算。训练后 9B CLM 的 BrowseComp-Plus 准确率提高 13.7 个百分点，计算从 1.52 降到 1.34 PFLOPs/题。重要的是，未训练小模型在该训练比较中落后摘要执行框架，说明上下文自由并不自动产生优秀策略。</p>\n<p>第三项贡献是 Suffix Cache Reuse，解决中间编辑破坏前缀匹配导致重新预填充的问题。上下文从 [A,B,C] 改成 [A,B&#x27;,C] 时，普通缓存只能复用 A；SCR 找到编辑后仍存活的片段，按长度优先迁移最多 6 段 KV 状态，对键的旋转位置编码重新定位，再插入新上下文。只有 B&#x27; 和新增 tokens 需要预填充。迁移状态放在会话私有缓存槽，避免污染共享 radix tree；分配失败就退回普通预填充。因为 C 的状态仍带有旧前缀信息，这是近似复用，不是严格等价的注意力计算。在报告实验里维持性能的同时，计算下降约 35%。</p>\n<h2>4. 实验结果分析</h2>\n<p>下表整理正文表 2、图 5、图 8 的数值。计算指标为考虑前缀缓存匹配的理论或实测计算量，不是请求耗时；不同任务及模型之间不能直接比较 PFLOPs 的绝对大小。</p>\n<table><thead><tr><th>任务及模型</th><th>方法</th><th>效果</th><th>计算</th></tr></thead><tbody><tr><td>BrowseComp-Plus，Qwen3.5-9B，训练前</td><td>摘要框架</td><td>34.7%</td><td>4.01 PFLOPs/题</td></tr><tr><td>同上，训练后</td><td>摘要框架</td><td>42.1%</td><td>2.19 PFLOPs/题</td></tr><tr><td>BrowseComp-Plus，Qwen3.5-9B，训练前</td><td>CLM</td><td>28.8%</td><td>1.52 PFLOPs/题</td></tr><tr><td>同上，训练后</td><td>CLM</td><td>42.5%</td><td>1.34 PFLOPs/题</td></tr><tr><td>TBLite，Qwen3.6-27B，零样本</td><td>摘要框架</td><td>67.0%</td><td>相对基准 100%</td></tr><tr><td>同上</td><td>CLM</td><td>73.7%</td><td>相对基准 91%</td></tr><tr><td>EdgeBench-10，Qwen3.6-27B，32K</td><td>摘要框架</td><td>42.3</td><td>437 PFLOPs/试验</td></tr><tr><td>同上</td><td>CLM</td><td>44.6</td><td>179 PFLOPs/试验</td></tr><tr><td>同上</td><td>CLM 加子 Agent</td><td>44.2</td><td>181 PFLOPs/试验</td></tr></tbody></table>\n<p>在零样本复杂研究任务中，27B CLM 的 BrowseComp-Plus 准确率是 59.4%，比最强摘要基线相对高 11.4%，计算低 21.5%。这与表内 9B 强化学习实验不同，不能混成同一设置。训练后的 CLM 相对训练后的摘要模型只高 0.4 个百分点，但每题计算从 2.19 降到 1.34，减少约 38.8%。因此它在这个比较中的突出收益主要是相近准确率下的效率，而非大幅超过所有训练基线。</p>\n<p>消融和对照提供了几条更具体的判断。正文及附录的奖励曲线显示，增加计算奖励进一步降低推理成本，没有清晰可见的准确率损失；论文没有给出可直接抄录的全部曲线端点数值，所以这里不估读图片来声称某个精确提升。32K 单仓库任务里增加子 Agent 从 44.6 变为 44.2，并未改善表现。128K 下，子 Agent 达到 50.2，高于单 CLM 的 47.3，但消耗 219 而非 142 PFLOPs。是否并行探索取决于任务结构和预算，不应只因支持子 Agent 就默认开启。</p>\n<p>模型规模也影响策略质量：在 TerminalBench 2.1，9B 模型平均编辑 1.4 次，半数任务一次都不编辑；27B 平均编辑 2.6 次。二者峰值上下文中位数分别为 30.2K 和 17.6K，说明小模型更容易把窗口用满。技能演化的 KV Store 保留测试集从 38.3% 到 74.2%，提高 35.9 个百分点；开发集从 22.3% 到 83.8%，这些划分不能混用。正文还报告六仓库协作的下游速度改善幅度相对基线多 65%，它是特定软件优化目标，不能解读为搜索问答准确率提高 65%。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在讨论中明确指出，可编辑上下文会增加安全攻击面：提示注入和模型自行生成的指令可能写入后续轮次持续使用的上下文。文章引用摘要压缩中插入未授权指令的先例，要求研究保持完整性的防护。未来方向包括扩大 CLM 的强化学习规模，以及把已有执行框架的过程策略转写成 CLM 动作，再吸收到模型参数。作者把执行框架看成程序性记忆，提出外部开发后再内部学习的路线，并没有声称当前版本已能完全替代所有框架规则。</p>\n<p>作为实践观察，还应关注正文未直接覆盖的业务风险：社区搜索的点击率、nDCG、实时响应延迟及用户可信度并未进行线上 A/B 验证；FLOPs 更少也可能被文件同步、缓存匹配或额外工具往返抵消。SCR 使用旧上下文下的后缀状态，需要针对大量事实修改的场景测试残留信息影响。RL 奖励依赖模型裁判，正确性定义与真实社区任务有距离。这些是迁移评估问题，不是论文已经测出的负面结论。</p>\n<h2>6. 工业实践意义</h2>\n<p>适合先试点的场景是需要多次检索与核查的社区问题，例如综合不同帖子判断某种产品的使用条件，或追踪一个主题随时间变化的意见。可让模型维护“问题约束、已确认事实、原文片段及引用、分歧、失败搜索、待验证项”工作区，把过长工具返回外存但留下来源定位。这个工作区字段设计是本解读的业务建议；论文证明的是开放编辑机制及其基准效果，并未验证上述社区字段。</p>\n<p>试验应固定模型、检索器、候选池与时间预算，把固定摘要和 CLM 两组放在同一查询集上比较。准确性看相关性、证据支持率和约束完成率，效率看工具调用数、输入输出 tokens、重复搜索、实际端到端耗时。还要抽查原文被错误删除或改写的比例，特别是用户否定约束和帖子日期。先给轻量模型配自然语言策略并测试，不必立即投入 64 张 H200 复现训练。</p>\n<p>工程实现必须保存可回放的上下文版本；系统级边界、用户授权与外部证据应有独立完整性保护，避免模型编辑把检索材料升格为指令。可限制试点访问范围并测量恢复能力，但不要假定这些限制已经由 CLM 论文自动提供。缓存层应作为第二个独立变量：先证明编辑策略改善质量与成本，再引入 SCR，记录回退率、显存占用与请求延迟。若只能调用不暴露 KV 状态的托管接口，可采用文件上下文机制，但不能宣称获得论文 SCR 的 35% 收益。</p>\n<p>最后，本文没有社区搜索线上收益。对 nDCG 和 CTR 的作用应通过受控业务试验确认；它更直接的启示是让模型在多轮检索中保留正确而紧凑的证据状态，并使管理成本可测、策略可学习、每次改写可追溯。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.36059",
+      "title": "Mnemon: Raw Records, Fast Judgments, Slow Thoughts",
+      "authors": "Guangren Wang",
+      "abstract": "arXiv:2609.36059v1 Announce Type: cross \nAbstract: Long-term memory lets an LLM assistant use a history it can no longer reread, and most memory systems build it by rewriting conversations into facts, graphs or typed memories at write time. We argue that the work of memory divides, as thinking does, into two systems. Most of it is fast System 1 work: many small, independent yes/no judgments about records, such as whether a record is needed or no longer current, which a decision model makes by the dozen in a third of a second. Only a little is slow System 2 work: writing a few search queries, naming what the reply needs and composing the answer, which an LLM does well but slowly. We present Mnemon, a memory agent built on this division. It keeps conversations as raw, dated records; an LLM (System 2) plans searches over them, a decision model, Jev (System 1), judges what the searches return, and rules with explicit budgets turn the judgments into a small View for an unchanged answering m",
+      "url": "https://arxiv.org/abs/2609.36059",
+      "source": "arxiv",
+      "published": "2026-09-28",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.15,
+      "company": [],
+      "summary": "Mnemon 保留带日期的原始记录，让大模型规划检索、Jev 决策模型批量判断相关性，再用明确预算组装回答上下文。使用 gpt-4.1-mini 时，LoCoMo 准确率为 91.7%、LongMemEval-S 为 83.8%，每题上下文不到 4K tokens；历史从 100K 增至 10M tokens 时，每题成本仅增长 1.11 倍。",
+      "key_insight": "对社区用户的长期搜索助手，原始帖子和对话记录比写入时抽取的固定事实更容易追溯与纠错。可把慢速查询规划与快速候选判断分开，并保留时间与来源；先验证过时信息过滤和跨会话问题，再评估是否值得引入专门决策模型，避免直接套用问答基准结论。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.2,
+      "evidence_file": "fulltext_0.txt",
+      "rank": 2
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.35807",
+      "title": "Environment Steering: Using Data Flow Control to Improve Agent Utility and Safety",
+      "authors": "Charlie Summers, Prajwal Raghunath, Aaditya Pai, Mayur Kulkarni, Zhuo Zhang, Oliver Kennedy, Eugene Wu",
+      "abstract": "arXiv:2609.35807v1 Announce Type: new \nAbstract: LLM agents can make unsafe tool calls even when instructed to behave safely. Existing defenses constrain agents before execution, modify tool inputs/outputs, or rely on LLM judges; these approaches may depend on model behavior or block unsafe actions without helping the agent recover. We argue that the execution environment should instead enforce safety as the agent runs and steer it toward safe alternatives when violations occur---we call this Environment Steering. We implement this by modeling the agent and harness execution state as database tables, track the record-level data flows, and check these data flows against declarative policies during runtime. When violations are detected, policy- and context-specific feedback steers the agent toward safe trajectories. On AgentDyn, this enables the agent to improve task success rate over no-defense while achieving 0% attack success rate.",
+      "url": "https://arxiv.org/abs/2609.35807",
+      "source": "arxiv",
+      "published": "2026-09-28",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.85,
+      "company": [],
+      "summary": "Environment Steering 把 Agent 和执行框架状态建模为数据库表，追踪记录级数据流，并在运行时用声明式策略检查越权。系统在违规时返回与策略、上下文相关的反馈，引导安全替代路径；在 AgentDyn 上达到 0% 攻击成功率，同时任务成功率超过无防护系统。",
+      "key_insight": "社区搜索 Agent 会读取不可信 UGC 并调用外部工具，可用执行环境控制数据流，而不只靠提示词拒绝注入。将搜索结果视为证据而非指令，限制跨来源敏感数据输出，并提供可恢复反馈；0% 是特定基准结果，不能推断真实业务攻击均能被阻止。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.85,
+      "evidence_file": "fulltext_20.txt",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.36392",
+      "title": "ARCagent: An Adaptive Retrieval Calibration Agent for Clinical Question Answering",
+      "authors": "Yuyan Chen",
+      "abstract": "arXiv:2609.36392v1 Announce Type: cross \nAbstract: In diseases where clinical guidelines are incomplete, contested, or mutually contradictory, knowledge completeness and dynamic conflict-aware synthesis are two safety-critical properties that standard Retrieval-Augmented Generation systems do not provide. Therefore, we present \\sysname, an adaptive retrieval calibration clinical question-answering agent for ME/CFS, a disease where diagnostic frameworks coexist and major guidelines actively contradict each other on treatment. ARCagent contributes three components. First, a 1,706-chunk, 10-source knowledge base with a structured inter-guideline conflict registry spanning all active ME/CFS diagnostic frameworks. Second, a conflict-aware retrieval calibration pipeline that re-ranks retrieved evidence using query-specific focus and conflict signals. Third, a benchmark scored by LLM-as-Judge, avoiding systematic underestimation averaging 10.1 percentage points caused by keyword matching. ARC",
+      "url": "https://arxiv.org/abs/2609.36392",
+      "source": "arxiv",
+      "published": "2026-09-28",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "company": [],
+      "summary": "ARCagent 面向存在相互矛盾指南的临床问答，构建 1,706 个片段、10 个来源的知识库和冲突登记表，并按查询焦点及冲突信号校准检索。系统报告 95.3% 的评测结果；关键词匹配相对模型裁判平均低估 10.1 个百分点，说明评价方式会明显改变结论。",
+      "key_insight": "社区帖子常包含互相冲突的经验与不同时间版本，检索不能只返回最相似的单一立场。可借鉴显式冲突登记与分歧展示，把观点、日期和来源作为可核查证据；其医学结果来自特定知识库与模型裁判，迁移时必须用社区人工相关性标注重新校准。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.8,
+      "evidence_file": "fulltext_3.txt",
+      "rank": 4
+    },
+    {
+      "id": "blog_rss:nvidia_developer_blog:https://developer.nvidia.com/blog/tracing-agent-harness-behavior-with-nvidia-nemo-relay",
+      "title": "Tracing Agent Harness Behavior with NVIDIA NeMo Relay",
+      "authors": "",
+      "abstract": "<img alt=\"Illustration of a developer at code screens, with a camera and Nous logo beside task success panels showing 70% and 81%.\" class=\"webfeedsFeaturedVisual wp-post-image\" height=\"432\" src=\"https://developer-blogs.nvidia.com/wp-content/uploads/2026/09/Tracing-Agent-Harness-768x432.png\" style=\"display: block; margin-bottom: 5px; clear: both;\" title=\"Tracing-Agent-Harness\" width=\"768\" />An agent can finish a task and still take an inefficient path. A failed search can trigger another search. A truncated file read can lead to a command fetching...",
+      "url": "https://developer.nvidia.com/blog/tracing-agent-harness-behavior-with-nvidia-nemo-relay/",
+      "source": "blog_rss",
+      "published": "2026-09-30",
+      "discovered_at": "2026-09-30",
+      "source_type": "blog",
+      "source_detail": "nvidia_developer_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "company": [
+        "NVIDIA"
+      ],
+      "summary": "NeMo Relay 为 Hermes Agent 记录会话、模型与工具调用生命周期，并输出 ATOF、ATIF 和 OpenTelemetry 三种表示。文中已验证的简单任务记录 74 个事件、2 次模型调用、1 次工具调用和 0 个工具错误，输出 VALUE=42；这些是运行实例，并非总体性能提升实验。",
+      "key_insight": "复杂社区搜索可用父子调用关系定位重复搜索、截断读取和失败后的重试，先核查工具开始及结束事件，再判断调用是否真正完成。把正确性与 token、耗时一起观测，能发现答案正确但路径昂贵的流程；示例的具体计数不应被当作通用吞吐能力。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.8,
+      "evidence_file": "fulltext_53.txt",
+      "rank": 5
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.35806",
+      "title": "From Lexical Baselines to Agentic Retrieval-Augmented Generation: Structured Skill and Responsibility-Level Extraction with the SFIA Framework",
+      "authors": "Ranuga Disansa, U. S. Samarasinghe, Lasith Gunawardena",
+      "abstract": "arXiv:2609.35806v1 Announce Type: new \nAbstract: Automated skill extraction underpins workforce planning, yet most systems represent skills as flat labels with no notion of the responsibility level at which a skill is practiced. The Skills Framework for the Information Age (SFIA) captures exactly this dimension, defining 147 professional skills across seven responsibility levels, but no automated LLM-based extraction targeting SFIA has been reported. We formalize the task as structured prediction of (skill, level) pairs from free text and ask three questions: how accurately can text be mapped onto SFIA's closed vocabulary, which strategies reliably predict the level alongside the skill, and do agentic designs improve on simpler retrieval and prompting? We evaluate five strategies (a lexical baseline, dense retrieval with LLM reranking, a zero-shot schema-constrained LLM, single-agent agentic RAG, and a three-agent retriever--matcher--verifier crew) against expert-mapped European ICT ro",
+      "url": "https://arxiv.org/abs/2609.35806",
+      "source": "arxiv",
+      "published": "2026-09-19",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "company": [
+        "IIT Sri Lanka",
+        "University of Sri Jayewardenepura"
+      ],
+      "summary": "研究把自由文本映射为 SFIA 的技能及责任等级，比较词法检索、向量检索加重排、零样本模型、单 Agent RAG 与三 Agent 流程。框架包含 147 种技能和 7 个责任等级；相似度选等级的错误超过显式判断的两倍，三角色流程延迟翻倍却没有提高准确性。",
+      "key_insight": "UGC 搜索中的意图、主题和经验等级可分开预测，不应让向量相似度代替所有离散判断。先用简单检索与结构化输出建立基线，再判断多 Agent 校验是否带来增益；对闭集标签任务，增加角色可能只增加开销，应同时记录精度、召回率和延迟。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.7,
+      "evidence_file": "fulltext_19.txt",
+      "rank": 6
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.35808",
+      "title": "When Successful Memories Mislead Embodied Agents:Memory Adaption For Task-Conditioned Execution",
+      "authors": "Quanquan Li, Hongbo Zhang, Yihe Chi, Liuyang Song, Jingyu Li, Yuxiang Huang, Hongzhen Zhang, Guitao Cao",
+      "abstract": "arXiv:2609.35808v1 Announce Type: new \nAbstract: Experience reuse can reduce repeated exploration in embodied agents, but a trajectory that succeeded previously may be unsuitable for the current execution context. Existing memory systems pri marily optimize construction and retrieval; semantic relevance and historical success therefore remain insufficient when retrieved ex perience contains incompatible actions or an inappropriate level of structure. We introduce Memory Adaptation for Task-Conditioned Execution (MATE), a deterministic post-retrieval procedure that converts trajectories into execution-oriented memory. MATE re moves obsolete control context, extracts condition-action-effect transitions, applies verified action normalization, selects a task dependent representation, and serializes the result under a fixed budget without additional LLM inference. On 134 ALFWorld tasks, MATE achieves task success rates of 81.3% and 93.3% with Qwen2.5-14B and 72B while using approximately on",
+      "url": "https://arxiv.org/abs/2609.35808",
+      "source": "arxiv",
+      "published": "2026-09-28",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL"
+      },
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "company": [
+        "ECNU",
+        "Peking University",
+        "USTC"
+      ],
+      "summary": "MATE 在检索记忆与执行之间加入确定性适配：去掉过时控制信息，抽取条件、动作与效果，校验动作归一化，再按任务选择表示。134 个 ALFWorld 任务中，Qwen2.5-14B 和 72B 成功率分别达到 81.3% 和 93.3%，使用约十分之一的原始轨迹 tokens。",
+      "key_insight": "记忆语义相关并不代表它适用于当前工具或任务状态，复用前应检查条件与动作兼容性。社区搜索助手可把旧检索轨迹改写成受预算约束的步骤，并验证接口参数；该结果来自具身环境，迁移到搜索时应单独评估调用成功率与证据覆盖。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.55,
+      "evidence_file": "fulltext_21.txt",
+      "rank": 7
+    },
+    {
+      "id": "hf:2609.36730",
+      "title": "Can Agents Design Libraries for Agents?",
+      "authors": "Gabriel Orlanski, Alex L. Zhang, Avi Trost, Vincent Sunn Chen, Frederic Sala",
+      "abstract": "Agents increasingly build on code written by other agents, and they reimplement rather than reuse, growing the codebases later agents must work in. To measure how well agents design libraries for other agents, we introduce LibraryDesignBench, a two-phase benchmark in which an agent implements a full-featured library from a specification that defines required capabilities and potential use cases without prescribing the design. We evaluate the library through the correctness and simplicity of programs written by three user agents from different model families. The benchmark spans 242 expert-validated programming problems across 15 library-design tasks in four languages. On eleven of the fifteen tasks, agent designers reproduce the abstractions of the human-written production library. Downstream agents adopt agent- and human-written libraries alike but underuse them, reimplementing capabilities the library already provides. Our failure analysis finds that downstream agents write extra cod",
+      "url": "https://huggingface.co/papers/2609.36730",
+      "source": "huggingface",
+      "published": "2026-09-29",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.45,
+      "company": [
+        "UW–Madison",
+        "MIT",
+        "Snorkel AI",
+        "Stanford"
+      ],
+      "summary": "LibraryDesignBench 让一个 Agent 设计库，再让三个不同模型家族的使用者执行任务，以正确性与代码简洁度衡量设计质量。基准覆盖 242 个专家验证问题、15 项库设计任务和 4 种语言；11 项任务重现了生产库抽象，但使用者仍经常重新实现已有功能。",
+      "key_insight": "搜索工具库设计应通过实际调用轨迹验收，关注模型能否发现并复用接口，而不只看函数测试通过。可用统一参数、短示例和错误反馈降低重复实现；本文显示僵硬或难用的 API 会增加下游代码量，适合用来评估社区搜索 Agent 的工具封装。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.45,
+      "evidence_file": "fulltext_24.txt",
+      "rank": 8
+    },
+    {
+      "id": "hf:2609.37686",
+      "title": "EngiWorld: What Can Frontier Agents Deliver in Professional Engineering Environments?",
+      "authors": "Hongcheng Gao, Hailong Qu, Yu Lei, Henghui Sun, Haoyang Li",
+      "abstract": "Autonomous agents have made rapid progress in general-purpose computer use, but reliable automation of professional industrial engineering remains out of reach, as engineering workflows demand reasoning over geometric and physical constraints and dependencies preserved across software and design stages. We present EngiWorld, the first benchmark structured around the complete design loop: 1,301 expert-curated tasks spanning 6 engineering domains (CAD, CAE, CAM, BIM, EDA, and 3D visualization) and 26 professional software platforms, with both GUI and CLI interfaces and 6 task types ranging from software-selection to open-ended tasks. We further introduce an artifact-centric evaluation methodology built on a unified domain-verifier suite, which programmatically checks the geometric validity, physical feasibility, and rule compliance of final and intermediate artifacts, and scores quantitative design tasks continuously by specification attainment rather than binary success. Evaluation of s",
+      "url": "https://huggingface.co/papers/2609.37686",
+      "source": "huggingface",
+      "published": "2026-09-29",
+      "discovered_at": "2026-09-30",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.2,
+      "company": [
+        "Tsinghua",
+        "Zhiman",
+        "Peking University"
+      ],
+      "summary": "EngiWorld 用最终与中间产物验证专业工程 Agent，覆盖 1,301 个专家任务、6 个工程领域和 26 个软件平台，并同时支持 GUI 与 CLI。七个前沿模型中最强 EngiScore 仅为 44.3，多软件任务只有 3.6% 成功，说明完成声明远不足以证明真实交付。",
+      "key_insight": "社区搜索 Agent 的验收同样应检查可验证的产物：引用是否支持结论、任务约束是否满足、报告是否完整。可把每轮工具调用和最终证据表纳入评分，而非仅让模型判断自己已完成；工程任务的低成功率不能直接等同于社区检索表现。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.2,
+      "evidence_file": "fulltext_37.txt",
+      "rank": 9
+    },
+    {
+      "id": "blog_rss:nvidia_developer_blog:https://developer.nvidia.com/blog/add-runtime-controls-to-ai-agents-with-nvidia-openshell",
+      "title": "Add Runtime Controls to AI Agents with NVIDIA OpenShell",
+      "authors": "",
+      "abstract": "<img alt=\"Three AI agents above a layered runtime stack with glowing green control icons, enclosed by a black-and-yellow safety barrier.\" class=\"webfeedsFeaturedVisual wp-post-image\" height=\"432\" src=\"https://developer-blogs.nvidia.com/wp-content/uploads/2026/09/OpenShell-Controls-768x432.png\" style=\"display: block; margin-bottom: 5px; clear: both;\" title=\"OpenShell-Controls\" width=\"768\" />AI agents can be given a goal, write code, use tools, and keep working as new information becomes available. This opens the door to applications that...",
+      "url": "https://developer.nvidia.com/blog/add-runtime-controls-to-ai-agents-with-nvidia-openshell/",
+      "source": "blog_rss",
+      "published": "2026-09-28",
+      "discovered_at": "2026-09-30",
+      "source_type": "blog",
+      "source_detail": "nvidia_developer_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 4
+      },
+      "total_score": 3.0,
+      "company": [
+        "NVIDIA"
+      ],
+      "summary": "OpenShell 0.1.0 通过 Gateway、Supervisor 与 Sandbox 三个组件，在 Agent 工作负载外实施权限、凭据与网络控制。文章演示同一 GitHub API 的读请求允许、POST 写请求拦截，并说明 HTTP、GraphQL 和 MCP 检查；提供工程步骤，但没有搜索质量或线上 A/B 的量化结果。",
+      "key_insight": "社区检索助手可获得只读文档和查询接口，而让真实凭据留在隔离环境之外；运行时策略应明确区分读取与写入操作。该内容作为工具执行治理实践收录，证据评分较低；若业务只需检索，先验证读权限及审计事件，再考虑扩大工具能力。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.0,
+      "evidence_file": "fulltext_56.txt",
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "hf_model:Qwen/Qwen3Guard-Stream-8B",
+      "title": "Qwen/Qwen3Guard-Stream-8B",
+      "authors": "Qwen",
+      "description": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-8B, base_model:finetune:Qwen/Qwen3-8B",
+      "abstract": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-8B, base_model:finetune:Qwen/Qwen3-8B",
+      "url": "https://huggingface.co/Qwen/Qwen3Guard-Stream-8B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 42,
+      "language": "model",
+      "created_at": "2025-09-23",
+      "updated_at": "2026-09-27",
+      "published": "2025-09-23",
+      "discovered_at": "2026-09-30",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3Guard-Stream-8B",
+        "likes": 42,
+        "downloads": 718,
+        "pipeline_tag": "feature-extraction",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3",
+          "feature-extraction",
+          "custom_code",
+          "arxiv:2510.14276",
+          "base_model:Qwen/Qwen3-8B",
+          "base_model:finetune:Qwen/Qwen3-8B",
+          "license:apache-2.0",
+          "text-embeddings-inference",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2025-09-23T11:52:50.000Z",
+        "last_modified": "2026-09-27T02:00:07.000Z"
+      },
+      "rank": 1
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3Guard-Stream-0.6B",
+      "title": "Qwen/Qwen3Guard-Stream-0.6B",
+      "authors": "Qwen",
+      "description": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-0.6B, base_model:finetune:Qwen/Qwen3-0.6B",
+      "abstract": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-0.6B, base_model:finetune:Qwen/Qwen3-0.6B",
+      "url": "https://huggingface.co/Qwen/Qwen3Guard-Stream-0.6B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 37,
+      "language": "model",
+      "created_at": "2025-09-23",
+      "updated_at": "2026-09-27",
+      "published": "2025-09-23",
+      "discovered_at": "2026-09-30",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3Guard-Stream-0.6B",
+        "likes": 37,
+        "downloads": 4017,
+        "pipeline_tag": "feature-extraction",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3",
+          "feature-extraction",
+          "custom_code",
+          "arxiv:2510.14276",
+          "base_model:Qwen/Qwen3-0.6B",
+          "base_model:finetune:Qwen/Qwen3-0.6B",
+          "license:apache-2.0",
+          "text-embeddings-inference",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2025-09-23T11:46:30.000Z",
+        "last_modified": "2026-09-27T02:00:16.000Z"
+      },
+      "rank": 2
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3Guard-Stream-4B",
+      "title": "Qwen/Qwen3Guard-Stream-4B",
+      "authors": "Qwen",
+      "description": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-4B, base_model:finetune:Qwen/Qwen3-4B",
+      "abstract": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-4B, base_model:finetune:Qwen/Qwen3-4B",
+      "url": "https://huggingface.co/Qwen/Qwen3Guard-Stream-4B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 28,
+      "language": "model",
+      "created_at": "2025-09-23",
+      "updated_at": "2026-09-27",
+      "published": "2025-09-23",
+      "discovered_at": "2026-09-30",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3Guard-Stream-4B",
+        "likes": 28,
+        "downloads": 515,
+        "pipeline_tag": "feature-extraction",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3",
+          "feature-extraction",
+          "custom_code",
+          "arxiv:2510.14276",
+          "base_model:Qwen/Qwen3-4B",
+          "base_model:finetune:Qwen/Qwen3-4B",
+          "license:apache-2.0",
+          "text-embeddings-inference",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2025-09-23T11:49:13.000Z",
+        "last_modified": "2026-09-27T02:00:18.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2718,
+      "language": "model",
+      "created_at": "2026-09-14",
+      "updated_at": "2026-09-30",
+      "published": "2026-09-14",
+      "discovered_at": "2026-09-30",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 2718,
+        "downloads": 70687,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "rgba",
+          "text-to-image",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-09-14T03:47:26.000Z",
+        "last_modified": "2026-09-30T02:14:09.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_space:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 317,
+      "language": "space",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-27",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-30",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 317,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T10:15:59.000Z",
+        "last_modified": "2026-09-27T14:59:47.000Z"
+      },
+      "rank": 5
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recency": true,
+    "source_diversity": true,
+    "chinese_source": false
+  },
+  "warnings": [
+    "Semantic Scholar 429；OpenReview 400；DBLP 超时/429，会议来源无候选。",
+    "部分候选属于 Agent 工程与评测迁移方法，未报告社区搜索 nDCG/CTR。",
+    "未入选中文来源；国内相关条目已在其他轨道或历史报告收录。",
+    "OpenShell 博客缺少量化效果实验，按工程实践低证据评分收录。"
+  ]
+}

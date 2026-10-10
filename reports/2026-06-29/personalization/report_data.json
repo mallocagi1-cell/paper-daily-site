@@ -1,0 +1,348 @@
+{
+  "date": "2026-06-29",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 22,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.27058",
+      "title": "UniFormer: Efficient and Unified Model-Centric Scaling for Industrial Recommendation",
+      "url": "https://arxiv.org/abs/2606.27058",
+      "authors": "Bo Chen, Jinlong Jiao, Tijian Hu, Ruihao Zhang, Yanzhi Liu, Chenghou Jin, Qinglin Jia, Baixuan He",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-25",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.4,
+      "summary": "针对工业推荐里组件各自扩参（行为建模、特征交互、任务建模分别 scaling）缺乏统一框架的问题，UniFormer 把整个建模空间拆成特征空间与任务空间，分别用堆叠的 Feature-space / Task-space Interaction Module 建模，并用语义 token 化实现 user-item 解耦做到 request 级推理加速；多序列 cross-attention 分别刻画异构行为以防偏好坍塌，多视角 FFN 支持各组件灵活扩参。快手与快手极速版双场景在线 A/B：App 时长 +0.101%/+0.260%，观看时长 +0.729%/+1.113%。",
+      "key_insight": "把组件级 scaling 升级为模型级统一 scaling，关键工程价值在语义 token 化带来的 user-item 解耦——item 侧表征可离线/请求级复用，让大模型推理成本可控，这是社区 feed 排序上量大模型的前提。多序列 cross-attention 防偏好坍塌的设计提示：堆参数时要按行为类型隔离序列，否则异构行为会互相干扰。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.27058",
+        "title": "UniFormer: Efficient and Unified Model-Centric Scaling for Industrial Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n工业推荐近两年的提效主要靠 component-centric scaling：把行为建模、特征交互、任务建模这些单个组件各自扩大容量。HyFormer、OneTrans 进一步做 cross-module co-scaling，联合建模行为与交互，但作者指出它们仍被限制在特征空间（feature space）内，缺少一个覆盖整个建模空间的统一 model-centric scaling 框架。换句话说，行业里\"堆参数\"是局部的、组件各管各的，没有一个把特征侧与任务侧一起扩、还能控住成本的统一范式。\n\n作者把\"统一扩参\"拆出三个绕不开的难点：一是容量上去后训练/推理效率怎么保持——推荐是亿级 DAU、百亿级日志的在线系统，算力是硬约束；二是怎么在扩参时刻画异构用户行为而不发生 preference collapse（不同类型行为被糅在一起、相互稀释）；三是怎么支持各组件灵活分配参数，而不是一刀切地全模型放大。这三点正是 UniFormer 的设计目标。论文实验对照组里，SIM+RankMixer、HyFormer、MixFormer 把参数从 ~115M 扩到 ~490M 后，Effective-view GAUC 相对 SIM+DCN 基线只提升 +0.34%~+0.43%，说明\"只在特征空间扩参\"的边际收益在递减——这是 UniFormer 要突破的具体失败模式。\n\n## 2. 方法详解\n\nUniFormer 把整体建模空间显式拆成两层：Feature-space Interaction Module（FIM）与 Task-space Interaction Module（TIM），用堆叠的方式分别建模特征空间与任务空间，刻意避开昂贵的\"序列内 × 序列-任务\"全交互。\n\n**Tokenization 与 user-item 解耦。** 序列特征分两类：item-independent 的（视频 ID、内容类型、作者信息、观看时长等元数据）按序保留并拼接；item-dependent 的（如 SIM 目标注意力序列）用 target-attention tokenizer 先聚合，从而在推理时实现 user-item decoupling。非序列特征按\"item-independent / item-dependent\"语义分成 m+n 组，各自投影到 d_model；任务特征按任务分组（task ID、task-specific bias）投影到 d_model。语义分组的意义在于把\"用户侧计算\"与\"候选 item 侧计算\"解耦，使打分时用户侧表征可复用，达到 request 级推理加速。每个表征经 SwiGLU 投影到 d_seq = S_kv · L_kv · d_model。\n\n**FIM。** 序列向组件用 multi-sequence cross-attention 对短期、长期行为分别做交叉注意力（H^feat_short = CA(RMSNorm(Q_cross), K_short, V_short) + Q_cross），后接序列专属 SwiGLU FFN（S-FFNs）。短/长序列的融合给了两种策略：全局自适应 H_cross = α·H̃_short + (1−α)·H̃_long，以及按用户活跃度个性化的 α_i。非序列向组件把 cross-attention 输出与上一层 query 拼接后做 self-attention，再过特征专属 FFN（NS-FFNs），并用可学习比例 β 把输出切成下一层的 cross-/self-attention query。\n\n**TIM。** 特征向组件对 FIM 的最终输出做 cross-attention；任务向组件做 self-attention 后接任务专属 FFN（T-FFNs）。输出经各任务 FFN head + Sigmoid 得 ŷ_i，多任务损失为 L = Σ λ_i · L_i(y_i, ŷ_i)。多视角 FFN（S/NS/T-FFNs）是支持各组件独立扩参的关键载体。\n\n**训练设置。** 数据来自快手最大推荐场景，400M+ 日活、50B+ 日交互日志；任务为 Effective-view、Long-view、Like、Follow 多反馈。AdamW，学习率 1e-3、weight decay 1e-3，per-GPU batch 2048，BF16 混合精度；默认 3 层、d_head=1280。\n\n## 3. 核心技术贡献\n\n**(1) 模型级统一 scaling 框架。** 把\"组件各自扩参\"升级为 FIM+TIM 的两层统一结构，覆盖特征空间与任务空间而非只在特征空间内 co-scaling。价值在于扩参时呈现明显 scaling law：UniFormer-Large（995.3M）相对基线 Effective-view +0.63%、Follow +1.04%，比同量级的 HyFormer/MixFormer 更高，说明统一结构把参数花在了更有效的地方。\n\n**(2) 语义 tokenization + user-item 解耦。** 按 item-independent/item-dependent 语义分组、item-dependent 序列用 target-attention 预聚合，使用户侧表征与候选 item 侧计算解耦，在每请求打分 512 个候选时拿到 48% QPS 提升且 GAUC 几乎无损。这是\"大模型上量但成本可控\"的核心机制。\n\n**(3) 多序列 cross-attention 防 preference collapse。** 短/长行为分开做交叉注意力再融合（全局或按活跃度个性化的 α），消融显示去掉它会显著掉点，证明异构行为必须按序列隔离建模。\n\n**(4) 多视角 FFN 支持灵活扩参。** S/NS/T-FFNs 让不同组件独立放大参数；消融中把 S-FFNs 或 NS-FFNs 换成共享 FFN 带来\"最显著的性能恶化\"，说明分视角的参数分配缓解了过早出现的边际递减。\n\n## 4. 实验结果分析\n\n**离线（GAUC，0.05% 即视为高度显著）。** 基线 SIM+DCN（115.8M）四任务 GAUC 为 0.7418/0.7734/0.8486/0.8361。把参数扩到 ~490M 的对照：SIM+RankMixer(492M) Effective-view +0.34%，HyFormer(496.5M) +0.39%，MixFormer(489.4M) +0.43%。UniFormer(516.0M) 达 0.7457/0.7771/0.8531/0.8435，即 Effective-view +0.53%、Like +0.53%、Follow +0.89%——在相近参数量下全面超过 MixFormer/HyFormer，Follow 这种稀疏正反馈提升最大。UniFormer-Large(995.3M) 进一步到 +0.63%/+0.58%/+0.61%/+1.04%，体现持续 scaling 收益。\n\n**消融。** 去掉 multi-sequence cross-attention → 显著掉点（防偏好坍塌起作用）；去掉 interaction enhancement(IE) → 明显退化；去掉 TIM → 各任务一致下降；把 S-FFNs/NS-FFNs 换成共享 FFN → 最严重恶化。结论是\"灵活可扩展的参数分配\"贡献最大，而不是单纯堆深堆宽。\n\n**在线 A/B（快手主站 + 极速版，7 天、5% 流量）。** 极速版/主站：App 时长 +0.260%/+0.101%，观看时长 +1.113%/+0.729%，视频播放 +0.252%/+0.249%，Like +1.089%/+0.155%，评论 +1.818%/+1.488%，收藏 +0.930%/+0.647%，转发 +1.274%/+0.157%。互动类（评论、收藏、转发）涨幅普遍高于时长类，且极速版收益整体大于主站——提示模型对低活/轻度用户场景增益更明显。推理侧 user-item 解耦带来 48% QPS 提升。需要注意这些时长类绝对涨幅在 0.1%~0.3% 量级，属大盘级别的常见显著区间，要结合流量规模看价值。\n\n## 5. 局限与未来方向\n\n论文没有显式写 limitations 章节，这是一个透明度上的缺口。从内容看，作者暗示的未来方向是把 unified co-scaling 扩展到特征空间与任务空间之外、并挖掘更多推理加速的解耦机会。我额外补充几点该工作未充分回答的局限：一是全部验证都在快手单一生态、短视频反馈，跨域（电商、信息流图文、社区搜索）迁移性未知；二是 user-item 解耦依赖 item-dependent 序列能被 target-attention 提前聚合，对强依赖实时 user×item 交叉特征的场景（如精排末端的实时交叉）可能不适用；三是多视角 FFN 与多序列融合带来的工程复杂度、显存与训练稳定性代价没有给出明细；四是离线 GAUC 提升（+0.5% 级）与线上互动指标提升之间的因果链条只给了相关性证据。\n\n## 6. 工业实践意义\n\n对搜索/推荐从业者，这篇最值得借鉴的是\"如何把大模型上量到在线系统而不被算力卡死\"。**可直接采纳**：语义 tokenization + user-item 解耦——把用户侧表征与候选 item 侧计算分离，item-dependent 序列用 target-attention 预聚合，使每请求多候选打分时用户侧只算一次，论文实测 512 候选/请求拿到 48% QPS 提升、GAUC 近乎无损。这对社区 feed / UGC 搜索的精排尤其关键：候选量大、用户侧序列长，解耦能直接换出延迟预算去上更大的模型。**值得尝试**：多序列 cross-attention 按短/长期、甚至按行为类型隔离建模，并用按活跃度个性化的融合权重 α，缓解异构行为糅在一起导致的偏好坍塌；多视角 FFN（S/NS/T-FFNs）做按组件的参数分配，比全模型等比放大更省、scaling 曲线更平滑。**需要警惕**：线上时长类绝对增益只有 0.1%~0.3%，是亿级大盘流量摊出来的，小流量业务未必复现；其次该方案在快手短视频生态验证，迁到图文/搜索相关性场景需重做特征分组与 item 解耦的可行性评估；最后多视角 FFN + 多序列融合的训练稳定性与显存开销，落地前要先压测。部署层面，BF16 + per-GPU batch 2048 + AdamW 是常规配置，主要工程量在 tokenizer 的语义分组改造与解耦推理链路上。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>工业推荐近两年的提效主要靠 component-centric scaling：把行为建模、特征交互、任务建模这些单个组件各自扩大容量。HyFormer、OneTrans 进一步做 cross-module co-scaling，联合建模行为与交互，但作者指出它们仍被限制在特征空间（feature space）内，缺少一个覆盖整个建模空间的统一 model-centric scaling 框架。换句话说，行业里&quot;堆参数&quot;是局部的、组件各管各的，没有一个把特征侧与任务侧一起扩、还能控住成本的统一范式。</p>\n<p>作者把&quot;统一扩参&quot;拆出三个绕不开的难点：一是容量上去后训练/推理效率怎么保持——推荐是亿级 DAU、百亿级日志的在线系统，算力是硬约束；二是怎么在扩参时刻画异构用户行为而不发生 preference collapse（不同类型行为被糅在一起、相互稀释）；三是怎么支持各组件灵活分配参数，而不是一刀切地全模型放大。这三点正是 UniFormer 的设计目标。论文实验对照组里，SIM+RankMixer、HyFormer、MixFormer 把参数从 ~115M 扩到 ~490M 后，Effective-view GAUC 相对 SIM+DCN 基线只提升 +0.34%~+0.43%，说明&quot;只在特征空间扩参&quot;的边际收益在递减——这是 UniFormer 要突破的具体失败模式。</p>\n<h2>2. 方法详解</h2>\n<p>UniFormer 把整体建模空间显式拆成两层：Feature-space Interaction Module（FIM）与 Task-space Interaction Module（TIM），用堆叠的方式分别建模特征空间与任务空间，刻意避开昂贵的&quot;序列内 × 序列-任务&quot;全交互。</p>\n<p><strong>Tokenization 与 user-item 解耦。</strong> 序列特征分两类：item-independent 的（视频 ID、内容类型、作者信息、观看时长等元数据）按序保留并拼接；item-dependent 的（如 SIM 目标注意力序列）用 target-attention tokenizer 先聚合，从而在推理时实现 user-item decoupling。非序列特征按&quot;item-independent / item-dependent&quot;语义分成 m+n 组，各自投影到 d_model；任务特征按任务分组（task ID、task-specific bias）投影到 d_model。语义分组的意义在于把&quot;用户侧计算&quot;与&quot;候选 item 侧计算&quot;解耦，使打分时用户侧表征可复用，达到 request 级推理加速。每个表征经 SwiGLU 投影到 d_seq = S_kv · L_kv · d_model。</p>\n<p><strong>FIM。</strong> 序列向组件用 multi-sequence cross-attention 对短期、长期行为分别做交叉注意力（H^feat_short = CA(RMSNorm(Q_cross), K_short, V_short) + Q_cross），后接序列专属 SwiGLU FFN（S-FFNs）。短/长序列的融合给了两种策略：全局自适应 H_cross = α·H̃_short + (1−α)·H̃_long，以及按用户活跃度个性化的 α_i。非序列向组件把 cross-attention 输出与上一层 query 拼接后做 self-attention，再过特征专属 FFN（NS-FFNs），并用可学习比例 β 把输出切成下一层的 cross-/self-attention query。</p>\n<p><strong>TIM。</strong> 特征向组件对 FIM 的最终输出做 cross-attention；任务向组件做 self-attention 后接任务专属 FFN（T-FFNs）。输出经各任务 FFN head + Sigmoid 得 ŷ_i，多任务损失为 L = Σ λ_i · L_i(y_i, ŷ_i)。多视角 FFN（S/NS/T-FFNs）是支持各组件独立扩参的关键载体。</p>\n<p><strong>训练设置。</strong> 数据来自快手最大推荐场景，400M+ 日活、50B+ 日交互日志；任务为 Effective-view、Long-view、Like、Follow 多反馈。AdamW，学习率 1e-3、weight decay 1e-3，per-GPU batch 2048，BF16 混合精度；默认 3 层、d_head=1280。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>(1) 模型级统一 scaling 框架。</strong> 把&quot;组件各自扩参&quot;升级为 FIM+TIM 的两层统一结构，覆盖特征空间与任务空间而非只在特征空间内 co-scaling。价值在于扩参时呈现明显 scaling law：UniFormer-Large（995.3M）相对基线 Effective-view +0.63%、Follow +1.04%，比同量级的 HyFormer/MixFormer 更高，说明统一结构把参数花在了更有效的地方。</p>\n<p><strong>(2) 语义 tokenization + user-item 解耦。</strong> 按 item-independent/item-dependent 语义分组、item-dependent 序列用 target-attention 预聚合，使用户侧表征与候选 item 侧计算解耦，在每请求打分 512 个候选时拿到 48% QPS 提升且 GAUC 几乎无损。这是&quot;大模型上量但成本可控&quot;的核心机制。</p>\n<p><strong>(3) 多序列 cross-attention 防 preference collapse。</strong> 短/长行为分开做交叉注意力再融合（全局或按活跃度个性化的 α），消融显示去掉它会显著掉点，证明异构行为必须按序列隔离建模。</p>\n<p><strong>(4) 多视角 FFN 支持灵活扩参。</strong> S/NS/T-FFNs 让不同组件独立放大参数；消融中把 S-FFNs 或 NS-FFNs 换成共享 FFN 带来&quot;最显著的性能恶化&quot;，说明分视角的参数分配缓解了过早出现的边际递减。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>离线（GAUC，0.05% 即视为高度显著）。</strong> 基线 SIM+DCN（115.8M）四任务 GAUC 为 0.7418/0.7734/0.8486/0.8361。把参数扩到 ~490M 的对照：SIM+RankMixer(492M) Effective-view +0.34%，HyFormer(496.5M) +0.39%，MixFormer(489.4M) +0.43%。UniFormer(516.0M) 达 0.7457/0.7771/0.8531/0.8435，即 Effective-view +0.53%、Like +0.53%、Follow +0.89%——在相近参数量下全面超过 MixFormer/HyFormer，Follow 这种稀疏正反馈提升最大。UniFormer-Large(995.3M) 进一步到 +0.63%/+0.58%/+0.61%/+1.04%，体现持续 scaling 收益。</p>\n<p><strong>消融。</strong> 去掉 multi-sequence cross-attention → 显著掉点（防偏好坍塌起作用）；去掉 interaction enhancement(IE) → 明显退化；去掉 TIM → 各任务一致下降；把 S-FFNs/NS-FFNs 换成共享 FFN → 最严重恶化。结论是&quot;灵活可扩展的参数分配&quot;贡献最大，而不是单纯堆深堆宽。</p>\n<p><strong>在线 A/B（快手主站 + 极速版，7 天、5% 流量）。</strong> 极速版/主站：App 时长 +0.260%/+0.101%，观看时长 +1.113%/+0.729%，视频播放 +0.252%/+0.249%，Like +1.089%/+0.155%，评论 +1.818%/+1.488%，收藏 +0.930%/+0.647%，转发 +1.274%/+0.157%。互动类（评论、收藏、转发）涨幅普遍高于时长类，且极速版收益整体大于主站——提示模型对低活/轻度用户场景增益更明显。推理侧 user-item 解耦带来 48% QPS 提升。需要注意这些时长类绝对涨幅在 0.1%~0.3% 量级，属大盘级别的常见显著区间，要结合流量规模看价值。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有显式写 limitations 章节，这是一个透明度上的缺口。从内容看，作者暗示的未来方向是把 unified co-scaling 扩展到特征空间与任务空间之外、并挖掘更多推理加速的解耦机会。我额外补充几点该工作未充分回答的局限：一是全部验证都在快手单一生态、短视频反馈，跨域（电商、信息流图文、社区搜索）迁移性未知；二是 user-item 解耦依赖 item-dependent 序列能被 target-attention 提前聚合，对强依赖实时 user×item 交叉特征的场景（如精排末端的实时交叉）可能不适用；三是多视角 FFN 与多序列融合带来的工程复杂度、显存与训练稳定性代价没有给出明细；四是离线 GAUC 提升（+0.5% 级）与线上互动指标提升之间的因果链条只给了相关性证据。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者，这篇最值得借鉴的是&quot;如何把大模型上量到在线系统而不被算力卡死&quot;。<strong>可直接采纳</strong>：语义 tokenization + user-item 解耦——把用户侧表征与候选 item 侧计算分离，item-dependent 序列用 target-attention 预聚合，使每请求多候选打分时用户侧只算一次，论文实测 512 候选/请求拿到 48% QPS 提升、GAUC 近乎无损。这对社区 feed / UGC 搜索的精排尤其关键：候选量大、用户侧序列长，解耦能直接换出延迟预算去上更大的模型。<strong>值得尝试</strong>：多序列 cross-attention 按短/长期、甚至按行为类型隔离建模，并用按活跃度个性化的融合权重 α，缓解异构行为糅在一起导致的偏好坍塌；多视角 FFN（S/NS/T-FFNs）做按组件的参数分配，比全模型等比放大更省、scaling 曲线更平滑。<strong>需要警惕</strong>：线上时长类绝对增益只有 0.1%~0.3%，是亿级大盘流量摊出来的，小流量业务未必复现；其次该方案在快手短视频生态验证，迁到图文/搜索相关性场景需重做特征分组与 item 解耦的可行性评估；最后多视角 FFN + 多序列融合的训练稳定性与显存开销，落地前要先压测。部署层面，BF16 + per-GPU batch 2048 + AdamW 是常规配置，主要工程量在 tokenizer 的语义分组改造与解耦推理链路上。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.24605",
+      "title": "ScaleToT: Generalizing Structured LLM Reasoning for Billion-Scale Low-Activity User Modeling",
+      "url": "https://arxiv.org/abs/2606.24605",
+      "authors": "Tianbao Ma, Chang Xi, Yichuan Zou, Chengen Li, Linxun Chen, Zilong Lu, Yanan Niu, Zhaojie Liu",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-23",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.1,
+      "summary": "针对数十亿低活用户缺乏交互历史、LLM 在稀疏 profile 上推理不可靠且全量推理算力不可承受的问题，ScaleToT 先用 LLM 在小样本上构造带类型的 user-state chain（有界熵引导的 Tree-of-Thought 精炼），再用 SFT + OSIPO（Outcome-Driven Segment-Aware Implicit Reward 策略优化）把推理蒸馏进 student，最后迁移到轻量 profile encoder，使其余用户无需 LLM 推理即可获得推理信号。广告 LTV 场景在线 A/B 使 LT30 +6.738%，离线只对 7.32% 人群跑 LLM 推理，大幅压低算力。",
+      "key_insight": "给 LLM 推理 + 蒸馏到轻量 encoder 提供了一条可上量的路径：仅对 7.32% 高价值人群跑 LLM、其余靠 encoder 共享推理表征，把算力压到可接受范围。对低活/冷启用户建模，typed user-state chain 比自由文本 CoT 更可控；OSIPO 这类按 segment 给隐式 reward 的策略优化，值得在 LTV/留存类目标上借鉴。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.26654",
+      "title": "SocialPersona: Benchmarking Personalized Profiling and Response with Multimodal Social-Media Context",
+      "url": "https://arxiv.org/abs/2606.26654",
+      "authors": "Qinkai Zhang, Yanyan Zhao, Xin Lu, Yulin Hu, Pengtao Han, Bing Qin",
+      "company": [
+        "HIT"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-25",
+      "total_score": 3.9,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.0,
+      "summary": "现有个性化评测多停留在记住用户在对话里明说的偏好，SocialPersona 转而考查 MLLM 能否从用户社媒时间线（文本+图像+时间戳）反推 revealed preference。基准取自 171 名真实非营销用户的长时间线，含 2,597 条人工核验偏好标签、覆盖 7 个兴趣域，并区分稳定兴趣与近期兴趣；设构造结构化用户画像和按画像生成回复两个任务。实验显示模型能识别粗粒度兴趣域，但在细粒度、近期兴趣上明显下降，画像用于对话个性化时进一步退化。",
+      "key_insight": "对社区 UGC 平台直接相关——从用户自然留下的帖子/图片反推兴趣，正是 feed 与搜索个性化的上游。两个发现可落地：一是文本与图像提供互补偏好信号，单模态画像会漏信息；二是近期兴趣最难捕捉，提示线上画像要单独维护短期兴趣通道，而非只靠长期累积。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.26277",
+      "title": "From Clicks to Intent: Cross-Platform Session Embeddings with LLM-Distilled Taxonomy for Financial Services Recommendations",
+      "url": "https://arxiv.org/abs/2606.26277",
+      "authors": "Dianjing Fan, Yao Li, Kyaw Hpone Myint, Dwipam Katariya, Alexandre G. R. Day, Pranab Mohanty, Giri Iyengar",
+      "company": [
+        "Capital One"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.9,
+      "summary": "金融场景里登录前 web 浏览（探索新产品）与登录后 app 行为（账户服务）差异大，且匿名 web session 难与认证账户做实体对齐，导致 web 意图信号在登录后个性化中被浪费。本文用自监督 Transformer 把多模态点击流编码成紧凑 session embedding，再用 LLM 生成意图 taxonomy 并蒸馏成可解释标签。移动首页 tile 排序上 session embedding 把 macro Recall@1 提升 1.88%、Log Loss 降低 13.38%；转化预测上 embedding 比 LLM 标签高 4.3%（micro F1），蒸馏层以约 7% 性能损失换超低延迟可解释标签。",
+      "key_insight": "给出自监督 session 表征 + LLM 蒸馏 taxonomy 的双产出范式：embedding 喂排序/转化等量化任务，蒸馏标签做可解释与冷启。对社区搜索同样适用——把登录前后跨端点击流统一成 session embedding，可把游客期意图带入登录后排序；蒸馏标签 7% 损失换超低延迟，是在线可解释特征的合理取舍。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.27214",
+      "title": "TRUST: Item-Calibrated Interval Evidence for Temporal Session-Based Recommendation",
+      "url": "https://arxiv.org/abs/2606.27214",
+      "authors": "Linjiang Guo, Nitin Bisht, Shiqing Wu, Yifan Yin, Guandong Xu",
+      "company": [
+        "UTS"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-25",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "summary": "时序 session 推荐常直接用绝对时间间隔，隐含假设相同间隔对不同 item 含义相同。作者实证发现该假设不成立：每个 item 有自己的间隔分布，间隔应相对该 item 的经验分布来解读。TRUST 据此提出一个打分函数，把 item 校准后的间隔证据注入全局邻居采样、session 图编码与兴趣聚合三个环节。多个公开数据集上稳定优于时序与非时序基线，作为 model-agnostic 插件还能提升已有时序 session 推荐器；消融显示在各模块内校准时间信号比直接删掉模块更有效。",
+      "key_insight": "一个低成本可迁移的改进点：把时间间隔从绝对值改成相对该 item 的分布分位，再接进采样/编码/聚合。因为是 model-agnostic 打分函数，可作为插件加到现有 GNN/序列 session 模型上，适合社区短行为序列里同样隔 1 小时、对热门贴和长尾贴意义不同的场景。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.26859",
+      "title": "AgentX: Towards Agent-Driven Self-Iteration of Industrial Recommender Systems",
+      "url": "https://arxiv.org/abs/2606.26859",
+      "authors": "Changxin Lao, Fei Pan, Guozhuang Ma, Han Li, Huihuang Lin, Jijun Shi, Kangzhi Zhao, Kun Gai",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-25",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.7,
+      "summary": "推荐算法迭代仍受限于想法到上线依赖人写代码、开 A/B、归因，创新随人头线性增长。AgentX 是已在生产部署的多智能体系统，把这条链做成自我进化引擎：Brainstorm Agent 综合历史实验/架构/数据/外部研究产出可执行提案并排序；Developing Agent 基于仓库上下文生成生产级代码并做多维可靠性校验；Evaluation Agent 带 guardrail 否决做安全灰度 A/B，把成功与失败都沉淀为结构化知识；Harness Evolution 层（SGPO）把执行轨迹蒸成语义梯度反过来打磨各 Agent。",
+      "key_insight": "把实验经验变成可复利的资产——失败实验也结构化沉淀，这点对推荐团队的研发提效最有借鉴。SGPO 用语义梯度更新 Agent，把强化学习式的轨迹蒸馏迁到 Agent 自我改进上；落地门槛在于 guardrail 与可靠性校验体系，没有这套安全网，自动改生产代码风险极高。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2606.27243",
+      "title": "NOVA: A Verification-Aware Agent Harness for Architecture Evolution in Industrial Recommender Systems",
+      "url": "https://arxiv.org/abs/2606.27243",
+      "authors": "Shaohua Liu, Liang Fang, Yilong Sun, Shudong Huang, Qingsong Luo, Xiaoyang Chen, Dongqiang Liu, Chuangang Ma",
+      "company": [
+        "ByteDance"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-25",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "summary": "工业广告推荐靠架构演进（RankMixer、TokenMixer-Large、MixFormer 等）持续提升，但人工开发成本高；AutoML 只调超参，通用 LLM 编码 Agent 只保证代码能跑而非是合法的推荐架构，易出静默失效。NOVA 提出 verification-aware 的 Agent harness：用 architecture gradient（类 SGD 的不可微更新信号，聚合历史修改、校验诊断、指标反馈与轨迹记忆）指导下一步改动；verification cascade 逐级校验结构语义/可执行/离线有效/在线影响，无效候选早停并记为禁止方向；L1–L4 按风险路由，高风险交人工。部署于工业广告系统，L2/L3 任务有效通过率 54.5%/60.0%，文献到生产周期人工耗时缩短 13 倍以上；在线 A/B 三个 pCVR 目标 GMV +1.25%/+1.70%/+2.02%，pCVR bias 降 58.8%/66.7%/37.3%。",
+      "key_insight": "关键创新是验证级联 + 架构梯度——把 recsys 特有的有效性检查（结构语义、离线指标、在线影响）做成早停门，挡住能跑但拉垮指标的静默失效，这正是通用编码 Agent 改推荐模型最大的坑。L1–L4 按风险分级、高风险转人工，是自动化改生产模型可落地的安全设计；pCVR bias 同步下降说明架构搜索目标要带校准约束。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2606.26690",
+      "title": "Attributed, But Not Incremental: Cannibalization-Corrected Attribution for Large-Scale Advertising",
+      "url": "https://arxiv.org/abs/2606.26690",
+      "authors": "Donghui Li, Bowen Yuan, Zili Yang, Qinxin Chen, Lijing Song",
+      "company": [
+        "ByteDance"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-25",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "summary": "大规模付费拉新里，付费归因的转化（如 DNU 日新增用户）会在付费渠道与自然流量/品牌流量重叠时系统性高估真实增量，扭曲增量 ROI 与预算决策。本文提出实验校准的归因修正框架：用 incrementality 实验作因果锚点，把稀疏的 lift 测量转成每日修正估计，再在结构一致性约束下把校准后的 cannibalization 量分摊到业务层级，使修正信号在生产粒度可用。离线 forward-in-time 验证显示其校准误差显著低于原始归因与细粒度 ML 基线；在多个 TikTok 全球市场部署后，实测 cannibalization rate 下降约 15 个百分点。",
+      "key_insight": "提醒做增长/广告的团队：归因数字不等于增量，付费与自然流量重叠会让预算分配失真。方法论可借鉴——用少量 incrementality 实验当因果锚，把稀疏 lift 外推成每日、可分摊到业务层级的修正量，比纯 ML 归因更稳。对社区平台的增长投放与渠道诊断，这套实验锚 + 结构一致性分摊思路可直接迁移。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2606.26337",
+      "title": "EMA-FS: Accelerating GBDT Training via Gain-Informed Feature Screening",
+      "url": "https://arxiv.org/abs/2606.26337",
+      "authors": "Yan Song",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "summary": "GBDT（以 LightGBM 为例）训练时 65–70% 时间花在逐特征建直方图上，而随机子采样（feature_fraction）丢特征时不看预测价值。EMA-FS 维护每个特征 split gain 的指数滑动平均，热身后只对历史 gain 排名 top-K 的特征建直方图，保留高增益、筛掉低增益，且兼容 LightGBM 直方图相减技巧、无需改核心。在欺诈检测、广告 CTR、工业质检等数据上：500 维合成集加速 2.61×，432 维 IEEE-CIS Fraud 在 30% 保留率下 1.45×；70% 保留率时 AUC +0.11 且 1.34× 加速；极稀疏数据无加速。另给出 S-EMA-FS 用 gain 加权随机采样统一确定性与随机两种策略，约 120 行 C++。",
+      "key_insight": "一个即插即用的训练提速点：CTR/风控等仍重度依赖 GBDT 的链路，用 gain EMA 做有信息的特征筛选比随机子采样更划算，70% 保留率还能小涨 AUC。约 120 行 C++、兼容直方图相减、向后兼容，迁移成本极低；但对极稀疏特征无收益，需先看自家特征稠密度再决定是否上。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2606.26369",
+      "title": "Scoring Is Not Enough: Addressing Gaps in Utility-fairness Trade-offs for Ranking",
+      "url": "https://arxiv.org/abs/2606.26369",
+      "authors": "Shubham Singh, Ian A. Kash, Mesrob I. Ohannessian",
+      "company": [
+        "UIC"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.2,
+      "summary": "检索/推荐里普遍用学到的打分函数对 item 排序以最大化效用，公平性研究也多在打分上做效用-公平权衡。本文用一系列反例证明：相比纯效用目标，打分函数无法达到所有效用-公平权衡点——无论打分是确定的还是随机的、公平性在单 query 还是跨 query 度量，结论都成立。正面结果是：半贪心（semi-greedy）的后处理能在可计算的代价下逼近穷举后处理的理想权衡。",
+      "key_insight": "给排序公平性敲警钟：只调打分函数（即便随机化）存在理论上达不到的权衡区，想要更好的效用-公平折中要在排序后处理阶段做。对需要满足多样性/曝光公平约束的社区 feed，结论提示把公平约束放到 re-rank 后处理（半贪心）比硬塞进打分模型更有效，且半贪心代价可控。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:Emmimal/context-graph-benchmark",
+      "title": "context-graph-benchmark: A pure-Python structured memory benchmark for multi-agent LLM systems — context graph vs vector RAG vs raw history dump, five scenarios, 18 graded queries, zero API calls.",
+      "url": "https://github.com/Emmimal/context-graph-benchmark",
+      "source": "github",
+      "description": "A pure-Python structured memory benchmark for multi-agent LLM systems — context graph vs vector RAG vs raw history dump, five scenarios, 18 graded queries, zero API calls.",
+      "language": "Python",
+      "stars": 20,
+      "created_at": "2026-06-23"
+    },
+    {
+      "rank": 2,
+      "id": "github:lingbol088-spec/-github-ai-",
+      "title": "-github-ai-: GitHub AI Credential Leak Scanner —— 开源 AI 密钥泄露扫描器  一键扫描 GitHub 公开仓库中泄露的 AI API 密钥，覆盖 OpenAI、DeepSeek、 通义千问、Kimi、火山引擎、Anthropic、Google Gemini 等 30+ 家服务商。  ✔ 零配置开箱即用，无需 Token ✔ 彩色终端 + 逐文件实时可视化 ✔ 高熵检测发现非标准格式密钥 ✔ 输出 TXT / Markdown / JSON 三种报告 ✔ 交互式菜单 + 命令行双模式  据 GitGuardian 2023 报告，OpenAI API 密钥泄露同比暴增 1212 倍， 月均 46,441 个，91.6% 在 5 天后仍有效。本项目专攻这一细分领域。",
+      "url": "https://github.com/lingbol088-spec/-github-ai-",
+      "source": "github",
+      "description": "GitHub AI Credential Leak Scanner —— 开源 AI 密钥泄露扫描器  一键扫描 GitHub 公开仓库中泄露的 AI API 密钥，覆盖 OpenAI、DeepSeek、 通义千问、Kimi、火山引擎、Anthropic、Google Gemini 等 30+ 家服务商。  ✔ 零配置开箱即用，无需 Token ✔ 彩色终端 + 逐文件实时可视化 ✔ 高熵检测发现非标准格式密钥 ✔ 输出 TXT / Markdown / JSON 三种报告 ✔ 交互式菜单 + 命令行双模式  据 GitGuardian 2023 报告，OpenAI API 密钥泄露同比暴增 1212 倍， 月均 46,441 个，91.6% 在 5 天后仍有效。本项目专攻这一细分领域。",
+      "language": "Python",
+      "stars": 14,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 3,
+      "id": "github:TNTnext/Lumen",
+      "title": "Lumen: Lumen is a self-hosted AI gateway that channels any LLM provider — DeepSeek, OpenAI, Anthropic, Kimi, or your own custom endpoint — through a single, beautifully restrained interface. Multi-user governance, granular permissions, endpoint-level toggles, and a first-login onboarding wizard. No orchestration overhead. Just python app.py and light.",
+      "url": "https://github.com/TNTnext/Lumen",
+      "source": "github",
+      "description": "Lumen is a self-hosted AI gateway that channels any LLM provider — DeepSeek, OpenAI, Anthropic, Kimi, or your own custom endpoint — through a single, beautifully restrained interface. Multi-user governance, granular permissions, endpoint-level toggles, and a first-login onboarding wizard. No orchestration overhead. Just python app.py and light.",
+      "language": "Python",
+      "stars": 6,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Qwen/Qwen-AgentWorld-35B-A3B",
+      "title": "Qwen/Qwen-AgentWorld-35B-A3B",
+      "url": "https://huggingface.co/Qwen/Qwen-AgentWorld-35B-A3B",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, qwen3_5_moe, image-text-to-text, qwen, world-model, agent, environment-simulation",
+      "language": "model",
+      "stars": 395,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:Qwen/AgentWorldBench",
+      "title": "Qwen/AgentWorldBench",
+      "url": "https://huggingface.co/datasets/Qwen/AgentWorldBench",
+      "source": "huggingface",
+      "description": "AgentWorldBench AgentWorldBench is a comprehensive evaluation benchmark for language world models, constructed from real-world observations of frontier model trajectories on established benchmarks such as Tool Decathlon, Terminal-Bench 1.0 & 2.0, and OSWorld-Verified. Every evalu; tags: task_categories:text-generation, language:en, license:apache-2.0, size_categories:1K<n<10K, format:json, modality:tabular, modality:text, library:datasets",
+      "language": "dataset",
+      "stars": 46,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 6,
+      "id": "hf_dataset:internlm/RNGBench-Game-Trajectories",
+      "title": "internlm/RNGBench-Game-Trajectories",
+      "url": "https://huggingface.co/datasets/internlm/RNGBench-Game-Trajectories",
+      "source": "huggingface",
+      "description": "RNGBench-Game-Trajectories SFT (supervised fine-tuning) trajectory data accompanying RNGBench · Reconstructive Non-Markov Games — an evaluation framework that tests whether multimodal language models can reconstruct hidden state from memory and act on it in closed-loop environmen; tags: task_categories:image-text-to-text, language:en, license:mit, size_categories:10K<n<100K, format:json, modality:text, library:datasets, library:pandas",
+      "language": "dataset",
+      "stars": 2,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 2778,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: scail-2, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2606.10804, license:mit",
+      "language": "model",
+      "stars": 272,
+      "created_at": "2026-06-09"
+    }
+  ]
+}

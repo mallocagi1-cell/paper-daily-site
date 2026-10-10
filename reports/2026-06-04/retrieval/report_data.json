@@ -1,0 +1,275 @@
+{
+  "date": "2026-06-04",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 14,
+    "papers_selected": 9,
+    "score_min": 3.45,
+    "score_max": 4.55
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.02737",
+      "title": "Attention Calibration for Position-Fair Dense Information Retrieval",
+      "url": "https://arxiv.org/abs/2606.02737",
+      "authors": "Andrianos Michail, Elias Schuhmacher, Juri Opitz, Simon Clematide, Rico Sennrich",
+      "company": [
+        "University of Zurich"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 4.55,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "dense retrieval 存在位置偏置——相关信息出现在 passage 后段时检索效果下降。论文把推理期 attention calibration 适配到检索任务，无需重训练，并引入强度系数 λ 在原始注意力与完全校准之间插值。在 3 个 embedding 模型、SQuAD-PosQ 与 FineWeb-PosQ 两个基准上系统研究 basket size、校准层集合与强度的影响，发现部分校准常优于完全校准；单一配置 (B=128, λ=0.5, 50% 层深) 提升了 FineWeb-PosQ 上跨位置组 nDCG@10 的调和平均。",
+      "key_insight": "位置公平性是短文本/UGC 召回的隐患——长帖或评论里关键信息靠后会被 dense 双塔系统性低估。该方法纯推理期、无需重训，可直接挂到现有 embedding 模型上调 λ；社区搜索可借鉴它对'信息位置敏感'query 做相关性补偿，并用跨位置 nDCG 的调和平均（而非算术平均）来度量鲁棒性。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.02737",
+        "title": "Attention Calibration for Position-Fair Dense Information Retrieval",
+        "status": "completed",
+        "content": "## Attention Calibration for Position-Fair Dense Information Retrieval — 深度解读\n\n### 1. 问题与动机\nDense retrieval（双塔/单塔 embedding 检索）存在一个被长期忽视的系统性缺陷——**位置偏置**：当相关信息出现在 passage 后半段时，检索效果显著下降。论文给出了量化证据：在 FineWeb-PosQ 上，基线模型 gte-multilingual-base 对\"信息在段首\"的 query 取得 87.16 的 nDCG@10，但对\"信息在段尾\"只有 72.23，相差 **14.93 个点**；该模型的 Position Sensitivity Index (PSI) 高达 0.160，说明跨段落三等分的位置偏斜非常严重。这一现象的根源在于 Transformer 的注意力机制：pooling token（[CLS] 或末位 token）在聚合时对不同位置的 token 分配了不均的注意力质量，导致靠后的相关内容被稀释。论文承接 Zeng et al. (2025) 对位置偏置的观察与 Schuhmacher et al. (2026) 的推理期 attention calibration 工作，提出一个核心问题：**能否在推理阶段、不重训练、且不牺牲整体检索效果的前提下缓解这种偏置？**\n\n### 2. 方法详解\n方法的核心是在前向推理时重新分配 pooling token 的注意力权重，使其在文档不同位置间更均衡，整个过程**纯推理期、无需重训**。\n\n- **Basket（篮）划分**：把 token 序列切成若干 basket（测试了 𝔅=128/256/512 token），强制\"每个 basket 的总注意力质量相等，同时保留 basket 内部 token 之间的相对注意力权重\"，并把特殊 token 隔离以避免跨 basket 污染。这样既拉平了位置间的全局注意力质量，又不破坏局部语义结构。\n- **强度系数 λ（线性插值）**：校准并非全有或全无，而是用 λ 在原始注意力 a_k 与完全校准注意力 a^cal_k 之间插值：**a^k = λ·a^cal_k + (1−λ)·a_k**。λ=0 即原始，λ=1 即完全校准，中间值平衡\"位置公平性\"与\"检索效果\"。\n- **作用范围**：只改 pooling token 的 query 行（[CLS]-pooled 模型改首 token，last-token-pooled 模型改末位 token），并可选只校准部分层——论文对比了\"仅最后一层\"与\"最后 50% 层\"两种层集合 𝔏^C。\n- **实现**：用 nnsight 库通过 PyTorch hook 拦截 softmax 后的注意力张量并改写，不改动模型权重，因此可即插即用到现有 embedding 模型上。\n\n### 3. 核心技术贡献\n1. **可调强度的部分校准**：相比前作的\"全量校准\"，引入 λ 把校准变成可控连续旋钮，使实践者能在公平性与效果间精细权衡——这是全文最关键的设计，因为实验反复证明\"部分校准优于完全校准\"。\n2. **系统性的三因子分析**：首次系统刻画 basket 大小、校准层深、强度 λ 三者如何**联合**影响\"位置公平 vs 检索效果\"的权衡曲线，而非单点调参。\n3. **模型无关的默认配置**：找到一组跨模型通用的默认值 **𝔅=128, λ=0.5, 50% 层深**，在三个不同架构（含 [CLS] 与 last-token 两种 pooling）上都提升了跨位置 nDCG@10 的调和平均，无需逐模型调参。\n4. **大规模多语验证**：在 PosIR（10 语言、31 领域）上验证，PSI 一致下降且 nDCG@10 保持或提升。\n\n### 4. 实验结果分析\n**FineWeb-PosQ（跨位置组 nDCG@10 调和平均，默认配置 vs 基线）**：\n- gte-multilingual-base：78.66 → 79.47（+0.81）\n- bge-m3-dense：79.10 → 80.34（+1.24）\n- Qwen3-Embedding-0.6B：76.49 → 79.94（**+3.45**，提升最大）\n\n**λ 的消融（50% 层、𝔅=128）**：增大 λ 改善段尾组但损害段首组，调和平均在 **λ≈0.3–0.5** 处见顶；完全校准（λ=1.0）常常反而更差——gte-multilingual-base 从 78.66 跌到 77.63。这说明\"过度拉平\"会抹掉有用的位置先验。\n\n**Basket 大小**：更小的 basket 调和平均更优。bge-m3-dense（50% 层, λ=0.5）下 𝔅=128 得 80.34、𝔅=256 得 80.15、𝔅=512 得 79.40。\n\n**与朴素基线对比**：Segment Embed Average 虽能降 PSI，但效果代价惨重——bge-m3-dense 上 nDCG@10 暴跌 **−10.44 点**，而 attention calibration 几乎不损效果。这凸显该方法\"既降偏置又保效果\"的价值。\n\n**PosIR 多语（10 语言宏平均）**：gte-multilingual-base PSI 降 −0.05（Q1）至 −0.10（Q4），nDCG@10 +1.14；bge-m3-dense PSI 降 −0.11~−0.12，nDCG@10 +0.46。跨语种（x→en）效果基本持平。\n\n### 5. 局限与未来方向\n作者明确列出的局限：（1）**范围仅限 dense retrieval**，未覆盖词法检索、cross-encoder、hybrid；（2）参数网格有限（仅 3 种 basket、2 种层集合、2 个 λ 值），并非全局最优；（3）**\"部分校准为何优于完全校准\"的机理仍未解释清楚**；（4）其它推理期变体（如调整特殊 token 的 basket 质量）尚未探索。此外可补充一点作者未强调的隐忧：实验全部基于\"信息位置可控\"的合成式基准（PosQ 系列），真实 UGC query 的位置分布更复杂，迁移效果需进一步验证。\n\n### 6. 工业实践意义\n对搜索/推荐从业者，这篇工作的可操作性很强：\n- **可直接落地**：纯推理期、通过注意力 hook 改写实现，无需重训、无需改模型权重，可在现有 embedding 服务上以单一默认配置（𝔅=128, λ=0.5, 50% 层深）开箱启用，且跨 [CLS] 与 last-token pooling 通用。\n- **针对性场景**：社区搜索中长帖、攻略、长评论里关键信息常出现在中后段，dense 召回会系统性低估这类内容；本方法正是补偿\"信息位置敏感\"query 的相关性。\n- **度量启示**：评估召回鲁棒性应看**跨位置 nDCG@10 的调和平均**（而非算术平均）与 PSI，否则段尾退化会被段首高分掩盖。\n- **避坑**：不要做\"完全校准\"（λ=1）或朴素的 segment 平均池化——前者抹掉有用位置先验、后者效果暴跌 10+ 点；λ 取 0.3–0.5 的部分校准才是甜点区。\n- **成本提示**：方法本身推理开销极低，但论文的调参与多语评估耗费了约 50 A100-时（参数研究）及约 1800 H100 + 950 A100-时（PosIR），说明若要在自有数据上重做大规模调参需预留可观算力，但线上 inference 几乎零额外成本。",
+        "content_html": "<h2>Attention Calibration for Position-Fair Dense Information Retrieval — 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>Dense retrieval（双塔/单塔 embedding 检索）存在一个被长期忽视的系统性缺陷——<strong>位置偏置</strong>：当相关信息出现在 passage 后半段时，检索效果显著下降。论文给出了量化证据：在 FineWeb-PosQ 上，基线模型 gte-multilingual-base 对&quot;信息在段首&quot;的 query 取得 87.16 的 nDCG@10，但对&quot;信息在段尾&quot;只有 72.23，相差 <strong>14.93 个点</strong>；该模型的 Position Sensitivity Index (PSI) 高达 0.160，说明跨段落三等分的位置偏斜非常严重。这一现象的根源在于 Transformer 的注意力机制：pooling token（[CLS] 或末位 token）在聚合时对不同位置的 token 分配了不均的注意力质量，导致靠后的相关内容被稀释。论文承接 Zeng et al. (2025) 对位置偏置的观察与 Schuhmacher et al. (2026) 的推理期 attention calibration 工作，提出一个核心问题：<strong>能否在推理阶段、不重训练、且不牺牲整体检索效果的前提下缓解这种偏置？</strong></p>\n<h3>2. 方法详解</h3>\n<p>方法的核心是在前向推理时重新分配 pooling token 的注意力权重，使其在文档不同位置间更均衡，整个过程<strong>纯推理期、无需重训</strong>。</p>\n<ul>\n<li><strong>Basket（篮）划分</strong>：把 token 序列切成若干 basket（测试了 𝔅=128/256/512 token），强制&quot;每个 basket 的总注意力质量相等，同时保留 basket 内部 token 之间的相对注意力权重&quot;，并把特殊 token 隔离以避免跨 basket 污染。这样既拉平了位置间的全局注意力质量，又不破坏局部语义结构。</li>\n<li><strong>强度系数 λ（线性插值）</strong>：校准并非全有或全无，而是用 λ 在原始注意力 a_k 与完全校准注意力 a^cal_k 之间插值：<strong>a^k = λ·a^cal_k + (1−λ)·a_k</strong>。λ=0 即原始，λ=1 即完全校准，中间值平衡&quot;位置公平性&quot;与&quot;检索效果&quot;。</li>\n<li><strong>作用范围</strong>：只改 pooling token 的 query 行（[CLS]-pooled 模型改首 token，last-token-pooled 模型改末位 token），并可选只校准部分层——论文对比了&quot;仅最后一层&quot;与&quot;最后 50% 层&quot;两种层集合 𝔏^C。</li>\n<li><strong>实现</strong>：用 nnsight 库通过 PyTorch hook 拦截 softmax 后的注意力张量并改写，不改动模型权重，因此可即插即用到现有 embedding 模型上。</li>\n</ul>\n<h3>3. 核心技术贡献</h3>\n<ol>\n<li><strong>可调强度的部分校准</strong>：相比前作的&quot;全量校准&quot;，引入 λ 把校准变成可控连续旋钮，使实践者能在公平性与效果间精细权衡——这是全文最关键的设计，因为实验反复证明&quot;部分校准优于完全校准&quot;。</li>\n<li><strong>系统性的三因子分析</strong>：首次系统刻画 basket 大小、校准层深、强度 λ 三者如何<strong>联合</strong>影响&quot;位置公平 vs 检索效果&quot;的权衡曲线，而非单点调参。</li>\n<li><strong>模型无关的默认配置</strong>：找到一组跨模型通用的默认值 <strong>𝔅=128, λ=0.5, 50% 层深</strong>，在三个不同架构（含 [CLS] 与 last-token 两种 pooling）上都提升了跨位置 nDCG@10 的调和平均，无需逐模型调参。</li>\n<li><strong>大规模多语验证</strong>：在 PosIR（10 语言、31 领域）上验证，PSI 一致下降且 nDCG@10 保持或提升。</li>\n</ol>\n<h3>4. 实验结果分析</h3>\n<p><strong>FineWeb-PosQ（跨位置组 nDCG@10 调和平均，默认配置 vs 基线）</strong>：</p>\n<ul>\n<li>gte-multilingual-base：78.66 → 79.47（+0.81）</li>\n<li>bge-m3-dense：79.10 → 80.34（+1.24）</li>\n<li>Qwen3-Embedding-0.6B：76.49 → 79.94（<strong>+3.45</strong>，提升最大）</li>\n</ul>\n<p><strong>λ 的消融（50% 层、𝔅=128）</strong>：增大 λ 改善段尾组但损害段首组，调和平均在 <strong>λ≈0.3–0.5</strong> 处见顶；完全校准（λ=1.0）常常反而更差——gte-multilingual-base 从 78.66 跌到 77.63。这说明&quot;过度拉平&quot;会抹掉有用的位置先验。</p>\n<p><strong>Basket 大小</strong>：更小的 basket 调和平均更优。bge-m3-dense（50% 层, λ=0.5）下 𝔅=128 得 80.34、𝔅=256 得 80.15、𝔅=512 得 79.40。</p>\n<p><strong>与朴素基线对比</strong>：Segment Embed Average 虽能降 PSI，但效果代价惨重——bge-m3-dense 上 nDCG@10 暴跌 <strong>−10.44 点</strong>，而 attention calibration 几乎不损效果。这凸显该方法&quot;既降偏置又保效果&quot;的价值。</p>\n<p><strong>PosIR 多语（10 语言宏平均）</strong>：gte-multilingual-base PSI 降 −0.05（Q1）至 −0.10（Q4），nDCG@10 +1.14；bge-m3-dense PSI 降 −0.11~−0.12，nDCG@10 +0.46。跨语种（x→en）效果基本持平。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确列出的局限：（1）<strong>范围仅限 dense retrieval</strong>，未覆盖词法检索、cross-encoder、hybrid；（2）参数网格有限（仅 3 种 basket、2 种层集合、2 个 λ 值），并非全局最优；（3）<strong>&quot;部分校准为何优于完全校准&quot;的机理仍未解释清楚</strong>；（4）其它推理期变体（如调整特殊 token 的 basket 质量）尚未探索。此外可补充一点作者未强调的隐忧：实验全部基于&quot;信息位置可控&quot;的合成式基准（PosQ 系列），真实 UGC query 的位置分布更复杂，迁移效果需进一步验证。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐从业者，这篇工作的可操作性很强：</p>\n<ul>\n<li><strong>可直接落地</strong>：纯推理期、通过注意力 hook 改写实现，无需重训、无需改模型权重，可在现有 embedding 服务上以单一默认配置（𝔅=128, λ=0.5, 50% 层深）开箱启用，且跨 [CLS] 与 last-token pooling 通用。</li>\n<li><strong>针对性场景</strong>：社区搜索中长帖、攻略、长评论里关键信息常出现在中后段，dense 召回会系统性低估这类内容；本方法正是补偿&quot;信息位置敏感&quot;query 的相关性。</li>\n<li><strong>度量启示</strong>：评估召回鲁棒性应看<strong>跨位置 nDCG@10 的调和平均</strong>（而非算术平均）与 PSI，否则段尾退化会被段首高分掩盖。</li>\n<li><strong>避坑</strong>：不要做&quot;完全校准&quot;（λ=1）或朴素的 segment 平均池化——前者抹掉有用位置先验、后者效果暴跌 10+ 点；λ 取 0.3–0.5 的部分校准才是甜点区。</li>\n<li><strong>成本提示</strong>：方法本身推理开销极低，但论文的调参与多语评估耗费了约 50 A100-时（参数研究）及约 1800 H100 + 950 A100-时（PosIR），说明若要在自有数据上重做大规模调参需预留可观算力，但线上 inference 几乎零额外成本。</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2602.02827",
+      "title": "Col-Bandit: Query-Time Top-K Estimation for Late-Interaction Retrieval",
+      "url": "https://arxiv.org/abs/2602.02827",
+      "authors": "Roi Pony, Adi Raz Goldfarb, Oshri Naparstek, Idan Friedman, Udi Barzelay, Eli Schwartz",
+      "company": [
+        "IBM"
+      ],
+      "source": "arxiv",
+      "published": "2026-02-04",
+      "total_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "ColBERT 等多向量 late-interaction 检索质量 SOTA，但 query 时成本被 token 级 MaxSim 穷举主导。N 个候选对 T 个 query token 构成 N×T 的 MaxSim 矩阵，其行和即 late-interaction 分数，求 top-K 很少需要全部元素。Col-Bandit 将其建成 bandit：分批揭示矩阵元素，对每个候选维护有限总体 Bernstein-Serfling 置信区间，凡上界低于第 K 大下界的文档永久剪枝，只计算分离 top-K 所需的格子。单一松弛旋钮 α_ef∈(0,1] 调节算力-精度权衡，部署用 α_ef=0.2。",
+      "key_insight": "late-interaction（ColBERT 风格）精度高但算力贵，是落地核心障碍。Col-Bandit 把 top-K 当成统计置信问题，用置信区间提前剪枝，把 MaxSim 计算降到'够分出 top-K 即可'，且只有一个旋钮调权衡——对既要高相关性又卡延迟的社区搜索重排阶段有直接借鉴价值。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.03535",
+      "title": "Can LLM Rerankers Predict Their Own Ranking Performance?",
+      "url": "https://arxiv.org/abs/2606.03535",
+      "authors": "Shiyu Ni, Keping Bi, Jiafeng Guo, Jingtong Wu, Zengxin Han, Xueqi Cheng",
+      "company": [
+        "CAS"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "检索效果随 query 波动大，在拿到相关性标注前预估排序质量（QPP）很重要。论文研究 reranker-internal QPP：LLM reranker 能否估计自己刚产出排序的质量。免训练方案考察跨采样排序的 metric-specific self-consistency 和 reranker 直接给出的 verbalized confidence。在 TREC DL 2019–2022、4 个 LLM 上，self-consistency 与 SOTA 相当且几乎所有设置下校准更好，而直接 verbalized confidence 严重过度自信；论文进一步提出两种改进 verbalized confidence 的策略。",
+      "key_insight": "让 reranker 自评排序质量，可在线决定是否触发更贵重排/兜底，或对低置信 query 走扩召回。关键结论：直接问模型'你多有信心'不可靠（过度自信），但跨多次采样的自一致性可靠且校准良好——社区搜索可用 self-consistency 做 query 难度路由，而非轻信 LLM 的口头置信。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.02992",
+      "title": "Slipstream: Locality-Aware Graph Index Construction for Streaming Approximate Nearest Neighbor Search",
+      "url": "https://arxiv.org/abs/2606.02992",
+      "authors": "Shubing Yang, Dongfang Zhao",
+      "company": [
+        "University of Washington"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "图索引广泛用于高召回 ANNS，但很多实时应用需要 streaming ANNS：持续到达的 embedding 必须先在已有图上搜索候选邻居再更新边，反复建图成为流式摄入瓶颈。Slipstream 利用向量流的连续性——新到点从上一次插入找到的有希望候选出发，而非从入口点重新搜索；它评估不同的起始候选子集，再由自适应控制器根据流的稳定性收窄或放宽搜索范围，显著降低频繁插入的计算成本。",
+      "key_insight": "社区平台 UGC（帖子/评论）持续高频写入，向量索引的增量构建延迟直接影响新内容的可被搜性。其核心 insight 是相邻到达向量在图上的近邻高度重叠，可复用上次插入的搜索结果做'热启动'，并按流稳定性自适应调整搜索宽度——对实时召回索引的写入吞吐优化有直接工程价值。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.02581",
+      "title": "Cost-Aware Query Routing in RAG: Empirical Analysis of Retrieval Depth Tradeoffs",
+      "url": "https://arxiv.org/abs/2606.02581",
+      "authors": "Sanjay Mishra",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.75,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "RAG 面临三方张力：更深检索改善事实 grounding，但抬高 token 成本与端到端延迟，静态检索配置无法适应异质 query。CA-RAG 是逐 query 路由框架，从离散的 strategy bundle 目录中选择——每个 bundle 把检索深度（从免检索直接推理到 top-k=10 dense 检索）与固定生成 profile 绑定，通过最大化'质量先验线性组合延迟与 token 惩罚'的标量效用来选择。系统用 FAISS dense 检索 + OpenAI chat/embedding API 实现并评估。",
+      "key_insight": "不是所有 query 都值得深检索——定义类 query 浅召回足够，复杂分析类才需深召回。把'检索深度'做成可路由的离散策略、并用 quality/latency/cost 的标量效用统一权衡，是搜索系统降本的实用思路；社区搜索可据 query 类型动态调召回深度与重排档位，而非一刀切 top-k。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.02814",
+      "title": "Do Neural Retrievers Prefer Certain Documents? Evidence of Learned Relevance Priors",
+      "url": "https://arxiv.org/abs/2606.02814",
+      "authors": "Francisco Valentini, Edgar Altszyler, Martin Fajcik",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "神经检索器从标注 query-doc 对学习相关性，但标注协议只标了文档子集且可能偏好某些文档类型。论文研究有监督 bi-encoder 是否隐式学到 query 无关的'文档级相关性先验'：通过在冻结文档 embedding 上训练简单分类器估计该先验，在多个 IR 基准、3 个 SOTA 检索器上评估，发现这种先验可泛化到未见文档、跨模型一致，并造成'可发现性 gap'——先验低的文档即便真相关也系统性更难被检索到。",
+      "key_insight": "dense 检索器会因训练标注偏置而系统性偏爱某类文档、与 query 无关——这在 UGC 搜索里意味着某些风格/长度/类型的帖子被结构性压制，伤害长尾内容曝光与公平性。可借鉴其诊断手段（冻结 embedding 上训分类器探测先验），在上线前审计召回模型的内容偏置。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2606.03247",
+      "title": "Structures Facilitate Retrieve, Rerank, and Generate",
+      "url": "https://arxiv.org/abs/2606.03247",
+      "authors": "Yeqin Zhang, Haomin Fu, Xujie Zhang, Cam-Tu Nguyen",
+      "company": [
+        "Nanjing University"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.5,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "文档接地对话系统通常把文档切成独立 passage 做检索与生成，既没用好文档内结构，也没给知识选择/回复足够上下文。SF-Re2G 系统性改进：一是用同 section 内 passage 互相对比来改善 passage 表示，提升检索；二是构建结构增强 reranker——利用同一轮对话的多个 grounding passage 往往在文档结构上相邻，把检索候选按文档结构分组成子图，reranker 结合其所在组重新打分。",
+      "key_insight": "把'文档结构'当作检索与重排的显式信号——同 section 对比学表示、同邻域分组重排——对长文档/结构化 UGC（如带小标题的攻略帖）的召回与重排有启发；尤其重排阶段用候选的结构邻域共现做联合打分，而非孤立 passage 评分，可提升上下文完整性。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2601.20844",
+      "title": "R^{2k} is Theoretically Large Enough for Embedding-based Top-k Retrieval",
+      "url": "https://arxiv.org/abs/2601.20844",
+      "authors": "Zihao Wang, Hang Yin, Lihui Liu, Hanghang Tong, Yangqiu Song, Ginny Wong, Simon See",
+      "company": [
+        "HKUST",
+        "UIUC",
+        "NVIDIA"
+      ],
+      "source": "arxiv",
+      "published": "2026-01-28",
+      "total_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "论文研究最小可嵌入维度 MED：使 m 个对象向量中任意大小≤k 的子集都能被打分比较精确检索出的最小维度。结论：对内积、欧氏距离、余弦相似度，MED 是 Θ(k)，与 m 无关。进一步定义鲁棒 MED（单位归一化且要求 ε 分数间隔），推导 m 相关的可行上界 ε⋆(m,k)=m/√(k(m−1)(m−k))，当 m≫k 时趋于 1/√k，并给出高斯质心构造。合成 top-2 检索仿真与 LIMIT/LIMIT-small 实验印证理论。",
+      "key_insight": "给 embedding 维度选择提供了理论下界——精确支持 top-k 检索所需维度只与 k 成正比、与库规模 m 无关。这解释了为何小维度 embedding 在大召回集上会出现'无论怎么训都检不全'的天花板（findability），对选择 embedding 维度、理解 dense 检索容量上限有指导意义。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2606.03138",
+      "title": "Section-Weighted Hybrid Approach for Legal Case Retrieval",
+      "url": "https://arxiv.org/abs/2606.03138",
+      "authors": "Rajith Arulanandam, Nisansa de Silva",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "找真正类似的判例需捕捉表层词重叠之外的法律推理。论文提出两阶段、section 感知框架：先用确定性 LLM 离线把判决书切成事实/争点/裁决/推理。Stage 1 用 BM25 词法与 dense ANN 语义并行全文检索经 RRF 融合成高召回候选池；Stage 2 做细粒度同类比较（如 query 推理 vs 候选推理），用 query 维 Z-score 归一化解决词法分数与余弦相似度的量纲不匹配，再用学习的 section 权重聚合信号，并对 top 结果返回相关 section 文本与简明依据。",
+      "key_insight": "工程上实用的组合拳：BM25+dense 经 RRF 召回、用 Z-score 归一化对齐异量纲分数、用 section 级学习权重做结构化聚合。Z-score 归一化解决'词法分无界、cosine 有界'导致的融合失衡，是混合检索落地的常见痛点；section 加权思路可迁移到带字段的 UGC（标题/正文/标签分别加权）。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "language": "model",
+      "stars": 102,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 2,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "pipeline: any-to-any; tags: Lance, safetensors, multimodal, image-generation, video-generation, image-editing, video-understanding, any-to-any",
+      "language": "model",
+      "stars": 1021,
+      "created_at": "2026-05-15"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash",
+      "title": "stepfun-ai/Step-3.7-Flash",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, step3p7, text-generation, vision-language, multimodal, moe, image-text-to-text",
+      "language": "model",
+      "stars": 228,
+      "created_at": "2026-05-23"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:internlm/Intern-S2-Preview",
+      "title": "internlm/Intern-S2-Preview",
+      "url": "https://huggingface.co/internlm/Intern-S2-Preview",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, intern_s2_preview, image-text-to-text, conversational, custom_code, license:apache-2.0, eval-results",
+      "language": "model",
+      "stars": 102,
+      "created_at": "2026-05-15"
+    },
+    {
+      "rank": 5,
+      "id": "hf_space:bytedance-research/Lance",
+      "title": "bytedance-research/Lance",
+      "url": "https://huggingface.co/spaces/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 97,
+      "created_at": "2026-05-22"
+    }
+  ]
+}

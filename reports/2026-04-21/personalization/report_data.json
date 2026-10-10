@@ -1,0 +1,248 @@
+{
+  "date": "2026-04-21",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 88,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.45
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "web:multi-epoch-ctr-meda",
+      "title": "Multi-Epoch Learning with Data Augmentation for Deep Click-Through Rate Prediction",
+      "url": "https://openreview.net/forum?id=7vH8DO2oPk",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-01-15",
+      "total_score": 4.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.55,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "MEDA 提出首个通用可靠的深度 CTR 模型多轮训练策略。工业界 CTR 模型普遍面临多轮训练过拟合问题（样本重复暴露导致 embedding 层过拟合），现有方案需针对特定模型调参。MEDA 通过特征级数据增强和自适应正则化，在不同 CTR 模型架构（DeepFM、DCN、DIN 等）上均能稳定提升多轮训练效果，AUC 提升 0.3-0.8%。",
+      "key_insight": "核心创新在于将数据增强从 CV/NLP 领域适配到 CTR 场景：对 embedding 层施加特征 dropout 和噪声注入，结合动态正则化权重调度。实践启示：CTR 模型训练通常只用单轮以避免过拟合，MEDA 证明多轮训练可安全使用且带来显著收益，适用于样本量有限或模型容量较大的场景。",
+      "deep_reading": {
+        "paper_id": "web:multi-epoch-ctr-meda",
+        "title": "Multi-Epoch Learning with Data Augmentation for Deep Click-Through Rate Prediction",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nCTR 预估模型面临一个独特的训练困境：**单轮过拟合现象**（one-epoch overfitting）。与 CV/NLP 领域模型通常需要多轮训练才能收敛不同，CTR 模型在第二轮训练开始时性能即显著下降。\n\n根本原因在于 **embedding 层过拟合**：CTR 模型处理数十亿稀疏分类特征（如用户 ID、物品 ID），大量低频特征的 embedding 向量仅有极少训练样本，重复暴露导致 embedding 记忆训练数据而非学习泛化表征。作者通过控制实验验证：固定 embedding 层时 MLP 几乎不过拟合；固定 MLP 后 embedding 过拟合仍然出现。\n\n工业意义：多轮训练对于以下场景至关重要——(1) 数据量有限但模型容量大；(2) 需要无监督域适应或标签噪声修正；(3) 计算资源充足但训练时间有限。快手实际部署中，MEDA 使基线 2 周训练效果仅需 1 周达到。\n\n## 2. 方法详解\n\n### 核心思想：解耦 Embedding 与 MLP\n\nMEDA 发现 MLP 层学习的是 embedding 间的**相对关系**（方向）而非绝对位置（数值）。因此可通过在每轮训练时重新初始化 embedding 来实现隐式数据增强——MLP 被迫在不同的 embedding 空间中学习稳健的匹配函数。\n\n### Non-Continual MEDA (Algorithm 1)\n\n1. 随机初始化 MLP 参数 θ₀\n2. 对每轮 r (1 到 k)：\n   - **随机重新初始化** embedding 层 Eᵣ（Glorot/均匀分布）\n   - 使用上轮 MLP θ_{r-1} 作为初始化（保留 MLP 知识）\n   - 在完整数据集上训练一轮\n   - 同时更新 θ 和 E\n\n**关键洞察**：embedding 重新初始化 = 隐式数据增强。每轮的 embedding 空间不同，MLP 看到的是\"同一数据的不同表示\"，等效于在特征空间做增强。\n\n### Continual MEDA (Algorithm 2)\n\n适用于连续数据流（如日增量训练）：维护 k 个独立初始化的 embedding 组：\n1. 初始化共享 MLP θ^c 和 k 个 embedding 层\n2. 对每个数据集 t (日增量)：对每轮 r 选择 embedding Eᵣ^{t-1}，初始化 MLP 为 θ^c，训练一轮\n\n### 训练细节\n\n- 损失函数：BCELoss（分类）/ AUC scoring（回归/LTV）\n- 优化器：Adam (lr=0.001) 公开数据集；Adagrad (lr=0.01) 业务数据集\n- Embedding 初始化：Glorot（公开）；uniform [-0.01, 0.01]（业务）\n- 验证 MLP 收敛性：跨轮 MLP 参数的 cosine similarity 单调递增\n\n## 3. 核心技术贡献\n\n1. **首次系统诊断 CTR 模型单轮过拟合根因**：通过控制实验明确归因于 embedding 层的高维稀疏性过拟合。推翻了此前模糊的\"整体模型过拟合\"认知。\n\n2. **通用多轮训练策略**：MEDA 可无缝集成到 DNN、DIN、DIEN、MIMN、ADFM 等不同架构中，无需修改模型结构。2 轮训练即带来 +0.73% 到 +5.17% AUC 提升。\n\n3. **数据效率翻倍**：在 Taobao 数据上，50% 数据 + 2 轮训练即达到基线 100% 数据单轮的性能，节省一半数据采集成本。\n\n4. **MLP 学习相对关系的发现**：余弦相似度分析证明 MLP 参数方向跨轮收敛，为 embedding 重新初始化策略提供理论基础。\n\n## 4. 实验结果分析\n\n### 主实验 AUC 提升（2轮 vs 单轮）\n\n**公开数据集**：\n| 模型 | Amazon | Taobao |\n|------|--------|--------|\n| DNN | +0.73% | +1.82% |\n| DIN | +1.30% | +1.06% |\n| DIEN | +1.75% | +1.98% |\n| MIMN | +1.41% | +1.61% |\n| ADFM | +0.90% | +5.17% |\n\n**业务数据集**：\n| 模型 | SVO (快手短视频, 17.5亿样本) | SVSL (快手社交, 3亿样本) |\n|------|----------------------------|---------------------------|\n| DNN | +0.24% | +0.49% |\n| DIN | +0.33% | +0.64% |\n\nTaobao 提升显著高于 Amazon，因 Taobao 数据稀疏度更低。\n\n### 消融实验\n\n- Fix embedding（不重新初始化）：无增强效果\n- Fix MLP after epoch 1：embedding 过拟合仍发生\n- Embedding same init：减轻但不消除过拟合\n- **Embedding reinit（MEDA）**：成功消除过拟合\n\n### 数据效率\n\nTaobao：MEDA 50% 数据 + 2 轮 = 基线 100% 数据单轮\nADFM with 3 epochs on 1/8 data > 基线全数据单轮\n\n### 在线 A/B 测试（快手视频广告，10% 流量 9 天）\n\n- Test AUC: **+0.14%**\n- 用户留存: **+6.6%**\n- 整体收入: **+0.32%**；预期收入: **+0.91%**\n\n关键成果：MEDA 使 2 周训练效果仅需 1 周达到，**训练效率翻倍**。\n\n## 5. 局限与未来方向\n\n作者承认：\n1. **信息损失**：随机重新初始化丢弃了高频特征积累的有价值 embedding。建议未来借鉴差分隐私思想，根据特征频率设计差异化噪声水平。\n2. **在线学习时效性**：多轮方法牺牲时效性，但 batch+online 混合方案可容纳。\n\n未被作者提及的局限：(1) 十亿级特征表重新初始化的显存和 IO 开销；(2) 高频特征的冷启动效应。\n\n## 6. 工业实践意义\n\n**直接可采纳**：\n- **零代码改动**提升 CTR 模型效果：仅需在训练脚本中加入 embedding 重新初始化逻辑\n- 在数据量有限的垂类场景（如 UGC 社区搜索排序），多轮训练增益更显著\n- 数据效率翻倍意味着可用更短数据窗口训练出等效模型\n\n**部署考量**：\n- 训练时间增加 k 倍，但可并行化\n- 在线 serving 无额外开销：最终只保留一套 embedding + MLP\n- 与增量训练兼容：Continual MEDA 专为日更场景设计\n\n**对 UGC 搜索排序的适用性**：社区搜索的 CTR 模型通常面临样本稀疏（长尾 query/帖子组合多）、特征高维稀疏特点，正是 MEDA 增益最大的场景。建议在现有 CTR 模型上尝试 2-3 轮 MEDA 训练，预期 AUC +0.3-1.0%。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>CTR 预估模型面临一个独特的训练困境：<strong>单轮过拟合现象</strong>（one-epoch overfitting）。与 CV/NLP 领域模型通常需要多轮训练才能收敛不同，CTR 模型在第二轮训练开始时性能即显著下降。</p>\n<p>根本原因在于 <strong>embedding 层过拟合</strong>：CTR 模型处理数十亿稀疏分类特征（如用户 ID、物品 ID），大量低频特征的 embedding 向量仅有极少训练样本，重复暴露导致 embedding 记忆训练数据而非学习泛化表征。作者通过控制实验验证：固定 embedding 层时 MLP 几乎不过拟合；固定 MLP 后 embedding 过拟合仍然出现。</p>\n<p>工业意义：多轮训练对于以下场景至关重要——(1) 数据量有限但模型容量大；(2) 需要无监督域适应或标签噪声修正；(3) 计算资源充足但训练时间有限。快手实际部署中，MEDA 使基线 2 周训练效果仅需 1 周达到。</p>\n<h2>2. 方法详解</h2>\n<h3>核心思想：解耦 Embedding 与 MLP</h3>\n<p>MEDA 发现 MLP 层学习的是 embedding 间的<strong>相对关系</strong>（方向）而非绝对位置（数值）。因此可通过在每轮训练时重新初始化 embedding 来实现隐式数据增强——MLP 被迫在不同的 embedding 空间中学习稳健的匹配函数。</p>\n<h3>Non-Continual MEDA (Algorithm 1)</h3>\n<ol>\n<li>随机初始化 MLP 参数 θ₀</li>\n<li>对每轮 r (1 到 k)：</li>\n</ol>\n<p>   - <strong>随机重新初始化</strong> embedding 层 Eᵣ（Glorot/均匀分布）<br>   - 使用上轮 MLP θ_{r-1} 作为初始化（保留 MLP 知识）<br>   - 在完整数据集上训练一轮<br>   - 同时更新 θ 和 E</p>\n<p><strong>关键洞察</strong>：embedding 重新初始化 = 隐式数据增强。每轮的 embedding 空间不同，MLP 看到的是&quot;同一数据的不同表示&quot;，等效于在特征空间做增强。</p>\n<h3>Continual MEDA (Algorithm 2)</h3>\n<p>适用于连续数据流（如日增量训练）：维护 k 个独立初始化的 embedding 组：</p>\n<ol>\n<li>初始化共享 MLP θ^c 和 k 个 embedding 层</li>\n<li>对每个数据集 t (日增量)：对每轮 r 选择 embedding Eᵣ^{t-1}，初始化 MLP 为 θ^c，训练一轮</li>\n</ol>\n<h3>训练细节</h3>\n<ul>\n<li>损失函数：BCELoss（分类）/ AUC scoring（回归/LTV）</li>\n<li>优化器：Adam (lr=0.001) 公开数据集；Adagrad (lr=0.01) 业务数据集</li>\n<li>Embedding 初始化：Glorot（公开）；uniform [-0.01, 0.01]（业务）</li>\n<li>验证 MLP 收敛性：跨轮 MLP 参数的 cosine similarity 单调递增</li>\n</ul>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>首次系统诊断 CTR 模型单轮过拟合根因</strong>：通过控制实验明确归因于 embedding 层的高维稀疏性过拟合。推翻了此前模糊的&quot;整体模型过拟合&quot;认知。</li>\n</ol>\n<ol>\n<li><strong>通用多轮训练策略</strong>：MEDA 可无缝集成到 DNN、DIN、DIEN、MIMN、ADFM 等不同架构中，无需修改模型结构。2 轮训练即带来 +0.73% 到 +5.17% AUC 提升。</li>\n</ol>\n<ol>\n<li><strong>数据效率翻倍</strong>：在 Taobao 数据上，50% 数据 + 2 轮训练即达到基线 100% 数据单轮的性能，节省一半数据采集成本。</li>\n</ol>\n<ol>\n<li><strong>MLP 学习相对关系的发现</strong>：余弦相似度分析证明 MLP 参数方向跨轮收敛，为 embedding 重新初始化策略提供理论基础。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<h3>主实验 AUC 提升（2轮 vs 单轮）</h3>\n<p><strong>公开数据集</strong>：</p>\n<table><thead><tr><th>模型</th><th>Amazon</th><th>Taobao</th></tr></thead><tbody><tr><td>DNN</td><td>+0.73%</td><td>+1.82%</td></tr><tr><td>DIN</td><td>+1.30%</td><td>+1.06%</td></tr><tr><td>DIEN</td><td>+1.75%</td><td>+1.98%</td></tr><tr><td>MIMN</td><td>+1.41%</td><td>+1.61%</td></tr><tr><td>ADFM</td><td>+0.90%</td><td>+5.17%</td></tr></tbody></table>\n<p><strong>业务数据集</strong>：</p>\n<table><thead><tr><th>模型</th><th>SVO (快手短视频, 17.5亿样本)</th><th>SVSL (快手社交, 3亿样本)</th></tr></thead><tbody><tr><td>DNN</td><td>+0.24%</td><td>+0.49%</td></tr><tr><td>DIN</td><td>+0.33%</td><td>+0.64%</td></tr></tbody></table>\n<p>Taobao 提升显著高于 Amazon，因 Taobao 数据稀疏度更低。</p>\n<h3>消融实验</h3>\n<ul>\n<li>Fix embedding（不重新初始化）：无增强效果</li>\n<li>Fix MLP after epoch 1：embedding 过拟合仍发生</li>\n<li>Embedding same init：减轻但不消除过拟合</li>\n<li><strong>Embedding reinit（MEDA）</strong>：成功消除过拟合</li>\n</ul>\n<h3>数据效率</h3>\n<p>Taobao：MEDA 50% 数据 + 2 轮 = 基线 100% 数据单轮<br>ADFM with 3 epochs on 1/8 data &gt; 基线全数据单轮</p>\n<h3>在线 A/B 测试（快手视频广告，10% 流量 9 天）</h3>\n<ul>\n<li>Test AUC: <strong>+0.14%</strong></li>\n<li>用户留存: <strong>+6.6%</strong></li>\n<li>整体收入: <strong>+0.32%</strong>；预期收入: <strong>+0.91%</strong></li>\n</ul>\n<p>关键成果：MEDA 使 2 周训练效果仅需 1 周达到，<strong>训练效率翻倍</strong>。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者承认：</p>\n<ol>\n<li><strong>信息损失</strong>：随机重新初始化丢弃了高频特征积累的有价值 embedding。建议未来借鉴差分隐私思想，根据特征频率设计差异化噪声水平。</li>\n<li><strong>在线学习时效性</strong>：多轮方法牺牲时效性，但 batch+online 混合方案可容纳。</li>\n</ol>\n<p>未被作者提及的局限：(1) 十亿级特征表重新初始化的显存和 IO 开销；(2) 高频特征的冷启动效应。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可采纳</strong>：</p>\n<ul>\n<li><strong>零代码改动</strong>提升 CTR 模型效果：仅需在训练脚本中加入 embedding 重新初始化逻辑</li>\n<li>在数据量有限的垂类场景（如 UGC 社区搜索排序），多轮训练增益更显著</li>\n<li>数据效率翻倍意味着可用更短数据窗口训练出等效模型</li>\n</ul>\n<p><strong>部署考量</strong>：</p>\n<ul>\n<li>训练时间增加 k 倍，但可并行化</li>\n<li>在线 serving 无额外开销：最终只保留一套 embedding + MLP</li>\n<li>与增量训练兼容：Continual MEDA 专为日更场景设计</li>\n</ul>\n<p><strong>对 UGC 搜索排序的适用性</strong>：社区搜索的 CTR 模型通常面临样本稀疏（长尾 query/帖子组合多）、特征高维稀疏特点，正是 MEDA 增益最大的场景。建议在现有 CTR 模型上尝试 2-3 轮 MEDA 训练，预期 AUC +0.3-1.0%。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2604.15650",
+      "title": "Sample Is Feature: Beyond Item-Level, Toward Sample-Level Tokens for Unified Large Recommender Models",
+      "url": "https://arxiv.org/abs/2604.15650",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 4.35,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "提出 Sample-Level Token 范式，突破工业推荐模型的两大瓶颈：样本信息扩展（通过更深更长行为序列丰富训练信号）和模型容量扩展（在单一 Transformer 骨干中统一序列建模与特征交互）。将每个训练样本的全部信息（用户特征、上下文、行为序列）统一编码为 token 序列，使 Transformer 自然处理跨模态交互。",
+      "key_insight": "关键创新在于打破 item-level token 的限制，将推荐模型从「每个 item 一个 token」提升到「每个样本一个 token 序列」。这使得模型能同时利用序列位置信息和特征交互信息，避免了传统方法中两个模块分离导致的信息损失。对搜索/推荐系统的启示：统一 Transformer 架构可替代「序列模型 + 特征交叉模型」的拼接方案。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2604.15650",
+        "title": "Sample Is Feature: Beyond Item-Level, Toward Sample-Level Tokens for Unified Large Recommender Models",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n工业推荐模型的扩展遵循两条并行范式：**样本信息扩展**（通过更深更长的行为序列丰富训练信号）和**模型容量扩展**（在统一 Transformer 骨干中融合序列建模与特征交互）。然而两者存在结构性瓶颈：\n\n1. **样本信息扩展瓶颈**：当前序列延长方法仅将 item embedding 或少量特征子集编码为历史 token，丢失了大量原始样本上下文（用户画像、情境信号、行为结果）。论文举例：\"考虑两个用户都点击了同一家餐厅：一个在深夜使用优惠券的 session 中，另一个在工作日午餐高峰期——裸 item embedding 将这两次交互视为完全相同。\"\n\n2. **模型容量扩展约束**：统一 Transformer 架构在处理序列 item token（稀疏）和当前请求的稠密多字段 token 时存在表征不对称，限制了模型容量的实现。\n\n该工作建立在 HyFormer、OneTrans 等先前统一架构之上，但指出它们在 sequence length > 500 时效果饱和。\n\n## 2. 方法详解\n\n### 核心创新：Sample-Level Token\n\nSIF 将每个历史交互的完整特征快照（用户画像、item 特征、上下文信号、交叉特征）编码为 token 序列，替代裸 item ID。原始样本定义为 S = [f_user | f_item | f_ctx | f_cross]。\n\n### Sample Tokenizer: 层次化分组自适应量化 (HGAQ)\n\n**Step 1: 分组分解** — 将原始样本划分为 G=4 个语义组，防止信息稀释。高基数特征（如 item ID）独占一个组。\n\n**Step 2: 自适应组内子 token 化** — 每组 g 划分为 K_g 个子 token：K_g = ⌈|F_g|/B⌉，粒度 B=32 控制每个子 token 的特征字段数。特征投影维度 d₀=16，总子 token 数约 T≈27。\n\n**Step 3: 残差向量量化 (RVQ)** — 对每个子 token 施加 M=3 级 RVQ，codebook 大小 V=256。总存储为 T×M=81 个离散索引，实现 **237× 压缩比**（相比 float32 原始快照）。\n\n**Step 4: 标签监督 Codebook 训练** — RVQ 重建结果通过 MLP 做辅助 CTR 预测，损失 L_token = L_BCE(ŷ^token, y)，确保 codebook 按预测相关性组织，而非仅按重建误差。\n\n### SIF-Mixer 架构\n\n输入布局为 (L+1)×T 矩阵（L 个历史 + 1 个目标），堆叠 N=4 个 SIF Block：\n- **Token-Level Mixer**：行内 self-attention，捕获单个样本内 T 个子 token 间的交互（用户-物品-上下文跨组关联），复杂度 O(T²·(L+1)·d₀)\n- **Sample-Level Mixer**：列内 self-attention，跨 L+1 个样本的时序注意力，复杂度 O((L+1)²·T·d₀)\n- **Token-Level FFN**：逐位置非线性变换\n\n预测头：对 T 个子 token 输出做 mean pooling 后接两层 MLP + sigmoid。\n\n### 训练目标\n\n总损失 L = L_BCE + β·L_VQ + γ·L_align，其中 β=1.0, γ=0.25。L_align 确保目标样本投影与 codebook 空间兼容。训练配置：Adam (lr=10⁻³)，batch size 4096，sequence length L=1000，8×A100-80G GPU。\n\n## 3. 核心技术贡献\n\n1. **Sample-Level Token 范式**：首次将推荐模型从 item-level token 提升到 sample-level token，使 Transformer 自然建模跨模态交互（用户×物品×上下文），对比 HyFormer/OneTrans 在 L=1000 时 GAUC 提升 +0.0088/+0.0093。\n\n2. **HGAQ 量化压缩**：237× 压缩比下保持全快照语义——相比 raw embedding (9× 压缩) AUC 更优。创新在于 label-supervised codebook 训练，使离散索引按 CTR 预测信息量组织。\n\n3. **双轴分解注意力**：Token-Level × Sample-Level 的因子化设计，复杂度 O(L²T·d₀) 优于 flat attention O((LT)²)，同时保留了 pooled-then-attend O(L²) 丢失的组内结构（GAUC 差 -0.81%）。\n\n4. **序列长度外推能力**：在 L 从 100 增至 2000 时，SIF 优势从 +0.0013 单调扩大至 +0.0102（vs HyFormer），证明 sample-level 信息在更长序列中释放更多价值。\n\n## 4. 实验结果分析\n\n### 离线主实验（美团本地生活，1B+ 样本）\n\n| 模型 | CTR AUC↑ | CTR GAUC↑ | CVR AUC↑ | CVR GAUC↑ | TFLOPs |\n|------|----------|-----------|----------|-----------|--------|\n| DCNv2+DIN (baseline) | 0.7832 | 0.7614 | 0.8103 | 0.7891 | 0.31 |\n| RankMixer+LONGER | +0.79% | +0.72% | +0.68% | +0.63% | 0.40 |\n| HyFormer | +1.12% | +1.01% | +0.97% | +0.88% | 0.87 |\n| **SIF** | **+2.03%** | **+1.89%** | **+1.74%** | **+1.61%** | 0.93 |\n\nSIF 在仅增加 7% FLOPs（vs HyFormer）的代价下，获得近乎翻倍的 GAUC 提升。所有差异 p<0.01 显著。\n\n### Tokenizer 消融\n\n- Item ID only：GAUC 比 SIF 低 1.00%（信息损失严重）\n- Item ID + 关键特征：低 0.60%\n- Raw embedding (d=512)：低 0.27% 但存储膨胀 26 倍\n- HGAQ：最优压缩比下最优效果\n\n### 在线 A/B 测试（美团平台，5% 流量 7 天）\n\nvs HyFormer baseline：**CTR +2.03%, CVR +1.21%, GMV/session +1.35%**。重度用户（L≥500）获得最大提升：CTR +3.12%, GMV +2.06%。\n\n## 5. 局限与未来方向\n\n作者指出：(1) 序列特征的时序排列信息未纳入 sample 量化，由 Sample-level Mixer 单独处理；(2) HGAQ 需精心校准子 token 粒度 B 以平衡分解精度和模型紧凑性；(3) 当前 codebook 为静态训练，未来可探索在线自适应更新。\n\n未提及但值得注意：(1) 237× 压缩仍需离线预计算和 KV 存储所有历史快照；(2) 特征字段变更需重训 codebook。\n\n## 6. 工业实践意义\n\n**直接可借鉴点**：\n- 对于行为序列较长的平台（L>100），sample-level 编码可释放显著信息增益——美团数据显示 L≥500 用户 CTR 提升 3%+\n- HGAQ 的 codebook 训练方式（label-supervised）值得在 embedding 压缩任务中借鉴——比纯重建目标更对齐业务指标\n- 双轴分解注意力是 compute-quality 的 Pareto 优选方案\n\n**部署考量**：\n- 推理延迟：0.93 TFLOPs（vs baseline 0.31），约 3× 计算开销，需 GPU 推理或 TensorRT 优化\n- 存储需求：每用户 1000 个历史样本 × 81 个离散索引 ≈ 81KB/用户\n- 特征工程依赖：需要能获取历史交互时刻的完整特征快照\n\n**对 UGC 搜索推荐的适用性**：社区搜索中用户浏览帖子时的上下文（搜索 query、时段、位置、前序浏览轨迹）高度异质，SIF 的 sample-level 编码可有效利用这些被传统方法忽略的信号。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>工业推荐模型的扩展遵循两条并行范式：<strong>样本信息扩展</strong>（通过更深更长的行为序列丰富训练信号）和<strong>模型容量扩展</strong>（在统一 Transformer 骨干中融合序列建模与特征交互）。然而两者存在结构性瓶颈：</p>\n<ol>\n<li><strong>样本信息扩展瓶颈</strong>：当前序列延长方法仅将 item embedding 或少量特征子集编码为历史 token，丢失了大量原始样本上下文（用户画像、情境信号、行为结果）。论文举例：&quot;考虑两个用户都点击了同一家餐厅：一个在深夜使用优惠券的 session 中，另一个在工作日午餐高峰期——裸 item embedding 将这两次交互视为完全相同。&quot;</li>\n</ol>\n<ol>\n<li><strong>模型容量扩展约束</strong>：统一 Transformer 架构在处理序列 item token（稀疏）和当前请求的稠密多字段 token 时存在表征不对称，限制了模型容量的实现。</li>\n</ol>\n<p>该工作建立在 HyFormer、OneTrans 等先前统一架构之上，但指出它们在 sequence length &gt; 500 时效果饱和。</p>\n<h2>2. 方法详解</h2>\n<h3>核心创新：Sample-Level Token</h3>\n<p>SIF 将每个历史交互的完整特征快照（用户画像、item 特征、上下文信号、交叉特征）编码为 token 序列，替代裸 item ID。原始样本定义为 S = [f_user | f_item | f_ctx | f_cross]。</p>\n<h3>Sample Tokenizer: 层次化分组自适应量化 (HGAQ)</h3>\n<p><strong>Step 1: 分组分解</strong> — 将原始样本划分为 G=4 个语义组，防止信息稀释。高基数特征（如 item ID）独占一个组。</p>\n<p><strong>Step 2: 自适应组内子 token 化</strong> — 每组 g 划分为 K_g 个子 token：K_g = ⌈|F_g|/B⌉，粒度 B=32 控制每个子 token 的特征字段数。特征投影维度 d₀=16，总子 token 数约 T≈27。</p>\n<p><strong>Step 3: 残差向量量化 (RVQ)</strong> — 对每个子 token 施加 M=3 级 RVQ，codebook 大小 V=256。总存储为 T×M=81 个离散索引，实现 <strong>237× 压缩比</strong>（相比 float32 原始快照）。</p>\n<p><strong>Step 4: 标签监督 Codebook 训练</strong> — RVQ 重建结果通过 MLP 做辅助 CTR 预测，损失 L_token = L_BCE(ŷ^token, y)，确保 codebook 按预测相关性组织，而非仅按重建误差。</p>\n<h3>SIF-Mixer 架构</h3>\n<p>输入布局为 (L+1)×T 矩阵（L 个历史 + 1 个目标），堆叠 N=4 个 SIF Block：</p>\n<ul>\n<li><strong>Token-Level Mixer</strong>：行内 self-attention，捕获单个样本内 T 个子 token 间的交互（用户-物品-上下文跨组关联），复杂度 O(T²·(L+1)·d₀)</li>\n<li><strong>Sample-Level Mixer</strong>：列内 self-attention，跨 L+1 个样本的时序注意力，复杂度 O((L+1)²·T·d₀)</li>\n<li><strong>Token-Level FFN</strong>：逐位置非线性变换</li>\n</ul>\n<p>预测头：对 T 个子 token 输出做 mean pooling 后接两层 MLP + sigmoid。</p>\n<h3>训练目标</h3>\n<p>总损失 L = L_BCE + β·L_VQ + γ·L_align，其中 β=1.0, γ=0.25。L_align 确保目标样本投影与 codebook 空间兼容。训练配置：Adam (lr=10⁻³)，batch size 4096，sequence length L=1000，8×A100-80G GPU。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>Sample-Level Token 范式</strong>：首次将推荐模型从 item-level token 提升到 sample-level token，使 Transformer 自然建模跨模态交互（用户×物品×上下文），对比 HyFormer/OneTrans 在 L=1000 时 GAUC 提升 +0.0088/+0.0093。</li>\n</ol>\n<ol>\n<li><strong>HGAQ 量化压缩</strong>：237× 压缩比下保持全快照语义——相比 raw embedding (9× 压缩) AUC 更优。创新在于 label-supervised codebook 训练，使离散索引按 CTR 预测信息量组织。</li>\n</ol>\n<ol>\n<li><strong>双轴分解注意力</strong>：Token-Level × Sample-Level 的因子化设计，复杂度 O(L²T·d₀) 优于 flat attention O((LT)²)，同时保留了 pooled-then-attend O(L²) 丢失的组内结构（GAUC 差 -0.81%）。</li>\n</ol>\n<ol>\n<li><strong>序列长度外推能力</strong>：在 L 从 100 增至 2000 时，SIF 优势从 +0.0013 单调扩大至 +0.0102（vs HyFormer），证明 sample-level 信息在更长序列中释放更多价值。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<h3>离线主实验（美团本地生活，1B+ 样本）</h3>\n<table><thead><tr><th>模型</th><th>CTR AUC↑</th><th>CTR GAUC↑</th><th>CVR AUC↑</th><th>CVR GAUC↑</th><th>TFLOPs</th></tr></thead><tbody><tr><td>DCNv2+DIN (baseline)</td><td>0.7832</td><td>0.7614</td><td>0.8103</td><td>0.7891</td><td>0.31</td></tr><tr><td>RankMixer+LONGER</td><td>+0.79%</td><td>+0.72%</td><td>+0.68%</td><td>+0.63%</td><td>0.40</td></tr><tr><td>HyFormer</td><td>+1.12%</td><td>+1.01%</td><td>+0.97%</td><td>+0.88%</td><td>0.87</td></tr><tr><td><strong>SIF</strong></td><td><strong>+2.03%</strong></td><td><strong>+1.89%</strong></td><td><strong>+1.74%</strong></td><td><strong>+1.61%</strong></td><td>0.93</td></tr></tbody></table>\n<p>SIF 在仅增加 7% FLOPs（vs HyFormer）的代价下，获得近乎翻倍的 GAUC 提升。所有差异 p&lt;0.01 显著。</p>\n<h3>Tokenizer 消融</h3>\n<ul>\n<li>Item ID only：GAUC 比 SIF 低 1.00%（信息损失严重）</li>\n<li>Item ID + 关键特征：低 0.60%</li>\n<li>Raw embedding (d=512)：低 0.27% 但存储膨胀 26 倍</li>\n<li>HGAQ：最优压缩比下最优效果</li>\n</ul>\n<h3>在线 A/B 测试（美团平台，5% 流量 7 天）</h3>\n<p>vs HyFormer baseline：<strong>CTR +2.03%, CVR +1.21%, GMV/session +1.35%</strong>。重度用户（L≥500）获得最大提升：CTR +3.12%, GMV +2.06%。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者指出：(1) 序列特征的时序排列信息未纳入 sample 量化，由 Sample-level Mixer 单独处理；(2) HGAQ 需精心校准子 token 粒度 B 以平衡分解精度和模型紧凑性；(3) 当前 codebook 为静态训练，未来可探索在线自适应更新。</p>\n<p>未提及但值得注意：(1) 237× 压缩仍需离线预计算和 KV 存储所有历史快照；(2) 特征字段变更需重训 codebook。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可借鉴点</strong>：</p>\n<ul>\n<li>对于行为序列较长的平台（L&gt;100），sample-level 编码可释放显著信息增益——美团数据显示 L≥500 用户 CTR 提升 3%+</li>\n<li>HGAQ 的 codebook 训练方式（label-supervised）值得在 embedding 压缩任务中借鉴——比纯重建目标更对齐业务指标</li>\n<li>双轴分解注意力是 compute-quality 的 Pareto 优选方案</li>\n</ul>\n<p><strong>部署考量</strong>：</p>\n<ul>\n<li>推理延迟：0.93 TFLOPs（vs baseline 0.31），约 3× 计算开销，需 GPU 推理或 TensorRT 优化</li>\n<li>存储需求：每用户 1000 个历史样本 × 81 个离散索引 ≈ 81KB/用户</li>\n<li>特征工程依赖：需要能获取历史交互时刻的完整特征快照</li>\n</ul>\n<p><strong>对 UGC 搜索推荐的适用性</strong>：社区搜索中用户浏览帖子时的上下文（搜索 query、时段、位置、前序浏览轨迹）高度异质，SIF 的 sample-level 编码可有效利用这些被传统方法忽略的信号。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2506.02261",
+      "title": "What Makes LLMs Effective Sequential Recommenders? A Study on Preference Intensity and Temporal Context",
+      "url": "https://arxiv.org/abs/2506.02261",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 4.0,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "系统研究 LLM 作为序列推荐器的有效性机制。发现现有偏好对齐方法多依赖二元配对比较，忽略了两个关键因素：偏好强度（用户对物品的喜好程度差异）和时间上下文（近期交互更能反映当前意图）。通过对比实验证明，引入偏好强度梯度和时间衰减机制可显著提升 LLM 推荐效果。",
+      "key_insight": "揭示了 LLM 推荐的核心改进方向：不是简单的「喜欢/不喜欢」二分法，而是建模偏好的连续强度和时间相关性。实践意义：在 UGC 搜索场景中，用户对内容的兴趣存在明显强度差异和时间衰减，该方法可直接用于 LLM-based 排序模型的偏好信号构建。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2604.16121",
+      "title": "Beyond One-Size-Fits-All: Adaptive Test-Time Augmentation for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2604.16121",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 4.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出自适应测试时增强（Adaptive TTA）方法解决序列推荐中的数据稀疏问题。现有 TTA 方法采用统一的、用户无关的增强策略，忽略了用户间巨大的行为异质性。论文设计了用户感知的增强策略选择器，根据用户行为模式自动选择最优增强方式，无需模型重训练即可提升推理精度。",
+      "key_insight": "核心洞察：不同用户需要不同的数据增强策略（活跃用户适合随机遮蔽，低频用户适合序列补全）。实践价值：作为即插即用模块，可在不修改已训练模型的前提下提升推荐效果，部署成本极低。对 UGC 搜索场景尤其适用——用户活跃度差异大，统一策略必然次优。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2604.15581",
+      "title": "Learning Behaviorally Grounded Item Embeddings via Personalized Temporal Contexts",
+      "url": "https://arxiv.org/abs/2604.15581",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 4.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "指出标准 Item2Vec 方法将用户历史视为无序集合（bag-of-items），隐含假设分钟级交互和月级交互具有同等语义关联性，从而抹平了用户行为的时间结构。提出基于个性化时间上下文的 item embedding 学习方法，区分短期偏好演变和长期兴趣变化，生成时间感知的 item 表征。",
+      "key_insight": "方法论创新：通过时间距离感知的上下文窗口动态调整 item 共现权重，近期共现 item 获得更强的语义关联信号。对推荐系统的实践启示：embedding 层是推荐系统的基石，时间感知 embedding 可直接替换现有 Item2Vec/Word2Vec 训练方式，对下游 CTR 模型和召回模型均有提升。"
+    },
+    {
+      "rank": 6,
+      "id": "web:embedding-compression-ctr",
+      "title": "A Universal Framework for Compressing Embeddings in CTR Prediction",
+      "url": "https://link.springer.com/chapter/10.1007/978-981-95-3830-0_6",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-01-01",
+      "total_score": 3.9,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "提出通用 embedding 压缩框架，解决 CTR 预估模型中 embedding table 超过 GPU 显存限制的核心工程问题。当 embedding table 过大需存储在 CPU 内存时，训练和推理速度显著下降。该框架通过统一的压缩策略（包括低秩分解、量化、哈希等）适配不同 CTR 模型架构。",
+      "key_insight": "工程实践价值高：工业级 CTR 模型的 embedding table 动辄数百 GB，GPU 显存放不下是普遍痛点。该框架的通用性意味着可在 DeepFM、DCN、DIN 等不同架构上即插即用，无需针对每个模型单独设计压缩方案。对大规模 UGC 搜索排序模型的 embedding 层优化有直接参考意义。"
+    },
+    {
+      "rank": 7,
+      "id": "web:multi-task-heterogeneous-graph-2026",
+      "title": "A multi-task heterogeneous graph learning with cross-attention fusion for robust recommendation",
+      "url": "https://www.nature.com/articles/s41598-026-48466-7",
+      "authors": "Nazari, Mansoorizadeh, Khotanlou",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-01",
+      "total_score": 3.5,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出多任务异构图学习框架，通过 cross-attention 融合机制解决推荐系统中的数据稀疏、冷启动和多目标负迁移三大问题。利用异构图建模用户-物品-属性间的多类型关系，多任务学习架构自动平衡不同优化目标间的信息共享。",
+      "key_insight": "亮点在于同时处理冷启动和多目标冲突：cross-attention 机制让不同任务的图表征选择性地共享信息，避免负迁移。对多目标推荐场景（如同时优化 CTR 和 CVR）有参考价值，但图方法的在线推理延迟需要关注。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2602.08667",
+      "title": "SRSUPM: Sequential Recommender System Based on User Psychological Motivation",
+      "url": "https://arxiv.org/abs/2602.08667",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-02-12",
+      "total_score": 3.35,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "从用户心理动机角度建模序列推荐。现有方法将近期行为压缩为单一向量并优化单一目标，缺乏对心理动机转移的显式建模。SRSUPM 引入动机分布建模，捕捉不同转移程度下的行为模式，利用协作信号增强动机推断。",
+      "key_insight": "新颖视角：将用户行为序列解读为心理动机的外在表现，通过建模动机转移概率预测下一步行为。对 UGC 搜索场景的启示：用户在社区中的浏览动机（信息获取、娱乐消遣、社交互动）可显式建模并用于个性化排序。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2508.18142",
+      "title": "Mirroring Users: Towards Building Preference-aligned User Simulator with User Feedback in Recommendation",
+      "url": "https://arxiv.org/abs/2508.18142",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 3.25,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "利用 LLM 构建偏好对齐的用户模拟器。推荐系统中用户模拟对离线评估和策略优化至关重要，但 LLM 缺乏推荐任务特定的对齐。该方法利用推荐系统中丰富的用户反馈数据训练 LLM 模拟器，使其行为模式与真实用户偏好分布一致。",
+      "key_insight": "解决了 LLM 用户模拟的核心问题：通用 LLM 不了解特定平台的用户偏好分布。通过 RLHF 式的反馈对齐训练，使模拟器能准确反映真实用户的点击、跳过、停留等行为模式。对推荐系统 A/B 测试替代方案和离线策略评估有实际价值。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:oai:arXiv.org:2604.15704",
+      "title": "Intent Propagation Contrastive Collaborative Filtering",
+      "url": "https://arxiv.org/abs/2604.15704",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出意图传播对比协同过滤方法。现有解耦方法仅关注节点直接交互的局部结构特征，忽略了全局图结构信息，限制了意图解耦精度。同时对比学习中的随机增强可能破坏图语义结构。该方法通过意图传播机制在全局图上进行意图信号扩散，结合语义保持的对比学习策略。",
+      "key_insight": "改进了 GCN-based 协同过滤中的意图建模：从局部交互扩展到全局意图传播，使每个节点的意图表征融合了多跳邻居的意图信号。对实践的启示：意图解耦可用于搜索/推荐的多兴趣建模，但图方法的在线计算成本需权衡。"
+    }
+  ],
+  "code_projects": []
+}

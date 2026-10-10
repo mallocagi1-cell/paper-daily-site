@@ -1,0 +1,261 @@
+{
+  "date": "2026-04-15",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 1249,
+    "papers_selected": 10,
+    "score_min": 2.9,
+    "score_max": 4.25
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.10150",
+      "title": "Learning from Emptiness: De-biasing Listwise Rerankers with Content-Agnostic Probability Calibration",
+      "url": "https://arxiv.org/abs/2604.10150",
+      "authors": "Hang Lv, Hongchao Gu, Ruiqing Yang, Liangyue Li, Zulong Chen, Defu Lian, Hao Wang, Enhong Chen",
+      "company": [
+        "USTC"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-14",
+      "total_score": 4.25,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.35,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "生成式列表重排序虽能利用全局上下文提升检索效果，但存在严重的位置偏差问题。本文提出 CapCal 框架，通过内容无关的占位符估计偏差分布，再利用熵自适应对比机制修正输出 logit，实现无需训练的位置偏差消除。该方法在 10 个基准上的实验表明，在保持单次推理效率的前提下，显著优于其他免训练方法，对轻量级模型提升尤为明显。",
+      "key_insight": "CapCal 的核心创新在于将位置偏差视为可独立估计和消除的信号，通过「空输入」探测获得纯位置分布，避免了传统多次推理聚合带来的延迟开销。对搜索排序系统而言，该方法可直接作为 LLM 重排序器的后处理插件使用，零训练成本即可改善排序公平性和相关性，特别适合资源受限场景下部署小型生成式排序模型。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.10150",
+        "title": "Learning from Emptiness: De-biasing Listwise Rerankers with Content-Agnostic Probability Calibration",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n生成式列表重排序（Generative Listwise Reranking）利用 LLM 同时评估多个候选文档，通过全局上下文感知实现优于 pointwise 方法的排序质量。然而，这类方法存在严重的**位置偏差**（Position Bias）问题：模型对输入列表中文档的位置表现出与内容无关的结构性偏好，倾向于高估列表首尾位置的文档相关性，而忽略中间位置的相关内容（\"Lost in the Middle\" 现象）。\n\n现有缓解方案面临两难困境：（1）推理时聚合方法（如 Permutation Self-Consistency，PSC）通过对多次随机打乱后的预测取平均来消除偏差，效果好但需要 10 次以上前向传播，延迟开销不可接受；（2）训练时方法（如排列数据增强、架构修改）需要昂贵的重训练，且在紧凑模型（如 0.6B）上无法完全消除固有的位置先验。这一矛盾在轻量级模型部署场景中尤为突出——小模型位置偏差更严重，但恰恰是延迟敏感的在线搜索系统最需要的。\n\n## 2. 方法详解\n\nCapCal（Content-Agnostic Probability Calibration）的核心思路是：位置偏差可以通过观察模型在无内容输入上的行为来独立估计，然后从真实预测中减去这一偏差分量。\n\n**步骤一：估计内在位置先验。** 构造内容无关输入 x_empty = T(q, ∅, ..., ∅)，将所有文档文本替换为空占位符，仅保留查询和文档标识符。将此输入送入冻结的 LLM，获得的输出 logit 即为纯位置偏差分布——不含任何语义信号。\n\n**步骤二：标识符级概率对齐。** 文档标识符可能是多 token 的（如 \"[1]\", \"[10]\"），直接比较不同长度标识符的概率不公平。CapCal 通过联合概率归一化处理：P(d_i|x) = ∏ P(w_j|x, w<j) · P(']'|x, w1:m)，确保不同长度标识符的概率可比。\n\n**步骤三：位置偏差分解。** 假设无内容条件下理想的标识符分布应为均匀分布（1/|C_k|），则偏差量为 P(d_i|x_empty) - 1/|C_k|。校准后分数为：S(d_i) = P(d_i|x) - α · (P(d_i|x_empty) - 1/|C_k|)。\n\n**步骤四：熵自适应惩罚系数。** α 不是固定超参数，而是通过预测熵动态调节：α_k = β · H(P(·|x, t<k))。当模型预测不确定性高（熵大）时，增强校准力度；当模型对排序有信心时，减弱校准以保留语义信号。β 为全局缩放因子，是唯一的超参数。\n\n**步骤五：约束解码。** 将输出词表限制为合法文档标识符，确保生成有效排列。\n\n整个框架无需训练，仅需在原始推理基础上额外进行一次无内容输入的前向传播。\n\n## 3. 核心技术贡献\n\n**贡献一：内容无关先验估计。** 通过空占位符输入隔离位置偏差，这一简洁设计避免了对偏差的参数化建模，且天然具备跨域泛化能力——偏差分布仅取决于模型和列表长度，与具体查询或文档无关。\n\n**贡献二：熵自适应校准机制。** 固定强度的校准要么在模型有信心时过度干预（损害语义信号），要么在模型不确定时校准不足。熵自适应的 α 实现了优雅的平衡，这一设计比需要验证集调参的固定 α 更鲁棒。\n\n**贡献三：与训练方法的互补性。** 实验表明，即使对经过排列数据增强微调的模型（如 RankZephyr 范式），CapCal 仍能带来额外提升（Qwen3-0.6B 上从 61.15 到 65.53 NDCG），说明训练方法无法完全消除硬编码的位置先验，CapCal 提供了正交的改进维度。\n\n**贡献四：轻量模型的潜力释放。** 在 0.6B 模型上的提升最为显著（10+ NDCG 点），这意味着 CapCal 可以让小模型在质量上逼近大模型，显著改善成本效率。\n\n## 4. 实验结果分析\n\n实验覆盖 10 个基准（MS MARCO v1/v2 的 TREC DL19-23 + BEIR 专业领域），测试了 Qwen3-0.6B、Qwen3-8B、Qwen2.5-7B-Instruct 三个规模的模型。\n\n**关键比较结果：**\n\n| 模型 | 基准 | 原始 | +CapCal | 增益 |\n|------|------|------|---------|------|\n| Qwen3-0.6B | DL19 | 0.4916 | 0.5454 | +5.38 |\n| Qwen3-0.6B | Climate-FEVER | 0.1622 | 0.2086 | +4.64 |\n| Qwen3-8B | DL21 | 0.8091 | 0.8228 | +1.37 |\n\n**效率对比：** CapCal 仅需 1 次额外前向传播（约 2 倍延迟），而 PSC 需要 10+ 次（约 10 倍延迟），两者在效果上接近甚至 CapCal 更优。\n\n**消融分析：** 1) 占位符类型（空字符串/固定文本/长度控制变体）对效果影响很小，说明框架对占位符选择不敏感；2) 标识符格式（数字 1,2,3 vs 字母 A,B,C）均有效；3) 不同初始检索质量（BM25/BGE-M3/随机打乱）下一致有效。\n\n**值得注意的发现：** 模型规模越小，位置偏差越严重，CapCal 的提升也越大。这一规律对工业部署有直接指导意义——越是资源受限的场景，CapCal 的价值越高。\n\n## 5. 局限与未来方向\n\n作者明确提出的局限：（1）**计算开销**：需要一次额外的内容无关前向传播，虽远低于 PSC 的 10 倍开销，但仍比单次推理慢约 2 倍；（2）**API 兼容性**：需要访问标识符级别的概率或 logit，与仅暴露文本输出的黑盒 API（如 GPT-4 API）不兼容，但与提供 log-probabilities 的系统（如 vLLM、自部署模型）兼容。\n\n未提及但值得关注的局限：该方法假设位置偏差可以通过无内容输入完全隔离，但实际中位置偏差可能与内容存在交互效应（如某些类型的文档在特定位置更易被高估），这类非线性偏差可能无法被简单的减法校准消除。\n\n## 6. 工业实践意义\n\n**直接可用性高：** CapCal 是即插即用的免训练方案，可直接部署到任何使用生成式重排序的搜索系统中，不需要修改模型或收集额外训练数据。\n\n**小模型部署场景价值巨大：** 对于延迟敏感的在线搜索（如 UGC 社区搜索），通常使用 0.6B-3B 级别的 LLM 重排序器。CapCal 在这一规模上提升最显著（10+ NDCG 点），实际效果可能等同于升级到数倍参数量的模型，而延迟仅增加 1 次前向传播。\n\n**与现有优化管线互补：** 可以在 SFT/DPO 微调后的模型上叠加使用，提供训练方法无法覆盖的正交改进。建议的部署策略是：先用排列数据增强微调模型，再在推理时叠加 CapCal 校准。\n\n**部署注意事项：** 需要自部署模型（vLLM/SGLang 等）以获取 logit 访问权限。β 超参数建议通过少量验证集快速调优，作者表明该参数对取值不太敏感。额外的一次前向传播可通过批处理与正式推理请求合并来摊薄延迟。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>生成式列表重排序（Generative Listwise Reranking）利用 LLM 同时评估多个候选文档，通过全局上下文感知实现优于 pointwise 方法的排序质量。然而，这类方法存在严重的<strong>位置偏差</strong>（Position Bias）问题：模型对输入列表中文档的位置表现出与内容无关的结构性偏好，倾向于高估列表首尾位置的文档相关性，而忽略中间位置的相关内容（&quot;Lost in the Middle&quot; 现象）。</p>\n<p>现有缓解方案面临两难困境：（1）推理时聚合方法（如 Permutation Self-Consistency，PSC）通过对多次随机打乱后的预测取平均来消除偏差，效果好但需要 10 次以上前向传播，延迟开销不可接受；（2）训练时方法（如排列数据增强、架构修改）需要昂贵的重训练，且在紧凑模型（如 0.6B）上无法完全消除固有的位置先验。这一矛盾在轻量级模型部署场景中尤为突出——小模型位置偏差更严重，但恰恰是延迟敏感的在线搜索系统最需要的。</p>\n<h2>2. 方法详解</h2>\n<p>CapCal（Content-Agnostic Probability Calibration）的核心思路是：位置偏差可以通过观察模型在无内容输入上的行为来独立估计，然后从真实预测中减去这一偏差分量。</p>\n<p><strong>步骤一：估计内在位置先验。</strong> 构造内容无关输入 x_empty = T(q, ∅, ..., ∅)，将所有文档文本替换为空占位符，仅保留查询和文档标识符。将此输入送入冻结的 LLM，获得的输出 logit 即为纯位置偏差分布——不含任何语义信号。</p>\n<p><strong>步骤二：标识符级概率对齐。</strong> 文档标识符可能是多 token 的（如 &quot;[1]&quot;, &quot;[10]&quot;），直接比较不同长度标识符的概率不公平。CapCal 通过联合概率归一化处理：P(d_i|x) = ∏ P(w_j|x, w&lt;j) · P(&#x27;]&#x27;|x, w1:m)，确保不同长度标识符的概率可比。</p>\n<p><strong>步骤三：位置偏差分解。</strong> 假设无内容条件下理想的标识符分布应为均匀分布（1/|C_k|），则偏差量为 P(d_i|x_empty) - 1/|C_k|。校准后分数为：S(d_i) = P(d_i|x) - α · (P(d_i|x_empty) - 1/|C_k|)。</p>\n<p><strong>步骤四：熵自适应惩罚系数。</strong> α 不是固定超参数，而是通过预测熵动态调节：α_k = β · H(P(·|x, t&lt;k))。当模型预测不确定性高（熵大）时，增强校准力度；当模型对排序有信心时，减弱校准以保留语义信号。β 为全局缩放因子，是唯一的超参数。</p>\n<p><strong>步骤五：约束解码。</strong> 将输出词表限制为合法文档标识符，确保生成有效排列。</p>\n<p>整个框架无需训练，仅需在原始推理基础上额外进行一次无内容输入的前向传播。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献一：内容无关先验估计。</strong> 通过空占位符输入隔离位置偏差，这一简洁设计避免了对偏差的参数化建模，且天然具备跨域泛化能力——偏差分布仅取决于模型和列表长度，与具体查询或文档无关。</p>\n<p><strong>贡献二：熵自适应校准机制。</strong> 固定强度的校准要么在模型有信心时过度干预（损害语义信号），要么在模型不确定时校准不足。熵自适应的 α 实现了优雅的平衡，这一设计比需要验证集调参的固定 α 更鲁棒。</p>\n<p><strong>贡献三：与训练方法的互补性。</strong> 实验表明，即使对经过排列数据增强微调的模型（如 RankZephyr 范式），CapCal 仍能带来额外提升（Qwen3-0.6B 上从 61.15 到 65.53 NDCG），说明训练方法无法完全消除硬编码的位置先验，CapCal 提供了正交的改进维度。</p>\n<p><strong>贡献四：轻量模型的潜力释放。</strong> 在 0.6B 模型上的提升最为显著（10+ NDCG 点），这意味着 CapCal 可以让小模型在质量上逼近大模型，显著改善成本效率。</p>\n<h2>4. 实验结果分析</h2>\n<p>实验覆盖 10 个基准（MS MARCO v1/v2 的 TREC DL19-23 + BEIR 专业领域），测试了 Qwen3-0.6B、Qwen3-8B、Qwen2.5-7B-Instruct 三个规模的模型。</p>\n<p><strong>关键比较结果：</strong></p>\n<table><thead><tr><th>模型</th><th>基准</th><th>原始</th><th>+CapCal</th><th>增益</th></tr></thead><tbody><tr><td>Qwen3-0.6B</td><td>DL19</td><td>0.4916</td><td>0.5454</td><td>+5.38</td></tr><tr><td>Qwen3-0.6B</td><td>Climate-FEVER</td><td>0.1622</td><td>0.2086</td><td>+4.64</td></tr><tr><td>Qwen3-8B</td><td>DL21</td><td>0.8091</td><td>0.8228</td><td>+1.37</td></tr></tbody></table>\n<p><strong>效率对比：</strong> CapCal 仅需 1 次额外前向传播（约 2 倍延迟），而 PSC 需要 10+ 次（约 10 倍延迟），两者在效果上接近甚至 CapCal 更优。</p>\n<p><strong>消融分析：</strong> 1) 占位符类型（空字符串/固定文本/长度控制变体）对效果影响很小，说明框架对占位符选择不敏感；2) 标识符格式（数字 1,2,3 vs 字母 A,B,C）均有效；3) 不同初始检索质量（BM25/BGE-M3/随机打乱）下一致有效。</p>\n<p><strong>值得注意的发现：</strong> 模型规模越小，位置偏差越严重，CapCal 的提升也越大。这一规律对工业部署有直接指导意义——越是资源受限的场景，CapCal 的价值越高。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确提出的局限：（1）<strong>计算开销</strong>：需要一次额外的内容无关前向传播，虽远低于 PSC 的 10 倍开销，但仍比单次推理慢约 2 倍；（2）<strong>API 兼容性</strong>：需要访问标识符级别的概率或 logit，与仅暴露文本输出的黑盒 API（如 GPT-4 API）不兼容，但与提供 log-probabilities 的系统（如 vLLM、自部署模型）兼容。</p>\n<p>未提及但值得关注的局限：该方法假设位置偏差可以通过无内容输入完全隔离，但实际中位置偏差可能与内容存在交互效应（如某些类型的文档在特定位置更易被高估），这类非线性偏差可能无法被简单的减法校准消除。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可用性高：</strong> CapCal 是即插即用的免训练方案，可直接部署到任何使用生成式重排序的搜索系统中，不需要修改模型或收集额外训练数据。</p>\n<p><strong>小模型部署场景价值巨大：</strong> 对于延迟敏感的在线搜索（如 UGC 社区搜索），通常使用 0.6B-3B 级别的 LLM 重排序器。CapCal 在这一规模上提升最显著（10+ NDCG 点），实际效果可能等同于升级到数倍参数量的模型，而延迟仅增加 1 次前向传播。</p>\n<p><strong>与现有优化管线互补：</strong> 可以在 SFT/DPO 微调后的模型上叠加使用，提供训练方法无法覆盖的正交改进。建议的部署策略是：先用排列数据增强微调模型，再在推理时叠加 CapCal 校准。</p>\n<p><strong>部署注意事项：</strong> 需要自部署模型（vLLM/SGLang 等）以获取 logit 访问权限。β 超参数建议通过少量验证集快速调优，作者表明该参数对取值不太敏感。额外的一次前向传播可通过批处理与正式推理请求合并来摊薄延迟。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2510.07972",
+      "title": "SHE: Stepwise Hybrid Examination Reinforcement Learning Framework for E-commerce Search Relevance",
+      "url": "https://arxiv.org/abs/2510.07972",
+      "authors": "Pengkun Jiao, Yiming Jin, Jianhui Yang, Chenhe Dong, Zerui Huang, Shaowei Yao, Xiaojiang Zhou, Dan Ou, Haihong Tang",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "arxiv",
+      "published": "2025-10-10",
+      "total_score": 4.1,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "针对电商搜索中 LLM 相关性预测面临的训练困难（SFT/DPO 长尾泛化差、传统 RLVR 反馈稀疏），提出分步混合检验 RL 框架 SHE。核心是 SRPO（分步奖励策略优化），结合生成式奖励模型与人工标注验证器提供细粒度的步骤级信号，配合多样化数据过滤保持策略熵和多阶段课程学习。在真实电商搜索基准上，SHE 在推理质量和相关性预测精度上全面超越 SFT、DPO、GRPO 等基线。",
+      "key_insight": "SHE 将 LLM 搜索相关性从粗粒度的序列级优化推进到细粒度的步骤级奖励，解决了传统 RL 方法在中间推理错误上无法纠偏的痛点。对搜索系统而言，其混合奖励机制（生成式 + 人工验证）为平衡标注成本和模型质量提供了可行路径，课程学习策略则有效缓解了 RL 训练的不稳定性。这一框架对 UGC 短文本搜索中的长尾 query 相关性判断尤为适用。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2601.19711",
+      "title": "Differentiable Semantic ID for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2601.19711",
+      "authors": "Junchen Fu, Xuri Ge, Alexandros Karatzoglou, Ioannis Arapakis, Suzan Verberne, Joemon M. Jose, Zhaochun Ren",
+      "company": [
+        "Google",
+        "Leiden University",
+        "Glasgow University"
+      ],
+      "source": "arxiv",
+      "published": "2026-01-29",
+      "total_score": 3.6,
+      "preference_bonus": 0.3,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "当前生成式推荐中语义 ID (SID) 的学习与推荐模型训练是割裂的：SID 优化内容重建目标，推荐模型在静态索引上训练，导致目标不一致。本文提出 DIGER，通过引入 Gumbel 噪声鼓励早期编码探索并缓解 codebook 坍塌，两种不确定性衰减策略实现从探索到利用的平滑过渡，使 SID 和推荐目标端到端可微分联合优化。在多个公开数据集上验证了一致性提升。",
+      "key_insight": "DIGER 解决了生成式推荐中「索引-推荐目标不匹配」的根本问题，核心洞察是 SID 不应被视为预训练后固定的表征，而应与推荐目标联合优化。Gumbel 噪声探索机制借鉴了离散变分推断的思路，为 codebook 学习提供了更稳健的梯度信号。该思路可推广到搜索系统中的文档 ID 学习，为生成式检索的索引优化提供新范式。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.11407",
+      "title": "Retrieval as Generation: A Unified Framework with Self-Triggered Information Planning",
+      "url": "https://arxiv.org/abs/2604.11407",
+      "authors": "Bo Li, Mingda Wang, Gexiang Fang, Shikun Zhang, Wei Ye",
+      "company": [
+        "PKU"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-14",
+      "total_score": 3.75,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文重新审视 RAG 范式，将检索控制直接嵌入生成过程。提出 GRIP 框架，模型在单个自回归轨迹中自主决定何时检索、如何重构查询、何时终止检索，无需外部控制器或分类器。通过在结构化数据集上进行监督训练，覆盖多种查询类型，GRIP 以更少的参数实现了与 GPT-4o 等强基线的竞争性能。",
+      "key_insight": "GRIP 的创新在于将「是否检索」的决策从外部管道转移为 token 级别的生成决策，实现了检索与生成的深度一体化。这种范式消除了传统 RAG 中检索模块与生成模块之间的信息断裂，对搜索系统有直接启示：可以将查询改写、多轮检索、结果聚合等步骤统一到一个自回归模型中，简化系统架构的同时提升端到端效果。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.11440",
+      "title": "R3-VAE: Reference Vector-Guided Rating Residual Quantization VAE for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2604.11440",
+      "authors": "Qiang Wan, Ze Yang, Dawei Yang, Ying Fan, Xin Yan, Siyang Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-13",
+      "total_score": 3.45,
+      "preference_bonus": 0.3,
+      "adjusted_score": 3.75,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "生成式推荐中语义 ID 的向量量化面临训练不稳定和质量评估困难两大挑战。本文提出 R3-VAE，包含三个核心组件：基于参考向量的语义锚定、通过点积评分稳定训练梯度传播、以及两种评估指标作为正则化目标。在 6 个基准上的实验显示，Amazon 数据集上 Recall@10 提升 14.2%、NDCG@10 提升 15.5%，真实平台上 MRR 提升 1.62% 且冷启动场景表现优异。",
+      "key_insight": "R3-VAE 通过引入参考向量作为语义锚点，为 SID 的向量量化过程提供了稳定的训练信号，有效解决了 straight-through estimator 梯度不足的问题。点积评分替代传统距离度量的设计简洁高效。14.2% 的 Recall 提升和线上 MRR 增益表明该方法已具备工业部署价值，特别是在冷启动场景中，参考向量可为新 item 提供语义先验。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.10048",
+      "title": "HARPO: Hierarchical Agentic Reasoning for User-Aligned Conversational Recommendation",
+      "url": "https://arxiv.org/abs/2604.10048",
+      "authors": "Subham Raj, Aman Vaibhav Jha, Mayank Anand, Sriparna Saha",
+      "company": [
+        "IIT Patna"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-14",
+      "total_score": 3.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "对话式推荐系统通常优化检索准确率等代理指标，而非推荐质量本身。HARPO 将对话推荐重构为结构化决策过程，引入层次化偏好学习（将推荐质量分解为相关性、多样性、预测满意度、参与度四个维度）、基于学习价值网络的审慎树搜索推理、以及虚拟工具操作实现跨领域可迁移推理。在 ReDial、INSPIRED、MUSE 数据集上全面优于强基线。",
+      "key_insight": "HARPO 的核心贡献在于将推荐质量显式建模为多维目标，并通过价值网络引导的树搜索在推理路径空间中优化，而非仅优化生成流畅度。虚拟工具操作的设计使推理逻辑与具体领域解耦，具有良好的迁移性。对搜索推荐系统而言，这种多维质量分解思路可用于对话式搜索场景中平衡相关性、多样性和用户满意度。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.10029",
+      "title": "Self-Distilled Reinforcement Learning for Co-Evolving Agentic Recommender Systems",
+      "url": "https://arxiv.org/abs/2604.10029",
+      "authors": "Zongwei Wang, Min Gao, Hongzhi Yin, Junliang Yu, Tong Chen, Shazia Sadiq, Tianrui Li",
+      "company": [
+        "Chongqing University",
+        "University of Queensland"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-11",
+      "total_score": 3.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM 驱动的智能体推荐系统（ARS）将推荐建模为推荐智能体与用户智能体之间的多轮交互。现有 ARS 主要采用 Reflexion 式范式，存在非结构化文本记忆的误差累积和信用分配不准确问题。本文提出 CoARS，引入交互奖励机制和自蒸馏信用分配，将历史交互轨迹转化为 token 级信号，使推荐和用户智能体能够协同进化。实验表明推荐性能和用户对齐均有显著提升。",
+      "key_insight": "CoARS 的核心创新在于将 RL 的信用分配从轨迹级推进到 token 级，通过自蒸馏机制让智能体从自身交互历史中提取更精确的奖励信号。「协同进化」思想——推荐智能体和用户智能体同步优化——为构建更拟真的推荐模拟环境提供了新思路，可用于搜索推荐系统的离线评估和策略优化。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2511.11653",
+      "title": "GroupRank: A Groupwise Paradigm for Effective and Efficient Passage Reranking with LLMs",
+      "url": "https://arxiv.org/abs/2511.11653",
+      "authors": "Meixiu Long, Duolin Sun, Dan Yang, Yihan Jiao, Lei Liu, Jiahai Wang, BinBin Hu, Yue Shen, Jie Feng, Zhehao Tan, Junjie Wang, Lianzhen Zhong, Jian Wang, Peng Wei, Jinjie Gu",
+      "company": [
+        "Ant Group"
+      ],
+      "source": "arxiv",
+      "published": "2025-11-18",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "LLM 重排序面临效率-精度的根本矛盾：pointwise 高效但忽略文档间比较，listwise 精准但推理延迟过高。本文提出 GroupRank，在组级别进行比较排序，兼顾灵活性和上下文感知。通过免答案数据合成管线融合 pointwise 和 listwise 信号，结合排序效用和组对齐奖励进行 RL 优化。在 BRIGHT 上达到 SOTA 65.2 NDCG@10，R2MED 上超基线 2.1 分，同时实现 6.4 倍推理加速。",
+      "key_insight": "GroupRank 在 pointwise 和 listwise 之间找到了实用的折中点：组级比较既保留了文档间的相对关系，又将上下文长度控制在合理范围内。6.4 倍的推理加速对在线搜索系统尤为重要——这意味着可以在相近延迟预算下使用更大的 LLM 进行重排序，或在相同模型下处理更多候选文档。其数据合成管线也为构建 LLM 排序训练数据提供了低成本方案。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2604.11095",
+      "title": "Bottleneck Tokens for Unified Multimodal Retrieval",
+      "url": "https://arxiv.org/abs/2604.11095",
+      "authors": "Siyu Sun, Jing Ren, Zhaohe Liao, Dongxiao Mao, Xiangyuan Ren, Yiyi Zhang, Haohua Zhao, Weixiong Lin, Jiang Shaohua, Liqing Zhang, Yuchao Zheng",
+      "company": [
+        "SJTU"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-14",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "将 decoder-only 多模态 LLM 适配到统一检索任务面临两个结构性缺陷：隐式池化机制非为信息聚合设计，对比微调缺乏 token 级压缩指导。本文提出 Bottleneck Tokens 作为可学习池化机制，配合生成式信息压缩训练和 Condensation Mask，在 MMEB-V2 基准 78 个数据集上取得 59.0 的 SOTA 整体得分，在语义密集任务上提升尤为显著。",
+      "key_insight": "Bottleneck Tokens 的设计哲学是：与其让 EOS token 承担非设计用途的表征聚合，不如引入专用的可学习 token 作为信息瓶颈。Condensation Mask 强制模型通过瓶颈 token 传递信息，提供了明确的压缩训练信号。对多模态搜索系统（如图文混合内容的 UGC 检索）而言，这种统一的多模态表征方法可简化跨模态检索的架构设计。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2411.05572",
+      "title": "Why These Documents? Explainable Generative Retrieval with Hierarchical Category Paths",
+      "url": "https://arxiv.org/abs/2411.05572",
+      "authors": "Sangam Lee, Ryang Heo, SeongKu Kang, Susik Yoon, Jinyoung Yeo, Dongha Lee",
+      "company": [
+        "Yonsei University"
+      ],
+      "source": "arxiv",
+      "published": "2024-11-08",
+      "total_score": 2.9,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "生成式检索直接解码文档 ID 响应查询，但无法为用户提供「为何检索该文档」的解释。本文提出 HyPE，在解码 docid 前先逐步生成层次化类目路径（从通用到具体的语义层级），再利用路径感知排序进行推理。实验表明该方法在提升可解释性的同时也改善了检索性能，类目路径为检索结果提供了直观的语义归因。",
+      "key_insight": "HyPE 的关键洞察是：层次化类目路径不仅是解释工具，还能作为生成式检索的结构化中间表征，引导模型从粗到细地缩小候选空间。对搜索系统而言，这种「先分类再定位」的生成式检索策略可提升结果的可解释性——这在 UGC 搜索中尤为重要，因为用户需要理解为何某个帖子被推荐。路径感知排序也可用于搜索结果的分面展示。"
+    }
+  ]
+}

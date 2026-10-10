@@ -1,0 +1,224 @@
+{
+  "date": "2026-06-23",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 6,
+    "papers_selected": 6,
+    "score_min": 3.15,
+    "score_max": 4.2
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2510.22733",
+      "title": "E2Rank: Your Text Embedding can Also be an Effective and Efficient Listwise Reranker",
+      "url": "https://arxiv.org/abs/2510.22733",
+      "authors": "Qi Liu, Yanzhao Zhang, Mingxin Li, Dingkun Long, Pengjun Xie, Jiaxin Mao",
+      "company": [
+        "Alibaba",
+        "Renmin University"
+      ],
+      "source": "arxiv",
+      "published": "2025-10-26",
+      "total_score": 4.2,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "summary": "文本 embedding 模型检索高效，但排序精度不及专用 reranker，尤其落后于 LLM listwise reranker。E2Rank 让同一个 embedding 模型同时承担检索与 listwise 重排：在 listwise ranking 目标上继续训练，把\"原始 query+候选文档\"拼成的排序 prompt 当作被 top-K 文档信号增强的 query embedding（类似 pseudo-relevance feedback），用 query 与文档 embedding 的余弦相似度作为统一打分函数。在 BEIR 重排基准上取得 SOTA，在推理密集的 BRIGHT 上有竞争力，重排延迟很低，且排序训练反过来提升了 MTEB 上的 embedding 表现。",
+      "key_insight": "单一 embedding 模型即可统一召回与重排，省去独立 cross-encoder reranker 的部署与延迟开销，对 UGC 短文本搜索这类既要低延迟又要 nDCG 的场景很有吸引力。把 listwise prompt 复用为 PRF 式增强 query embedding 是关键设计——不引入逐对 token 交互就拿到 listwise 收益。排序训练与 embedding 训练互相增益的发现，提示召回模型可在重排数据上继续训练以同时改善两端。来自阿里 Tongyi 与人民大学。",
+      "deep_reading": {
+        "paper_id": "arxiv:2510.22733",
+        "title": "E2Rank: Your Text Embedding can Also be an Effective and Efficient Listwise Reranker",
+        "status": "completed",
+        "content": "# E2Rank 深度解读：用一个 embedding 模型同时做检索与 listwise 重排\n\n## 1. 问题与动机\n\n双塔 embedding 模型检索高效，但排序精度有天花板：query 与 doc 各自独立编码、仅靠最终向量的余弦相似度打分，缺乏 query-doc 与 doc-doc 的细粒度交互，因此重排能力不及 cross-encoder，更落后于近期 LLM listwise reranker（RankGPT、RankZephyr、RankQwen3 等）。但 LLM listwise reranker 要逐 token 解码、对每个 query 重新前向，延迟极高——论文实测 RankQwen3-8B 在 COVID 上每 query 需 16.93 秒。工业搜索既要高 nDCG 又要低延迟，二者历来难以兼得。本文动机直接：能否让\"同一个 embedding 模型\"既承担高效检索、又承担高质量 listwise 重排，从而省掉单独部署一个重排模型的显存、延迟与工程成本。\n\n## 2. 方法详解\n\n核心是把 listwise 重排改写成\"一次 embedding 计算 + 余弦相似度\"。统一打分函数为 s(q,d)=cos(e^q, e^d)。重排时构造 listwise prompt q̂=(I, d_1,…,d_k, q)：前置 instruction I、拼接 top-k 候选文档、末尾接原始 query；模型取最后一层 decoder 在 EOS 位置的 hidden state 作为增强 query 向量，即 e^q̂ = f(I,d_1,…,d_k,q)[-1]，再用 cos(e^q̂, e^d_i) 对每个候选 d_i 打分。由于候选文档已进入 prompt，e^q̂ 相当于被 top-K 文档信号增强过的 query，等价于传统检索里的 pseudo-relevance feedback（PRF）；但文档自身向量 e^d_i 仍是离线预编码、可复用，重排只需重算一个 query 向量并做 k 次点积，延迟远低于逐 token 解码。\n\n训练分两阶段，底座为 Qwen3（0.6B/4B/8B 三档）。Stage I：在 E5 公开数据（约 150 万样本）上用 InfoNCE 对比损失（温度 τ=0.03）训练基础检索能力，batch size 512、1 epoch。Stage II：从 E5/BGE-M3 检索数据采约 8.7 万条（每条 1 个 query、1 个正例、15 个负例），损失为 L = L_InfoNCE + λ·L_RankNet（λ=2.0），其中 RankNet 为 pairwise 排序损失（τ=0.1）；batch size 128、约 700 步、学习率 5e-6，硬件为 8 张 NVIDIA A100 80G。设计上把对比检索目标与 pairwise 排序目标联合优化，使同一向量空间既适合召回又适合重排。\n\n## 3. 核心技术贡献\n\n1）统一框架：以 cos 相似度作为检索与 listwise 重排的同一打分函数，单模型双用途——省去独立 cross-encoder/LLM reranker，文档向量离线复用。机制在于把 listwise prompt 当作 PRF 式增强 query embedding，不引入逐对 token 交互即获得 listwise 上下文收益。\n\n2）两阶段联合训练：Stage I 对比学习打基础，Stage II 用 InfoNCE+RankNet 联合损失注入排序能力。消融显示去掉 RankNet 会在 BEIR/BRIGHT 上出现\"最严重的性能崩塌\"，说明 pairwise 排序目标是重排能力的关键来源。\n\n3）双向互增益：排序训练不仅提升重排，还反过来改善 embedding 在 MTEB 上的表现（E2Rank-8B 65.03，略高于 LLM2Vec-Meta-LLaMA-3-8B 的 65.01），表明排序信号对底层检索表征同样有正向作用，而非以牺牲检索换重排。\n\n## 4. 实验结果分析\n\nBEIR 重排 nDCG@10 平均：E2Rank-8B 为 54.35，高于 RankQwen3-8B 的 53.39 与 RankGPT-4o 的 53.09，在公开 listwise reranker 中取得 SOTA。推理密集的 BRIGHT 平均分：E2Rank-8B 为 33.4，优于 RankQwen3-8B 的 32.0，但低于专门面向推理的 ReasonRank-7B（35.7）——说明在需要复杂推理的检索上，纯 embedding 路线仍不及推理增强型 reranker。MTEB（56 个数据集）平均 65.03，与强 LLM-embedding baseline 持平，验证排序训练没有牺牲检索表征。对比的 baseline 覆盖 RankGPT、RankQwen3、RankZephyr、ListT5、BGE、monoBERT、monoT5 等。\n\n效率是最大亮点：COVID 数据集、A100 上每 query 端到端延迟，E2Rank-8B 仅 3.40 秒（其中编码 2.76 秒 + 其余 0.64 秒），而 RankQwen3-8B 需 16.93 秒，约 5 倍加速；论文进一步指出 E2Rank-8B 比 RankQwen3-0.6B 还快——即在同等甚至更优排序质量下，8B 的 E2Rank 比 0.6B 的解码式 reranker 更快，凸显\"避免逐 token 解码\"的结构性优势。\n\n消融结论：去掉 Stage I，MTEB 退化明显（基础 query-doc 对齐受损）；去掉 RankNet，BEIR/BRIGHT 崩塌最重；去掉 listwise prompt 则失去文档上下文的 PRF 信号、重排能力大降。listwise prompt 的收益在约 20 篇文档后趋于饱和，提示重排候选数不必过大。\n\n## 5. 局限与未来方向\n\n作者明确指出：受算力限制，训练并未使用 Appendix B 的完整数据，每个数据集最多采样 1 万条，数据规模受限。训练标签依赖 LLM 标注，质量不稳定——图 5 显示 MS MARCO 上标注一致率仅勉强过半，作者把\"构建更高质量训练数据\"留作未来工作。此外 BRIGHT 上落后于 ReasonRank，说明该方法在推理密集检索上的上限低于显式推理式 reranker；listwise prompt 还受 LLM 上下文长度约束，候选文档数与单文档长度都有限（约 20 篇后饱和）。\n\n## 6. 工业实践意义\n\n对延迟敏感又要 nDCG 的搜索系统（含社区 UGC 短文本搜索）很有参考：可用一个 embedding 模型同时承担召回与重排，文档向量离线建库复用，重排只重算一个 query 向量加 k 次点积，省去单独 cross-encoder reranker 的部署、显存与延迟（实测较解码式 8B reranker 约 5 倍加速、3.40s vs 16.93s）。落地路径清晰：用现成 embedding 模型（如 Qwen3 系）在自有点击/相关性数据上跑 Stage II 的 InfoNCE+RankNet 联合损失（λ=2），即可把召回模型升级为兼具 listwise 重排能力的统一模型；重排候选控制在约 20 篇即可，过多收益饱和。需注意两点：训练标签质量直接影响效果，社区场景宜用真实点击/人工相关性而非纯 LLM 弱标注（论文已暴露 MS MARCO 标注一致率偏低的问题）；若业务涉及复杂推理型 query，单 embedding 路线可能不及推理式 reranker，可保留 LLM reranker 作兜底。部署上 listwise 编码的主要成本在 query 侧前向，可用较小档（0.6B/4B）进一步压低线上延迟。",
+        "content_html": "<h1>E2Rank 深度解读：用一个 embedding 模型同时做检索与 listwise 重排</h1>\n<h2>1. 问题与动机</h2>\n<p>双塔 embedding 模型检索高效，但排序精度有天花板：query 与 doc 各自独立编码、仅靠最终向量的余弦相似度打分，缺乏 query-doc 与 doc-doc 的细粒度交互，因此重排能力不及 cross-encoder，更落后于近期 LLM listwise reranker（RankGPT、RankZephyr、RankQwen3 等）。但 LLM listwise reranker 要逐 token 解码、对每个 query 重新前向，延迟极高——论文实测 RankQwen3-8B 在 COVID 上每 query 需 16.93 秒。工业搜索既要高 nDCG 又要低延迟，二者历来难以兼得。本文动机直接：能否让&quot;同一个 embedding 模型&quot;既承担高效检索、又承担高质量 listwise 重排，从而省掉单独部署一个重排模型的显存、延迟与工程成本。</p>\n<h2>2. 方法详解</h2>\n<p>核心是把 listwise 重排改写成&quot;一次 embedding 计算 + 余弦相似度&quot;。统一打分函数为 s(q,d)=cos(e^q, e^d)。重排时构造 listwise prompt q̂=(I, d_1,…,d_k, q)：前置 instruction I、拼接 top-k 候选文档、末尾接原始 query；模型取最后一层 decoder 在 EOS 位置的 hidden state 作为增强 query 向量，即 e^q̂ = f(I,d_1,…,d_k,q)[-1]，再用 cos(e^q̂, e^d_i) 对每个候选 d_i 打分。由于候选文档已进入 prompt，e^q̂ 相当于被 top-K 文档信号增强过的 query，等价于传统检索里的 pseudo-relevance feedback（PRF）；但文档自身向量 e^d_i 仍是离线预编码、可复用，重排只需重算一个 query 向量并做 k 次点积，延迟远低于逐 token 解码。</p>\n<p>训练分两阶段，底座为 Qwen3（0.6B/4B/8B 三档）。Stage I：在 E5 公开数据（约 150 万样本）上用 InfoNCE 对比损失（温度 τ=0.03）训练基础检索能力，batch size 512、1 epoch。Stage II：从 E5/BGE-M3 检索数据采约 8.7 万条（每条 1 个 query、1 个正例、15 个负例），损失为 L = L_InfoNCE + λ·L_RankNet（λ=2.0），其中 RankNet 为 pairwise 排序损失（τ=0.1）；batch size 128、约 700 步、学习率 5e-6，硬件为 8 张 NVIDIA A100 80G。设计上把对比检索目标与 pairwise 排序目标联合优化，使同一向量空间既适合召回又适合重排。</p>\n<h2>3. 核心技术贡献</h2>\n<p>1）统一框架：以 cos 相似度作为检索与 listwise 重排的同一打分函数，单模型双用途——省去独立 cross-encoder/LLM reranker，文档向量离线复用。机制在于把 listwise prompt 当作 PRF 式增强 query embedding，不引入逐对 token 交互即获得 listwise 上下文收益。</p>\n<p>2）两阶段联合训练：Stage I 对比学习打基础，Stage II 用 InfoNCE+RankNet 联合损失注入排序能力。消融显示去掉 RankNet 会在 BEIR/BRIGHT 上出现&quot;最严重的性能崩塌&quot;，说明 pairwise 排序目标是重排能力的关键来源。</p>\n<p>3）双向互增益：排序训练不仅提升重排，还反过来改善 embedding 在 MTEB 上的表现（E2Rank-8B 65.03，略高于 LLM2Vec-Meta-LLaMA-3-8B 的 65.01），表明排序信号对底层检索表征同样有正向作用，而非以牺牲检索换重排。</p>\n<h2>4. 实验结果分析</h2>\n<p>BEIR 重排 nDCG@10 平均：E2Rank-8B 为 54.35，高于 RankQwen3-8B 的 53.39 与 RankGPT-4o 的 53.09，在公开 listwise reranker 中取得 SOTA。推理密集的 BRIGHT 平均分：E2Rank-8B 为 33.4，优于 RankQwen3-8B 的 32.0，但低于专门面向推理的 ReasonRank-7B（35.7）——说明在需要复杂推理的检索上，纯 embedding 路线仍不及推理增强型 reranker。MTEB（56 个数据集）平均 65.03，与强 LLM-embedding baseline 持平，验证排序训练没有牺牲检索表征。对比的 baseline 覆盖 RankGPT、RankQwen3、RankZephyr、ListT5、BGE、monoBERT、monoT5 等。</p>\n<p>效率是最大亮点：COVID 数据集、A100 上每 query 端到端延迟，E2Rank-8B 仅 3.40 秒（其中编码 2.76 秒 + 其余 0.64 秒），而 RankQwen3-8B 需 16.93 秒，约 5 倍加速；论文进一步指出 E2Rank-8B 比 RankQwen3-0.6B 还快——即在同等甚至更优排序质量下，8B 的 E2Rank 比 0.6B 的解码式 reranker 更快，凸显&quot;避免逐 token 解码&quot;的结构性优势。</p>\n<p>消融结论：去掉 Stage I，MTEB 退化明显（基础 query-doc 对齐受损）；去掉 RankNet，BEIR/BRIGHT 崩塌最重；去掉 listwise prompt 则失去文档上下文的 PRF 信号、重排能力大降。listwise prompt 的收益在约 20 篇文档后趋于饱和，提示重排候选数不必过大。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出：受算力限制，训练并未使用 Appendix B 的完整数据，每个数据集最多采样 1 万条，数据规模受限。训练标签依赖 LLM 标注，质量不稳定——图 5 显示 MS MARCO 上标注一致率仅勉强过半，作者把&quot;构建更高质量训练数据&quot;留作未来工作。此外 BRIGHT 上落后于 ReasonRank，说明该方法在推理密集检索上的上限低于显式推理式 reranker；listwise prompt 还受 LLM 上下文长度约束，候选文档数与单文档长度都有限（约 20 篇后饱和）。</p>\n<h2>6. 工业实践意义</h2>\n<p>对延迟敏感又要 nDCG 的搜索系统（含社区 UGC 短文本搜索）很有参考：可用一个 embedding 模型同时承担召回与重排，文档向量离线建库复用，重排只重算一个 query 向量加 k 次点积，省去单独 cross-encoder reranker 的部署、显存与延迟（实测较解码式 8B reranker 约 5 倍加速、3.40s vs 16.93s）。落地路径清晰：用现成 embedding 模型（如 Qwen3 系）在自有点击/相关性数据上跑 Stage II 的 InfoNCE+RankNet 联合损失（λ=2），即可把召回模型升级为兼具 listwise 重排能力的统一模型；重排候选控制在约 20 篇即可，过多收益饱和。需注意两点：训练标签质量直接影响效果，社区场景宜用真实点击/人工相关性而非纯 LLM 弱标注（论文已暴露 MS MARCO 标注一致率偏低的问题）；若业务涉及复杂推理型 query，单 embedding 路线可能不及推理式 reranker，可保留 LLM reranker 作兜底。部署上 listwise 编码的主要成本在 query 侧前向，可用较小档（0.6B/4B）进一步压低线上延迟。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2603.04816",
+      "title": "Scaling Laws for Cross-Encoder Reranking",
+      "url": "https://arxiv.org/abs/2603.04816",
+      "authors": "Rahul Seetharaman, Aman Bansal, Hamed Zamani, Kaustubh Dhole",
+      "company": [
+        "UMass Amherst",
+        "Emory"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-05",
+      "total_score": 4.0,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "summary": "语言模型与一阶段检索的 scaling law 已有研究，但重排尚无。本文首次系统刻画 cross-encoder reranker 在 pointwise/pairwise/listwise 三种目标下的 scaling law：排序质量随模型规模与训练曝光量呈可预测的幂律，可用小规模实验外推大模型。用最多 150M 参数的模型，在 MSMARCO-dev 与 TREC DL 上外推出 400M 与 1B reranker 的效果；并从拟合的联合 scaling law 推导算力分配规则，与等算力 checkpoint 对比发现检索指标常更偏好\"数据多\"的扩展，但最优策略取决于训练目标，外推通常偏保守。",
+      "key_insight": "给重排模型训练提供了\"先小规模拟合幂律、再外推大模型\"的预算规划方法，对要不要投入训练更大 reranker 的决策很实用。pointwise/pairwise/listwise 三种排序目标的 scaling 行为与最优数据-参数分配各不相同，提示团队按自身目标函数定制扩展策略。预测偏保守，可作为大模型训练投入的下界参考。作者承诺开源代码与评测协议。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2601.04720",
+      "title": "Qwen3-VL-Embedding and Qwen3-VL-Reranker: A Unified Framework for State-of-the-Art Multimodal Retrieval and Ranking",
+      "url": "https://arxiv.org/abs/2601.04720",
+      "authors": "Mingxin Li, Yanzhao Zhang, Dingkun Long, Keqin Chen, Sibo Song, Shuai Bai, Zhibo Yang, Pengjun Xie, An Yang, Dayiheng Liu, Jingren Zhou, Junyang Lin",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "arxiv",
+      "published": "2026-01-08",
+      "total_score": 3.9,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "summary": "Qwen3-VL-Embedding 与 Qwen3-VL-Reranker 把文本、图像、文档图像、视频映射到统一表示空间。Embedding 模型经多阶段训练，支持 flexible dimensions 与 32k token 输入；Reranker 用 cross-encoder 架构做相关性判断。两者均支持 30+ 语言，提供 2B 与 8B 两档。Qwen3-VL-Embedding-8B 在 MMEB-V2 上取得 77.8 分，发布时位列榜首。",
+      "key_insight": "一套开源、可商用的多模态 embedding+reranker，2B/8B 双档、32k 长输入、30+ 语言，对需要图文混排 UGC 内容检索的社区搜索可直接选型试用。embedding 与 reranker 配套发布、共享 Qwen3-VL 底座，便于搭召回+重排两阶段 pipeline。flexible dimensions 便于按存储与延迟预算裁剪向量维度。来自阿里 Qwen 团队。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2602.03689",
+      "title": "Rethinking the Reranker: Boundary-Aware Evidence Selection for Robust Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2602.03689",
+      "authors": "Jiashuo Sun, Pengcheng Jiang, Saizhuo Wang, ..., Heng Ji, Jiawei Han",
+      "company": [
+        "UIUC"
+      ],
+      "source": "arxiv",
+      "published": "2026-02-03",
+      "total_score": 3.6,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "summary": "RAG 系统在真实检索噪声下很脆弱，即便所需证据出现在 top-K 也常失败：检索器与重排器只优化相关性，会选中\"答案直白外露\"的平凡段落或缺关键信息的证据。BAR-RAG 把 reranker 重构为 boundary-aware 证据选择器，瞄准生成器的 Goldilocks Zone——对生成器既非过易也非完全无解、而是\"有挑战但足以推理\"的证据，提供最强学习信号。它用生成器反馈做强化学习训练选择器，并用两阶段流程在诱导出的证据分布上微调生成器以缓解训练-推理分布失配。在 knowledge-intensive QA 上较强 RAG 与重排 baseline 平均提升 10.3%。",
+      "key_insight": "把重排的优化目标从\"纯相关性\"改成\"对下游生成器最有用\"，是对搜索/RAG 重排范式的有价值反思——选证据要考虑消费者（生成器）而非只看 query-doc 相关。Goldilocks Zone 思路对带 LLM 生成式摘要的搜索场景有借鉴：过于直白或过难的段落都不是最优上下文。代价是需 RL 训练加生成器联合微调，工程门槛较高。UIUC 出品。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2602.11518",
+      "title": "KuaiSearch: A Large-Scale E-Commerce Search Dataset for Recall, Ranking, and Relevance",
+      "url": "https://arxiv.org/abs/2602.11518",
+      "authors": "Yupeng Li, Ben Chen, Mingyue Cheng, Zhiding Liu, Xuxin Zhang, Chenyi Lei, Wenwu Ou",
+      "company": [
+        "Kuaishou",
+        "USTC"
+      ],
+      "source": "arxiv",
+      "published": "2026-02-12",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "电商搜索面临 query 高度模糊、商品文本噪声大且语义顺序弱、用户偏好多样等难题。现有电商搜索数据集多为启发式构造 query、过滤冷启动用户与长尾商品、文本匿名化，且只覆盖单一 pipeline 阶段。快手开源 KuaiSearch，号称当前最大的电商搜索数据集，基于快手平台真实用户搜索交互构建，保留真实 query 与自然语言商品文本，覆盖冷启动用户与长尾商品，系统性涵盖召回、排序、相关性判断三个阶段，并从商品、用户、query 多视角分析、在代表性任务上建立 benchmark。",
+      "key_insight": "一个覆盖召回/排序/相关性全链路、保留冷启动与长尾、未匿名化的真实电商搜索数据集，对研究 UGC 短文本 query 理解与短文本检索很有数据价值，可直接用于训练与评测三阶段模型。它对真实 query 模糊性与商品文本噪声的刻画，贴近社区搜索的短文本难点。局限是数据集类工作无方法消融，价值在数据与 benchmark 而非新模型。来自快手与中科大。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.11945",
+      "title": "uva-irlab-conv at SemEval-2026 Task 8: Multi-Turn RAG with Learned Sparse Retrieval and Listwise Reranking",
+      "url": "https://arxiv.org/abs/2606.11945",
+      "authors": "Simon Lupart, Kidist Amde Mekonnen, Zahra Abbasiantaeb, Mohammad Aliannejadi",
+      "company": [
+        "University of Amsterdam"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-10",
+      "total_score": 3.15,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "该报告描述阿姆斯特丹大学 IRLab 参加 SemEval-2026 Task 8（多轮检索问答）的系统，任务覆盖金融、云文档、政务、维基百科四个领域，含\"集合中无足够证据\"的不可答 query。系统提出多轮 RAG pipeline：以 learned sparse retrieval（LION-SP，基于 LLM 底座的 LSR 模型）为主检索方法，利用其跨领域强泛化；并借 LLM 的长上下文能力做对话式 query 改写、pointwise 与 listwise 重排、最终答案生成，每一步都以完整对话历史为条件，从而在检索与生成全程融入对话上下文、提升跨领域鲁棒性。",
+      "key_insight": "用 learned sparse retrieval 作主召回换取跨领域泛化、再叠加 LLM query 改写与 listwise 重排，是一套可直接照搬的多轮对话搜索工程范式，对社区搜索的会话式 query 理解有参考。把对话历史一路贯穿改写-重排-生成的做法值得借鉴。但作为竞赛系统报告，方法新颖性低、缺消融，更多是 pipeline 组合的工程经验。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; downloads: 2421858",
+      "language": "model",
+      "stars": 5007,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 2,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; downloads: 33589",
+      "language": "model",
+      "stars": 1996,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; downloads: 2353239",
+      "language": "model",
+      "stars": 1558,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; downloads: 0",
+      "language": "model",
+      "stars": 252,
+      "created_at": "2026-06-09"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5.2-FP8",
+      "title": "zai-org/GLM-5.2-FP8",
+      "url": "https://huggingface.co/zai-org/GLM-5.2-FP8",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; downloads: 334716",
+      "language": "model",
+      "stars": 133,
+      "created_at": "2026-06-16"
+    }
+  ]
+}

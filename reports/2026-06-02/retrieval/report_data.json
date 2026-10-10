@@ -1,0 +1,291 @@
+{
+  "date": "2026-06-02",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 15,
+    "papers_selected": 8,
+    "score_min": 3.15,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.31003",
+      "title": "Graph-GRPO: Dependency-Aware Credit Assignment for Generative E-commerce Search Relevance",
+      "url": "https://arxiv.org/abs/2605.31003",
+      "authors": "Jiarui Che, Yifei Chen, Zhixing Tian, Chenyang Wang, Ziguang Cheng",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 4.4,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.6,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对电商搜索相关性建模，论文把 LLM 的相关性判断建成 query 理解→商品理解→facet 匹配的 CoT 推理并用 RL 优化。现有 GRPO 只有 outcome-level 奖励、把整条推理链当成单一优化单元，难以区分错误步骤；Graph-GRPO 将 CoT 各步建为节点、逻辑依赖建为边，把结果奖励沿依赖图传播得到 step-level 信用，再用主损失驱动的控制器自适应调整边上传播系数，并配合 CoT 随机掩码做 SFT 初始化和基于图节点的多头蒸馏，相关性分类指标与线上互动指标均提升。",
+      "key_insight": "把推理链信用分配从序列级细化到依赖图级，是 process-reward 的一个可落地改进：电商/社区搜索相关性本就是 query 理解+内容理解+facet 匹配的多步判断，依赖图能定位\"哪一步推错导致最终判错\"。对自研 LLM 相关性模型有借鉴——用 GRPO 训练时引入步骤依赖结构 + 图节点蒸馏，可在不堆 reward 标注的前提下提升 nDCG。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.31003",
+        "title": "Graph-GRPO: Dependency-Aware Credit Assignment for Generative E-commerce Search Relevance",
+        "status": "completed",
+        "content": "## Graph-GRPO 深度解读：用\"推理依赖图\"重做电商搜索相关性的强化学习信用分配\n\n### 1. 问题与动机\n\n电商搜索相关性建模（判断 query 与候选商品是否匹配）正越来越多地被表述为 LLM 的链式思维（CoT）推理 + 强化学习优化。但作者指出现有 RL 范式有一个结构性缺陷：**只用稀疏的结果级（outcome-level）奖励，把整条推理链当成单一优化单元**。这导致\"无法区分出错的推理步骤与正确的中间步骤\"，信用分配（credit assignment）错位——模型答错了，却不知道是 query 理解错、商品理解错、还是匹配判断错。\n\n论文给出了量化证据来说明问题严重性：未经训练的 vanilla LLM 基线（Qwen3-14B）在相关性分类上 Macro-F1 仅 56.39%；更要命的是对\"不相关\"类的召回只有 29.70%、F1 仅 43.97%，即\"只能识别出一小部分明显不相关的 case，缺乏任务特定的可靠校准\"。对一个要靠相关性把控搜索结果质量的系统，漏判不相关商品是直接伤害体验的。已有的过程奖励（process-reward）方法虽提供更密集监督，却\"把推理步骤当作相互独立的，忽略了依赖驱动的错误传播\"，无法刻画\"上游 query 理解错 → 下游匹配必然错\"这种责任链。\n\n### 2. 方法详解\n\n**(a) 相关性推理依赖图。** 作者把相关性推理显式分解为结构：`(q,p) → (qs,qa,ps,pa) → (ms,ma) → y`，即 query 和 product 各自拆成 subject（主体 s）与 attribute（属性 a）两个维度，产生 subject 匹配分 ms 和 attribute 匹配分 ma，再决定最终标签 y。对应的依赖图 𝒢=(𝒩,ℰ) 有 7 个节点（最终标签 y、ms/ma 两个匹配分、qs/qa/ps/pa 四个证据节点），边分三类：ℰdec（决策传播，y→ms/ma）、ℰevid（分数到证据，ms→qs/ps）、ℰcons（跨维度一致性，query 证据与 product 证据互校）。\n\n**(b) 结果奖励沿图传播为步骤级信用。** 奖励用二值精确匹配信号：`ry = 2·𝕀[y=y*] − 1`（对 +1、错 −1），维度匹配分同理。这些结果级奖励通过可学习系数 φ 沿图传播：全局决策奖励传到匹配分 `Rms = rs + φ1·ry`；匹配分奖励再传到证据节点 `R̂qs = φ3·Rms`；并在 query/product 证据间做跨维度一致性交换。这样把\"最终标签 + 维度匹配分\"的稀疏正确性信号，转换成\"依赖感知\"的细粒度节点级奖励。\n\n**(c) 主损失驱动的边系数控制器。** 关键创新：传播系数 φ 不是手工固定，而是在竞争分支组内用 softmax 归一化 `w(u→v)=exp(φ)/Σexp(φ)`，并且\"直接通过主策略损失优化\"——总目标 `𝒥(θ,φ)=ℒ_Graph-GRPO(θ,φ)+λ_reg·ℛ(φ)`。即让主策略损失的梯度去强化有效的信用路径、抑制噪声路径，实现自适应的跨路径信用分配。\n\n**(d) CoT 随机掩码做 SFT 冷启动。** 两阶段：先在模型标注数据上做 label-only SFT，再做 masked CoT 训练（采用\"先给标签、再推理、最后决策\"的顺序）。对推理 token，只有随机子集（Bernoulli(1−ρ) 掩码）参与 loss——既保留稳定的决策学习与部分结构化推理监督，又减少对模板化解释的过拟合。消融显示该掩码把 Macro-F1 从 79.55% 提到 80.33%（+0.78pp）。\n\n**(e) 基于图节点的多头蒸馏。** 线上无法直接部署 14B LLM，于是用轻量 BERT cross-encoder 学生模型，配三个预测头分别输出 ms、ma、y，并加第四个一致性损失：让 `y_union=g(ms,ma)` 与直接预测的 y 通过 KL 散度对齐。总蒸馏损失 `λs·ℒs+λa·ℒa+ℒy+λc·ℒc`，把 LLM 教师的结构化推理信号转成可学习的多任务监督。\n\n**训练配置：** 基座 Qwen3-14B；GRPO 每样本采样 16 个回复、temperature 0.95；学习率分别为 label SFT 1e-5、masked CoT 7e-6、Graph-GRPO 1e-6；图系数学习率 6e-4、正则权重 6e-5；训练 batch 512、PPO mini-batch 256。\n\n### 3. 核心技术贡献\n\n1. **图结构化信用分配**：把相关性推理建成显式依赖图，使奖励能\"从全局决策细化到局部证据\"，解决整链单一奖励无法定位错误步骤的问题。这比独立处理各步的 process-reward 更贴合\"上游错→下游错\"的真实错误传播。\n2. **可学习边系数**：用主策略损失联合优化传播系数 φ，而非固定权重，实现不同推理路径上的自适应信用分配；这是相对普通 GRPO/PRM 的机制性改进。\n3. **可训练且可部署的统一框架**：渐进式 SFT+掩码、依赖感知 GRPO、图节点多头蒸馏三者拼成一条\"教师用图做强 RL、学生用 BERT 上线\"的工业落地链路。\n\n### 4. 实验结果分析\n\n**离线（测试集 92,419 条）Macro-F1 / Weighted-F1 / Accuracy / 不相关类 F1：**\n- LLM-Base：56.39% / 61.34% / 61.54% / 43.97%\n- LLM-SFT：80.33% / 83.13% / 83.84% / 83.94%\n- LLM-GRPO：80.91% / 83.57% / 84.21% / 84.53%\n- **Graph-GRPO：81.26% / 83.84% / 84.44% / 84.75%**\n\n可以看到三点：① SFT 相对 base 是质变（Macro-F1 56→80，不相关类 F1 44→84），说明任务对齐是第一收益源；② 在 SFT 已经很强的基础上，GRPO（+0.58pp）与 Graph-GRPO（再 +0.35pp）属于\"高位精修\"，提升幅度小但方向一致，且不相关类 F1 持续走高（最关心的指标）；③ 去掉可学习系数的 Graph-GRPO 为 81.22%，即系数机制本身只贡献约 0.04pp——这是一个诚实但偏弱的消融，说明依赖图的主要价值来自结构化奖励传播，而非系数自适应。可学习系数对\"不相关召回\"有更明显作用（89.57%→89.95%）。\n\n**线上 A/B（10,000 条代表性 query）：** 用 Graph-GRPO 蒸馏后的 BERT 上线，Bad Case Rate（top-10 结果中至少含一个被标为不相关商品的 query 占比）从两个对照槽 11.99%/11.95% 降到 11.65%，相对降低约 2.67%。指标设计直接对应用户可感知的\"搜出不相关商品\"问题。\n\n### 5. 局限与未来方向\n\n论文未给出显式的定量局限陈述。从方法看几处隐含约束：① 依赖图假设了 subject/attribute 二元分解，对其他任务结构（如多facet、数值/规格匹配）的可迁移性未讨论；② 边系数需要在奖励计算上反向传播，稀疏奖励下可能不稳定；③ 多头蒸馏效果依赖中间监督（ms/ma 伪标签）的质量，若教师维度判断本身噪声大，学生会继承偏差。此外，系数机制仅 +0.04pp 的离线增益，是否值得引入额外训练复杂度，作者没有进一步成本-收益讨论。\n\n### 6. 工业实践意义\n\n对做 LLM 搜索相关性判别的团队，最值得借鉴的是**\"训练用推理图、上线用蒸馏头\"的双轨设计**：14B LLM 推理成本\"难以直接在线上搜索系统部署\"，但把它当教师、用图节点多头蒸馏把结构化推理灌进 BERT cross-encoder，就能满足线上延迟/吞吐，已在 JD 电商搜索\"服务数亿用户\"。具体可落地的点：① 把相关性拆成 query 理解 / 商品理解 / facet 匹配并按依赖关系归因错误，比整链单一奖励更能定位\"哪一步推错\"，社区 UGC 短文本搜索同样适用（如把\"query 意图 / 帖子主题 / 语义匹配\"建成依赖图）；② CoT 随机掩码 + label-first 顺序的 SFT 冷启动是低成本、稳定收益（+0.78pp）的技巧，优先于复杂 RL；③ 评估上直接用 Bad Case Rate（top-k 含不相关项占比）这种与体验强相关的业务指标，比单纯看 F1 更能驱动线上决策。需要注意：本文核心收益来自 SFT 对齐与结构化奖励传播，可学习系数的边际收益很小，资源有限时可先复现\"依赖图 + 掩码 SFT + 蒸馏\"，把系数自适应作为后续可选项。",
+        "content_html": "<h2>Graph-GRPO 深度解读：用&quot;推理依赖图&quot;重做电商搜索相关性的强化学习信用分配</h2>\n<h3>1. 问题与动机</h3>\n<p>电商搜索相关性建模（判断 query 与候选商品是否匹配）正越来越多地被表述为 LLM 的链式思维（CoT）推理 + 强化学习优化。但作者指出现有 RL 范式有一个结构性缺陷：<strong>只用稀疏的结果级（outcome-level）奖励，把整条推理链当成单一优化单元</strong>。这导致&quot;无法区分出错的推理步骤与正确的中间步骤&quot;，信用分配（credit assignment）错位——模型答错了，却不知道是 query 理解错、商品理解错、还是匹配判断错。</p>\n<p>论文给出了量化证据来说明问题严重性：未经训练的 vanilla LLM 基线（Qwen3-14B）在相关性分类上 Macro-F1 仅 56.39%；更要命的是对&quot;不相关&quot;类的召回只有 29.70%、F1 仅 43.97%，即&quot;只能识别出一小部分明显不相关的 case，缺乏任务特定的可靠校准&quot;。对一个要靠相关性把控搜索结果质量的系统，漏判不相关商品是直接伤害体验的。已有的过程奖励（process-reward）方法虽提供更密集监督，却&quot;把推理步骤当作相互独立的，忽略了依赖驱动的错误传播&quot;，无法刻画&quot;上游 query 理解错 → 下游匹配必然错&quot;这种责任链。</p>\n<h3>2. 方法详解</h3>\n<p><strong>(a) 相关性推理依赖图。</strong> 作者把相关性推理显式分解为结构：<code>(q,p) → (qs,qa,ps,pa) → (ms,ma) → y</code>，即 query 和 product 各自拆成 subject（主体 s）与 attribute（属性 a）两个维度，产生 subject 匹配分 ms 和 attribute 匹配分 ma，再决定最终标签 y。对应的依赖图 𝒢=(𝒩,ℰ) 有 7 个节点（最终标签 y、ms/ma 两个匹配分、qs/qa/ps/pa 四个证据节点），边分三类：ℰdec（决策传播，y→ms/ma）、ℰevid（分数到证据，ms→qs/ps）、ℰcons（跨维度一致性，query 证据与 product 证据互校）。</p>\n<p><strong>(b) 结果奖励沿图传播为步骤级信用。</strong> 奖励用二值精确匹配信号：<code>ry = 2·𝕀[y=y*] − 1</code>（对 +1、错 −1），维度匹配分同理。这些结果级奖励通过可学习系数 φ 沿图传播：全局决策奖励传到匹配分 <code>Rms = rs + φ1·ry</code>；匹配分奖励再传到证据节点 <code>R̂qs = φ3·Rms</code>；并在 query/product 证据间做跨维度一致性交换。这样把&quot;最终标签 + 维度匹配分&quot;的稀疏正确性信号，转换成&quot;依赖感知&quot;的细粒度节点级奖励。</p>\n<p><strong>(c) 主损失驱动的边系数控制器。</strong> 关键创新：传播系数 φ 不是手工固定，而是在竞争分支组内用 softmax 归一化 <code>w(u→v)=exp(φ)/Σexp(φ)</code>，并且&quot;直接通过主策略损失优化&quot;——总目标 <code>𝒥(θ,φ)=ℒ_Graph-GRPO(θ,φ)+λ_reg·ℛ(φ)</code>。即让主策略损失的梯度去强化有效的信用路径、抑制噪声路径，实现自适应的跨路径信用分配。</p>\n<p><strong>(d) CoT 随机掩码做 SFT 冷启动。</strong> 两阶段：先在模型标注数据上做 label-only SFT，再做 masked CoT 训练（采用&quot;先给标签、再推理、最后决策&quot;的顺序）。对推理 token，只有随机子集（Bernoulli(1−ρ) 掩码）参与 loss——既保留稳定的决策学习与部分结构化推理监督，又减少对模板化解释的过拟合。消融显示该掩码把 Macro-F1 从 79.55% 提到 80.33%（+0.78pp）。</p>\n<p><strong>(e) 基于图节点的多头蒸馏。</strong> 线上无法直接部署 14B LLM，于是用轻量 BERT cross-encoder 学生模型，配三个预测头分别输出 ms、ma、y，并加第四个一致性损失：让 <code>y_union=g(ms,ma)</code> 与直接预测的 y 通过 KL 散度对齐。总蒸馏损失 <code>λs·ℒs+λa·ℒa+ℒy+λc·ℒc</code>，把 LLM 教师的结构化推理信号转成可学习的多任务监督。</p>\n<p><strong>训练配置：</strong> 基座 Qwen3-14B；GRPO 每样本采样 16 个回复、temperature 0.95；学习率分别为 label SFT 1e-5、masked CoT 7e-6、Graph-GRPO 1e-6；图系数学习率 6e-4、正则权重 6e-5；训练 batch 512、PPO mini-batch 256。</p>\n<h3>3. 核心技术贡献</h3>\n<ol>\n<li><strong>图结构化信用分配</strong>：把相关性推理建成显式依赖图，使奖励能&quot;从全局决策细化到局部证据&quot;，解决整链单一奖励无法定位错误步骤的问题。这比独立处理各步的 process-reward 更贴合&quot;上游错→下游错&quot;的真实错误传播。</li>\n<li><strong>可学习边系数</strong>：用主策略损失联合优化传播系数 φ，而非固定权重，实现不同推理路径上的自适应信用分配；这是相对普通 GRPO/PRM 的机制性改进。</li>\n<li><strong>可训练且可部署的统一框架</strong>：渐进式 SFT+掩码、依赖感知 GRPO、图节点多头蒸馏三者拼成一条&quot;教师用图做强 RL、学生用 BERT 上线&quot;的工业落地链路。</li>\n</ol>\n<h3>4. 实验结果分析</h3>\n<p><strong>离线（测试集 92,419 条）Macro-F1 / Weighted-F1 / Accuracy / 不相关类 F1：</strong></p>\n<ul>\n<li>LLM-Base：56.39% / 61.34% / 61.54% / 43.97%</li>\n<li>LLM-SFT：80.33% / 83.13% / 83.84% / 83.94%</li>\n<li>LLM-GRPO：80.91% / 83.57% / 84.21% / 84.53%</li>\n<li><strong>Graph-GRPO：81.26% / 83.84% / 84.44% / 84.75%</strong></li>\n</ul>\n<p>可以看到三点：① SFT 相对 base 是质变（Macro-F1 56→80，不相关类 F1 44→84），说明任务对齐是第一收益源；② 在 SFT 已经很强的基础上，GRPO（+0.58pp）与 Graph-GRPO（再 +0.35pp）属于&quot;高位精修&quot;，提升幅度小但方向一致，且不相关类 F1 持续走高（最关心的指标）；③ 去掉可学习系数的 Graph-GRPO 为 81.22%，即系数机制本身只贡献约 0.04pp——这是一个诚实但偏弱的消融，说明依赖图的主要价值来自结构化奖励传播，而非系数自适应。可学习系数对&quot;不相关召回&quot;有更明显作用（89.57%→89.95%）。</p>\n<p><strong>线上 A/B（10,000 条代表性 query）：</strong> 用 Graph-GRPO 蒸馏后的 BERT 上线，Bad Case Rate（top-10 结果中至少含一个被标为不相关商品的 query 占比）从两个对照槽 11.99%/11.95% 降到 11.65%，相对降低约 2.67%。指标设计直接对应用户可感知的&quot;搜出不相关商品&quot;问题。</p>\n<h3>5. 局限与未来方向</h3>\n<p>论文未给出显式的定量局限陈述。从方法看几处隐含约束：① 依赖图假设了 subject/attribute 二元分解，对其他任务结构（如多facet、数值/规格匹配）的可迁移性未讨论；② 边系数需要在奖励计算上反向传播，稀疏奖励下可能不稳定；③ 多头蒸馏效果依赖中间监督（ms/ma 伪标签）的质量，若教师维度判断本身噪声大，学生会继承偏差。此外，系数机制仅 +0.04pp 的离线增益，是否值得引入额外训练复杂度，作者没有进一步成本-收益讨论。</p>\n<h3>6. 工业实践意义</h3>\n<p>对做 LLM 搜索相关性判别的团队，最值得借鉴的是<strong>&quot;训练用推理图、上线用蒸馏头&quot;的双轨设计</strong>：14B LLM 推理成本&quot;难以直接在线上搜索系统部署&quot;，但把它当教师、用图节点多头蒸馏把结构化推理灌进 BERT cross-encoder，就能满足线上延迟/吞吐，已在 JD 电商搜索&quot;服务数亿用户&quot;。具体可落地的点：① 把相关性拆成 query 理解 / 商品理解 / facet 匹配并按依赖关系归因错误，比整链单一奖励更能定位&quot;哪一步推错&quot;，社区 UGC 短文本搜索同样适用（如把&quot;query 意图 / 帖子主题 / 语义匹配&quot;建成依赖图）；② CoT 随机掩码 + label-first 顺序的 SFT 冷启动是低成本、稳定收益（+0.78pp）的技巧，优先于复杂 RL；③ 评估上直接用 Bad Case Rate（top-k 含不相关项占比）这种与体验强相关的业务指标，比单纯看 F1 更能驱动线上决策。需要注意：本文核心收益来自 SFT 对齐与结构化奖励传播，可学习系数的边际收益很小，资源有限时可先复现&quot;依赖图 + 掩码 SFT + 蒸馏&quot;，把系数自适应作为后续可选项。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.30917",
+      "title": "Inference-Free Multimodal Learned Sparse Retrieval for Production-Scale Visual Document Search",
+      "url": "https://arxiv.org/abs/2605.30917",
+      "authors": "NAVER Corp.; Seoul National University; Naver Labs Europe",
+      "company": [
+        "NAVER",
+        "Seoul National University"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 4.1,
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "面向 arXiv/企业 PDF 等视觉文档的生产级检索，论文提出 V-SPLADE——一种推理无关 (inference-free) 的多模态学习稀疏检索器：服务时不对 query 做神经编码，直接用倒排索引检索视觉文档。核心是 caption-gated token supervision，仅训练期用 VLM 生成的 caption 作词法线索激活检索相关的词表维度，解决视觉稀疏表示的 lexical grounding 问题。六个视觉文档检索基准上 NDCG@5 平均 +13.8pp（对同规模 dense 基线），较 OCR/caption-BM25 最高 +6.3pp；在 1870 万文档语料上 R@5 翻倍以上，score fusion 还能给现有检索器叠加 +2.4pp R@5。",
+      "key_insight": "训练期用 caption 监督、服务期纯稀疏倒排的设计，直接绕开了 dense 检索在大规模下的 query 编码延迟与成本。对社区/文档搜索基建有参考价值：SPLADE 系学习稀疏检索可继承 BM25 倒排工程栈，又拿到接近 dense 的效果，且能通过 score fusion 给现有召回器做增量增强。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.31171",
+      "title": "MIMO: Multilingual Information Retrieval via Monolingual Objectives",
+      "url": "https://arxiv.org/abs/2605.31171",
+      "authors": "Youngjoon Jang, Seongtae Hong, Heuiseok Lim",
+      "company": [
+        "Korea University"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 4.1,
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "多语言信息检索 (MLIR) 中 query 与相关文档可能语言不同，现有 embedding 多为 multi-monolingual 优化，直接套对比学习会加剧语言聚类，并在跨语对齐与 embedding uniformity 间产生权衡。MIMO 用高性能教师模型的稳定英语语义空间作锚点：第一阶段通过知识蒸馏初始化学生模型的跨语对齐，第二阶段联合优化蒸馏与跨语对比学习以提升检索判别力同时保持对齐。在多语检索基线上持续领先，并与同规模或更大的现成模型相当。",
+      "key_insight": "用英语语义空间作锚再蒸馏到多语，是缓解 MLIR 语言聚类的实用思路。社区搜索若涉及多语种 UGC（中英混排、外语帖），可借鉴\"教师英语空间锚定 + 蒸馏 + 跨语对比\"两阶段配方训练召回向量，避免直接对比学习带来的语言分簇与跨语对齐退化。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.30529",
+      "title": "Generalistic or Specific Embeddings, Which is Better? An Empirical Study on Search for Clinical Coding in Non-English Languages",
+      "url": "https://arxiv.org/abs/2605.30529",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 3.55,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "语义检索的句向量模型几乎都在英语语料上训练评估，用于非英语临床检索（ICD-10 编码召回）时召回明显下降且被聚合指标掩盖。论文用大生成模型当数据工厂：从西班牙语生物医学编码器微调出 bi-encoder + cross-encoder reranker 两阶段检索器，训练数据由 Gemini 合成、覆盖英/西/加泰/意/葡/法六语。bi-encoder 单独在 MRR 上追平 BioBERT-ST (0.876 vs 0.866)、R@3 (0.650 vs 0.626)、R@5 (0.804 vs 0.790) 更优；加 cross-encoder reranker 把 R@5 提到 0.822。",
+      "key_insight": "验证了\"LLM 合成多语数据 + 领域编码器微调 + 两阶段 bi/cross-encoder\"在低资源语言检索上的有效性，且无需英语生物医学预训练。社区搜索做垂类或小语种召回时可复用：用 LLM 造合成 query-doc 对微调召回，再叠 cross-encoder 重排，性价比高。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.31575",
+      "title": "SPECTRA: Synthetic IR Test Collections with Relevance Oracles and Controlled Distractor Diagnostics",
+      "url": "https://arxiv.org/abs/2605.31575",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 3.45,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "大规模 IR 测试需要足够大的语料压测索引构建、排序延迟、query 路由与评测工具，但人工判定的测试集昂贵、且文档私密或尚在设计时无法获得。SPECTRA 提出可复现框架，把潜在主题结构、表层文本实现、元数据控制、query 意图生成与确定性 relevance oracle 分离，合成文本语料与检索测试集，作为 Cranfield/TREC 式评测的诊断补充。单进程 Python 原型可生成最多 6 万文档、961 万 token 的语料，并为 96 条 query 产出分级相关性标签。",
+      "key_insight": "用确定性 oracle 生成可控分级标签，让检索系统在没有人工标注时也能做压测和诊断（含可控干扰项 distractor）。对自建搜索评测有用：冷启动或隐私语料场景下，可用合成测试集先验证索引/排序工程链路与长尾词表行为，再上人工评测。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2602.10809",
+      "title": "DeepImageSearch: Benchmarking Multimodal Agents for Context-Aware Image Retrieval in Visual Histories",
+      "url": "https://arxiv.org/abs/2602.10809",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-02-13",
+      "total_score": 3.35,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "现有多模态检索擅长语义匹配，却默认 query-图像相关性可孤立度量，忽略真实视觉流中信息分布在时序序列上的依赖。DeepImageSearch 把图像检索重构为自主探索任务：模型需在原始视觉历史上做多步推理规划、依据隐含上下文线索定位目标。论文构建 DISBench 基准，并用人-模型协同 pipeline，让 VLM 挖掘潜在时空关联以生成上下文相关 query。",
+      "key_insight": "把检索从一次性匹配升级为在历史流上多步探索，对带时序/上下文的检索场景（相册、浏览历史、会话内检索）有启发。社区搜索若涉及用户历史行为上下文，agentic 多步检索可定位靠隐含线索才能命中的目标，但需权衡多步推理的延迟成本。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.31100",
+      "title": "Vector Linking via Cross-Model Local Isometric Consistency",
+      "url": "https://arxiv.org/abs/2605.31100",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 3.25,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.25,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文研究 Vector Linking：给定两个黑盒编码器在部分重叠数据上产出的向量云，仅用向量恢复跨模型对象对应关系。理论与实验表明独立训练的对比编码器有局部几何一致性——短程距离近似保距（差一个尺度因子），长程因模型特异畸变而不保。据此提出基于参考锚点的迭代几何 embedding 哈希：用到采样配对锚点的距离表示每个向量，在哈希空间提候选链接，并用 Beta-Bernoulli 后验跨视图聚合证据、把高置信链接升为新锚点。多个基准与编码器对上链接准确稳健。",
+      "key_insight": "\"局部保距、长程畸变\"这一对比编码器几何性质，对 embedding 模型升级/迁移很实用：换召回模型时无需重编码全库，用少量配对锚点即可对齐新旧向量空间，降低双塔模型迭代的索引重建成本。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.30729",
+      "title": "SemStruct: Contextualizing Semantic Embeddings with Structural Information for Schema Matching",
+      "url": "https://arxiv.org/abs/2605.30729",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 3.15,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.15,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "Schema matching 中预训练语言模型 (PLM) 通常把表格序列化为独立列描述的文本序列，丢弃了行级共现这一关键结构（关系上下文），只能依赖列名语义。SemStruct 把表建模为列与值为节点、行为连接的异构图，用 GNN 在结构上传播消歧上下文，结合冻结 PLM 的语义能力；与需要专有 LLM 访问和微调的 SOTA 不同，它无需这些即可工作。",
+      "key_insight": "\"冻结 PLM 语义 + GNN 结构归纳偏置\"说明纯文本序列化会丢失结构信号，引入图结构传播上下文能在不微调大模型的前提下提升匹配。对结构化检索/实体匹配（商品属性、字段对齐）有借鉴：把行级共现等关系上下文显式建模为图，比硬塞进文本序列更有效。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:rextanka/zero-cost-cline",
+      "title": "zero-cost-cline: Tired of paying for frontier AI models? Break free with this guide to 100% local, private LLM code generation on Apple Silicon. Optimized for 24GB+ Macs, it uses Ollama + Cline to build a disciplined, free agentic workflow. Learn to write system rules, configure custom Modelfiles, and run strict two-layer test suites.",
+      "url": "https://github.com/rextanka/zero-cost-cline",
+      "source": "github",
+      "description": "Tired of paying for frontier AI models? Break free with this guide to 100% local, private LLM code generation on Apple Silicon. Optimized for 24GB+ Macs, it uses Ollama + Cline to build a disciplined, free agentic workflow. Learn to write system rules, configure custom Modelfiles, and run strict two-layer test suites.",
+      "language": "",
+      "stars": 27,
+      "created_at": "2026-05-31"
+    },
+    {
+      "rank": 2,
+      "id": "github:smilezheng/gojaja",
+      "title": "gojaja: Agent-agnostic file-system coordination layer for multi-LLM-agent collaboration (Codex / Claude Code / Cursor / generic).",
+      "url": "https://github.com/smilezheng/gojaja",
+      "source": "github",
+      "description": "Agent-agnostic file-system coordination layer for multi-LLM-agent collaboration (Codex / Claude Code / Cursor / generic).",
+      "language": "TypeScript",
+      "stars": 14,
+      "created_at": "2026-05-27"
+    },
+    {
+      "rank": 3,
+      "id": "github:zz-haooo/Meta-Team",
+      "title": "Meta-Team: The implementation of the paper \"Evolve as a Team: Collaborative Self-Evolution for LLM-based Multi-Agent Systems\"",
+      "url": "https://github.com/zz-haooo/Meta-Team",
+      "source": "github",
+      "description": "The implementation of the paper \"Evolve as a Team: Collaborative Self-Evolution for LLM-based Multi-Agent Systems\"",
+      "language": "Python",
+      "stars": 13,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "language": "model",
+      "stars": 80,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "pipeline: any-to-any; tags: Lance, safetensors, multimodal, image-generation, video-generation, image-editing, video-understanding, any-to-any",
+      "language": "model",
+      "stars": 1002,
+      "created_at": "2026-05-15"
+    },
+    {
+      "rank": 6,
+      "id": "hf_space:TencentARC/PhotoMaker-Style",
+      "title": "TencentARC/PhotoMaker-Style",
+      "url": "https://huggingface.co/spaces/TencentARC/PhotoMaker-Style",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 654,
+      "created_at": "2024-01-14"
+    },
+    {
+      "rank": 7,
+      "id": "hf_space:deepseek-ai/deepseek-vl2-small",
+      "title": "deepseek-ai/deepseek-vl2-small",
+      "url": "https://huggingface.co/spaces/deepseek-ai/deepseek-vl2-small",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 605,
+      "created_at": "2025-01-16"
+    },
+    {
+      "rank": 8,
+      "id": "hf_space:stepfun-ai/GOT_official_online_demo",
+      "title": "stepfun-ai/GOT_official_online_demo",
+      "url": "https://huggingface.co/spaces/stepfun-ai/GOT_official_online_demo",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 360,
+      "created_at": "2024-09-13"
+    }
+  ]
+}

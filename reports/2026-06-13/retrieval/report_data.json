@@ -1,0 +1,536 @@
+{
+  "date": "2026-06-13",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 14,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.13533",
+      "title": "OneRetrieval: Unifying Multi-Branch E-commerce Retrieval with an Editable Generative Model",
+      "url": "https://arxiv.org/abs/2606.13533",
+      "authors": "Xuxin Zhang, Ben Chen, Yue Lv, Siyuan Wang, Yupeng Li, Yufei Ma, Zihan Liang, Tong Zhao, Ying Yang, Huangyu Dai, Lingtao Mao, Zhipeng Qian, Xinyu Sun, Chenyi Lei, Wenwu Ou, Kun Gai",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 4.4,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.55,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "工业电商搜索的召回阶段由倒排索引、向量召回等多路分支经人工调权融合，缺乏联合优化。论文提出 OneRetrieval，用单一生成式检索(GR)模型统一多路召回，核心是 Keyword-Aligned Encoding(KAE)：把生成标识符的每个位置绑定到一个可解释的属性词，从而在保持召回质量的同时保留倒排索引“小时级新增 term、无需重训”的实时可编辑性。倒排分支虽转化率低于平台均值，却因可被运营实时干预而难以替代，KAE 正是为补齐这一能力而设计。",
+      "key_insight": "生成式检索落地的真正障碍不只是召回指标，而是运营可实时编辑的能力——闭合码本(closed-codebook)在训练时把每个槽位固定为量化 embedding，开放词表则把新 term 路由交给模型泛化，两者都无法支持运营小时级注入新词。KAE 用“标识符位置↔属性词”的对齐让生成结果可解释、可干预，为社区搜索把多路召回收敛为单模型提供了一条兼顾可运营性的路径。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.13533",
+        "title": "OneRetrieval: Unifying Multi-Branch E-commerce Retrieval with an Editable Generative Model",
+        "status": "completed",
+        "content": "## OneRetrieval：用「可编辑」的生成式检索统一电商多路召回\n\n### 1. 问题与动机\n\n工业电商搜索的召回阶段通常并行三路分支，各有结构性短板：倒排索引(BM25)\"词面忠实但语义盲\"、稠密检索\"匹配粗、对新内容周转慢\"、协同过滤存在\"头部偏置、压制长尾与新品曝光\"。三路相互独立、靠人工调权融合，无法联合优化。生成式检索(GR)有望把这一阶段塌缩为单模型，但论文指出真正的拦路虎不是召回指标，而是**实时可编辑性**：倒排分支转化率低于平台均值，却几乎是唯一能让运营\"小时级注入一个新 term、无需任何模型更新\"的通道，任何单模型替身都必须保住这一能力。现有 GR 恰恰缺失：闭合码本方法(DSI、TIGER、LC-Rec)把标识符槽位在训练时绑定为量化 embedding，部署后无法注入新词；开放词表方法(SEAL、GLEN)又缺乏\"把 term 绑定到指定 item 集合\"的显式机制。OneRetrieval 的目标就是在保持召回质量的同时，恢复推理期可编辑性。\n\n### 2. 方法详解\n\n核心是 **Keyword-Aligned Encoding(KAE)**：给每个 item 生成长度 L=6 的语义标识符(SID)，每个位置取自该位的专属码本，且**每个位置对应一个可解释的关键属性词**(实体、品牌、颜色等)，而非量化向量。属性体系上，作者从生产数据(约 1.08×10⁶ 个带类型词)归纳出 18 类细粒度属性，用信息论凝聚聚类按对称条件熵 IL(X,Y)=½(H(X|Y)+H(Y|X)) 贪心合并为 6 组(实体作为单例锚点)，累计信息损失在 G=6 处出现拐点。每个码本含四类槽位：空槽(index 0)、聚类槽(尾部词 embedding 的 k-means 质心)、独占槽(高频头部词)、以及每位 10 个、共 60 个**训练时不绑定的预留槽**(reserved slots)，留给部署后绑定的趋势词。推荐配置 L6-D3 在前 3 个稠密位各 2048 槽、后 3 位各 1024 槽，核心 9216 + 预留 60 = 9276 个 SID token。编码时拼接标题/属性/详情页/图片 OCR，用 Aho-Corasick 自动机匹配生产属性词典、按组选代表词(主体优先 + 行为重要度 PV/CTR)，全程无需神经推理。训练用标准自回归极大似然损失，backbone 为 BART-base 扩展 9276 个 SID token，并设计**四阶段 SFT**：Stage 0 属性—SID 对齐(建立\"词归属第 ℓ 组就在第 ℓ 位发射\"的位置偏置)；Stage 1 内容对齐(检索质量主来源，约 0.8M 样本)；Stage 2 协同共现(唯一暴露 query 侧 SID、确立 query-SID→item-SID 路由，约 74.3M 样本，对可编辑性至关重要)；Stage 3 个性化检索 + 预留槽自路由(用极小辅助块教模型把 query 中的预留前缀 ⟨ℓv⟩ 原样发射到 item SID，不绑定具体词)。在线服务时 query 端用 Aho-Corasick 确定性匹配出 s_q(请求路径无神经推理)，策略用 beam size 512 的无约束 beam search 解码 top-K SID，再经查找索引 T 还原为每 SID 最多 5 个 item 送下游预排。\n\n### 3. 核心技术贡献\n\n(1) **可扩展码本的 GR 设计**：通过\"预留槽 + 词典绑定\"实现参数无关的实时干预——新趋势词 w_new 来时只需在其属性组分配一个未用预留槽 ⟨ℓv⟩、在查找索引里把该槽映射到目标 item 集，query 编码经 Aho-Corasick 路由到 ⟨ℓv⟩，策略凭 Stage 3 自路由把它发射出来，对应 item 即进入结果。其成立靠三条性质：句法可达(无约束 beam 可发射任意码本 token)、词无关身份路由(自路由训练不绑定具体词)、编码端确定性(词典查找固定)，而闭合码本方法三条全不满足。(2) **信息论属性合并 ECOM6**：用条件熵把 18 类原则性地降到 6 组，支撑稠密感知的非均匀槽位分配。(3) **四阶段 SFT 解耦**：把检索质量(Stage 1)与可编辑性(Stage 2)拆到近乎不相交的阶段，由消融验证。(4) **层级编码负结果**：实体条件码本虽能降密度却劣于全局编码(Table 4)。\n\n### 4. 实验结果分析\n\n离线用 31 天生产日志、5×10⁶ 训练样本、约 3 万 click + 3 万 order 测试样本、7.6M query、20.2M item。检索质量(Order HR@350)：BM25 0.2215、DPR 0.4346、LC-Rec 0.3751、OneSearch 0.5550、OneRetrieval 0.5482——在深召回(HR@350)与最强基线 OneSearch 基本持平，仅在浅 cut(HR@10)落后；但 OneSearch\"几乎没有推理期可编辑性\"，OneRetrieval 把它找了回来。编码范式对比(Table 5)最关键：在 IHR@350(干预命中率)上 KAE 0.0806 vs RQ-VAE/RQ-kmeans/RQ-OPQ 的 0.0021–0.0030，**高出 30 倍以上**，且差距是结构性的而非调参。与 BM25 比可编辑性(Table 6)：IAR@350 OneRetrieval 0.553 vs BM25 0.761，即恢复约 73% 的倒排激活率，同时把召回质量翻倍(Order HR 0.2215→0.5482)。四阶段消融(Table 7)：去掉 Stage 2 后 IHR@350 从 0.1340 崩到 0.0030，证明 Stage 2 是可编辑性的承重墙；去 Stage 1 主要伤检索质量。线上 A/B(Kuaishou 站外搜索，20% 相对流量)：仅替换倒排分支时 Order +0.711%†(p<0.05)、Buyer +0.450%；同时替换倒排+稠密分支时 Item CTR +0.821%†、转化不掉。人工 GSB：query-item 相关性 +0.82%、item 质量 +1.36%。分行业 CTR 16/20 为正、均值 +1.00%，女鞋 +3.05%、内衣 +3.00% 等属性丰富类目增益最大。\n\n### 5. 局限与未来方向\n\n作者明确指出：OneRetrieval 在浅召回(HR@10 0.1846 vs OneSearch 0.2551)与 MRR@350(0.0880 vs 0.1333)上落后，这与它定位于召回阶段(而非 top 精排)一致，作为喂给排序器的召回分支可接受；预留槽共 60 个(每位约 10 个)是按\"平台周级趋势周期 + 余量\"设定，换到趋势更快或类目更多的目录可能需要重新规划容量；层级/实体条件编码的劣化(Table 4)说明这条降密度路线仍有未挖掘的优化空间。整体看，把\"可编辑性\"作为一等约束来设计 GR，是该方向尚未充分探索的维度。\n\n### 6. 工业实践意义\n\n对社区搜索这类海量 UGC 短文本场景，OneRetrieval 给出三点可借鉴的设计：其一，**别只盯召回指标**，要把\"运营能否小时级干预召回\"当作硬约束——这正是倒排长期不可替代的原因，预留槽 + 词典绑定提供了一条在单模型里保住该能力的范式。其二，**编码方式决定可编辑性上限**：KAE 这种\"位置↔属性词\"的可解释编码相比 RQ-VAE 量化，在干预命中率上有 30 倍量级差距，说明把语义 ID 做成人可读、可干预的结构本身就是工程价值。其三，**训练阶段要按目标解耦**：检索质量与可编辑性由不同 SFT 阶段承载，便于分别诊断与优化。部署上它很轻量：BART-base 规模，H100 训练、RTX 4090 推理，请求路径用 Aho-Corasick 确定性编码、无神经推理，beam size 512 解码、每 SID 还原最多 5 个 item，新词干预沿用与 BM25 相同的\"小时级索引刷新\"机制。社区搜索若想把多路召回逐步收敛到生成式单模型，可优先在\"可被运营干预的热词/活动词\"这一痛点上试点，先替换语义盲的词面分支、再逐步纳入稠密分支。",
+        "content_html": "<h2>OneRetrieval：用「可编辑」的生成式检索统一电商多路召回</h2>\n<h3>1. 问题与动机</h3>\n<p>工业电商搜索的召回阶段通常并行三路分支，各有结构性短板：倒排索引(BM25)&quot;词面忠实但语义盲&quot;、稠密检索&quot;匹配粗、对新内容周转慢&quot;、协同过滤存在&quot;头部偏置、压制长尾与新品曝光&quot;。三路相互独立、靠人工调权融合，无法联合优化。生成式检索(GR)有望把这一阶段塌缩为单模型，但论文指出真正的拦路虎不是召回指标，而是<strong>实时可编辑性</strong>：倒排分支转化率低于平台均值，却几乎是唯一能让运营&quot;小时级注入一个新 term、无需任何模型更新&quot;的通道，任何单模型替身都必须保住这一能力。现有 GR 恰恰缺失：闭合码本方法(DSI、TIGER、LC-Rec)把标识符槽位在训练时绑定为量化 embedding，部署后无法注入新词；开放词表方法(SEAL、GLEN)又缺乏&quot;把 term 绑定到指定 item 集合&quot;的显式机制。OneRetrieval 的目标就是在保持召回质量的同时，恢复推理期可编辑性。</p>\n<h3>2. 方法详解</h3>\n<p>核心是 <strong>Keyword-Aligned Encoding(KAE)</strong>：给每个 item 生成长度 L=6 的语义标识符(SID)，每个位置取自该位的专属码本，且<strong>每个位置对应一个可解释的关键属性词</strong>(实体、品牌、颜色等)，而非量化向量。属性体系上，作者从生产数据(约 1.08×10⁶ 个带类型词)归纳出 18 类细粒度属性，用信息论凝聚聚类按对称条件熵 IL(X,Y)=½(H(X|Y)+H(Y|X)) 贪心合并为 6 组(实体作为单例锚点)，累计信息损失在 G=6 处出现拐点。每个码本含四类槽位：空槽(index 0)、聚类槽(尾部词 embedding 的 k-means 质心)、独占槽(高频头部词)、以及每位 10 个、共 60 个<strong>训练时不绑定的预留槽</strong>(reserved slots)，留给部署后绑定的趋势词。推荐配置 L6-D3 在前 3 个稠密位各 2048 槽、后 3 位各 1024 槽，核心 9216 + 预留 60 = 9276 个 SID token。编码时拼接标题/属性/详情页/图片 OCR，用 Aho-Corasick 自动机匹配生产属性词典、按组选代表词(主体优先 + 行为重要度 PV/CTR)，全程无需神经推理。训练用标准自回归极大似然损失，backbone 为 BART-base 扩展 9276 个 SID token，并设计<strong>四阶段 SFT</strong>：Stage 0 属性—SID 对齐(建立&quot;词归属第 ℓ 组就在第 ℓ 位发射&quot;的位置偏置)；Stage 1 内容对齐(检索质量主来源，约 0.8M 样本)；Stage 2 协同共现(唯一暴露 query 侧 SID、确立 query-SID→item-SID 路由，约 74.3M 样本，对可编辑性至关重要)；Stage 3 个性化检索 + 预留槽自路由(用极小辅助块教模型把 query 中的预留前缀 ⟨ℓv⟩ 原样发射到 item SID，不绑定具体词)。在线服务时 query 端用 Aho-Corasick 确定性匹配出 s_q(请求路径无神经推理)，策略用 beam size 512 的无约束 beam search 解码 top-K SID，再经查找索引 T 还原为每 SID 最多 5 个 item 送下游预排。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) <strong>可扩展码本的 GR 设计</strong>：通过&quot;预留槽 + 词典绑定&quot;实现参数无关的实时干预——新趋势词 w_new 来时只需在其属性组分配一个未用预留槽 ⟨ℓv⟩、在查找索引里把该槽映射到目标 item 集，query 编码经 Aho-Corasick 路由到 ⟨ℓv⟩，策略凭 Stage 3 自路由把它发射出来，对应 item 即进入结果。其成立靠三条性质：句法可达(无约束 beam 可发射任意码本 token)、词无关身份路由(自路由训练不绑定具体词)、编码端确定性(词典查找固定)，而闭合码本方法三条全不满足。(2) <strong>信息论属性合并 ECOM6</strong>：用条件熵把 18 类原则性地降到 6 组，支撑稠密感知的非均匀槽位分配。(3) <strong>四阶段 SFT 解耦</strong>：把检索质量(Stage 1)与可编辑性(Stage 2)拆到近乎不相交的阶段，由消融验证。(4) <strong>层级编码负结果</strong>：实体条件码本虽能降密度却劣于全局编码(Table 4)。</p>\n<h3>4. 实验结果分析</h3>\n<p>离线用 31 天生产日志、5×10⁶ 训练样本、约 3 万 click + 3 万 order 测试样本、7.6M query、20.2M item。检索质量(Order HR@350)：BM25 0.2215、DPR 0.4346、LC-Rec 0.3751、OneSearch 0.5550、OneRetrieval 0.5482——在深召回(HR@350)与最强基线 OneSearch 基本持平，仅在浅 cut(HR@10)落后；但 OneSearch&quot;几乎没有推理期可编辑性&quot;，OneRetrieval 把它找了回来。编码范式对比(Table 5)最关键：在 IHR@350(干预命中率)上 KAE 0.0806 vs RQ-VAE/RQ-kmeans/RQ-OPQ 的 0.0021–0.0030，<strong>高出 30 倍以上</strong>，且差距是结构性的而非调参。与 BM25 比可编辑性(Table 6)：IAR@350 OneRetrieval 0.553 vs BM25 0.761，即恢复约 73% 的倒排激活率，同时把召回质量翻倍(Order HR 0.2215→0.5482)。四阶段消融(Table 7)：去掉 Stage 2 后 IHR@350 从 0.1340 崩到 0.0030，证明 Stage 2 是可编辑性的承重墙；去 Stage 1 主要伤检索质量。线上 A/B(Kuaishou 站外搜索，20% 相对流量)：仅替换倒排分支时 Order +0.711%†(p&lt;0.05)、Buyer +0.450%；同时替换倒排+稠密分支时 Item CTR +0.821%†、转化不掉。人工 GSB：query-item 相关性 +0.82%、item 质量 +1.36%。分行业 CTR 16/20 为正、均值 +1.00%，女鞋 +3.05%、内衣 +3.00% 等属性丰富类目增益最大。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确指出：OneRetrieval 在浅召回(HR@10 0.1846 vs OneSearch 0.2551)与 MRR@350(0.0880 vs 0.1333)上落后，这与它定位于召回阶段(而非 top 精排)一致，作为喂给排序器的召回分支可接受；预留槽共 60 个(每位约 10 个)是按&quot;平台周级趋势周期 + 余量&quot;设定，换到趋势更快或类目更多的目录可能需要重新规划容量；层级/实体条件编码的劣化(Table 4)说明这条降密度路线仍有未挖掘的优化空间。整体看，把&quot;可编辑性&quot;作为一等约束来设计 GR，是该方向尚未充分探索的维度。</p>\n<h3>6. 工业实践意义</h3>\n<p>对社区搜索这类海量 UGC 短文本场景，OneRetrieval 给出三点可借鉴的设计：其一，<strong>别只盯召回指标</strong>，要把&quot;运营能否小时级干预召回&quot;当作硬约束——这正是倒排长期不可替代的原因，预留槽 + 词典绑定提供了一条在单模型里保住该能力的范式。其二，<strong>编码方式决定可编辑性上限</strong>：KAE 这种&quot;位置↔属性词&quot;的可解释编码相比 RQ-VAE 量化，在干预命中率上有 30 倍量级差距，说明把语义 ID 做成人可读、可干预的结构本身就是工程价值。其三，<strong>训练阶段要按目标解耦</strong>：检索质量与可编辑性由不同 SFT 阶段承载，便于分别诊断与优化。部署上它很轻量：BART-base 规模，H100 训练、RTX 4090 推理，请求路径用 Aho-Corasick 确定性编码、无神经推理，beam size 512 解码、每 SID 还原最多 5 个 item，新词干预沿用与 BM25 相同的&quot;小时级索引刷新&quot;机制。社区搜索若想把多路召回逐步收敛到生成式单模型，可优先在&quot;可被运营干预的热词/活动词&quot;这一痛点上试点，先替换语义盲的词面分支、再逐步纳入稠密分支。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.13145",
+      "title": "The Clustering Strikes Back: Building Cost-Effective and High-Performance ANNS at Scale with Helmsman",
+      "url": "https://arxiv.org/abs/2606.13145",
+      "authors": "Yuchen Huang, Baiteng Ma, Yiping Sun, Yang Shi, Xiao Chen, Xiaocheng Zhong, Zhiyong Wang, Yao Hu, Erci Xu, Chuliang Weng",
+      "company": [
+        "Xiaohongshu"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 4.4,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.5,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "小红书(RedNote)用 ANNS 支撑搜索、推荐、广告，长期依赖内存图索引(HNSW)满足低延迟 SLA，但用户与内容规模增长导致内存占用和 CapEx/OpEx 激增。论文提出 HELMSMAN，把聚类式 ANNS 搬到全闪存(all-flash)服务器，结合面向 ANNS 的用户态存储栈、leveling-learned 剪枝模块与 GPU 加速的索引构建流水线，相比内存方案节省超过 90% 的内存与成本，同时保持高吞吐、低延迟。",
+      "key_insight": "当向量规模让内存 HNSW 的成本不可持续时，“聚类式索引 + 全闪存”重新具备竞争力，关键在于用用户态存储绕开内核 I/O 栈开销、用可学习的分层剪枝替代固定剪枝、并用 GPU 给建索引提速。对社区搜索这种 UGC 海量短文本叠加严格 SLA 的场景，这是一条在不牺牲延迟前提下大幅压低向量检索硬件成本的路线。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.13145",
+        "title": "The Clustering Strikes Back: Building Cost-Effective and High-Performance ANNS at Scale with Helmsman",
+        "status": "completed",
+        "content": "## The Clustering Strikes Back: Helmsman ANNS (Xiaohongshu) — 深度解读\n\n### 1. 问题与动机\n小红书（RedNote）的搜索/推荐/广告全靠内存 HNSW 做 ANNS，到 2025 年内存 HNSW 索引消耗 PB 级 DRAM，仅搜索就吃掉数百 TB。核心矛盾是成本-性能错配：内存部署提供 100% 吞吐，但维持延迟 SLA 只需要其中 32–43%，剩下 57–68% 的 DRAM 纯粹为容量买单；而 DRAM 8 $/GB vs Gen5 SSD 0.2 $/GB，这种浪费经济上不可持续。图索引混合方案也救不了：在 96 核 + 12 块 PCIe Gen5 SSD 上实测 DiskANN/Starling/PipeANN 都无法满足 5–10ms 平均延迟 SLA，PipeANN 因串行依赖链 I/O 把 SSD-DRAM 之间 10²–10³ 的延迟差放大，吞吐只有 HNSW 的 1/10–1/25。问题落到：能否用全闪存把 DRAM 成本砍掉、又不破 SLA。\n\n### 2. 方法详解\n硬件底座：全闪存服务器（12×2TB PCIe Gen5 NVMe SSD + 12×96GB DDR5 + 96 核）。\n在线 serving 流水线：① Router 模型按 query 预测 nprobe（探查簇数）；② DRAM 里的 Centroid Graph 定位最近簇；③ Leveling 剪枝模型进一步过滤候选；④ 经 SPDK 直接 NVMe I/O 异步加载簇 posting list；⑤ 距离计算排出 top-k。\n面向 ANNS 的用户态存储栈（§4.2）：metadata 用普通文件，簇列表作为裸逻辑块存 SSD；绕过内核做 direct device I/O，固定 12KB 簇读；批量提交 NVMe 命令、每批只敲一次 PCIe doorbell；64MB 粒度的 chunk free-list 分配器管空间。profiling 发现传统 libaio/io_uring 栈占了高达 58% 的 I/O 开销，换 SPDK 才能达到每搜索线程 120–170 KIOPS 的需求。\nLeveling-Learned Search Pruning（LLSP，§4.3）：GBDT router 模型按 query+top-k 预测最大搜索范围；多级剪枝模型在不依赖中间结果反馈的前提下逐 query 精修 nprobe（从而保住批量 I/O）；特征含 query 向量、top-k、质心距离分布比；离线用大 nprobe(~4096) 的非剪枝搜索近似 ground truth 训练。之所以不学 Quake/LAET/Auncel 那种迭代式 probe-compute-decide，是因为它们会串行化簇 I/O、压低带宽利用率。\nGPU 加速弹性建索引（§4.4）三阶段：① GPU 粗聚类（FAISS k-means，多 GPU，对百万级向量约 10× 加速）；② 弹性细粒度均衡（分布式 CPU worker 最多 1 万核，在低峰拆分/再平衡簇，QoS 抢占保在线流量）；③ merge & finalize（多核服务器合并分片、建质心图、训剪枝模型）。\n\n### 3. 核心技术贡献\n① 给在线 ANNS「复活」了聚类路线：证明现代高带宽 NVMe 阵列（Gen5 约 12GB/s）让聚类方案能在满足 SLA 的同时靠批量 I/O 扩吞吐，颠覆「只有图索引才能上线」的默认。② 定制 I/O 栈：SPDK 用户态直接 device steering，Gen4 上 85%、Gen5 上 70% 带宽利用率，远高于 SPANN 的 26–59%、图基线的 <20%。③ 无中间反馈的 query 自适应剪枝：LLSP 在保持批量 I/O 友好的同时处理可变 top-k 与 query 分布，保证 >80% 的 query 达到 90% recall 目标。④ 异构弹性建索引：GPU + 弹性 CPU 池让 0.1B 向量亚小时、10B 向量小时级建完。\n\n### 4. 实验结果分析\n搜索性能（SIFT100M，90% recall）：吞吐比现有 DRAM-SSD ANNS 高 2–16×，达到内存 HNSW 吞吐的 85% 且始终满足平均延迟 SLA。在 RedSrch10B 上，单节点对比 10 shard 拿到 HNSW 吞吐的 47–85%，同时 CPU 核数少 3–4×、DRAM 少约 10×；P99.9 尾延迟稳定在约 10ms，而图基线尾延迟急剧恶化。\n带宽利用率（RedSrch0.5B）：Helmsman Gen4 约 85%、Gen5 约 70%，SPANN Gen4 仅 55%，图基线 <20%；升级到 Gen5 后 Helmsman 吞吐提升 55–87%，基线只涨 10–30%（说明基线吃不到新硬件红利）。\n剪枝效率：LLSP 比无剪枝快 1.1–1.6×，比固定剪枝策略高 5–25%；质量上固定策略对 >40% 的 query 达不到目标 recall，LLSP 保证 >80% 达 90% 目标。\n建索引：GPU 加速对 0.1B 向量约 10× 提速，从 9–12 小时降到 1 小时内；10B 向量从 >16 小时降到 4–7 小时（最多借 1 万在线集群 CPU 核）。\n成本效率（Table 4–5）：RedSrch0.5B 上 Helmsman 250 QPS/$，HNSW 仅 51、SPANN 88；RedSrch10B 上靠砍 90% DRAM 拿到 8.3× 成本效率（10 QPS/$ vs HNSW 1.2）。单节点 96 核 +4 GPU 建索引成本是纯 CPU HNSW 的 1.7×，但建索引时间效率更高。\n\n### 5. 局限与未来方向\n作者明确列出四点：① SSD die 级热点冲突——query 突发打同一批簇会引发芯片内部冲突，用冗余簇副本缓解也只有 1.5–2× 吞吐提升；② 内存带宽瓶颈——12 块 Gen5 SSD 提供约 140GB/s 但只有约 70% 可用，因为 DDR5 有效带宽 300–350GB/s 要同时服务 SSD→DRAM、DRAM→CPU、最近质心搜索，加到 20 块 SSD 收益递减；③ 原地更新——25–30 KOPS 更新与 25–30 KQPS 搜索并发已超现有大规模动态 ANNS 系统，当前用「周期重建 + 辅助内存 HNSW + tombstone 位图」的混合设计，额外吃内存与重建成本；④ top-k 评测缺口——学界惯用 recall@10，但生产要 top-k 100–1000 且 90% recall，未来 benchmark 应反映多阶段流水线。\n\n### 6. 工业实践意义\n这是给自建向量检索、被 DRAM 成本压制团队的一份直接施工图。落地结论：① 生产部署约 40 台全闪存服务器（每台 0.7–1.1TB DRAM + 12 SSD），承载了原先约 35000 核 + 0.35 PB DRAM 的负载，硬件成本降 >90%，已稳定运行数月，小红书计划迁移大部分内存部署、预期年省数千万美元。② 可借鉴的设计点：用 router 模型预测 nprobe，把「按 query 花预算」做成学习问题；I/O 别走内核（libaio/io_uring 能吃掉 58% 开销），上 SPDK 用户态 + 固定 12KB 簇读 + 批量 doorbell；建索引把 GPU k-means + 低峰借在线集群 CPU 核结合，能把 10B 级建索引从天级压到小时级。③ 关键认知：大规模召回瓶颈已从「召回精度」转向「内存/成本」，且内存 HNSW 有 57–68% 的 DRAM 是为容量而非吞吐买单，这部分正是全闪存能吃下的红利。④ 注意硬件天花板：SSD 加到一定数量受 DDR5 带宽限制收益递减，热点与高频更新仍是软肋，强更新场景需谨慎。代码开源于 github.com/Red-EAD/helmsman。",
+        "content_html": "<h2>The Clustering Strikes Back: Helmsman ANNS (Xiaohongshu) — 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>小红书（RedNote）的搜索/推荐/广告全靠内存 HNSW 做 ANNS，到 2025 年内存 HNSW 索引消耗 PB 级 DRAM，仅搜索就吃掉数百 TB。核心矛盾是成本-性能错配：内存部署提供 100% 吞吐，但维持延迟 SLA 只需要其中 32–43%，剩下 57–68% 的 DRAM 纯粹为容量买单；而 DRAM 8 $/GB vs Gen5 SSD 0.2 $/GB，这种浪费经济上不可持续。图索引混合方案也救不了：在 96 核 + 12 块 PCIe Gen5 SSD 上实测 DiskANN/Starling/PipeANN 都无法满足 5–10ms 平均延迟 SLA，PipeANN 因串行依赖链 I/O 把 SSD-DRAM 之间 10²–10³ 的延迟差放大，吞吐只有 HNSW 的 1/10–1/25。问题落到：能否用全闪存把 DRAM 成本砍掉、又不破 SLA。</p>\n<h3>2. 方法详解</h3>\n<p>硬件底座：全闪存服务器（12×2TB PCIe Gen5 NVMe SSD + 12×96GB DDR5 + 96 核）。<br>在线 serving 流水线：① Router 模型按 query 预测 nprobe（探查簇数）；② DRAM 里的 Centroid Graph 定位最近簇；③ Leveling 剪枝模型进一步过滤候选；④ 经 SPDK 直接 NVMe I/O 异步加载簇 posting list；⑤ 距离计算排出 top-k。<br>面向 ANNS 的用户态存储栈（§4.2）：metadata 用普通文件，簇列表作为裸逻辑块存 SSD；绕过内核做 direct device I/O，固定 12KB 簇读；批量提交 NVMe 命令、每批只敲一次 PCIe doorbell；64MB 粒度的 chunk free-list 分配器管空间。profiling 发现传统 libaio/io_uring 栈占了高达 58% 的 I/O 开销，换 SPDK 才能达到每搜索线程 120–170 KIOPS 的需求。<br>Leveling-Learned Search Pruning（LLSP，§4.3）：GBDT router 模型按 query+top-k 预测最大搜索范围；多级剪枝模型在不依赖中间结果反馈的前提下逐 query 精修 nprobe（从而保住批量 I/O）；特征含 query 向量、top-k、质心距离分布比；离线用大 nprobe(~4096) 的非剪枝搜索近似 ground truth 训练。之所以不学 Quake/LAET/Auncel 那种迭代式 probe-compute-decide，是因为它们会串行化簇 I/O、压低带宽利用率。<br>GPU 加速弹性建索引（§4.4）三阶段：① GPU 粗聚类（FAISS k-means，多 GPU，对百万级向量约 10× 加速）；② 弹性细粒度均衡（分布式 CPU worker 最多 1 万核，在低峰拆分/再平衡簇，QoS 抢占保在线流量）；③ merge &amp; finalize（多核服务器合并分片、建质心图、训剪枝模型）。</p>\n<h3>3. 核心技术贡献</h3>\n<p>① 给在线 ANNS「复活」了聚类路线：证明现代高带宽 NVMe 阵列（Gen5 约 12GB/s）让聚类方案能在满足 SLA 的同时靠批量 I/O 扩吞吐，颠覆「只有图索引才能上线」的默认。② 定制 I/O 栈：SPDK 用户态直接 device steering，Gen4 上 85%、Gen5 上 70% 带宽利用率，远高于 SPANN 的 26–59%、图基线的 &lt;20%。③ 无中间反馈的 query 自适应剪枝：LLSP 在保持批量 I/O 友好的同时处理可变 top-k 与 query 分布，保证 &gt;80% 的 query 达到 90% recall 目标。④ 异构弹性建索引：GPU + 弹性 CPU 池让 0.1B 向量亚小时、10B 向量小时级建完。</p>\n<h3>4. 实验结果分析</h3>\n<p>搜索性能（SIFT100M，90% recall）：吞吐比现有 DRAM-SSD ANNS 高 2–16×，达到内存 HNSW 吞吐的 85% 且始终满足平均延迟 SLA。在 RedSrch10B 上，单节点对比 10 shard 拿到 HNSW 吞吐的 47–85%，同时 CPU 核数少 3–4×、DRAM 少约 10×；P99.9 尾延迟稳定在约 10ms，而图基线尾延迟急剧恶化。<br>带宽利用率（RedSrch0.5B）：Helmsman Gen4 约 85%、Gen5 约 70%，SPANN Gen4 仅 55%，图基线 &lt;20%；升级到 Gen5 后 Helmsman 吞吐提升 55–87%，基线只涨 10–30%（说明基线吃不到新硬件红利）。<br>剪枝效率：LLSP 比无剪枝快 1.1–1.6×，比固定剪枝策略高 5–25%；质量上固定策略对 &gt;40% 的 query 达不到目标 recall，LLSP 保证 &gt;80% 达 90% 目标。<br>建索引：GPU 加速对 0.1B 向量约 10× 提速，从 9–12 小时降到 1 小时内；10B 向量从 &gt;16 小时降到 4–7 小时（最多借 1 万在线集群 CPU 核）。<br>成本效率（Table 4–5）：RedSrch0.5B 上 Helmsman 250 QPS/$，HNSW 仅 51、SPANN 88；RedSrch10B 上靠砍 90% DRAM 拿到 8.3× 成本效率（10 QPS/$ vs HNSW 1.2）。单节点 96 核 +4 GPU 建索引成本是纯 CPU HNSW 的 1.7×，但建索引时间效率更高。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确列出四点：① SSD die 级热点冲突——query 突发打同一批簇会引发芯片内部冲突，用冗余簇副本缓解也只有 1.5–2× 吞吐提升；② 内存带宽瓶颈——12 块 Gen5 SSD 提供约 140GB/s 但只有约 70% 可用，因为 DDR5 有效带宽 300–350GB/s 要同时服务 SSD→DRAM、DRAM→CPU、最近质心搜索，加到 20 块 SSD 收益递减；③ 原地更新——25–30 KOPS 更新与 25–30 KQPS 搜索并发已超现有大规模动态 ANNS 系统，当前用「周期重建 + 辅助内存 HNSW + tombstone 位图」的混合设计，额外吃内存与重建成本；④ top-k 评测缺口——学界惯用 recall@10，但生产要 top-k 100–1000 且 90% recall，未来 benchmark 应反映多阶段流水线。</p>\n<h3>6. 工业实践意义</h3>\n<p>这是给自建向量检索、被 DRAM 成本压制团队的一份直接施工图。落地结论：① 生产部署约 40 台全闪存服务器（每台 0.7–1.1TB DRAM + 12 SSD），承载了原先约 35000 核 + 0.35 PB DRAM 的负载，硬件成本降 &gt;90%，已稳定运行数月，小红书计划迁移大部分内存部署、预期年省数千万美元。② 可借鉴的设计点：用 router 模型预测 nprobe，把「按 query 花预算」做成学习问题；I/O 别走内核（libaio/io_uring 能吃掉 58% 开销），上 SPDK 用户态 + 固定 12KB 簇读 + 批量 doorbell；建索引把 GPU k-means + 低峰借在线集群 CPU 核结合，能把 10B 级建索引从天级压到小时级。③ 关键认知：大规模召回瓶颈已从「召回精度」转向「内存/成本」，且内存 HNSW 有 57–68% 的 DRAM 是为容量而非吞吐买单，这部分正是全闪存能吃下的红利。④ 注意硬件天花板：SSD 加到一定数量受 DDR5 带宽限制收益递减，热点与高频更新仍是软肋，强更新场景需谨慎。代码开源于 github.com/Red-EAD/helmsman。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.13204",
+      "title": "CoDeR: Local Constraint-Compatible Retrieval Beyond Semantic Similarity",
+      "url": "https://arxiv.org/abs/2606.13204",
+      "authors": "Xingkun Yin, Xuebin Tang, Hongyang Du",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 4.0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "检索系统长期把语义相似度当作相关性的代理，但对“带约束”的查询会失效——文档主题贴近 query 却支持相反的约束方向(满足了本应排除的属性、肯定了本应否定的关系)。论文称之为 constraint-violating evidence exposure，提出 CoDeR：保留标准主题编码器负责候选覆盖，另加一个双编码器实现的“兼容性打分器”，用词法极性(lexical-polarity)监督在“满足/违反”对比样本上训练。兼容性信号既可对主题候选重打分，也可单独召回一路兼容性候选，推理时无需调用外部 LLM。",
+      "key_insight": "把“主题相关”和“约束兼容”解耦，是处理否定/排除类 query 的实用思路。社区搜索中大量 query 含隐式约束(如“不辣的火锅”“非广告测评”)，纯语义向量召回容易引入违反约束的负向证据；CoDeR 用轻量双编码器在召回/重排阶段补一路极性兼容信号，推理零 LLM 调用、延迟可控，易于嵌入现有多阶段检索。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.01697",
+      "title": "RCEM: Embedder Equipped with Query Rewriting Skill for Robust Conversational Search in Distributional Shift",
+      "url": "https://arxiv.org/abs/2606.01697",
+      "authors": "Kilho Son, Paul Hsu, Cha Zhang, Dinei Florencio",
+      "company": [
+        "Microsoft"
+      ],
+      "source": "web_search",
+      "published": "2026-06-01",
+      "total_score": 3.9,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "会话式检索中，多轮对话里的 query 高度依赖上下文。论文提出 RCEM，把 LLM 的 query 改写能力蒸馏进 embedding 模型，让稠密检索在推理时无需显式改写就能感知上下文。与以往直接学“对话→文档”匹配不同，RCEM 让“会话 query 的 embedding”对齐“改写后 query 的 embedding”，从而在分布漂移(distributional shift)下更稳健；训练不需要昂贵且难获取的“会话 query→文档”相关性标注。在 QReCC、TopiOCQA、TREC CAsT 上一致优于强会话检索基线。",
+      "key_insight": "“把改写能力蒸馏进 embedder、推理零改写”避开了在线 LLM 改写的延迟与成本，对社区搜索的多轮、带上下文 query 很有借鉴价值。用“对齐改写后 query 向量”作监督信号，绕开稀缺的会话级相关性标注，是一种低成本获得上下文感知召回的方法；落地只需替换或微调 embedding 模型，不改动在线检索链路。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.13550",
+      "title": "Uncertainty-Aware Hybrid Retrieval for Long-Document RAG",
+      "url": "https://arxiv.org/abs/2606.13550",
+      "authors": "Hoin Jung, Xiaoqian Wang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "RAG 的效果高度依赖检索证据的粒度：大块保留上下文但引入无关内容、稀释关键证据；细块更紧凑却因缺乏语义/词法/桥接线索而难以稳定召回。论文提出 UMG-RAG，一个免训练的不确定性感知混合检索框架：把已有的稠密与稀疏检索器当作跨多种 chunk 粒度的互补专家，对每个 query 把各“专家×粒度”的打分列表转成证据分布、用分布熵估计可靠性，再按 query 自适应融合候选，无需训练新检索器或改动生成器。",
+      "key_insight": "用“分布熵=可靠性”把 chunk 粒度选择变成 query 级的自适应问题，且全程免训练、复用现有 dense/sparse 检索器，迁移成本极低。社区搜索/RAG 落地常卡在“切多大块”，UMG-RAG 提供了一个不重训就能按 query 在多粒度间动态加权的融合方案，适合在现有召回栈上快速做 A/B 验证。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.13680",
+      "title": "Learning to Reason by Analogy via Retrieval-Augmented Reinforcement Fine-Tuning",
+      "url": "https://arxiv.org/abs/2606.13680",
+      "authors": "Zilin Xiao, Qi Ma, Chun-cheng Jason Chen, Xintao Chen, Avinash Atreya, Hanjie Chen, Vicente Ordonez",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "传统基于词法/语义相似度的检索不适合复杂推理任务——语义相近的问题可能需要完全不同的解题策略，表面不同的问题却可能共享同一推理模式。论文提出 RA-RFT(Retrieval-Augmented Reinforcement Fine-Tuning)：用 gold-relevance 蒸馏训练一个“按预期推理收益而非语义重叠排序上下文”的检索器，再用强化微调让策略模型在检索到的类比示范下学习，借助可验证的结果奖励利用推理轨迹；分析显示推理感知的检索能召回更互补的上下文。",
+      "key_insight": "把检索目标从“语义相似”改为“对下游推理的预期收益”，是检索器训练目标的一次重定位，对需要多步推理的搜索/问答有启发。社区搜索中“找相似帖”未必等于“找有用帖”，用下游任务收益作相关性监督、配合 RL 微调，可让召回更服务最终答案质量，但代价是需要可验证奖励与 RL 训练成本。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2606.12789",
+      "title": "How Fine-Grained Should a RAG Benchmark Be? A Hierarchical Framework for Synthetic Question Generation",
+      "url": "https://arxiv.org/abs/2606.12789",
+      "authors": "Chase M. Fensore, Kaustubh Dhole, Jason Fan, Eugene Agichtein, Joyce C. Ho",
+      "company": [
+        "Emory"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.4,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "评估 RAG 需要能刻画问题多样性的基准，但实践中缺乏“该在哪些维度、用多细的粒度”的经验指导。论文提出 HieraRAG 分层框架，把最优粒度定义为“在给定 RAG 配置下使类别间生成质量标准差(判别力)最大”的粒度。以 FineWeb-10BT 生成 5,872 条合成 QA，覆盖问题复杂度、答案类型、语言变体三个维度×2/4/8 三档粒度：用 BM25+Falcon-3-10B 流水线发现复杂度维度受益于细粒度(判别力 0.053)，而答案类型与语言变体在中等粒度最优，并提出 Coherence Ratio 度量。",
+      "key_insight": "基准的“粒度”本身是个可优化变量，用判别力(类别间质量方差)来选粒度，给 RAG/检索评测设计提供了可量化的方法论。对自建社区搜索评测集有直接借鉴：与其凭经验切维度，不如按“哪种切分最能区分系统好坏”来定，避免评测过粗(区分不开)或过细(噪声大)。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2606.13537",
+      "title": "When Does Mixing Help? Analyzing Query Embedding Interpolation in Multilingual Dense Retrieval",
+      "url": "https://arxiv.org/abs/2606.13537",
+      "authors": "Tongyao Zhu, Chao-Ming Huang, Min-Yen Kan",
+      "company": [
+        "NUS"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.3,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "混合语言查询在多语社区很常见，但稠密检索器对此的敏感性研究不足。论文在 mMARCO 上做比例可控实验，通过 embedding 级插值(把混合 query 构造成单语 embedding 的插值)系统评估不同混合比例。基于 BGE-M3 发现：存在最优混合比例，在 105 个设置中的 88 个上优于最好的单语端点；并揭示由英语主导带来的不对称——检索非英语文档库时混合普遍有益，含英语的库则用纯英语 query 最好，且英语是所有非英语语言最强的混合伙伴；控制英语主导后，混合收益与类型学距离负相关。",
+      "key_insight": "在 embedding 空间对多语 query 做插值即可稳定提升跨语检索，且无需改模型，对有跨语、中英混排 query 的社区搜索是低成本增益。关键经验是“是否混、混多少”取决于目标文档库的语言构成与英语主导程度，可据此对不同语言的索引采用不同的 query 表示策略。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2606.13438",
+      "title": "CQC-RAG: Robust Retrieval-Augmented Generation via Cross-Query Consistency",
+      "url": "https://arxiv.org/abs/2606.13438",
+      "authors": "Yanjia Sun, Sifan Liu, Jie Shao",
+      "company": [
+        "UESTC"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "RAG 的可靠性对“证据如何被检索与使用”高度敏感：语义等价但句法不同的 query 会得到不同检索结果，无关或误导文档会诱发幻觉。已有多路推理方法靠采样多个候选答案做投票/置信选择，但多样性来自不可控的解码随机性、且评估局限于单一 query 视角。论文提出 Cross-Query Consistency 假设——正确答案在“语义等价但句法多样”的 query 间保持高置信，而噪声诱发的幻觉置信不稳定，据此设计 CQC-RAG 提升鲁棒性。",
+      "key_insight": "用“跨改写 query 的置信一致性”作答案可信度信号，比单纯多次解码投票更可控，因为多样性来自受控的 query 改写而非随机采样。社区搜索的问答类场景可借此降低因 query 表述差异导致的检索波动与幻觉，思路是把“同义改写”从查询扩展手段升级为答案校验信号。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2606.12903",
+      "title": "X-MADAM-RAG: Diagnosing and Handling Chinese-English Evidence Conflict in Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2606.12903",
+      "authors": "Yongqi Kang, Yu Fu, Yong Zhao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-11",
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "RAG 收到的证据可能不只是有噪声，而是相互矛盾，这在多语场景尤其突出——检索到的中文与英文证据可能支持互不相容的答案。论文构造 X-RAMDocs-ZHEN 中英受控基准(300 例、6 种平衡条件，含单语支持、双语一致、反向冲突、带噪冲突)，并提出可解释流水线 X-MADAM-RAG：按文档抽取候选、可见证据修复、确定性候选分组、冲突感知聚合。在 Qwen2.5-7B-Instruct 上取得 0.9667 严格准确率与 0.9767 冲突感知成功率，优于 evidence-norm 基线。",
+      "key_insight": "把“证据冲突处理”拆成抽取→修复→分组→冲突感知聚合的可解释步骤，对多语证据相互矛盾的检索问答很有用。社区搜索常面临中英混合、版本不一的 UGC 证据，X-MADAM-RAG 显示用确定性分组加冲突感知聚合能把答案严格准确率提到 0.96 以上，且流程可解释、便于排查 badcase。"
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:cisco-open/ai-deep-sast",
+      "title": "ai-deep-sast: AI Deep SAST - LLM-powered deep static analysis for CI/CD. Combines Semgrep, tree-sitter code indexing and frontier LLMs (e.g. GPT-4o, Claude) for fast and deep vulnerability scanning.",
+      "authors": "cisco-open",
+      "abstract": "AI Deep SAST - LLM-powered deep static analysis for CI/CD. Combines Semgrep, tree-sitter code indexing and frontier LLMs (e.g. GPT-4o, Claude) for fast and deep vulnerability scanning.",
+      "url": "https://github.com/cisco-open/ai-deep-sast",
+      "source": "github",
+      "published": "2026-06-09",
+      "discovered_at": "2026-06-13",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "cisco-open/ai-deep-sast",
+        "owner": "cisco-open",
+        "description": "AI Deep SAST - LLM-powered deep static analysis for CI/CD. Combines Semgrep, tree-sitter code indexing and frontier LLMs (e.g. GPT-4o, Claude) for fast and deep vulnerability scanning.",
+        "created_at": "2026-06-09T19:01:39Z",
+        "updated_at": "2026-06-12",
+        "pushed_at": "2026-06-10",
+        "stargazers_count": 19,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "AI Deep SAST - LLM-powered deep static analysis for CI/CD. Combines Semgrep, tree-sitter code indexing and frontier LLMs (e.g. GPT-4o, Claude) for fast and deep vulnerability scanning.",
+      "language": "Python",
+      "stars": 19,
+      "created_at": "2026-06-09",
+      "rank": 1
+    },
+    {
+      "id": "github:nagi-studio/nagi-bench",
+      "title": "nagi-bench: One-shot LLM eval cases by NAGI STUDIO - same prompt, different models, runnable artifacts side by side.",
+      "authors": "nagi-studio",
+      "abstract": "One-shot LLM eval cases by NAGI STUDIO - same prompt, different models, runnable artifacts side by side.",
+      "url": "https://github.com/nagi-studio/nagi-bench",
+      "source": "github",
+      "published": "2026-06-09",
+      "discovered_at": "2026-06-13",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "nagi-studio/nagi-bench",
+        "owner": "nagi-studio",
+        "description": "One-shot LLM eval cases by NAGI STUDIO - same prompt, different models, runnable artifacts side by side.",
+        "created_at": "2026-06-09T21:20:16Z",
+        "updated_at": "2026-06-13",
+        "pushed_at": "2026-06-13",
+        "stargazers_count": 15,
+        "language": "HTML",
+        "topics": []
+      },
+      "description": "One-shot LLM eval cases by NAGI STUDIO - same prompt, different models, runnable artifacts side by side.",
+      "language": "HTML",
+      "stars": 15,
+      "created_at": "2026-06-09",
+      "rank": 2
+    },
+    {
+      "id": "github:Arnie936/llm-prompting-tests",
+      "title": "llm-prompting-tests: Prompting tests for evaluating LLMs, coding agents, and agentic models",
+      "authors": "Arnie936",
+      "abstract": "Prompting tests for evaluating LLMs, coding agents, and agentic models",
+      "url": "https://github.com/Arnie936/llm-prompting-tests",
+      "source": "github",
+      "published": "2026-06-09",
+      "discovered_at": "2026-06-13",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "Arnie936/llm-prompting-tests",
+        "owner": "Arnie936",
+        "description": "Prompting tests for evaluating LLMs, coding agents, and agentic models",
+        "created_at": "2026-06-09T20:41:28Z",
+        "updated_at": "2026-06-13",
+        "pushed_at": "2026-06-11",
+        "stargazers_count": 14,
+        "language": "",
+        "topics": []
+      },
+      "description": "Prompting tests for evaluating LLMs, coding agents, and agentic models",
+      "language": "",
+      "stars": 14,
+      "created_at": "2026-06-09",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "authors": "deepseek-ai",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4805,
+      "language": "model",
+      "created_at": "2026-04-22",
+      "updated_at": "2026-06-08",
+      "published": "2026-04-22",
+      "discovered_at": "2026-06-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4-Pro",
+        "likes": 4805,
+        "downloads": 3250404,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v4",
+          "text-generation",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-04-22T06:04:45.000Z",
+        "last_modified": "2026-06-08T06:02:44.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 1948,
+      "language": "space",
+      "created_at": "2026-01-21",
+      "updated_at": "2026-06-09",
+      "published": "2026-01-21",
+      "discovered_at": "2026-06-13",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/Qwen3-TTS",
+        "likes": 1948,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-01-21T09:10:16.000Z",
+        "last_modified": "2026-06-09T06:13:30.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1476,
+      "language": "model",
+      "created_at": "2026-04-22",
+      "updated_at": "2026-06-08",
+      "published": "2026-04-22",
+      "discovered_at": "2026-06-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4-Flash",
+        "likes": 1476,
+        "downloads": 2173163,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v4",
+          "text-generation",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-04-22T06:04:20.000Z",
+        "last_modified": "2026-06-08T06:03:43.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K2.7-Code",
+      "title": "moonshotai/Kimi-K2.7-Code",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, image-feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, image-feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.7-Code",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 430,
+      "language": "model",
+      "created_at": "2026-06-11",
+      "updated_at": "2026-06-12",
+      "published": "2026-06-11",
+      "discovered_at": "2026-06-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K2.7-Code",
+        "likes": 430,
+        "downloads": 1689,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k25",
+          "image-feature-extraction",
+          "compressed-tensors",
+          "image-text-to-text",
+          "conversational",
+          "custom_code",
+          "license:other",
+          "region:us"
+        ],
+        "created_at": "2026-06-11T07:51:47.000Z",
+        "last_modified": "2026-06-12T10:05:55.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "authors": "zai-org",
+      "description": "pipeline: image-to-video; tags: diffusers, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2512.05905, license:mit",
+      "abstract": "pipeline: image-to-video; tags: diffusers, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2512.05905, license:mit",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 146,
+      "language": "model",
+      "created_at": "2026-06-09",
+      "updated_at": "2026-06-09",
+      "published": "2026-06-09",
+      "discovered_at": "2026-06-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/SCAIL-2",
+        "likes": 146,
+        "downloads": 0,
+        "pipeline_tag": "image-to-video",
+        "tags": [
+          "diffusers",
+          "character-animation",
+          "video-generation",
+          "pose-driven",
+          "diffusion",
+          "image-to-video",
+          "arxiv:2512.05905",
+          "license:mit",
+          "region:us"
+        ],
+        "created_at": "2026-06-09T07:18:27.000Z",
+        "last_modified": "2026-06-09T11:45:48.000Z"
+      },
+      "rank": 8
+    }
+  ]
+}

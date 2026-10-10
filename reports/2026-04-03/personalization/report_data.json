@@ -1,0 +1,249 @@
+{
+  "date": "2026-04-03",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 48,
+    "papers_selected": 10,
+    "score_min": 2.85,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.00590",
+      "title": "UniMixer: A Unified Architecture for Scaling Laws in Recommendation Systems",
+      "url": "https://arxiv.org/abs/2604.00590",
+      "authors": "Mingming Ha, Guanchen Wang, Linxun Chen, Xuan Rao, Yuexin Shi, Tianbao Ma, Zhaojie Liu, Yunqian Fan, Zilong Lu, Yanan Ni",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 4.3,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.55,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出 UniMixer，一种统一的推荐系统 scaling 架构。当前推荐模型的三大主流 scaling 架构（attention-based、TokenMixer-based、factorization-machine-based）在设计哲学和结构上存在根本差异。UniMixer 将基于规则的 TokenMixer 转换为等价的参数化结构，构建广义参数化特征混合模块，使 token 混合模式可在训练中优化学习，从而在统一框架下实现更高效的 scaling。",
+      "key_insight": "该工作的核心价值在于为推荐模型的 scaling law 研究提供了统一视角。通过将三种主流 scaling 架构（注意力、TokenMixer、FM）纳入同一参数化框架，实践者可以在同一代码库中比较不同架构的 scaling 效率，避免重复实验。对于追求模型规模扩展的推荐系统团队，UniMixer 提供了一条清晰的架构选择和 scaling 路径。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.00590",
+        "title": "UniMixer: A Unified Architecture for Scaling Laws in Recommendation Systems",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n推荐模型的 scaling law 研究近年受到广泛关注，其核心问题是如何建立模型性能与参数量/FLOPs 之间的可预测关系。当前主流的三种 scaling 架构——基于注意力的方法（如 HSTU）、基于 TokenMixer 的方法（如 RankMixer、MixFormer）、以及基于因子分解机的方法（如 FinalMLP）——在设计哲学和结构上存在根本差异，缺乏统一的理论框架来比较和优化它们的 scaling 效率。\n\n与 LLM 中同质化的文本 token 不同，推荐系统面临异构特征空间的独特挑战：用户画像、物品属性、行为序列、查询特征等不同语义域的特征需要不同的交互模式。现有方法各自为政，导致实践者在架构选择上缺乏理论指导，不同架构的 scaling 效率（ROI）难以直接比较。\n\n## 2. 方法详解\n\nUniMixer 的核心思想是将规则化的 TokenMixer 操作转换为等价的参数化结构。\n\n**特征 Token 化**：输入特征按语义域（用户画像、物品特征、行为序列、查询特征）组织，通过域特定的嵌入层转换为 token 级嵌入，拼接后通过线性投影得到隐状态 X ∈ ℝ^(T×D)。\n\n**核心发现**：TokenMixer 的特征混合操作可重新表示为 TokenMixer(X) = reshape(W^perm · flatten(X))，其中 W^perm 是一个具有可压缩性、双随机性、稀疏性和对称性约束的置换矩阵。直接实现该操作的复杂度为 O(T²D²)，不可接受。\n\n**Kronecker 分解**：将 W^perm 分解为 W^perm = G ⊗ I，将复杂度降至 O(T⁴ + (D/T)²)，进一步通过流水线优化降至 O(L²/B + LB)（B 为块大小）。具体实现包括：\n- **局部混合模式**：每个块内使用独立权重矩阵 W_B^i 执行块内特征交互\n- **全局混合模式**：矩阵 W_G 控制块间信息流动\n- 两者均通过 Sinkhorn-Knopp 迭代强制双随机约束\n\n**UniMixing-Lite**：轻量版本使用基向量组合局部混合权重 {Z_ℓ}，全局矩阵采用低秩近似 A_G · B_G，大幅减少参数量。\n\n**SiameseNorm**：引入耦合双流归一化（X̄_ℓ, Ȳ_ℓ），解决深层网络中 pre-norm 和 post-norm 各自的缺陷。\n\n**温度退火策略**：从高温（τ=1.0）线性退火至 0.05；数据不足时采用两阶段策略——高温初始化后用低温和热启动权重重训。\n\n**训练配置**：基于快手广告数据集（>7亿用户样本，一年数据，数百个异构特征），使用 AUC 和 UAUC 评估性能。\n\n## 3. 核心技术贡献\n\n**统一理论框架**：首次证明注意力、TokenMixer 和 FM 三种主流方法可在统一公式下表示（论文公式17），差异仅在于交互投影函数的选择。这为跨架构比较提供了理论基础，之前不同架构间的比较缺乏公平基准。\n\n**参数化 TokenMixer**：移除了原始 TokenMixer 中 T=H 的硬约束，使混合模式可在训练中自适应学习。通过双随机约束和温度退火，在保持混合操作的结构化特性的同时引入灵活性。\n\n**最陡 Scaling 曲线**：UniMixer-Lite 的 scaling 指数达到 0.142，高于 RankMixer (0.116) 和标准 UniMixer (0.132)，意味着每增加同等参数量获得的性能提升更大。\n\n**深层扩展能力**：UniMixer-Lite 展示了正向的深度 scaling（2块→4块 AUC 从 0.749228 升至 0.750803），而 RankMixer 在深度增加时出现性能退化。\n\n## 4. 实验结果分析\n\n核心实验基于快手广告真实数据集，百万量级参数模型对比：\n\n| 模型 | 参数量 | AUC | 相对提升 |\n|------|--------|-----|---------|\n| RankMixer | 76.2M | 0.749329 | baseline |\n| UniMixer-2-Blocks | 101.5M | 0.750238 | +0.5661% |\n| UniMixer-Lite-2-Blocks | 76.2M | 0.751401 | +0.6824% |\n| UniMixer-Lite-4-Blocks | 84.5M | 0.752718 | +0.8141% |\n\n值得注意的是，UniMixer-Lite 在与 RankMixer 相同参数量（76.2M）下即超越其性能，说明架构效率而非单纯堆参数才是关键。\n\n消融实验揭示各组件贡献：温度系数退火最关键（去除后 -0.1645% AUC），其次是模型热启动（-0.0856%），对称约束（-0.0573%）和块特定局部混合（-0.0436%）。\n\n基向量数从 b=2 到 b=8 带来 +0.1055% 提升；秩从 r=2 到 r=256 带来 +0.0971% 提升，两者均以极小的参数增长换取显著性能提升。\n\n**线上 A/B 测试**：部署于快手多个广告场景，D1-D30 累计活跃天数（CAD）平均提升超过 15%，验证了其工业级价值。\n\n## 5. 局限与未来方向\n\n论文未设专门的局限性讨论章节。隐含的局限包括：(1) 实验验证仅限于约 100M 参数规模，未探索更大规模（1B+）下的 scaling 行为是否延续；(2) Sinkhorn-Knopp 迭代在训练时引入额外计算开销，对训练吞吐量的影响未量化；(3) 温度退火策略需要精细调节（初始温度、退火终点、两阶段切换时机），自动化程度有限；(4) 所有实验仅在快手广告数据上验证，其他推荐场景（如内容推荐、电商）的泛化性未知。\n\n## 6. 工业实践意义\n\n**架构选型参考**：UniMixer 的统一框架使团队能在同一代码库内比较三种主流 scaling 架构的 ROI，避免独立实现和调参的重复劳动。Scaling 指数的拟合方法可直接用于预估「增加 X 参数量预期获得 Y% 收益」。\n\n**轻量部署路径**：UniMixer-Lite 的基向量组合和低秩近似在保持 scaling 效率的同时大幅降低参数量和计算量，适合在线服务的延迟约束。实际部署时可从少量基（b=2）和低秩（r=2）起步，按需扩展。\n\n**训练稳定性工具**：SiameseNorm 和温度退火策略解决了深层推荐模型训练不稳定的通病。特别是温度退火（消融中贡献最大），是一个即插即用的训练技巧，可迁移至现有推荐模型训练中。\n\n**线上 15%+ CAD 提升**：在快手这一超大规模广告平台上验证了显著的业务指标提升，说明 scaling 架构的优化可以直接转化为商业价值。但需注意该指标是 CAD（累计活跃天数），与常规 CTR/CVR 指标有区别，解读时需结合具体业务逻辑。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>推荐模型的 scaling law 研究近年受到广泛关注，其核心问题是如何建立模型性能与参数量/FLOPs 之间的可预测关系。当前主流的三种 scaling 架构——基于注意力的方法（如 HSTU）、基于 TokenMixer 的方法（如 RankMixer、MixFormer）、以及基于因子分解机的方法（如 FinalMLP）——在设计哲学和结构上存在根本差异，缺乏统一的理论框架来比较和优化它们的 scaling 效率。</p>\n<p>与 LLM 中同质化的文本 token 不同，推荐系统面临异构特征空间的独特挑战：用户画像、物品属性、行为序列、查询特征等不同语义域的特征需要不同的交互模式。现有方法各自为政，导致实践者在架构选择上缺乏理论指导，不同架构的 scaling 效率（ROI）难以直接比较。</p>\n<h2>2. 方法详解</h2>\n<p>UniMixer 的核心思想是将规则化的 TokenMixer 操作转换为等价的参数化结构。</p>\n<p><strong>特征 Token 化</strong>：输入特征按语义域（用户画像、物品特征、行为序列、查询特征）组织，通过域特定的嵌入层转换为 token 级嵌入，拼接后通过线性投影得到隐状态 X ∈ ℝ^(T×D)。</p>\n<p><strong>核心发现</strong>：TokenMixer 的特征混合操作可重新表示为 TokenMixer(X) = reshape(W^perm · flatten(X))，其中 W^perm 是一个具有可压缩性、双随机性、稀疏性和对称性约束的置换矩阵。直接实现该操作的复杂度为 O(T²D²)，不可接受。</p>\n<p><strong>Kronecker 分解</strong>：将 W^perm 分解为 W^perm = G ⊗ I，将复杂度降至 O(T⁴ + (D/T)²)，进一步通过流水线优化降至 O(L²/B + LB)（B 为块大小）。具体实现包括：</p>\n<ul>\n<li><strong>局部混合模式</strong>：每个块内使用独立权重矩阵 W_B^i 执行块内特征交互</li>\n<li><strong>全局混合模式</strong>：矩阵 W_G 控制块间信息流动</li>\n<li>两者均通过 Sinkhorn-Knopp 迭代强制双随机约束</li>\n</ul>\n<p><strong>UniMixing-Lite</strong>：轻量版本使用基向量组合局部混合权重 {Z_ℓ}，全局矩阵采用低秩近似 A_G · B_G，大幅减少参数量。</p>\n<p><strong>SiameseNorm</strong>：引入耦合双流归一化（X̄_ℓ, Ȳ_ℓ），解决深层网络中 pre-norm 和 post-norm 各自的缺陷。</p>\n<p><strong>温度退火策略</strong>：从高温（τ=1.0）线性退火至 0.05；数据不足时采用两阶段策略——高温初始化后用低温和热启动权重重训。</p>\n<p><strong>训练配置</strong>：基于快手广告数据集（&gt;7亿用户样本，一年数据，数百个异构特征），使用 AUC 和 UAUC 评估性能。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>统一理论框架</strong>：首次证明注意力、TokenMixer 和 FM 三种主流方法可在统一公式下表示（论文公式17），差异仅在于交互投影函数的选择。这为跨架构比较提供了理论基础，之前不同架构间的比较缺乏公平基准。</p>\n<p><strong>参数化 TokenMixer</strong>：移除了原始 TokenMixer 中 T=H 的硬约束，使混合模式可在训练中自适应学习。通过双随机约束和温度退火，在保持混合操作的结构化特性的同时引入灵活性。</p>\n<p><strong>最陡 Scaling 曲线</strong>：UniMixer-Lite 的 scaling 指数达到 0.142，高于 RankMixer (0.116) 和标准 UniMixer (0.132)，意味着每增加同等参数量获得的性能提升更大。</p>\n<p><strong>深层扩展能力</strong>：UniMixer-Lite 展示了正向的深度 scaling（2块→4块 AUC 从 0.749228 升至 0.750803），而 RankMixer 在深度增加时出现性能退化。</p>\n<h2>4. 实验结果分析</h2>\n<p>核心实验基于快手广告真实数据集，百万量级参数模型对比：</p>\n<table><thead><tr><th>模型</th><th>参数量</th><th>AUC</th><th>相对提升</th></tr></thead><tbody><tr><td>RankMixer</td><td>76.2M</td><td>0.749329</td><td>baseline</td></tr><tr><td>UniMixer-2-Blocks</td><td>101.5M</td><td>0.750238</td><td>+0.5661%</td></tr><tr><td>UniMixer-Lite-2-Blocks</td><td>76.2M</td><td>0.751401</td><td>+0.6824%</td></tr><tr><td>UniMixer-Lite-4-Blocks</td><td>84.5M</td><td>0.752718</td><td>+0.8141%</td></tr></tbody></table>\n<p>值得注意的是，UniMixer-Lite 在与 RankMixer 相同参数量（76.2M）下即超越其性能，说明架构效率而非单纯堆参数才是关键。</p>\n<p>消融实验揭示各组件贡献：温度系数退火最关键（去除后 -0.1645% AUC），其次是模型热启动（-0.0856%），对称约束（-0.0573%）和块特定局部混合（-0.0436%）。</p>\n<p>基向量数从 b=2 到 b=8 带来 +0.1055% 提升；秩从 r=2 到 r=256 带来 +0.0971% 提升，两者均以极小的参数增长换取显著性能提升。</p>\n<p><strong>线上 A/B 测试</strong>：部署于快手多个广告场景，D1-D30 累计活跃天数（CAD）平均提升超过 15%，验证了其工业级价值。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文未设专门的局限性讨论章节。隐含的局限包括：(1) 实验验证仅限于约 100M 参数规模，未探索更大规模（1B+）下的 scaling 行为是否延续；(2) Sinkhorn-Knopp 迭代在训练时引入额外计算开销，对训练吞吐量的影响未量化；(3) 温度退火策略需要精细调节（初始温度、退火终点、两阶段切换时机），自动化程度有限；(4) 所有实验仅在快手广告数据上验证，其他推荐场景（如内容推荐、电商）的泛化性未知。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>架构选型参考</strong>：UniMixer 的统一框架使团队能在同一代码库内比较三种主流 scaling 架构的 ROI，避免独立实现和调参的重复劳动。Scaling 指数的拟合方法可直接用于预估「增加 X 参数量预期获得 Y% 收益」。</p>\n<p><strong>轻量部署路径</strong>：UniMixer-Lite 的基向量组合和低秩近似在保持 scaling 效率的同时大幅降低参数量和计算量，适合在线服务的延迟约束。实际部署时可从少量基（b=2）和低秩（r=2）起步，按需扩展。</p>\n<p><strong>训练稳定性工具</strong>：SiameseNorm 和温度退火策略解决了深层推荐模型训练不稳定的通病。特别是温度退火（消融中贡献最大），是一个即插即用的训练技巧，可迁移至现有推荐模型训练中。</p>\n<p><strong>线上 15%+ CAD 提升</strong>：在快手这一超大规模广告平台上验证了显著的业务指标提升，说明 scaling 架构的优化可以直接转化为商业价值。但需注意该指标是 CAD（累计活跃天数），与常规 CTR/CVR 指标有区别，解读时需结合具体业务逻辑。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.01036",
+      "title": "Aligning Recommendations with User Popularity Preferences",
+      "url": "https://arxiv.org/abs/2604.01036",
+      "authors": "Mona Schirmer, Anton Thielmann, Pola Schwöbel, Thomas Martynec, Giuseppe Di Benedetto, Ben London, Yannik Stein",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 4.0,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文研究推荐系统中的流行度偏差问题，提出 Popularity Quantile Calibration 度量框架来量化用户历史流行度偏好与推荐结果之间的不对齐程度。基于此提出 SPREE，一种面向序列推荐模型的推理时激活引导方法——在表示空间中识别流行度方向，并根据每位用户的个人流行度偏好自适应地调节模型激活，实现个性化的流行度校准。",
+      "key_insight": "SPREE 的核心创新在于将 activation steering 技术应用到推荐场景。与需要重训练的去偏方法不同，SPREE 仅在推理时调整模型表示，无需修改训练流程，部署成本极低。对于 UGC 搜索场景，这种方法可以帮助平衡热门内容与长尾内容的曝光，避免「马太效应」，提升内容生态多样性。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.01036",
+        "title": "Aligning Recommendations with User Popularity Preferences",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n推荐系统中的流行度偏差是一个广泛存在的问题：系统倾向于过度推荐热门物品，导致「富者愈富」效应和内容同质化。论文从多利益方角度分析了危害：创作者受到经济损害（长尾内容被压制）、用户满意度下降（推荐不匹配个人偏好）、平台面临创作者流失和监管风险。\n\n关键洞察：现有方法将流行度偏差视为全局去偏问题（如降低所有用户对热门物品的曝光），但实际上不同用户对流行度有不同偏好——有人喜欢热门，有人偏好小众。因此，问题的本质是用户级别的对齐（alignment），而非全局的流行度压制。\n\n现有度量指标（PopLift、LogPopDiff、UPD）在度量理论上存在缺陷：缺乏方向性（D1）、大小敏感性（D2）、方差捕捉（D3）、尺度不变性（D4）或鲁棒性（D5）。这导致干预效果的评估不可靠。\n\n## 2. 方法详解\n\n**度量框架：Popularity Quantile Calibration**\n\n基于度量理论的四阶段框架设计新指标：\n\n将物品流行度映射到分位数空间 τ ∈ [0,1]，比较用户交互历史的流行度 CDF 与推荐列表的流行度 CDF。完美校准时两者对齐于对角线 τⱼ = τ̂ⱼ。\n\nPopularity Calibration Error (PCE) 定义为：PCE(u) = (1/m) Σ(τⱼ - τ̂ⱼ)²，范围 [0,1]，0 表示完美校准。该指标同时满足 D1-D5 所有度量理论要求。\n\n**缓解方法：SPREE (Steering PopulaRity toward human prEferEncEs)**\n\nSPREE 是一种推理时激活引导方法，无需重训练：\n\n**步骤一：识别流行度方向** 构建对比数据集——高流行度序列 𝒟⁺（物品流行度 s(i) ≥ ρ⁺）和低流行度序列 𝒟⁻（s(i) ≤ ρ⁻）。在 Transformer 每一层每个位置计算引导向量 v = normalize(x⁻_mean - x⁺_mean)。通过线性探针精度选择最优层和位置。\n\n**步骤二：自适应引导强度** 对每个用户估计中位分位数偏差 e(u) = τ̂_med - 0.5（负值表示推荐过于小众，正值表示过于热门）。用 Lasso 回归训练偏差估计器 f̂: ℝᵈ → [-0.5, 0.5]。\n\n**推理时修改激活**：x* = x + λ · f̂(x) · v，其中 λ 是全局超参数控制引导强度。关键在于 f̂(x) 提供了每用户的方向和强度自适应。\n\n**训练配置**：基座模型为 SASRec（L=3 Transformer 块，d=64 隐维度，序列长度 T=200-300）。对比数据集各生成 500 条序列，Lasso 回归用验证集拟合。\n\n## 3. 核心技术贡献\n\n**度量理论驱动的度量设计**：不同于经验性的指标设计，论文从度量理论出发系统化地分析了现有指标的缺陷，提出满足完整度量理论要求的 PCE 指标。实验表明 IPR 和 PopSteer 虽降低了全局流行度（S1 类偏差），但在 PCE（S3 类用户级对齐）上反而恶化。\n\n**个性化 vs 全局去偏的分离**：论文首次在实验中清晰地分离了「降低全局流行度」和「用户级对齐」两个目标，证明了它们不仅不等价，甚至可能冲突。这挑战了流行度去偏研究中的隐含假设。\n\n**直接激活空间干预**：与 PopSteer 需要训练稀疏自编码器（SAE）不同，SPREE 直接在激活空间中操作，通过均值差构建引导向量，部署更加轻量。偏差估计器 f̂ 的引入使得同一引导向量对不同用户产生不同的修正幅度和方向。\n\n## 4. 实验结果分析\n\n四个数据集（Foursquare Tokyo 49.5万交互、MovieLens-1M 100万交互、MovieLens-20M 2000万交互、RateBeer 263万交互）上的结果：\n\n| 数据集 | 方法 | PCE@100 | NDCG@100 | 变化 |\n|--------|------|---------|----------|------|\n| ml-1m | Base | 0.211 | ~6.34 | - |\n| ml-1m | IPR | 更差 | 更差 | 两维度均退化 |\n| ml-1m | PopSteer | 更差 | 略降 | PCE 恶化 |\n| ml-1m | SPREE | 0.176 (-16%) | ~6.34 | PCE 显著改善，NDCG 保持 |\n| ml-20m | SPREE | 0.382 (-9%) | ~9.01 | 两维度均改善 |\n| RateBeer | SPREE | 0.293 (-9%) | 略升 | 两维度均改善 |\n\n**关键发现**：IPR 和 PopSteer 在降低全局流行度的同时恶化了用户级对齐——这是本文最重要的实验发现，说明「去偏」和「对齐」是两个不同的目标。\n\n**消融实验**：去除偏差估计器 f̂（即均匀引导）后，PCE 在 fs-tky 上恶化 143%（0.200→0.509），在 ml-1m 上恶化 106%（0.176→0.434），NDCG 也出现 7-22% 的退化。这证明个性化的引导强度是方法成功的关键。\n\n**校准曲线分析**：基座模型在 ml-1m、ml-20m、RateBeer 上呈现负偏差（曲线低于对角线），即推荐内容比用户偏好更小众。SPREE 将校准曲线推向对角线，而 PP 方法则过度校正产生正偏差。\n\n## 5. 局限与未来方向\n\n论文明确讨论了三个局限：(1) 引导效果依赖于嵌入空间中是否存在流行度校准区域——如果物品嵌入空间的几何结构不支持流行度维度的线性分离，引导效果受限；(2) 当前方法聚焦于中位数分位数（τ=0.5）的控制，无法选择性地调节分布的上下尾部；(3) 仅处理流行度维度的对齐，未扩展到其他维度（如类型多样性、少数群体内容曝光）。\n\n## 6. 工业实践意义\n\n**零成本部署**：SPREE 仅修改推理时的激活值，无需重训练模型、无需修改训练数据或损失函数。对于已部署序列推荐模型的团队，可以在不影响现有训练流程的情况下引入流行度对齐。\n\n**PCE 作为评估工具**：即使不使用 SPREE，PCE 指标本身就是一个有价值的评估工具。建议团队将 PCE 纳入离线评估体系，监控推荐结果与用户流行度偏好的对齐程度。这比全局流行度分布统计更有意义。\n\n**UGC 搜索场景应用**：在社区搜索中，热门帖子和小众优质内容的曝光平衡是核心挑战。SPREE 的个性化引导可根据用户的历史行为自适应调节：对偏好热门的用户保持热门推荐，对偏好小众的用户增加长尾内容曝光，避免一刀切的去偏策略。\n\n**延迟影响**：引导操作仅涉及一次向量加法（x + λ·f̂(x)·v），计算开销可忽略不计。Lasso 回归的偏差估计也非常轻量。这使得 SPREE 适合对延迟敏感的在线推荐场景。但需注意，对比数据集构建和线性探针选层需要离线准备，且随着模型更新需要定期刷新引导向量。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>推荐系统中的流行度偏差是一个广泛存在的问题：系统倾向于过度推荐热门物品，导致「富者愈富」效应和内容同质化。论文从多利益方角度分析了危害：创作者受到经济损害（长尾内容被压制）、用户满意度下降（推荐不匹配个人偏好）、平台面临创作者流失和监管风险。</p>\n<p>关键洞察：现有方法将流行度偏差视为全局去偏问题（如降低所有用户对热门物品的曝光），但实际上不同用户对流行度有不同偏好——有人喜欢热门，有人偏好小众。因此，问题的本质是用户级别的对齐（alignment），而非全局的流行度压制。</p>\n<p>现有度量指标（PopLift、LogPopDiff、UPD）在度量理论上存在缺陷：缺乏方向性（D1）、大小敏感性（D2）、方差捕捉（D3）、尺度不变性（D4）或鲁棒性（D5）。这导致干预效果的评估不可靠。</p>\n<h2>2. 方法详解</h2>\n<p><strong>度量框架：Popularity Quantile Calibration</strong></p>\n<p>基于度量理论的四阶段框架设计新指标：</p>\n<p>将物品流行度映射到分位数空间 τ ∈ [0,1]，比较用户交互历史的流行度 CDF 与推荐列表的流行度 CDF。完美校准时两者对齐于对角线 τⱼ = τ̂ⱼ。</p>\n<p>Popularity Calibration Error (PCE) 定义为：PCE(u) = (1/m) Σ(τⱼ - τ̂ⱼ)²，范围 [0,1]，0 表示完美校准。该指标同时满足 D1-D5 所有度量理论要求。</p>\n<p><strong>缓解方法：SPREE (Steering PopulaRity toward human prEferEncEs)</strong></p>\n<p>SPREE 是一种推理时激活引导方法，无需重训练：</p>\n<p><strong>步骤一：识别流行度方向</strong> 构建对比数据集——高流行度序列 𝒟⁺（物品流行度 s(i) ≥ ρ⁺）和低流行度序列 𝒟⁻（s(i) ≤ ρ⁻）。在 Transformer 每一层每个位置计算引导向量 v = normalize(x⁻_mean - x⁺_mean)。通过线性探针精度选择最优层和位置。</p>\n<p><strong>步骤二：自适应引导强度</strong> 对每个用户估计中位分位数偏差 e(u) = τ̂_med - 0.5（负值表示推荐过于小众，正值表示过于热门）。用 Lasso 回归训练偏差估计器 f̂: ℝᵈ → [-0.5, 0.5]。</p>\n<p><strong>推理时修改激活</strong>：x* = x + λ · f̂(x) · v，其中 λ 是全局超参数控制引导强度。关键在于 f̂(x) 提供了每用户的方向和强度自适应。</p>\n<p><strong>训练配置</strong>：基座模型为 SASRec（L=3 Transformer 块，d=64 隐维度，序列长度 T=200-300）。对比数据集各生成 500 条序列，Lasso 回归用验证集拟合。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>度量理论驱动的度量设计</strong>：不同于经验性的指标设计，论文从度量理论出发系统化地分析了现有指标的缺陷，提出满足完整度量理论要求的 PCE 指标。实验表明 IPR 和 PopSteer 虽降低了全局流行度（S1 类偏差），但在 PCE（S3 类用户级对齐）上反而恶化。</p>\n<p><strong>个性化 vs 全局去偏的分离</strong>：论文首次在实验中清晰地分离了「降低全局流行度」和「用户级对齐」两个目标，证明了它们不仅不等价，甚至可能冲突。这挑战了流行度去偏研究中的隐含假设。</p>\n<p><strong>直接激活空间干预</strong>：与 PopSteer 需要训练稀疏自编码器（SAE）不同，SPREE 直接在激活空间中操作，通过均值差构建引导向量，部署更加轻量。偏差估计器 f̂ 的引入使得同一引导向量对不同用户产生不同的修正幅度和方向。</p>\n<h2>4. 实验结果分析</h2>\n<p>四个数据集（Foursquare Tokyo 49.5万交互、MovieLens-1M 100万交互、MovieLens-20M 2000万交互、RateBeer 263万交互）上的结果：</p>\n<table><thead><tr><th>数据集</th><th>方法</th><th>PCE@100</th><th>NDCG@100</th><th>变化</th></tr></thead><tbody><tr><td>ml-1m</td><td>Base</td><td>0.211</td><td>~6.34</td><td>-</td></tr><tr><td>ml-1m</td><td>IPR</td><td>更差</td><td>更差</td><td>两维度均退化</td></tr><tr><td>ml-1m</td><td>PopSteer</td><td>更差</td><td>略降</td><td>PCE 恶化</td></tr><tr><td>ml-1m</td><td>SPREE</td><td>0.176 (-16%)</td><td>~6.34</td><td>PCE 显著改善，NDCG 保持</td></tr><tr><td>ml-20m</td><td>SPREE</td><td>0.382 (-9%)</td><td>~9.01</td><td>两维度均改善</td></tr><tr><td>RateBeer</td><td>SPREE</td><td>0.293 (-9%)</td><td>略升</td><td>两维度均改善</td></tr></tbody></table>\n<p><strong>关键发现</strong>：IPR 和 PopSteer 在降低全局流行度的同时恶化了用户级对齐——这是本文最重要的实验发现，说明「去偏」和「对齐」是两个不同的目标。</p>\n<p><strong>消融实验</strong>：去除偏差估计器 f̂（即均匀引导）后，PCE 在 fs-tky 上恶化 143%（0.200→0.509），在 ml-1m 上恶化 106%（0.176→0.434），NDCG 也出现 7-22% 的退化。这证明个性化的引导强度是方法成功的关键。</p>\n<p><strong>校准曲线分析</strong>：基座模型在 ml-1m、ml-20m、RateBeer 上呈现负偏差（曲线低于对角线），即推荐内容比用户偏好更小众。SPREE 将校准曲线推向对角线，而 PP 方法则过度校正产生正偏差。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文明确讨论了三个局限：(1) 引导效果依赖于嵌入空间中是否存在流行度校准区域——如果物品嵌入空间的几何结构不支持流行度维度的线性分离，引导效果受限；(2) 当前方法聚焦于中位数分位数（τ=0.5）的控制，无法选择性地调节分布的上下尾部；(3) 仅处理流行度维度的对齐，未扩展到其他维度（如类型多样性、少数群体内容曝光）。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>零成本部署</strong>：SPREE 仅修改推理时的激活值，无需重训练模型、无需修改训练数据或损失函数。对于已部署序列推荐模型的团队，可以在不影响现有训练流程的情况下引入流行度对齐。</p>\n<p><strong>PCE 作为评估工具</strong>：即使不使用 SPREE，PCE 指标本身就是一个有价值的评估工具。建议团队将 PCE 纳入离线评估体系，监控推荐结果与用户流行度偏好的对齐程度。这比全局流行度分布统计更有意义。</p>\n<p><strong>UGC 搜索场景应用</strong>：在社区搜索中，热门帖子和小众优质内容的曝光平衡是核心挑战。SPREE 的个性化引导可根据用户的历史行为自适应调节：对偏好热门的用户保持热门推荐，对偏好小众的用户增加长尾内容曝光，避免一刀切的去偏策略。</p>\n<p><strong>延迟影响</strong>：引导操作仅涉及一次向量加法（x + λ·f̂(x)·v），计算开销可忽略不计。Lasso 回归的偏差估计也非常轻量。这使得 SPREE 适合对延迟敏感的在线推荐场景。但需注意，对比数据集构建和线性探针选层需要离线准备，且随着模型更新需要定期刷新引导向量。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2510.15299",
+      "title": "GRank: Towards Target-Aware and Streamlined Industrial Retrieval with a Generate-Rank Framework",
+      "url": "https://arxiv.org/abs/2510.15299",
+      "authors": "Yijia Sun, Shanshan Huang, Zhiyuan Guan, Qiang Luo, Ruiming Tang, Kun Gai, Guorui Zhou",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 4.0,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "GRank 提出一种无结构化索引的工业级检索范式，统一了目标感知学习与以用户为中心的检索。核心创新包括：(1) 基于 GPU 加速 MIPS 的目标感知生成器，实现个性化候选生成；(2) 解决了传统双塔架构表达力不足和生成式模型缺乏精确目标感知匹配的问题；(3) 避免了树/图/量化等结构化索引的高昂构建和维护成本。",
+      "key_insight": "GRank 对推荐系统检索层的实践意义重大：它证明了无需构建和维护复杂的结构化索引（如 HNSW、量化索引），通过 GPU 加速的 MIPS 即可实现高效检索。这大幅降低了工程复杂度和运维成本。同时，目标感知的设计使检索阶段能捕捉更细粒度的 user-item 交互，有望提升全链路推荐效果。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.00997",
+      "title": "Uncertainty-Aware Variational Reward Factorization via Probabilistic Preference Bases for LLM Personalization",
+      "url": "https://arxiv.org/abs/2604.00997",
+      "authors": "Gyuseok Lee, Wonbin Kweon, Zhenrui Yue, SeongKu Kang, Jiawei Han, Dong Wang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 3.75,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出 VRF（Variational Reward Factorization），一种不确定性感知的 LLM 个性化框架。通过将奖励分解为共享基函数和用户特定权重，用变分编码器推断用户偏好分布，利用 Wasserstein 距离匹配共享概率基，并通过方差衰减损失降权不确定估计。在三个基准上，VRF 在已见/未见用户、少样本场景和不同不确定性水平下均超越所有基线。",
+      "key_insight": "VRF 将概率建模引入奖励分解，解决了用户偏好数据稀缺时的个性化难题。其变分推断框架可自然处理冷启动用户（通过先验分布），方差衰减损失机制避免在数据不足时过拟合。这一思路可迁移到推荐系统的用户建模中：用概率偏好空间替代确定性用户向量，提升对长尾用户的推荐质量。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.00513",
+      "title": "MOON3.0: Reasoning-aware Multimodal Representation Learning for E-commerce Product Understanding",
+      "url": "https://arxiv.org/abs/2604.00513",
+      "authors": "Junxian Wu, Chenghan Fu, Zhanheng Nie, Daoze Zhang, Bowen Wan, Wanxian Guan, Chuan Yu, Jian Xu, Bo Zheng",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "MOON3.0 提出了推理感知的多模态表示学习方法，解决电商产品理解中的三大挑战：长上下文推理导致模型对关键信息的注意力稀释、SFT 仅鼓励僵化模仿限制推理策略探索、细粒度细节在全局嵌入中被淹没。通过利用 MLLM 的推理能力显式建模细粒度产品属性，结合 RL 训练探索有效的推理策略。",
+      "key_insight": "MOON3.0 的核心启示在于：传统的 MLLM 特征提取（作为黑箱编码器）无法捕捉电商产品的细粒度属性差异。引入显式推理链（CoT）配合强化学习，使模型能主动分析产品属性间的细微差异，这对于搜索排序中的相关性判断（如区分相似但不同规格的商品）极具参考价值。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.00022",
+      "title": "Criterion Validity of LLM-as-Judge for Business Outcomes in Conversational Commerce",
+      "url": "https://arxiv.org/abs/2604.00022",
+      "authors": "Liang Chen, Qi Liu, Wenhuan Lin, Feng Liang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文在大型中文相亲平台上研究 LLM-as-Judge 的效标效度——即质量评分是否真正关联下游业务转化。采用 7 维评估框架，发现维度级异质性显著：需求引导（D1, ρ=0.368）和节奏策略（D3, ρ=0.354）与转化显著相关（Bonferroni 校正后），而上下文记忆（D5, ρ=0.018）无显著关联。研究表明不同评估维度对业务结果的贡献差异巨大。",
+      "key_insight": "该研究的核心启示是：在使用 LLM-as-Judge 评估对话系统时，不能假设所有评分维度都与业务目标等权相关。实践中应基于真实业务标签验证各维度的效标效度，用经验权重替代均权聚合。这一方法论可迁移到搜索/推荐场景中的离线评估体系设计，避免「评分高但转化低」的脱节问题。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2506.19846",
+      "title": "HiMA-Ecom: Enabling Joint Training of Hierarchical Multi-Agent E-commerce Assistants",
+      "url": "https://arxiv.org/abs/2506.19846",
+      "authors": "Junxing Hu, Ai Han, Haolan Zhan, Pu Wei, Zhiqian Zhang, Yuhang Guo, Jiawei Lu, Zhen Chen, Haoran Li, Zicheng Zhang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 3.35,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "HiMA-Ecom 是首个面向电商场景的层次化多 Agent 基准，包含 22.8K 实例，涵盖 Agent 级 SFT 数据和系统级联合强化学习数据。提出 HiMA-R1 联合训练方法和 VR-GRPO（Variance-Reduction Group Relative Policy Optimization），通过初始轨迹蒙特卡罗采样降低方差，实现主 Agent 与子 Agent 的协同优化。",
+      "key_insight": "该工作对电商推荐系统的启示在于：多 Agent 协同已成为复杂电商场景（如购买咨询、售后服务）的新范式。VR-GRPO 的方差降低技术解决了多 Agent RL 训练不稳定的核心难题。但其对基础设施要求较高（需要完整的 agent 训练管线），更适合大规模电商平台借鉴。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.00013",
+      "title": "MSA-Thinker: Discrimination-Calibration Reasoning with Hint-Guided Reinforcement Learning for Multimodal Sentiment Analysis",
+      "url": "https://arxiv.org/abs/2604.00013",
+      "authors": "Miaosen Luo, Zhenhao Yang, Jieshen Long, Jinghu Sun, Yichu Liu, Sijie Mai",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 3.15,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.25,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "MSA-Thinker 提出融合判别-校准推理的多模态情感分析框架，利用 Hint-guided RL 解决 SFT 训练中黑箱推理可解释性不足的问题。通过教师模型（Qwen3Omni-30B）合成高质量 CoT 数据进行冷启动 SFT，构建包含宏观判别和微观校准的推理范式，有效提升困难样本上的探索效率。",
+      "key_insight": "该工作虽聚焦情感分析，但其 Hint-guided RL 框架对推荐系统中的用户意图理解有借鉴价值。在 UGC 搜索场景中，用户评论和帖子的情感分析可辅助内容理解和排序。其判别-校准二阶段推理设计可迁移到搜索相关性判断——先粗判再精调，提升难例准确率。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2604.00531",
+      "title": "Learning Shared Representations for Multi-Task Linear Bandits",
+      "url": "https://arxiv.org/abs/2604.00531",
+      "authors": "Jiabin Lin, Shana Moothedath",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 2.95,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出基于低秩共享表示的多任务线性 Bandit 算法。考虑 T 个并发线性 Bandit 任务共享维度 r ≪ min{d,T} 的潜在表示，设计新的 OFUL 算法：先通过探索阶段收集数据，用谱初始化估计共享模型，再在新构建的置信集上进行 OFUL 学习。提供了置信集的理论保证和遗憾界分析。",
+      "key_insight": "多任务低秩表示学习在推荐系统中的对应场景是：多个推荐任务（如 CTR、CVR、停留时长）共享底层用户-物品表示。该工作的理论框架为多目标推荐中的探索-利用权衡提供了形式化分析工具，其谱初始化方法也可启发实际多任务模型的初始化策略。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2603.20826",
+      "title": "Simple Projection-Free Algorithm for Contextual Recommendation with Logarithmic Regret and Robustness",
+      "url": "https://arxiv.org/abs/2603.20826",
+      "authors": "Shinsaku Sakaue",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 2.85,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.0,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "本文提出一种高效的上下文推荐算法，在达到 O(d log T) 遗憾界的同时避免了 Online Newton Step 方法所需的 Mahalanobis 投影计算瓶颈。核心思路是利用上下文推荐固有的 improper 性质，采用类似二阶感知器的更新规则。该算法对可能的次优动作反馈也具有鲁棒性。",
+      "key_insight": "该工作的实践价值在于其算法效率优势：去除投影步骤使得在线推荐系统中的上下文 Bandit 部署更加轻量。对次优反馈的鲁棒性在实际推荐场景中尤为重要——用户的隐式反馈（如点击、跳过）本质上是带噪声的次优信号。理论结果可为在线排序策略的选择提供参考。"
+    }
+  ]
+}

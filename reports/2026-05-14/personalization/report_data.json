@@ -1,0 +1,359 @@
+{
+  "date": "2026-05-14",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 85,
+    "papers_selected": 10,
+    "score_min": 3.85,
+    "score_max": 4.55
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2511.06077",
+      "title": "Make It Long, Keep It Fast: End-to-End 10k-Sequence Modeling at Billion Scale on Douyin Recommendation",
+      "url": "https://arxiv.org/abs/2511.06077",
+      "authors": "Lin Guan, Jia-Qi Yang, Zhishan Zhao, Beichuan Zhang, Bo Sun, Xuanyuan Luo, Jinan Ni, Xiaowen Li, Yuhang Qi, Zhifang Fan, Hangyu Wang, Qiwei Chen, Yi Cheng, Feng Zhang, Xiao Yang",
+      "company": [
+        "ByteDance",
+        "Douyin"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 4.55,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.55,
+      "summary": "本文提出一套生产级长序列建模方案，将抖音推荐系统的用户历史序列扩展到 10k 长度同时维持线上延迟与成本预算。核心包含三项创新：Stacked Target-to-History Cross Attention (STCA) 用目标对历史的堆叠交叉注意力替代历史自注意力，将复杂度从二次降到线性；Request Level Batching (RLB) 在同一用户/请求内聚合多个目标共享 user 侧编码，大幅降低序列相关的存储、通信与计算；长度外推训练策略 (短窗训练、长窗推理) 使模型泛化到生产长度。系统已在抖音亿级 DAU 推荐场景全量上线，离线 AUC 与在线核心指标均有显著提升。",
+      "key_insight": "对工业短视频/社区推荐有直接借鉴价值：在保留全量行为长序列的前提下，通过 target-to-history 单向交叉注意力把 attention 复杂度从 O(N²) 摊薄到 O(N)，是端到端长序列建模的关键工程突破。RLB 思路也值得借鉴——同一 request 内多目标共享用户编码，可显著降低 user-tower 推理成本，对召回-排序级联的双塔/多塔结构尤其有用。此外短训长推的长度外推训练范式说明序列长度扩展不必同步扩 batch，对算力预算紧张的团队是务实方案。",
+      "deep_reading": {
+        "paper_id": "arxiv:2511.06077",
+        "title": "Make It Long, Keep It Fast: End-to-End 10k-Sequence Modeling at Billion Scale on Douyin Recommendation",
+        "status": "completed",
+        "content": "# Make It Long, Keep It Fast: 抖音 10k 长序列端到端建模深度解读\n\n## 1. 问题与动机\n\n工业短视频推荐的核心矛盾是：用户行为历史动辄数千条，但主流系统沿用两段式架构 (检索 + 排序) 截断序列、牺牲端到端优化。Douyin 的目标是让模型直接吃 10k 长度的用户历史，同时不打破生产环境的延迟与算力预算。作者强调 standard Transformer self-attention 的 O(L²) 复杂度让 L=10k 几乎不可行：他们测得 self-attention 在 L=10k 需要 **236.26 GFLOPs**，而本文方法只需 **21.06 GFLOPs**——大约 11 倍差距。\n\n更本质的洞察是：与 NLP/CV 的 scaling law 不同，推荐系统受 user-generated data 制约，扩 token 数最直接的来源就是用更长的历史。作者通过实验确认了推荐场景下 \"性能随序列长度可预测放大\" 的 scaling 行为，因此长序列是一条值得投入工程力的扩展轴。这一动机区别于以往工业长序列方案 (SIM/ETA/TWIN) 主要走 \"检索精简\" 路线——本文要的是 end-to-end 建模整段历史。\n\n## 2. 方法详解\n\n整套方案由三块组合而成：STCA + RLB + 长度外推训练。\n\n### STCA (Stacked Target-to-History Cross Attention)\n核心是把 history 内部的 self-attention 替换为 target-only 的 cross-attention：target 作为唯一 query 去 attend 历史序列。复杂度从 O(L²·d_h) 降为 O(L·d_h)。多头公式：\n\nα^(i,j) = softmax((q^(i) W_Q^(i,j) (X̃^(i) W_K^(i,j))^T) / √d_h)  \no^(i,j) = α^(i,j) (X̃^(i) W_V^(i,j))\n\n层间通过 target-conditioned fusion 堆叠——每层输出拼上 target embedding 再用一个可学习投影压回固定维度，从而能堆深做多层信息聚合。一个关键工程优化是先算 attention 权重再扩展 value，避免实例化长度 L 的中间 K/V 张量。\n\n### RLB (Request Level Batching)\n传统训练每个 (user, target, label) 是独立样本；RLB 把同一用户的 m 个目标合成一个 micro-batch，**user/history 编码 Φ_user(ℋ) 只算一次**被全部目标复用。Loss 写成 ℒ_u = (1/m) Σ_k ℒ_BCE(ŷ(u, t_k), y_k)，根据期望线性性它依然是经验风险的无偏估计。系统侧收益：L=512–2k 时序列相关带宽下降 **77–84%**，端到端训练吞吐提升 **2.2×**，结合 kernel 优化达到 **5.1×**；可训练最大序列长度提升约 **8×**；Parameter Server CPU 与通信带宽各降 50%。\n\n### 长度外推训练 (Train Sparsely, Infer Densely)\n训练平均长度 L_train^avg ≈ 2k、推理 L_infer = 10k，外推比 ρ_extra = 5。引入 Sequence Sparsity 指标 SS = L_train^avg / L_train^max（2k/10k ≈ 20%）。训练时按 U 形 Beta 分布在 [L_min, L_max] 内随机截断序列，构造长短混合 curriculum。截断策略对比表明 \"保留最近交互\" (temporal suffix) 显著优于随机采样。还实现了 ragged 计算 + index-based target-attention kernel，处理变长序列时不引入 padding 浪费。\n\n训练 curriculum：先在 L=512 预训稳收敛，再切到 L=2048 继续训。模型架构 4 层 STCA、d=256、h=8、FFN expansion ratio r=4、SwiGLU 激活；RLB micro-batch m=8。\n\n## 3. 核心技术贡献\n\n1. **STCA 把推荐长序列的 attention 从 O(L²) 降到 O(L)**：通过用 target 替代 history-token 作 query，避免了 history 内部的二次注意力。该取舍背后的假设是——推荐场景下我们只关心 \"history 中哪段对预测当前 target 重要\"，并不需要让 history 自己彼此交叉注意。\n2. **RLB 给出了一条 user-tower 摊薄的训练范式**：传统训练把 (u, t, y) 当独立样本浪费了大量 user 侧重复计算；RLB 用统计上的无偏聚合解锁了 ~8× 的最大可训长度上限，同时显著减少 PS 通信和 GPU 显存。\n3. **U-shaped sparsity + 短训长推**：对比 α=10 (skewed)、α=0.5、α=0.02 (U-shaped)，U-shaped 在 +0.21% AUC 上最优，说明 curriculum 里要同时保留 \"很短\" 和 \"很长\" 两个尾巴。最重要的是 L_train^avg=2k 时已能拿到全量 10k 训练增益的 ~80%。\n\n## 4. 实验结果分析\n\n### 离线主实验 (Table 1)\n所有 baseline 配 TWIN(10k) 检索后再排序。本文 STCA+RLB+Extrap：\n\n| Task | ΔAUC | ΔNLL |\n|------|------|------|\n| Finish (完播) | +0.49% | −1.16% |\n| Skip (跳过) | +0.71% | −1.14% |\n| Head (头部点击) | +0.39% | −1.41% |\n\n显著优于 DIN (+0.19/−0.17)、Transformer (+0.25/−0.46)、HSTU (+0.31/−0.86)，在等 compute 下。\n\n### Compute-Quality Scaling\n达到相同 NLL≈0.396：STCA 在 L=10k 只需 21.06 GFLOPs，Transformer 在 L=8k 需要 156.24 GFLOPs（高 7.4 倍）。L=500→10k FLOPs 增长：STCA 19.9×，Transformer 113.6×。\n\n### 外推消融 (Tables 3–5)\n- L_train^max = 2k / 4k / 10k → AUC 增 +0.03% / +0.09% / +0.21%\n- L_train^avg = 1.0k / 2.0k / 2.5k → +0.09% / +0.21% / +0.22%（边际收益递减）\n- α=10 / 0.5 / 0.02 → +0.08% / +0.11% / +0.21%（U 形最优）\n\n### 在线 A/B (30 天，Table 6)\n\n| 指标 | Douyin (全量) | Douyin Lite (全量) |\n|------|---------------|-------------------|\n| 30-day Activeness | +0.1161% | +0.1281% |\n| Stay Time | +0.9266% | +0.8467% |\n| Finish | +3.3454% | +4.2275% |\n| Comment | +1.5678% | +2.6167% |\n| Like | +1.8282% | +2.3828% |\n\n低中活用户提升最大——证实长序列建模主要在 \"近期行为稀疏\" 的用户上拿到信息增量。每用户的内容类目簇数也增 +1.6%，意味着内容多样性轻微提升。\n\n### 架构消融 (Table 2 at L=512)\n- 扩稀疏 ID embedding (128→320)：+0.08%\n- Sequence FFN 层深 2→4：+0.18% (单点最大增益)\n- FFN→SwiGLU：+0.11%\n- Heads 8→16：+0.05%\n- Query fusion：+0.06%\n- Time-delta features：+0.08%\n\n## 5. 局限与未来方向\n\n作者明确提到的约束：\n1. 训练稳定性问题：直接在 L=2048 训练不稳定，必须先 L=512 预训。\n2. 总成本权衡：取消 TWIN(10k) 检索后 GPU +33%、CPU −16%，**净成本 +17%**——作者称 \"在在线增益面前可接受\" 但仍是真实开销。\n3. 位置编码细节未充分披露，长序列外推超过 10k 的行为未讨论。\n4. RLB 的同 user 内 target 相关性虽不破坏期望无偏性，但对方差/收敛速度的影响未深入分析。\n5. 实验完全在 Douyin 短视频场景，e-commerce/news 等其它领域适用性未验证。\n\n## 6. 工业实践意义\n\n对国内做工业搜推的团队，这篇论文有几个高 ROI 借鉴点：\n- **STCA 是 SIM/ETA/TWIN 之后值得新尝试的长序列范式**：不再做先检索后排序的两段拆分，而是端到端用 target-to-history 的 cross-attention 一把建模全段历史。落地时主要风险点是 RPC/显存——RLB 的 m=8 micro-batch 给出了一条务实工程路径。\n- **RLB 的思想可独立复用**：即便不上 STCA，把推荐训练样本按 user 聚合、user-tower 计算共享，是低风险的训练吞吐优化。对召回/粗排/精排几乎都通用。\n- **短训长推**：建议工业团队不要直接在 L=10k 训练（不稳且慢），先 L=512 预训、再切 2k 继续训、推理时跑 10k 即可拿到 ~80% 全量增益。U 形 sparsity 是关键细节。\n- **部署成本约束很硬**：方案虽强但还是要 +17% 总成本买在线 +3.3% Finish。要去说服业务 trade-off 时这是真实数据点。\n- **对社区/UGC 场景**：UGC 用户行为同样长尾稀疏、低活占多数，本文 \"低中活提升最大\" 的结论高度可迁移——长序列建模对低活用户的收益可能是最值得期待的方向。",
+        "content_html": "<h1>Make It Long, Keep It Fast: 抖音 10k 长序列端到端建模深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>工业短视频推荐的核心矛盾是：用户行为历史动辄数千条，但主流系统沿用两段式架构 (检索 + 排序) 截断序列、牺牲端到端优化。Douyin 的目标是让模型直接吃 10k 长度的用户历史，同时不打破生产环境的延迟与算力预算。作者强调 standard Transformer self-attention 的 O(L²) 复杂度让 L=10k 几乎不可行：他们测得 self-attention 在 L=10k 需要 <strong>236.26 GFLOPs</strong>，而本文方法只需 <strong>21.06 GFLOPs</strong>——大约 11 倍差距。</p>\n<p>更本质的洞察是：与 NLP/CV 的 scaling law 不同，推荐系统受 user-generated data 制约，扩 token 数最直接的来源就是用更长的历史。作者通过实验确认了推荐场景下 &quot;性能随序列长度可预测放大&quot; 的 scaling 行为，因此长序列是一条值得投入工程力的扩展轴。这一动机区别于以往工业长序列方案 (SIM/ETA/TWIN) 主要走 &quot;检索精简&quot; 路线——本文要的是 end-to-end 建模整段历史。</p>\n<h2>2. 方法详解</h2>\n<p>整套方案由三块组合而成：STCA + RLB + 长度外推训练。</p>\n<h3>STCA (Stacked Target-to-History Cross Attention)</h3>\n<p>核心是把 history 内部的 self-attention 替换为 target-only 的 cross-attention：target 作为唯一 query 去 attend 历史序列。复杂度从 O(L²·d_h) 降为 O(L·d_h)。多头公式：</p>\n<p>α^(i,j) = softmax((q^(i) W_Q^(i,j) (X̃^(i) W_K^(i,j))^T) / √d_h)  <br>o^(i,j) = α^(i,j) (X̃^(i) W_V^(i,j))</p>\n<p>层间通过 target-conditioned fusion 堆叠——每层输出拼上 target embedding 再用一个可学习投影压回固定维度，从而能堆深做多层信息聚合。一个关键工程优化是先算 attention 权重再扩展 value，避免实例化长度 L 的中间 K/V 张量。</p>\n<h3>RLB (Request Level Batching)</h3>\n<p>传统训练每个 (user, target, label) 是独立样本；RLB 把同一用户的 m 个目标合成一个 micro-batch，<strong>user/history 编码 Φ_user(ℋ) 只算一次</strong>被全部目标复用。Loss 写成 ℒ_u = (1/m) Σ_k ℒ_BCE(ŷ(u, t_k), y_k)，根据期望线性性它依然是经验风险的无偏估计。系统侧收益：L=512–2k 时序列相关带宽下降 <strong>77–84%</strong>，端到端训练吞吐提升 <strong>2.2×</strong>，结合 kernel 优化达到 <strong>5.1×</strong>；可训练最大序列长度提升约 <strong>8×</strong>；Parameter Server CPU 与通信带宽各降 50%。</p>\n<h3>长度外推训练 (Train Sparsely, Infer Densely)</h3>\n<p>训练平均长度 L_train^avg ≈ 2k、推理 L_infer = 10k，外推比 ρ_extra = 5。引入 Sequence Sparsity 指标 SS = L_train^avg / L_train^max（2k/10k ≈ 20%）。训练时按 U 形 Beta 分布在 [L_min, L_max] 内随机截断序列，构造长短混合 curriculum。截断策略对比表明 &quot;保留最近交互&quot; (temporal suffix) 显著优于随机采样。还实现了 ragged 计算 + index-based target-attention kernel，处理变长序列时不引入 padding 浪费。</p>\n<p>训练 curriculum：先在 L=512 预训稳收敛，再切到 L=2048 继续训。模型架构 4 层 STCA、d=256、h=8、FFN expansion ratio r=4、SwiGLU 激活；RLB micro-batch m=8。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>STCA 把推荐长序列的 attention 从 O(L²) 降到 O(L)</strong>：通过用 target 替代 history-token 作 query，避免了 history 内部的二次注意力。该取舍背后的假设是——推荐场景下我们只关心 &quot;history 中哪段对预测当前 target 重要&quot;，并不需要让 history 自己彼此交叉注意。</li>\n<li><strong>RLB 给出了一条 user-tower 摊薄的训练范式</strong>：传统训练把 (u, t, y) 当独立样本浪费了大量 user 侧重复计算；RLB 用统计上的无偏聚合解锁了 ~8× 的最大可训长度上限，同时显著减少 PS 通信和 GPU 显存。</li>\n<li><strong>U-shaped sparsity + 短训长推</strong>：对比 α=10 (skewed)、α=0.5、α=0.02 (U-shaped)，U-shaped 在 +0.21% AUC 上最优，说明 curriculum 里要同时保留 &quot;很短&quot; 和 &quot;很长&quot; 两个尾巴。最重要的是 L_train^avg=2k 时已能拿到全量 10k 训练增益的 ~80%。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<h3>离线主实验 (Table 1)</h3>\n<p>所有 baseline 配 TWIN(10k) 检索后再排序。本文 STCA+RLB+Extrap：</p>\n<table><thead><tr><th>Task</th><th>ΔAUC</th><th>ΔNLL</th></tr></thead><tbody><tr><td>Finish (完播)</td><td>+0.49%</td><td>−1.16%</td></tr><tr><td>Skip (跳过)</td><td>+0.71%</td><td>−1.14%</td></tr><tr><td>Head (头部点击)</td><td>+0.39%</td><td>−1.41%</td></tr></tbody></table>\n<p>显著优于 DIN (+0.19/−0.17)、Transformer (+0.25/−0.46)、HSTU (+0.31/−0.86)，在等 compute 下。</p>\n<h3>Compute-Quality Scaling</h3>\n<p>达到相同 NLL≈0.396：STCA 在 L=10k 只需 21.06 GFLOPs，Transformer 在 L=8k 需要 156.24 GFLOPs（高 7.4 倍）。L=500→10k FLOPs 增长：STCA 19.9×，Transformer 113.6×。</p>\n<h3>外推消融 (Tables 3–5)</h3>\n<ul>\n<li>L_train^max = 2k / 4k / 10k → AUC 增 +0.03% / +0.09% / +0.21%</li>\n<li>L_train^avg = 1.0k / 2.0k / 2.5k → +0.09% / +0.21% / +0.22%（边际收益递减）</li>\n<li>α=10 / 0.5 / 0.02 → +0.08% / +0.11% / +0.21%（U 形最优）</li>\n</ul>\n<h3>在线 A/B (30 天，Table 6)</h3>\n<table><thead><tr><th>指标</th><th>Douyin (全量)</th><th>Douyin Lite (全量)</th></tr></thead><tbody><tr><td>30-day Activeness</td><td>+0.1161%</td><td>+0.1281%</td></tr><tr><td>Stay Time</td><td>+0.9266%</td><td>+0.8467%</td></tr><tr><td>Finish</td><td>+3.3454%</td><td>+4.2275%</td></tr><tr><td>Comment</td><td>+1.5678%</td><td>+2.6167%</td></tr><tr><td>Like</td><td>+1.8282%</td><td>+2.3828%</td></tr></tbody></table>\n<p>低中活用户提升最大——证实长序列建模主要在 &quot;近期行为稀疏&quot; 的用户上拿到信息增量。每用户的内容类目簇数也增 +1.6%，意味着内容多样性轻微提升。</p>\n<h3>架构消融 (Table 2 at L=512)</h3>\n<ul>\n<li>扩稀疏 ID embedding (128→320)：+0.08%</li>\n<li>Sequence FFN 层深 2→4：+0.18% (单点最大增益)</li>\n<li>FFN→SwiGLU：+0.11%</li>\n<li>Heads 8→16：+0.05%</li>\n<li>Query fusion：+0.06%</li>\n<li>Time-delta features：+0.08%</li>\n</ul>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确提到的约束：</p>\n<ol>\n<li>训练稳定性问题：直接在 L=2048 训练不稳定，必须先 L=512 预训。</li>\n<li>总成本权衡：取消 TWIN(10k) 检索后 GPU +33%、CPU −16%，<strong>净成本 +17%</strong>——作者称 &quot;在在线增益面前可接受&quot; 但仍是真实开销。</li>\n<li>位置编码细节未充分披露，长序列外推超过 10k 的行为未讨论。</li>\n<li>RLB 的同 user 内 target 相关性虽不破坏期望无偏性，但对方差/收敛速度的影响未深入分析。</li>\n<li>实验完全在 Douyin 短视频场景，e-commerce/news 等其它领域适用性未验证。</li>\n</ol>\n<h2>6. 工业实践意义</h2>\n<p>对国内做工业搜推的团队，这篇论文有几个高 ROI 借鉴点：</p>\n<ul>\n<li><strong>STCA 是 SIM/ETA/TWIN 之后值得新尝试的长序列范式</strong>：不再做先检索后排序的两段拆分，而是端到端用 target-to-history 的 cross-attention 一把建模全段历史。落地时主要风险点是 RPC/显存——RLB 的 m=8 micro-batch 给出了一条务实工程路径。</li>\n<li><strong>RLB 的思想可独立复用</strong>：即便不上 STCA，把推荐训练样本按 user 聚合、user-tower 计算共享，是低风险的训练吞吐优化。对召回/粗排/精排几乎都通用。</li>\n<li><strong>短训长推</strong>：建议工业团队不要直接在 L=10k 训练（不稳且慢），先 L=512 预训、再切 2k 继续训、推理时跑 10k 即可拿到 ~80% 全量增益。U 形 sparsity 是关键细节。</li>\n<li><strong>部署成本约束很硬</strong>：方案虽强但还是要 +17% 总成本买在线 +3.3% Finish。要去说服业务 trade-off 时这是真实数据点。</li>\n<li><strong>对社区/UGC 场景</strong>：UGC 用户行为同样长尾稀疏、低活占多数，本文 &quot;低中活提升最大&quot; 的结论高度可迁移——长序列建模对低活用户的收益可能是最值得期待的方向。</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2601.05513",
+      "title": "LEAPS: An LLM-Empowered Adaptive Plugin in Taobao AI Search",
+      "url": "https://arxiv.org/abs/2601.05513",
+      "authors": "Lei Wang, Jinhang Wu, Zhibin Wang, Biye Li",
+      "company": [
+        "Alibaba",
+        "Taobao"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 4.3,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.3,
+      "summary": "针对 LLM 时代用户搜索从关键词转向自然语言多约束查询的趋势，本文提出 LEAPS——在淘宝 AI 搜索现有架构两端附加 LLM 插件，采用 'Broaden-and-Refine' 范式。上游 Query Expander 通过逆向数据增强、后验知识 SFT、多样性感知 RL 三阶段训练，对原始 query 生成自适应互补的查询组合最大化候选集；下游 Relevance Verifier 综合多源信号过滤噪声召回。LEAPS 已在淘宝 AI 搜索线上部署，相比基线显著缓解了精确 NL query 零结果与简化 query 噪声多两种极端。",
+      "key_insight": "LEAPS 的 Broaden-and-Refine 思路对 UGC 社区搜索极具参考价值：与其重写搜索主链路，不如在两端各挂 LLM 插件——上游做 query 多样化扩展提高召回覆盖、下游做语义级精排过滤兜底相关性。三阶段训练策略 (逆向数据增强→后验 SFT→多样性 RL) 给出了一条可落地的 LLM query 扩展模型训练范式，避免了直接 zero-shot 调用 LLM 的高成本与不稳定。Relevance Verifier 也提示我们：将 LLM 作为下游过滤器比作为主排序器更易工程化。",
+      "deep_reading": {
+        "paper_id": "arxiv:2601.05513",
+        "title": "LEAPS: An LLM-Empowered Adaptive Plugin in Taobao AI Search",
+        "status": "completed",
+        "content": "# LEAPS: An LLM-Empowered Adaptive Plugin in Taobao AI Search 深度解读\n\n## 1. 问题与动机\n\nLLM 时代用户搜索行为正从离散关键词转向自然语言多约束 query。典型案例：『我想买亚麻男士西装，500-800 元，适合海滩婚礼，不要纯黑、不要大花纹』——5 个并列约束。现有电商搜索面临两难：精确 NL query 频繁触发零结果，强行简化 query 又会返回大量噪声逼用户自己筛。LEAPS 一个月线上 A/B 显示 Sufficient Result Rate (首屏≥10 个相关 item 的概率) 从 77.0% 提升到 91.4%——也就是说基线状态下接近 1/4 的搜索请求其实首页相关内容不足。该问题在淘宝月活数亿的规模下意味着大量用户被劣质结果劝退。\n\n业界已有方案如 Query2Doc (查询扩展)、MiniELM (端到端语义召回)、ICL LLM Pipeline (上下文学习重写) 等都尝试过用 LLM 改造搜索，但要么对复杂多约束 query 仍乏力，要么改造主搜引擎成本过高。LEAPS 选择走 \"non-intrusive\" 路线——把现有搜索引擎当黑盒，只在两端各挂一个 LLM 插件。\n\n## 2. 方法详解\n\n整体框架是 Broaden-and-Refine：上游 Query Expander 把单 query 扩展为多个互补 query 子集合并到候选池，下游 Relevance Verifier 用多源信号 + CoT 推理逐条裁剪。\n\n### Query Expander (ℰ) 三阶段训练\n\n**Stage 1 - Inverse Data Augmentation**：从精选商品 title 反向生成口语化 query（用 DeepSeek-R1 合成符合淘宝真实用户语料的表达），按标准 NLL warmup 模型：\nℒ_align(θ) = -E_(x,y)~D_align Σ log π(y_i | y_0:i-1, x; θ)\n作用是给模型注入电商 query 的领域语言。\n\n**Stage 2 - Posterior-Knowledge SFT**：假设 query 的多个属性有层次重要性，并非每个都是核心约束。系统对原 query 做属性置换生成多个 candidate 重写、提交给搜索引擎、用 Verifier 度量每个重写返回的相关商品占比，取 top-k=4 个最佳作为 SFT 目标 (Algorithm 1)。500-query 审计显示 mocked 与真实 user-profile 排名的 Spearman ρ≈0.96，表明用户侧特征对 \"重写质量评估\" 几乎正交，证明该 posterior 信号可信。\n\n**Stage 3 - Diversity-Aware RL (GRPO)**：单条 SFT 只能优化单个重写，无法刻画 \"一组重写的集合覆盖力\"。Effective Relevance reward 通过去重直接惩罚冗余：\nR_eff = |I_r| / N，其中 N=100 是每个 query 的检索预算，I_r 是 Verifier 判定相关且去重后的商品集合。RL 训练限制 R_eff ∈ [0.1, 0.9] 以稳定，group size 8，KL β=0.04。\n\n### Relevance Verifier (𝒱)\n\n多源数据融合：商品页 OCR 文本、精选高质量评论、价格、销量、店铺/品牌信誉、用户地理位置——一起组装成 \"重构粒度上下文\"。\n\nCoT 推理内化：多指令 SFT 用 ~800k query-item pair（按四档复杂度分层采样）训练 Verifier 预测二分类 relevance + 简短理由。双标 + 分歧裁定 (分歧率 ~8%) 在 2000 对审计上达到 Cohen's κ=0.81。CoT rationales 由 DeepSeek-R1 在不暴露 ground-truth label 的情况下生成，保留的 rationale 中 ≥92% 与 label 一致。一个 5000 对的审计显示 Verifier 与人工标注的一致性 ~95%，κ=0.88。\n\n## 3. 核心技术贡献\n\n1. **Posterior-Knowledge SFT 替代传统 RL 探索冷启动**：用引擎+Verifier 反馈替代昂贵的 RL 试错冷启动，ablation 显示这是 Expander 三阶段中最关键 (去掉 -0.14 F1，是单点最大下降)。\n2. **Effective Relevance reward 强迫覆盖**：相比按重写单独算 reward，去重后归一化的 R_eff 强制 RL 优化 query 集合的边际信息增益，与传统 GRPO 在 LLM RLHF 中的范式不同。\n3. **黑盒搜索引擎假设的工程价值**：LEAPS 只通过 query 提交 + 结果聚合与底层引擎交互，整个方案 plug-and-play，跨不同 backend (BM25/embedding/hybrid) 均可适配——这对任何想给现有大型搜索系统加 LLM 增强的团队是关键设计决策。\n4. **多源 + CoT 的 Verifier**：相比 raw LLM-as-judge 直接打分，融入价格/销量/OCR/评论 + CoT rationale 让 verifier 在工业混杂噪声下大幅提升精度 (去掉 multi-source 降 0.10 F1，去掉 CoT 降 0.09 F1)。\n\n## 4. 实验结果分析\n\n### 离线主实验\n\n**Taobao 内部** (production retrieval backend):\n- Production Baseline: P@20=0.62, R@20=0.58, F1@20=0.60\n- LEAPS: P@20=0.79, R@20=0.82, F1@20=0.81 (+19 pts F1@20)\n\n**ESCI 公开** (BM25 + BGE hybrid):\n- Baseline: 0.55 / 0.51 / 0.53\n- LEAPS: 0.72 / 0.74 / 0.73 (+20 pts F1)\n\nBaselines: Query2Doc 0.59 / MiniELM 0.62 / ICL LLM 0.69 / Claude Opus 4 0.72。LEAPS 显著超过用 Claude Opus 4 当 reranker 的强基线。\n\n### 复杂度分层 (Table by constraint count)\n\n| 方法 | Simple=1 | Moderate=2 | Complex=3 | Heavy≥4 |\n|------|----------|------------|-----------|---------|\n| Raw | 0.79 | 0.64 | 0.47 | 0.32 |\n| MiniELM | 0.81 | 0.67 | 0.52 | 0.38 |\n| Claude Opus 4 | 0.85 | 0.75 | 0.64 | 0.52 |\n| **LEAPS** | **0.86** | **0.82** | **0.77** | **0.70** |\n\n亮点：在 ≥4 个约束的 Heavy 段，LEAPS 比 Raw 翻倍 (0.32→0.70)，比 Claude Opus 4 仍高 18pt。\n\n### Ablation\nExpander-only F1=0.61 (R 主导)；Verifier-only F1=0.56 (P 主导)——两者缺一不可。\n- w/o Stage 2 Posterior SFT: F1=0.67 (-0.14, 最大单点下降)\n- w/o Stage 3 RL: 0.72 (-0.09)\n- w/o Stage 1 Aug: 0.75 (-0.06)\n- w/o CoT: 0.72 (-0.09)\n- w/o multi-source: 0.71 (-0.10)\n\n### 在线 A/B (1 个月，July 2025)\n- CTR: 9.4% → 11.9% (+27.1%)\n- EPS: 11.3 → 12.8 (+13.3%)\n- CPS: 0.82 → 1.18 (+43.9%)\n- SRR: 77.0% → 91.4% (+18.7%)\n- 全部 p<0.001。200 个多约束 query 的 production 审计：LEAPS 在 84% 的 case 上首页完全合规 (vs 控制组 41%)。\n\n## 5. 局限与未来方向\n\n作者明确指出：\n1. **重写权重平均化**：N=100 检索预算在多个重写间均等分配，未来应做 confidence-aware allocation——置信度高的重写分配更多 slot。\n2. **稀有实体兜底**：在含罕见实体的 idiosyncratic query 上仍有 low-result 残留，建议联合 retrieval-side 的 index expansion。\n3. （未深入披露）调用 LLM 的成本：双 Qwen3-14B 推理叠加在每次搜索请求上，对长尾 QPS 与冷启动延迟的影响有限说明。\n4. 在 ESCI 这种英文公开集与 Taobao 中文电商之间的迁移性未充分实验。\n\n## 6. 工业实践意义\n\n对要把 LLM 引入工业搜索/推荐的团队：\n- **Plug-in 思路比改主搜引擎更落地**：LEAPS 的 Broaden-and-Refine 是低风险高 ROI 范式，搜索引擎几乎不动，所有 LLM 创新都在两端插件里——可独立迭代、独立回滚、独立扩缩容。对老牌成熟系统尤为友好。\n- **Posterior-Knowledge SFT 是个被低估的范式**：与其纯 RL 探索，不如先用既有 ranker/Verifier 的反馈做 SFT 冷启，再切 RL 提升 ceiling。这套两段范式对 query rewrite、生成式 retrieval、relevance modeling 都通用。\n- **多源 + CoT Verifier 工业可复用**：直接照搬到内容/UGC 平台——价格/销量换成内容质量分、收藏数、作者权威度等，CoT rationale 既提精度又可日志化便于人工 debug。\n- **生产部署细节**：双 14B 模型 INT8 + TP=2，P99 ~290ms，峰值 QPS ~150——给团队部署 LLM-in-the-loop 搜索一组实参考。Verifier 用 ~800k 高质量人工标注数据是关键投入，没这个数据规模性能掉得很厉害。\n- **对社区/UGC 搜索**：UGC query 经常更口语化、约束更分散，LEAPS 在 Heavy≥4 约束上 0.32→0.70 的提升暗示这套范式恰恰击中 UGC 搜索的痛点。Verifier 的多源信号在 UGC 场景可换成内容质量、互动数据、作者画像等，迁移直接。",
+        "content_html": "<h1>LEAPS: An LLM-Empowered Adaptive Plugin in Taobao AI Search 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>LLM 时代用户搜索行为正从离散关键词转向自然语言多约束 query。典型案例：『我想买亚麻男士西装，500-800 元，适合海滩婚礼，不要纯黑、不要大花纹』——5 个并列约束。现有电商搜索面临两难：精确 NL query 频繁触发零结果，强行简化 query 又会返回大量噪声逼用户自己筛。LEAPS 一个月线上 A/B 显示 Sufficient Result Rate (首屏≥10 个相关 item 的概率) 从 77.0% 提升到 91.4%——也就是说基线状态下接近 1/4 的搜索请求其实首页相关内容不足。该问题在淘宝月活数亿的规模下意味着大量用户被劣质结果劝退。</p>\n<p>业界已有方案如 Query2Doc (查询扩展)、MiniELM (端到端语义召回)、ICL LLM Pipeline (上下文学习重写) 等都尝试过用 LLM 改造搜索，但要么对复杂多约束 query 仍乏力，要么改造主搜引擎成本过高。LEAPS 选择走 &quot;non-intrusive&quot; 路线——把现有搜索引擎当黑盒，只在两端各挂一个 LLM 插件。</p>\n<h2>2. 方法详解</h2>\n<p>整体框架是 Broaden-and-Refine：上游 Query Expander 把单 query 扩展为多个互补 query 子集合并到候选池，下游 Relevance Verifier 用多源信号 + CoT 推理逐条裁剪。</p>\n<h3>Query Expander (ℰ) 三阶段训练</h3>\n<p><strong>Stage 1 - Inverse Data Augmentation</strong>：从精选商品 title 反向生成口语化 query（用 DeepSeek-R1 合成符合淘宝真实用户语料的表达），按标准 NLL warmup 模型：<br>ℒ_align(θ) = -E_(x,y)~D_align Σ log π(y_i | y_0:i-1, x; θ)<br>作用是给模型注入电商 query 的领域语言。</p>\n<p><strong>Stage 2 - Posterior-Knowledge SFT</strong>：假设 query 的多个属性有层次重要性，并非每个都是核心约束。系统对原 query 做属性置换生成多个 candidate 重写、提交给搜索引擎、用 Verifier 度量每个重写返回的相关商品占比，取 top-k=4 个最佳作为 SFT 目标 (Algorithm 1)。500-query 审计显示 mocked 与真实 user-profile 排名的 Spearman ρ≈0.96，表明用户侧特征对 &quot;重写质量评估&quot; 几乎正交，证明该 posterior 信号可信。</p>\n<p><strong>Stage 3 - Diversity-Aware RL (GRPO)</strong>：单条 SFT 只能优化单个重写，无法刻画 &quot;一组重写的集合覆盖力&quot;。Effective Relevance reward 通过去重直接惩罚冗余：<br>R_eff = |I_r| / N，其中 N=100 是每个 query 的检索预算，I_r 是 Verifier 判定相关且去重后的商品集合。RL 训练限制 R_eff ∈ [0.1, 0.9] 以稳定，group size 8，KL β=0.04。</p>\n<h3>Relevance Verifier (𝒱)</h3>\n<p>多源数据融合：商品页 OCR 文本、精选高质量评论、价格、销量、店铺/品牌信誉、用户地理位置——一起组装成 &quot;重构粒度上下文&quot;。</p>\n<p>CoT 推理内化：多指令 SFT 用 ~800k query-item pair（按四档复杂度分层采样）训练 Verifier 预测二分类 relevance + 简短理由。双标 + 分歧裁定 (分歧率 ~8%) 在 2000 对审计上达到 Cohen&#x27;s κ=0.81。CoT rationales 由 DeepSeek-R1 在不暴露 ground-truth label 的情况下生成，保留的 rationale 中 ≥92% 与 label 一致。一个 5000 对的审计显示 Verifier 与人工标注的一致性 ~95%，κ=0.88。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>Posterior-Knowledge SFT 替代传统 RL 探索冷启动</strong>：用引擎+Verifier 反馈替代昂贵的 RL 试错冷启动，ablation 显示这是 Expander 三阶段中最关键 (去掉 -0.14 F1，是单点最大下降)。</li>\n<li><strong>Effective Relevance reward 强迫覆盖</strong>：相比按重写单独算 reward，去重后归一化的 R_eff 强制 RL 优化 query 集合的边际信息增益，与传统 GRPO 在 LLM RLHF 中的范式不同。</li>\n<li><strong>黑盒搜索引擎假设的工程价值</strong>：LEAPS 只通过 query 提交 + 结果聚合与底层引擎交互，整个方案 plug-and-play，跨不同 backend (BM25/embedding/hybrid) 均可适配——这对任何想给现有大型搜索系统加 LLM 增强的团队是关键设计决策。</li>\n<li><strong>多源 + CoT 的 Verifier</strong>：相比 raw LLM-as-judge 直接打分，融入价格/销量/OCR/评论 + CoT rationale 让 verifier 在工业混杂噪声下大幅提升精度 (去掉 multi-source 降 0.10 F1，去掉 CoT 降 0.09 F1)。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<h3>离线主实验</h3>\n<p><strong>Taobao 内部</strong> (production retrieval backend):</p>\n<ul>\n<li>Production Baseline: P@20=0.62, R@20=0.58, F1@20=0.60</li>\n<li>LEAPS: P@20=0.79, R@20=0.82, F1@20=0.81 (+19 pts F1@20)</li>\n</ul>\n<p><strong>ESCI 公开</strong> (BM25 + BGE hybrid):</p>\n<ul>\n<li>Baseline: 0.55 / 0.51 / 0.53</li>\n<li>LEAPS: 0.72 / 0.74 / 0.73 (+20 pts F1)</li>\n</ul>\n<p>Baselines: Query2Doc 0.59 / MiniELM 0.62 / ICL LLM 0.69 / Claude Opus 4 0.72。LEAPS 显著超过用 Claude Opus 4 当 reranker 的强基线。</p>\n<h3>复杂度分层 (Table by constraint count)</h3>\n<table><thead><tr><th>方法</th><th>Simple=1</th><th>Moderate=2</th><th>Complex=3</th><th>Heavy≥4</th></tr></thead><tbody><tr><td>Raw</td><td>0.79</td><td>0.64</td><td>0.47</td><td>0.32</td></tr><tr><td>MiniELM</td><td>0.81</td><td>0.67</td><td>0.52</td><td>0.38</td></tr><tr><td>Claude Opus 4</td><td>0.85</td><td>0.75</td><td>0.64</td><td>0.52</td></tr><tr><td><strong>LEAPS</strong></td><td><strong>0.86</strong></td><td><strong>0.82</strong></td><td><strong>0.77</strong></td><td><strong>0.70</strong></td></tr></tbody></table>\n<p>亮点：在 ≥4 个约束的 Heavy 段，LEAPS 比 Raw 翻倍 (0.32→0.70)，比 Claude Opus 4 仍高 18pt。</p>\n<h3>Ablation</h3>\n<p>Expander-only F1=0.61 (R 主导)；Verifier-only F1=0.56 (P 主导)——两者缺一不可。</p>\n<ul>\n<li>w/o Stage 2 Posterior SFT: F1=0.67 (-0.14, 最大单点下降)</li>\n<li>w/o Stage 3 RL: 0.72 (-0.09)</li>\n<li>w/o Stage 1 Aug: 0.75 (-0.06)</li>\n<li>w/o CoT: 0.72 (-0.09)</li>\n<li>w/o multi-source: 0.71 (-0.10)</li>\n</ul>\n<h3>在线 A/B (1 个月，July 2025)</h3>\n<ul>\n<li>CTR: 9.4% → 11.9% (+27.1%)</li>\n<li>EPS: 11.3 → 12.8 (+13.3%)</li>\n<li>CPS: 0.82 → 1.18 (+43.9%)</li>\n<li>SRR: 77.0% → 91.4% (+18.7%)</li>\n<li>全部 p&lt;0.001。200 个多约束 query 的 production 审计：LEAPS 在 84% 的 case 上首页完全合规 (vs 控制组 41%)。</li>\n</ul>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出：</p>\n<ol>\n<li><strong>重写权重平均化</strong>：N=100 检索预算在多个重写间均等分配，未来应做 confidence-aware allocation——置信度高的重写分配更多 slot。</li>\n<li><strong>稀有实体兜底</strong>：在含罕见实体的 idiosyncratic query 上仍有 low-result 残留，建议联合 retrieval-side 的 index expansion。</li>\n<li>（未深入披露）调用 LLM 的成本：双 Qwen3-14B 推理叠加在每次搜索请求上，对长尾 QPS 与冷启动延迟的影响有限说明。</li>\n<li>在 ESCI 这种英文公开集与 Taobao 中文电商之间的迁移性未充分实验。</li>\n</ol>\n<h2>6. 工业实践意义</h2>\n<p>对要把 LLM 引入工业搜索/推荐的团队：</p>\n<ul>\n<li><strong>Plug-in 思路比改主搜引擎更落地</strong>：LEAPS 的 Broaden-and-Refine 是低风险高 ROI 范式，搜索引擎几乎不动，所有 LLM 创新都在两端插件里——可独立迭代、独立回滚、独立扩缩容。对老牌成熟系统尤为友好。</li>\n<li><strong>Posterior-Knowledge SFT 是个被低估的范式</strong>：与其纯 RL 探索，不如先用既有 ranker/Verifier 的反馈做 SFT 冷启，再切 RL 提升 ceiling。这套两段范式对 query rewrite、生成式 retrieval、relevance modeling 都通用。</li>\n<li><strong>多源 + CoT Verifier 工业可复用</strong>：直接照搬到内容/UGC 平台——价格/销量换成内容质量分、收藏数、作者权威度等，CoT rationale 既提精度又可日志化便于人工 debug。</li>\n<li><strong>生产部署细节</strong>：双 14B 模型 INT8 + TP=2，P99 ~290ms，峰值 QPS ~150——给团队部署 LLM-in-the-loop 搜索一组实参考。Verifier 用 ~800k 高质量人工标注数据是关键投入，没这个数据规模性能掉得很厉害。</li>\n<li><strong>对社区/UGC 搜索</strong>：UGC query 经常更口语化、约束更分散，LEAPS 在 Heavy≥4 约束上 0.32→0.70 的提升暗示这套范式恰恰击中 UGC 搜索的痛点。Verifier 的多源信号在 UGC 场景可换成内容质量、互动数据、作者画像等，迁移直接。</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.11447",
+      "title": "Conditional Memory Enhanced Item Representation for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2605.11447",
+      "authors": "Ziwei Liu, Yejing Wang, Shengyu Zhou, Xinhang Li, Xiangyu Zhao",
+      "company": [
+        "City University of Hong Kong"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.3,
+      "summary": "生成式推荐 (GR) 通过自回归生成 Semantic ID (SID) 预测目标 item。现有 item 级表征要么直接合并 SID-token embedding 致信息损失加剧，要么靠外部网络注入语义但破坏 SID 结构证据。本文提出 Conditional Memory Enhanced Item Representation：构造一个条件记忆库，根据 SID 上下文动态检索并融合记忆向量，既保留 SID 结构性，也补充外部语义信息。多个公开 benchmark 上 Recall@K、NDCG@K 较强基线 (TIGER 等) 均有稳定提升，量化 ID 冲突率下降。",
+      "key_insight": "生成式推荐里 SID 是双刃剑：结构性带来生成可行性，但量化损失与 ID collision 直接打掉表征上限。'条件记忆' 思路本质是把 item 表征拆成 SID 骨架 + 上下文检索补丁，既给生成器明确的 token 路径，又能在 token 共享场景动态补全语义。对于做生成式推荐/检索的团队，这套范式可以直接套到现有 TIGER/HSTU 体系——不改 SID 编码器，只在 decoder 端的 item embedding 注入一个轻量 memory 检索头，是低风险高 ROI 的方向。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.11118",
+      "title": "A Cascaded Generative Approach for e-Commerce Recommendations",
+      "url": "https://arxiv.org/abs/2605.11118",
+      "authors": "Moein Hasani, Hamidreza Shahidi, Trace Levinson, Yuan Zhong, Guanghua Shu, Vinesh Gudla, Tejaswi Tenneti",
+      "company": [
+        "Walmart"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 4.15,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.3,
+      "summary": "电商个性化货架传统上由静态主题、召回、点级排序组件拼装而成，限制了页面语义连贯性与动态个性化。本文提出 Cascaded Merchandising 框架，将货架构建分解为两个生成任务：(i) placement-level theme generation 生成模块主题，(ii) per-placement constrained keyword generation 驱动商品召回。通过 teacher-student 微调，使开源小模型在生产延迟/成本约束下逼近闭源大模型表现，离线 A/B 显示主题相关性、CTR 等指标均显著优于传统流水线。",
+      "key_insight": "本文用 '生成式调度' 替代静态规则的思路对社区/电商内容化场景有强启示：复杂排序问题不一定要在排序层解，把主题/坑位/召回 query 都看作可生成的中间产物，让 LLM 在更高层做 page-level 规划，下游召回器只负责执行。Teacher-student 蒸馏路径解决了工业落地的成本痛点——闭源大模型蒸到开源小模型基本不掉点。该框架对 UGC 社区的多坑位混排、模块化推荐 (问答/帖子/视频混合) 都可借鉴。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.11553",
+      "title": "TwiSTAR: Think Fast, Think Slow, Then Act — Generative Recommendation with Adaptive Reasoning",
+      "url": "https://arxiv.org/abs/2605.11553",
+      "authors": "Shiteng Cao, Kaian Jiang, Yunlong Gong, Zhiheng Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.05,
+      "summary": "基于 Semantic ID 的生成式推荐当前要么对所有用户都用 fast 直接生成 (准确率不足) 要么都用 slow CoT 推理 (延迟成本高)。TwiSTAR 提出 'Think Fast, Think Slow, Then Act' 框架：LLM 配备三个工具——快速 SID 召回器、轻量候选 ranker、显式生成 rationale 的 slow reasoning 模型，由 planner 根据用户序列难度自适应分配推理力度。同时把 item-to-item 协同知识转写成自然语言注入 slow 模型作为协同常识。在公开 benchmark 上 NDCG@10 较纯 fast/纯 slow 基线均提升，平均推理成本仅为纯 slow 的约 40%。",
+      "key_insight": "工业推荐落地 LLM 推理最大的两个矛盾是准确率与延迟，TwiSTAR 给出了一个工程性极强的折衷：用 planner 把简单/难样本分桶，让大部分流量走 fast 路径，难样本才升级到 slow CoT。这套思路完全可以套到 RAG/LLM 排序/agentic search 等场景，是 production LLM serving 通用范式。另外把协同信号转成自然语言喂 slow 模型作为 commonsense 的做法值得借鉴——比纯 prompt user-item ID 更易让 LLM 利用其先验知识。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.11874",
+      "title": "RecRM-Bench: Benchmarking Multidimensional Reward Modeling for Agentic Recommender Systems",
+      "url": "https://arxiv.org/abs/2605.11874",
+      "authors": "Wenwen Zeng, Jinhui Zhang, Hao Chen, Zhaoyu Hu, Yongqi Liang, Jiajun Chai, Dengcan Liu, Zhenfeng Liu, Shurui Yan, Minglong Xue, Xiaohan Wang, Wei Lin, Guojun Yin",
+      "company": [
+        "Meituan"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "summary": "当前 agentic 推荐系统 (LLM agent 做推荐) 大量依赖单维度终态奖励 (用户最终交互)，忽视了指令遵循、复杂意图理解等中间能力。本文提出 RecRM-Bench：迄今规模最大的 agentic 推荐 RM 基准，覆盖 100 万+ 条目，四大评估维度——指令遵循、事实性、用户意图理解、推荐质量，并提供细粒度子任务划分。作者基于该 benchmark 全面对比了多种开源/闭源 LLM-as-judge 与训练好的 RM 模型，揭示主流 LLM 在多步意图分解与显式偏好捕捉上的明显短板。",
+      "key_insight": "对要把 LLM agent 落到推荐/搜索上的团队，这套多维 reward 设计直接对应工业关注的几条主线：是否听话执行业务规则、是否事实正确、是否真正理解意图、最终推荐质量。从单维度 click reward 升级到多维 RM，是 agentic RL 训练范式的必经一步。这套 benchmark 也可以作为内部 LLM 评估的 reference，避免只看离线 NDCG 而忽视 instruction-following 等关键工业能力。Meituan 的工业背景说明该问题在国内搜推团队已是真实痛点。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.11662",
+      "title": "HSUGA: LLM-Enhanced Recommendation with Hierarchical Semantic Understanding and Group-Aware Alignment",
+      "url": "https://arxiv.org/abs/2605.11662",
+      "authors": "Guorui Li, Dugang Liu, Lei Li, Xing Tang, Zhong Ming",
+      "company": [
+        "FiT",
+        "Tencent"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.0,
+      "summary": "LLM 增强的序列推荐存在两个痛点：长序列直接喂 LLM 难以可靠抽取偏好；对所有用户用同一套 embedding 利用策略忽视活跃度差异。HSUGA 引入两个轻量插件：HSU (Hierarchical Semantic Understanding) 把长序列分段两阶段挖掘偏好，先局部偏好再聚合全局偏好；GAA (Group-Aware Alignment) 按用户活跃度分群，对不同群组采用差异化的 LLM 语义 embedding 利用策略。在 Amazon、ML-1M 等公开数据集上 NDCG/HR 相比 LLM4Rec 强基线稳定提升，对低活用户提升尤为明显。",
+      "key_insight": "工业场景里用户活跃度差异极大 (社区/电商都是)，HSUGA 提示我们 'embedding 一刀切利用' 是典型次优做法。Group-Aware Alignment 思路可以直接拷贝到现有 LLM-as-encoder 体系——按活跃度分桶并训练不同的 adapter 是低成本高收益。HSU 的分段递归式偏好挖掘对长序列场景也比直接拼接喂 LLM 更稳：先短段抽取再聚合，与 RAG 'map-reduce' 思路一脉相承，对 token 限制紧的小模型尤为友好。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.11433",
+      "title": "FedMM: Federated Collaborative Signal Quantization for Multi-Market CTR Prediction",
+      "url": "https://arxiv.org/abs/2605.11433",
+      "authors": "Jun Zhang, Dugang Liu, Xing Tang, Xiuqiang He, Zhong Ming",
+      "company": [
+        "FiT",
+        "Tencent"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.85,
+      "summary": "跨国/跨市场推荐 (MMR) 通常用预训练+微调，忽略市场间隐私；联邦学习虽保隐私但 ID 空间在市场间不共享，传统 embedding 聚合失效。FedMM 提出基于离散 codebook 的联邦协同信号量化方法：每个市场把本地交互信号量化为共享 codebook 的离散 token 进行隐私安全聚合，不直接传 ID embedding。在多个 CTR benchmark 上 FedMM 在保护隐私前提下接近中心化训练性能，相比传统 FedAvg 在异质市场上 AUC 显著提升。",
+      "key_insight": "Codebook 量化的本质是给跨域/跨场景特征建立一个共享的 'discrete vocabulary'，这个思路在生成式推荐 (SID)、长尾 ID 处理、多场景多任务推荐里都已被反复验证。FedMM 把它用到联邦多市场是一个干净的 instantiation。对国内做多业态 (外卖/酒旅/到店/即时零售) 互通的搜推团队特别有借鉴价值——不必直接共享原始 user/item ID，只共享 codebook token 既能跨场景迁移又能满足合规。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2605.11145",
+      "title": "Debiasing Message Passing to Mitigate Popularity Bias in GNN-based Collaborative Filtering",
+      "url": "https://arxiv.org/abs/2605.11145",
+      "authors": "Md Aminul Islam, Ahmed Sayeed Faruk, Sourav Medya, Elena Zheleva",
+      "company": [
+        "University of Illinois Chicago"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.85,
+      "summary": "基于 GNN 的协同过滤 (LightGCN 等) 受流行度偏差影响严重——交互分布偏斜叠加多阶消息传递放大热门 item 影响、抑制长尾。已有重加权/正则/因果/后处理方案在 GNN 设定下效果有限，因为它们没有直接对抗聚合中传播的偏差。本文提出 DPAA：将自适应的 embedding 感知交互加权直接嵌入消息聚合层，根据当前 embedding 估计动态计算去偏权重，避免静态启发式。在 LastFM、Yelp、Gowalla 等数据集上长尾 item Recall 显著提升，head item 性能基本不掉。",
+      "key_insight": "GNN 推荐工业系统普遍存在 'embedding 越训越向热门收敛' 的问题，本文给出了一个原生在消息传递阶段做去偏的范式，比离线重采样或重排更彻底。Embedding-aware 动态加权说明：去偏不能只看交互频次，要结合当前模型对 item 的 'familiarity' 自适应调整。对社区/UGC 场景尤其有意义——长尾内容曝光决定生态健康，把去偏从后置规则下沉到模型训练目标是更可持续的方向。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2605.11272",
+      "title": "Localization Boosting for Growth Markets: Mitigating Cross-Locale Behavioral Bias in Learning-to-Rank",
+      "url": "https://arxiv.org/abs/2605.11272",
+      "authors": "Suryaa Veerabathiran Seran, Ashwin Naresh Kumar, Tracy Holloway King, Jing Zheng",
+      "company": [
+        "Adobe"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.85,
+      "summary": "Adobe Express 国际化扩张中遇到 cross-locale 行为偏差：仅用 click 信号训练 LTR 会把美国本地热门模板过曝到非美 locale。本文系统证明 click-only 训练会压制语义本地化特征，单纯加 VLM 相关性标签可改善语义对齐但无法保住本地内容可见度。作者提出多目标 LTR 框架：行为监督 + VLM 派生相关性 + locale-aware boosting，5 个 locale 上同时提升相关性与本地内容稳定曝光。",
+      "key_insight": "对要做多市场/多区域分发的产品 (社区跨城、电商跨国、内容跨语种)，这套框架揭示了一条隐蔽风险：单一行为信号 (click) 会自动放大主流市场偏好，造成长尾市场内容能见度恶化、最终拖低用户体验。'行为 + 语义 + locale boosting' 三层目标分解给出了直接可复用的多目标设计——其中 VLM/LLM 派生的标注信号已逐渐成为工业 LTR 标配。对社区搜索而言：地域、品类、新老用户等都是潜在的 'locale'，单一全局训练会自动 over-serve 头部。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:python-telegramBot/ai-auto-trading",
+      "title": "ai-auto-trading: AI trading bot crypto LLM agent quantitative trading automated trading algorithmic trading Binance Gate.io TypeScript Node.js VoltAgent crypto bot risk management multi-strategy",
+      "url": "https://github.com/python-telegramBot/ai-auto-trading",
+      "source": "github",
+      "description": "AI trading bot crypto LLM agent quantitative trading automated trading algorithmic trading Binance Gate.io TypeScript Node.js VoltAgent crypto bot risk management multi-strategy",
+      "language": "TypeScript",
+      "stars": 65,
+      "created_at": "2026-05-13"
+    },
+    {
+      "rank": 2,
+      "id": "github:notoriouslab/vault-curate",
+      "title": "vault-curate: Semantic search for Obsidian using local Ollama embeddings",
+      "url": "https://github.com/notoriouslab/vault-curate",
+      "source": "github",
+      "description": "Semantic search for Obsidian using local Ollama embeddings",
+      "language": "TypeScript",
+      "stars": 89,
+      "created_at": "2026-04-04"
+    },
+    {
+      "rank": 3,
+      "id": "github:alibaba-multimodal-industrial-ai/IndustryBench",
+      "title": "IndustryBench: A multi-lingual benchmark for evaluating industrial domain knowledge of LLMs.",
+      "url": "https://github.com/alibaba-multimodal-industrial-ai/IndustryBench",
+      "source": "github",
+      "description": "A multi-lingual benchmark for evaluating industrial domain knowledge of LLMs.",
+      "language": "Python",
+      "stars": 33,
+      "created_at": "2026-05-12"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "Hard, practical, end-to-end evaluation for AI agents — in the wild. 📌 Overview WildClawBench is an agent benchmark that tests what actually matters: can an AI agent do real work, end-to-end, without hand-holding? We drop agents into a live OpenClaw environment — the same open-sou; tags: task_categories:visual-question-answering, task_categories:image-text-to-text, task_categories:question-answering, language:en, language:zh, license:mit, size_categories:n<1K, region:us",
+      "language": "dataset",
+      "stars": 59,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:Qwen/WebWorldData",
+      "title": "Qwen/WebWorldData",
+      "url": "https://huggingface.co/datasets/Qwen/WebWorldData",
+      "source": "huggingface",
+      "description": "WebWorldData 🌐 Overview WebWorldData is a large-scale dataset of 1.06M web interaction trajectories collected from the open web, designed for training browser world models. It is the training data behind the WebWorld model series. Each trajectory consists of sequences of (state, ; tags: task_categories:text-generation, language:en, language:zh, license:apache-2.0, size_categories:100K<n<1M, format:json, modality:text, library:datasets",
+      "language": "dataset",
+      "stars": 19,
+      "created_at": "2026-02-13"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:zai-org/GLM-5.1",
+      "title": "zai-org/GLM-5.1",
+      "url": "https://huggingface.co/zai-org/GLM-5.1",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 1637,
+      "created_at": "2026-04-03"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "model",
+      "stars": 1274,
+      "created_at": "2026-04-14"
+    },
+    {
+      "rank": 8,
+      "id": "hf_dataset:zai-org/terminal-bench-2-verified",
+      "title": "zai-org/terminal-bench-2-verified",
+      "url": "https://huggingface.co/datasets/zai-org/terminal-bench-2-verified",
+      "source": "huggingface",
+      "description": "Terminal-Bench 2.0 Verified: Instruction & Environment Fix Version 中文版本 2026.05.08 Update: We are excited to announce our collaboration with the official Terminal-Bench team to release Terminal-Bench 2.1 — the verified version of Terminal-Bench, which fixes many of the issues ide; tags: license:apache-2.0, arxiv:2601.11868, arxiv:2602.15763, region:us",
+      "language": "dataset",
+      "stars": 73,
+      "created_at": "2026-02-05"
+    }
+  ]
+}

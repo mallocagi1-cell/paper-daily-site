@@ -1,0 +1,556 @@
+{
+  "date": "2026-09-24",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "papers_scored": 79,
+    "papers_selected": 10,
+    "score_min": 3.5,
+    "score_max": 4.2
+  },
+  "papers": [
+    {
+      "id": "arxiv:oai:arXiv.org:2609.26086",
+      "title": "CoVeR: Coverage-Based Routing of Verifier Calls in Agentic Retrieval",
+      "authors": "Daeyoung Roh, Donghee Han",
+      "abstract": "arXiv:2609.26086v1 Announce Type: cross \nAbstract: An agentic retrieval system issues a sequence of search queries and must decide, at each step, whether the evidence collected so far is enough to stop. Delegating that decision to an LLM verifier or a prompt judge makes stopping reliable, but the verifier then reprocesses the growing evidence after every retrieval step, a substantial repeated cost. We show that most of these calls can be skipped without materially changing answer accuracy: a single threshold on a frozen sentence-embedding coverage margin detects the states in which the evidence is still plainly incomplete, and the verifier is called only on the ambiguous remainder, a gate we call CoVeR (Coverage-based Verifier Routing). Across three multi-hop QA benchmarks, with the evaluation protocol fixed before the full-scale run, the CoVeR-gated agent matches the answer accuracy of both the full-budget agent and the always-verify baseline within a fraction of an EM point. It cuts ",
+      "url": "https://arxiv.org/abs/2609.26086",
+      "source": "arxiv",
+      "published": "2026-09-03",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 4.2,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.25,
+      "summary": "针对多步搜索每轮重复验证证据的开销，CoVeR 用冻结句向量的覆盖缺口筛掉明显不完整状态，仅在模糊状态调用验证器。在 HotpotQA 和 2Wiki 上验证调用分别减少 62.2% 和 67.8%，EM 相对始终验证仅变化 −0.10 和 +0.20 个百分点；93% 的 MuSiQue 降幅属于饱和场景。",
+      "key_insight": "社区搜索的多跳问答可先缓存帖子证据向量，用便宜的覆盖检测控制昂贵验证调用，再由验证器决定能否停止。语义接近不等于事实支持，因此不能让向量阈值直接批准回答；上线时应同时统计引用正确率、额外检索轮数和端到端延迟，不能把调用降幅当作延迟降幅。",
+      "company": [
+        "KAIST"
+      ],
+      "evidence_url": "https://arxiv.org/abs/2609.26086",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2609.26086",
+        "title": "CoVeR: Coverage-Based Routing of Verifier Calls in Agentic Retrieval",
+        "status": "completed",
+        "content": "# CoVeR：把检索是否完成的检查拆成便宜筛选与昂贵验证\n\n原文：https://arxiv.org/html/2609.26086 。以下方法、数据与局限来自论文正文第 3–7 节及附录；工业落地建议是针对社区 UGC 搜索的分析，不是论文报告的线上收益。\n\n## 1. 问题与动机\n\n多步搜索 Agent 不仅要生成查询，还要决定什么时候已有足够证据。始终运行到最大预算能避免部分过早停止，却浪费检索和生成；每轮让验证模型检查证据，可以提前停止，但会反复处理不断增长的材料。CoVeR 关注的是后一个环节的重复支出：当前轮次如果明显缺少某个推理跳所需证据，再调用一次验证器通常只会得到“继续搜索”。\n\n作者将验证任务拆开：识别明显不完整的状态，和确认所有主张都得到支持。前者可以用句向量近邻作为廉价信号，后者必须理解实体、关系与证据内容。实验显示这种不对称很关键：生成主张的覆盖分数在三个数据集上的 AUROC 只有 0.686、0.680、0.760，不能承担完整的停止判断。论文由此构造单向门控：可以推迟验证，但不能自行宣布证据充分。这与根据问题复杂度预先确定预算不同，它在每轮观察已收集的证据，选择哪次验证值得执行。\n\n## 2. 方法详解\n\n主实验以 Self-Ask 为宿主，生成模型是 Qwen2.5-3B-Instruct，扩展实验换成 7B。每个问题最多运行 6 轮检索，每轮在包含正确材料及干扰材料的 BM25 句子索引中取 top-3。问题先分解成一组预期主张，通常约 2 个；主张可以来自模型生成，真实支撑句只用于理想条件诊断，不能在部署时使用。\n\n冻结 E5 编码器把主张目标文本与证据句转换成向量。对每个主张，找已检索句子中最高的余弦相似度，用 1 减去它作为缺口；再取所有主张缺口的最大值作为当前状态的覆盖缺口。这是一个“最缺证据的主张”聚合，而不是所有句子的平均相关性。证据向量可以缓存，新一轮只补充新增句子的向量和点积。\n\n若状态缺口大于阈值，跳过验证并继续检索；否则调用原有验证器，由它决定是否停止。预算耗尽仍按宿主流程回答，门控本身没有增加事实正确性保证。阈值采用留一数据集验证：在另外两个数据集各自 train-600 的数据上选择最大节省率，同时要求停止轮次一致率至少 0.90、覆盖安全性不低于原验证器。三个折都选出 0.16。该一致率约束属于训练侧选择条件，不应声称所有测试集都达到 0.90。\n\n主验证器来自作者并行研究 HALT，是 Qwen2.5-3B 加 LoRA；附录给出 rank 16、alpha 32、dropout 0.05，覆盖七类投影模块，4-bit NF4 加载并使用 bf16 计算。它分别计算 Match、Partial、Null 三种标签的平均 token 对数概率，以最大者作判定，而非再设一个概率阈值。输入明确包含问题、候选答案、预期主张、页面与目标角色及证据句。新增片段经句切分，每块最多 12 句、每句至少 20 字符，仅检查尚未匹配的主张。CoVeR 不重新训练该验证器，其训练数据规模、优化器、批大小和训练步数在本次读到的验证器卡中没有完整提供，不能补造这些参数。\n\n可选扩展是约 92.1 万参数的 MLP：从问题向量预测多个主张向量槽位，以生成主张向量为余弦损失目标，并用小分类头预测槽位数。它去掉门控侧的 LLM 主张生成，但如果下游验证器仍消费主张文本，就不能说整条链路都不需要生成文本。另一扩展是在验证器内部优先核验缺口最大的主张，只在逐条计算时能提前短路；批量执行时不能直接兑现这部分节省。\n\n## 3. 核心技术贡献\n\n第一，论文提供了保持停止决策权不变的单向门控接口。相似度只用于证明“值得继续找”，最终停止仍由原验证器批准。这使方法可以接入训练式验证器、提示式裁判和公开 NLI 模型，而不要求为每个下游模型重新学习停止策略。它解决的是无用调用，不是验证器自身的事实理解错误。\n\n第二，作者比较了同一接口下多种低成本信号。HotpotQA 在停止一致率至少 0.90 的描述性前沿上，向量覆盖可省 62.2% 调用，词重合省 51.2%，BM25 省 20.2%，句数规则为 0%。将便宜信号用逻辑回归组合也只有 43.5%。因此有用的不只是降低调用预算，还包括识别具体哪些轮次可以略过；相同预算的随机跳过使 HotpotQA 和 2Wiki 停止一致率分别下降 6.4、7.0 个百分点。\n\n第三，门控与验证器的错误互补性被单独检验。对训练式验证器，覆盖分数往往也被错误实体的相似证据欺骗，不能有效纠正其错误停止；更换为波动较大的提示裁判或 NLI 模型后，门控有时能否决过早停止，但这不是普遍收益。论文把路由节省与错误纠正分开报告，避免将二者混成一种能力。\n\n## 4. 实验结果分析\n\n主评测分别使用 HotpotQA 1,000 题、2Wiki 1,000 题和去重后的 MuSiQue 911 题。EM 由固定 Qwen2.5-3B 抽取器在停止处读取累计证据，三个系统共用评估接口。下表 EM 为百分比，调用降幅以始终验证系统为基线。\n\n| 数据集 | 完整预算 EM | 始终验证 EM | CoVeR EM | 验证调用减少 |\n|---|---:|---:|---:|---:|\n| HotpotQA | 30.60 | 30.50 | 30.40 | 62.2% |\n| 2Wiki | 18.40 | 18.50 | 18.70 | 67.8% |\n| MuSiQue | 8.01 | 8.12 | 8.12 | 93.0% |\n\n两个主要数据集与始终验证的差值分别为 −0.10、+0.20 个百分点，显示大部分验证调用可移除而不出现明显质量损失。但 EM 绝对值不高，样本量也不足以分辨所有小于 1 个百分点的变化，不能把“差异很小”写成确定无损。测试停止轮次一致率依次为 0.910、0.886、0.976，2Wiki 测试值低于训练选阈时的 0.90 条件，说明停止策略相似和最终答案相似是两个指标。\n\nMuSiQue 需要独立解读：验证器只在 2.6% 的循环中触发停止，大多数轨迹无论用哪种方法都会耗尽预算。93% 调用降幅主要体现这种饱和状态下跳过检查仍安全，不是可外推到一般搜索系统的节省倍数。论文将 62–68% 作为主要结果是合理的，因为那两个数据集确实存在有意义的停止选择。\n\n消融进一步说明向量匹配不能替代验证。真实支撑句作为理想目标时 AUROC 为 0.892、0.895、0.831，模型生成目标时降到 0.686、0.680、0.760；两类目标来自不同标签运行，作者明确提示这不是严格受控消融。若直接用部署时可得的缺口分数停止，为满足覆盖安全性，停止节省几乎归零。五种冻结编码器检查中，较大的 e5-large 没有稳定超过 e5-base，而 bge/gte 家族损失了 12–25 个百分点的调用削减；对证据取最大相似度也优于平均或 softmax 聚合。\n\n迁移方面，7B 生成主张设置没有重新调阈值；蒸馏头在 400/400/384 题上的调用削减为 61.2%、65.8%、91.5%。公开 NLI 裁判在 HotpotQA 的某设置下，门控 EM 为 26.0%、纯裁判为 23.3%，差值按原始精度统计为 +2.8 个百分点，说明特定裁判的过早停止确实可能被门控抑制。这个结果不应替换主实验，更不能宣传为所有验证器都能提升答案质量。\n\n## 5. 局限与未来方向\n\n作者明确限定证据主要来自一种 Self-Ask 脚手架与三个多跳问答集。主实验使用包含正确材料的封闭池，开放语料检查只有 HotpotQA 一个点，而且该点使用真实主张的验证器，因此离完整开放网络搜索还有距离。冻结 E5 的预训练偏向维基百科，换到社区短文本、缩写、反讽或多语言混写，覆盖分数可能失效。\n\n轨迹使用单个 seed 13，bootstrap 衡量问题样本的不确定性，未覆盖生成随机性。比较或聚合问题的主张分解可能失败，但没有被充分量化；HALT 权重并非本文可发布的资产，复现主要依赖公开裁判替代或缓存证据。作者还承认覆盖分数与训练式验证器的错误相关，不能保证纠正后者。成本统计主要是调用、主张判定对与输入 token，未把所有门控计算纳入通用收益宣称。这些都是在社区环境试验前应重新测量的部分。\n\n## 6. 工业实践意义\n\n对社区搜索，适合优先试验的是复杂问答分支：检索多个帖子、核验不同用户提供的信息、再生成带引用的答案。可把问题分成待核验的主张，在每轮召回后增量计算覆盖缺口；只有疑似接近完成时才调用较贵的证据验证模型。证据应保留帖子作者、发布时间和引用位置，避免语义接近的旧帖替代当前条件下真正有效的证据。\n\n建议先做同查询、同语料快照、同模型和同最大预算的离线对照，记录答案正确率、引用支持率、停止轮次、检索 nDCG、验证成本及端到端耗时，再用小流量测试 CTR 与用户继续追问比例。UGC 中短句可能缺少实体上下文，不能照搬 0.16 阈值；应在独立标注集上检验短文本编码器和分句策略，保留“没有依据就继续找”的方向性。\n\n最重要的成本边界来自附录实际计时：特定 4-bit 生成栈中解码占每轮生成时间约 95%，即使前缀缓存命中 85%，每轮也只减少 0.02–0.04 秒。组合验证器计时后，CoVeR 相对始终验证在 HotpotQA、2Wiki 的端到端变化是 +0.12 秒和 +0.71 秒，置信区间跨零；MuSiQue 才出现约 −2.46 秒。也就是说省掉验证可能被额外检索生成抵消。部署决策应依据本地生成与验证成本的平衡，尤其不能把 62–68% 调用削减直接写成同比例的整体加速。",
+        "content_html": "<h1>CoVeR：把检索是否完成的检查拆成便宜筛选与昂贵验证</h1>\n<p>原文：https://arxiv.org/html/2609.26086 。以下方法、数据与局限来自论文正文第 3–7 节及附录；工业落地建议是针对社区 UGC 搜索的分析，不是论文报告的线上收益。</p>\n<h2>1. 问题与动机</h2>\n<p>多步搜索 Agent 不仅要生成查询，还要决定什么时候已有足够证据。始终运行到最大预算能避免部分过早停止，却浪费检索和生成；每轮让验证模型检查证据，可以提前停止，但会反复处理不断增长的材料。CoVeR 关注的是后一个环节的重复支出：当前轮次如果明显缺少某个推理跳所需证据，再调用一次验证器通常只会得到“继续搜索”。</p>\n<p>作者将验证任务拆开：识别明显不完整的状态，和确认所有主张都得到支持。前者可以用句向量近邻作为廉价信号，后者必须理解实体、关系与证据内容。实验显示这种不对称很关键：生成主张的覆盖分数在三个数据集上的 AUROC 只有 0.686、0.680、0.760，不能承担完整的停止判断。论文由此构造单向门控：可以推迟验证，但不能自行宣布证据充分。这与根据问题复杂度预先确定预算不同，它在每轮观察已收集的证据，选择哪次验证值得执行。</p>\n<h2>2. 方法详解</h2>\n<p>主实验以 Self-Ask 为宿主，生成模型是 Qwen2.5-3B-Instruct，扩展实验换成 7B。每个问题最多运行 6 轮检索，每轮在包含正确材料及干扰材料的 BM25 句子索引中取 top-3。问题先分解成一组预期主张，通常约 2 个；主张可以来自模型生成，真实支撑句只用于理想条件诊断，不能在部署时使用。</p>\n<p>冻结 E5 编码器把主张目标文本与证据句转换成向量。对每个主张，找已检索句子中最高的余弦相似度，用 1 减去它作为缺口；再取所有主张缺口的最大值作为当前状态的覆盖缺口。这是一个“最缺证据的主张”聚合，而不是所有句子的平均相关性。证据向量可以缓存，新一轮只补充新增句子的向量和点积。</p>\n<p>若状态缺口大于阈值，跳过验证并继续检索；否则调用原有验证器，由它决定是否停止。预算耗尽仍按宿主流程回答，门控本身没有增加事实正确性保证。阈值采用留一数据集验证：在另外两个数据集各自 train-600 的数据上选择最大节省率，同时要求停止轮次一致率至少 0.90、覆盖安全性不低于原验证器。三个折都选出 0.16。该一致率约束属于训练侧选择条件，不应声称所有测试集都达到 0.90。</p>\n<p>主验证器来自作者并行研究 HALT，是 Qwen2.5-3B 加 LoRA；附录给出 rank 16、alpha 32、dropout 0.05，覆盖七类投影模块，4-bit NF4 加载并使用 bf16 计算。它分别计算 Match、Partial、Null 三种标签的平均 token 对数概率，以最大者作判定，而非再设一个概率阈值。输入明确包含问题、候选答案、预期主张、页面与目标角色及证据句。新增片段经句切分，每块最多 12 句、每句至少 20 字符，仅检查尚未匹配的主张。CoVeR 不重新训练该验证器，其训练数据规模、优化器、批大小和训练步数在本次读到的验证器卡中没有完整提供，不能补造这些参数。</p>\n<p>可选扩展是约 92.1 万参数的 MLP：从问题向量预测多个主张向量槽位，以生成主张向量为余弦损失目标，并用小分类头预测槽位数。它去掉门控侧的 LLM 主张生成，但如果下游验证器仍消费主张文本，就不能说整条链路都不需要生成文本。另一扩展是在验证器内部优先核验缺口最大的主张，只在逐条计算时能提前短路；批量执行时不能直接兑现这部分节省。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文提供了保持停止决策权不变的单向门控接口。相似度只用于证明“值得继续找”，最终停止仍由原验证器批准。这使方法可以接入训练式验证器、提示式裁判和公开 NLI 模型，而不要求为每个下游模型重新学习停止策略。它解决的是无用调用，不是验证器自身的事实理解错误。</p>\n<p>第二，作者比较了同一接口下多种低成本信号。HotpotQA 在停止一致率至少 0.90 的描述性前沿上，向量覆盖可省 62.2% 调用，词重合省 51.2%，BM25 省 20.2%，句数规则为 0%。将便宜信号用逻辑回归组合也只有 43.5%。因此有用的不只是降低调用预算，还包括识别具体哪些轮次可以略过；相同预算的随机跳过使 HotpotQA 和 2Wiki 停止一致率分别下降 6.4、7.0 个百分点。</p>\n<p>第三，门控与验证器的错误互补性被单独检验。对训练式验证器，覆盖分数往往也被错误实体的相似证据欺骗，不能有效纠正其错误停止；更换为波动较大的提示裁判或 NLI 模型后，门控有时能否决过早停止，但这不是普遍收益。论文把路由节省与错误纠正分开报告，避免将二者混成一种能力。</p>\n<h2>4. 实验结果分析</h2>\n<p>主评测分别使用 HotpotQA 1,000 题、2Wiki 1,000 题和去重后的 MuSiQue 911 题。EM 由固定 Qwen2.5-3B 抽取器在停止处读取累计证据，三个系统共用评估接口。下表 EM 为百分比，调用降幅以始终验证系统为基线。</p>\n<table><thead><tr><th>数据集</th><th>完整预算 EM</th><th>始终验证 EM</th><th>CoVeR EM</th><th>验证调用减少</th></tr></thead><tbody><tr><td>HotpotQA</td><td>30.60</td><td>30.50</td><td>30.40</td><td>62.2%</td></tr><tr><td>2Wiki</td><td>18.40</td><td>18.50</td><td>18.70</td><td>67.8%</td></tr><tr><td>MuSiQue</td><td>8.01</td><td>8.12</td><td>8.12</td><td>93.0%</td></tr></tbody></table>\n<p>两个主要数据集与始终验证的差值分别为 −0.10、+0.20 个百分点，显示大部分验证调用可移除而不出现明显质量损失。但 EM 绝对值不高，样本量也不足以分辨所有小于 1 个百分点的变化，不能把“差异很小”写成确定无损。测试停止轮次一致率依次为 0.910、0.886、0.976，2Wiki 测试值低于训练选阈时的 0.90 条件，说明停止策略相似和最终答案相似是两个指标。</p>\n<p>MuSiQue 需要独立解读：验证器只在 2.6% 的循环中触发停止，大多数轨迹无论用哪种方法都会耗尽预算。93% 调用降幅主要体现这种饱和状态下跳过检查仍安全，不是可外推到一般搜索系统的节省倍数。论文将 62–68% 作为主要结果是合理的，因为那两个数据集确实存在有意义的停止选择。</p>\n<p>消融进一步说明向量匹配不能替代验证。真实支撑句作为理想目标时 AUROC 为 0.892、0.895、0.831，模型生成目标时降到 0.686、0.680、0.760；两类目标来自不同标签运行，作者明确提示这不是严格受控消融。若直接用部署时可得的缺口分数停止，为满足覆盖安全性，停止节省几乎归零。五种冻结编码器检查中，较大的 e5-large 没有稳定超过 e5-base，而 bge/gte 家族损失了 12–25 个百分点的调用削减；对证据取最大相似度也优于平均或 softmax 聚合。</p>\n<p>迁移方面，7B 生成主张设置没有重新调阈值；蒸馏头在 400/400/384 题上的调用削减为 61.2%、65.8%、91.5%。公开 NLI 裁判在 HotpotQA 的某设置下，门控 EM 为 26.0%、纯裁判为 23.3%，差值按原始精度统计为 +2.8 个百分点，说明特定裁判的过早停止确实可能被门控抑制。这个结果不应替换主实验，更不能宣传为所有验证器都能提升答案质量。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确限定证据主要来自一种 Self-Ask 脚手架与三个多跳问答集。主实验使用包含正确材料的封闭池，开放语料检查只有 HotpotQA 一个点，而且该点使用真实主张的验证器，因此离完整开放网络搜索还有距离。冻结 E5 的预训练偏向维基百科，换到社区短文本、缩写、反讽或多语言混写，覆盖分数可能失效。</p>\n<p>轨迹使用单个 seed 13，bootstrap 衡量问题样本的不确定性，未覆盖生成随机性。比较或聚合问题的主张分解可能失败，但没有被充分量化；HALT 权重并非本文可发布的资产，复现主要依赖公开裁判替代或缓存证据。作者还承认覆盖分数与训练式验证器的错误相关，不能保证纠正后者。成本统计主要是调用、主张判定对与输入 token，未把所有门控计算纳入通用收益宣称。这些都是在社区环境试验前应重新测量的部分。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索，适合优先试验的是复杂问答分支：检索多个帖子、核验不同用户提供的信息、再生成带引用的答案。可把问题分成待核验的主张，在每轮召回后增量计算覆盖缺口；只有疑似接近完成时才调用较贵的证据验证模型。证据应保留帖子作者、发布时间和引用位置，避免语义接近的旧帖替代当前条件下真正有效的证据。</p>\n<p>建议先做同查询、同语料快照、同模型和同最大预算的离线对照，记录答案正确率、引用支持率、停止轮次、检索 nDCG、验证成本及端到端耗时，再用小流量测试 CTR 与用户继续追问比例。UGC 中短句可能缺少实体上下文，不能照搬 0.16 阈值；应在独立标注集上检验短文本编码器和分句策略，保留“没有依据就继续找”的方向性。</p>\n<p>最重要的成本边界来自附录实际计时：特定 4-bit 生成栈中解码占每轮生成时间约 95%，即使前缀缓存命中 85%，每轮也只减少 0.02–0.04 秒。组合验证器计时后，CoVeR 相对始终验证在 HotpotQA、2Wiki 的端到端变化是 +0.12 秒和 +0.71 秒，置信区间跨零；MuSiQue 才出现约 −2.46 秒。也就是说省掉验证可能被额外检索生成抵消。部署决策应依据本地生成与验证成本的平衡，尤其不能把 62–68% 调用削减直接写成同比例的整体加速。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.26780",
+      "title": "SpeakerMem-R1: Speaker-Centered Dual-Track Memory for Multi-Party Dialogue",
+      "authors": "Haobo Zheng, Tan Tang, Yan Chen, Weijie Wang, Yingcai Wu",
+      "abstract": "arXiv:2609.26780v1 Announce Type: cross \nAbstract: Long-term conversational memory in multi-party settings requires more than retrieving relevant content from long-term conversations: it must distinguish who said what, whom each statement concerns, how individuals perceive one another, what information is shared by the group, and how states change over time. Recent studies on multi-party dialogue benchmarks show that existing general-purpose LLM memory systems tend to lose person and group relations or struggle to integrate clues distributed across members, groups, and time. Together, these issues reveal two core bottlenecks: message attribution and relational understanding in multi-party dialogue, and state reconstruction from interleaved histories. To address both, we propose $\\textbf{SpeakerMem-R1}$: its dual-track memory stores speaker-labeled verbatim messages and derived states organized into person-level and group-level views, then combines evidence from both tracks by entity, e",
+      "url": "https://arxiv.org/abs/2609.26780",
+      "source": "arxiv",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.1,
+      "preference_bonus": 0.21,
+      "adjusted_score": 4.31,
+      "summary": "SpeakerMem-R1 面向多人对话中的说话人归属与状态重建，将带身份的原始消息和个人、群组结构化状态分别存储，再按实体、事件和时间联合检索。三个多人记忆基准准确率为 47.9%、69.2%、61.9%；305 题控制实验中，强化学习使写入器准确率从 57.38% 升至 68.20%。",
+      "key_insight": "社区帖子、回复和评论常混合作者观点、他人转述及群体事实，双轨记忆能保留原话供核验，同时提供可搜索的结构化状态。可先把作者、被讨论对象与时间拆成独立字段，再试验带说话人条件的写入奖励；需要用社区语料验证归属错误是否下降，现有结果不能直接推导 nDCG 或 CTR 收益。",
+      "company": [
+        "Zhejiang University"
+      ],
+      "evidence_url": "https://arxiv.org/abs/2609.26780",
+      "rank": 2
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.25991",
+      "title": "Knowledge-as-Skill: A Structural Design for Autonomous Knowledge-Base Use by LLM Agents",
+      "authors": "Jiangxu Wu",
+      "abstract": "arXiv:2609.25991v1 Announce Type: new \nAbstract: Retrieval-augmented generation (RAG) gives large language models (LLMs) access to external knowledge, but its conventional retrieve-concatenate-generate pipeline makes retrieval decisions on behalf of the model. As tool use and agent loops become more reliable, an agent can decide whether to retrieve, what to inspect, and when to stop. This shift exposes a new bottleneck: the agent may not know what a knowledge base contains. Traditional knowledge bases expose documents as anonymous text chunks with limited information about scope, purpose, provenance, or relations.\n  We propose Knowledge-as-Skill, an organization scheme that makes a knowledge base discoverable, navigable, and self-descriptive. It has three layers: a discovery layer centered on SKILL.md; a navigation layer with one index.md per directory; and a knowledge layer containing documents with YAML frontmatter for topic, type, provenance, and lifecycle. The design follows the Op",
+      "url": "https://arxiv.org/abs/2609.25991",
+      "source": "arxiv",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "total_score": 3.95,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.0,
+      "summary": "Knowledge-as-Skill 用发现、导航、知识三层结构让 Agent 自主理解知识库范围，并通过目录索引和元数据记录来源及生命周期。WixQA 初步评估中事实性为 0.889、上下文召回为 0.816，对照工作报告值为 0.767 和 0.708；模型及提示不受控，且精度和交互轮数存在代价，不能视为严格胜出。",
+      "key_insight": "社区搜索可为专题、问答合集和运营知识建立可浏览的目录说明，让 Agent 先判断内容范围，再读取相关帖子，减少盲目拼接文本块。该设计无需重写 Agent 框架，适合先做小规模原型；但目录维护成本、内容更新与多轮读取延迟必须纳入实验，并用相同模型和检索预算重做对照。",
+      "company": [],
+      "evidence_url": "https://arxiv.org/abs/2609.25991",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.25054",
+      "title": "MoM: Memory of Memory",
+      "authors": "Bowen Qin, Yao Lu",
+      "abstract": "arXiv:2609.25054v1 Announce Type: new \nAbstract: For a long-horizon LLM agent, the memory question is not what was once recorded but what \\emph{currently holds}. Most designs answer it only indirectly: every interaction is stored, and the present is reconstructed at query time by retrieving and reconciling records, so stale values re-enter and the same conflicts are re-litigated. Committing the current value at write time avoids this, but existing write-time (CRUD) memories overwrite, so a wrong update is unrecoverable and prior state is lost. We take the missing combination---\\emph{commit on arrival while retaining what is displaced}---and formalize it as \\textsc{Memory of Memory} (MoM): memory tracks not only content but the provenance, status, and history of its own entries. We instantiate MoM as \\textsc{Provenant Memory} (P-Mem), a typed provenance graph whose \\emph{active frontier} exposes one current value per resolved key while displaced values are retained as provenance; typed ",
+      "url": "https://arxiv.org/abs/2609.25054",
+      "source": "arxiv",
+      "published": "2026-09-07",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.9,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.95,
+      "summary": "MoM 将当前知识状态与历史来源一并管理，P-Mem 用类型化溯源图区分支持、替代、争议和撤销，查询只暴露当前有效值。图引导裁剪使陈旧答案率从 19.4% 降至 10.9%；修订链准确率为 100%，查询时重建基线为 25%，同时保留历史可修复覆盖式记忆无法恢复的错误。",
+      "key_insight": "社区内容会出现编辑、辟谣和观点变化，单纯按相似度召回容易把旧结论重新放回答案。可以把来源、有效状态和修订关系做成 Agent 记忆的一等字段，保留被替代证据用于回滚；约四倍读 token 节省主要来自检索粒度变化，应与图结构带来的有效性收益分开评估。",
+      "company": [
+        "NUS"
+      ],
+      "evidence_url": "https://arxiv.org/abs/2609.25054",
+      "rank": 4
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.25192",
+      "title": "FinFIRST: Benchmarking Search Agents for Financial Information Retrieval, Sourcing and Traceability",
+      "authors": "Wenqing Wang, Haitao Xiang, Xinyi Zhao, Mingming Yin, Ying Zhong, Zhaoxin Huan, Qiheng Zhou, Jin Zhu, Xiaolu Zhang, Shi Chang, Jun Zhou",
+      "abstract": "arXiv:2609.25192v1 Announce Type: new \nAbstract: Financial search is a highly demanding task for LLM agents, requiring not only a correct final answer but also temporally valid information retrieval, authoritative source selection, entity and period alignment, unit and definition consistency, and verifiable evidence for all conclusions. Existing benchmarks predominantly evaluate only the final answer, making it difficult to localize errors or assess whether an answer is well-founded. To address this gap, we introduce FinFIRST (Financial Information Retrieval, Sourcing and Traceability), the first financial benchmark to jointly evaluate answers and supporting evidence through atomic rubrics. FinFIRST comprises 123 expert-authored tasks spanning a graduated difficulty spectrum, constructed from aggregate patterns of real-world financial scenarios through an 18-field taxonomy, a six-axis coverage blueprint, a registry of 138 financial sources, contributions from over 50 finance experts, a",
+      "url": "https://arxiv.org/abs/2609.25192",
+      "source": "arxiv",
+      "published": "2026-09-21",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.85,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.9,
+      "summary": "FinFIRST 将金融搜索答案与支撑证据拆成原子评分规则，覆盖信息获取、来源核验和计算成文。基准含 123 个专家任务、138 个来源及 15 种模型配置；最高原子得分为 87.59%，最高严格通过率为 71.54%，说明局部信息正确并不意味着完整任务可靠完成。",
+      "key_insight": "社区搜索的复杂问题也需要检查时间、实体和引用是否对齐，可借鉴原子规则将检索错误、证据错误和答案合成错误分别定位。首先为高价值问答建立少量人工审核任务，再同时报告局部得分与全条件通过率；金融领域的数字不能外推到社区 CTR，但其评测拆解方式可直接借用。",
+      "company": [
+        "Inclusion AI",
+        "Peking University",
+        "CICC"
+      ],
+      "evidence_url": "https://arxiv.org/abs/2609.25192",
+      "rank": 5
+    },
+    {
+      "id": "hf:2609.25804",
+      "title": "The Tasteful Agent: Measuring and Improving Taste in Long-Horizon Tasks",
+      "authors": "Wenbo Pan, Zhichao Liu, Shujie Liu, Jingying Zeng, Chin-Yew Lin",
+      "abstract": "LLM agents increasingly work on long-horizon tasks, and the decisions they make along the way, such as which hypothesis to test or which implementation to build on, determine the outcome of the whole run. Making these decisions well is becoming a key capability for both engineering and research agents. We refer to the ability to make good long-horizon decisions as the taste of an agent. While existing benchmarks measure the end-to-end success of agents on long-horizon tasks, none of them measures the taste of an agent. To address this problem, we build Taste-Bench, a benchmark of taste questions constructed automatically from trajectories that agents produced in engineering and research tasks. Each question presents a decision fork, a point in a trajectory where multiple directions are available and one of them leads to a better outcome, and the evaluated model chooses among these directions without seeing what happens after the fork. We mine these forks automatically from parallel att",
+      "url": "https://huggingface.co/papers/2609.25804",
+      "source": "huggingface",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.8,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.8,
+      "summary": "Taste-Bench 从 Agent 的并行尝试与轨迹绕路中自动提取决策岔路，让模型在看不到后续结果时选择方向，评估长任务中的决策质量。最佳模型正确率仅 59.7%，增加推理预算未改善表现；利用知晓结果的教师蒸馏，可改善学生在未见任务上的选择与 SWE-bench Pro 端到端成功率。",
+      "key_insight": "社区搜索 Agent 的关键决策往往是继续查证、换查询词还是结束，可以从历史成功和失败检索轨迹构造类似岔路题。借鉴结果感知教师生成训练信号时，必须按任务隔离训练与测试，防止未来证据泄漏；先检验决策正确率是否转化为更好的证据覆盖和更低搜索成本。",
+      "company": [
+        "City University of Hong Kong",
+        "Microsoft"
+      ],
+      "evidence_url": "https://huggingface.co/papers/2609.25804",
+      "rank": 6
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.25052",
+      "title": "Self-Cleaning and Captured Anyway: One Measured Primitive for Error in a Store an Agent Writes to Itself, and What a Falling Score Actually Measures",
+      "authors": "Wenhui Chen, Jianlin Chen, Ziyao Lin, Chi Man Vong",
+      "abstract": "arXiv:2609.25052v1 Announce Type: new \nAbstract: \"An agent that writes its conclusions into a store it later retrieves from closes a loop usually reported as one-way contamination. Taking the loop to the infinite-tenure limit against an append-only store gives a different picture: because writing never deletes, the reachable state space has a hard upper edge at (n-1)/n, so the outcome is a choice between two edges rather than a decay. At f_0 = 0.9 the interval between the two modes holds 3.6% of 220 runs where a uniform spread would put 20.6%, and is strictly empty on the first 15; the pooled mean describes 8.2% of the runs it summarises, the median 68.2%. Everything the model contributes is carried by one measured primitive with no fitted parameter, the copy function \\gamma(\\phi): on 36 Wikidata facts, sign(\\hat{\\gamma} - \\gamma_{crit}), with \\gamma_{crit} = 1/k at r = 0, w = 1, predicts the direction of drift on 353 of 360 real-fact runs (39 of 40 synthetic in the same batch). Scale ",
+      "url": "https://arxiv.org/abs/2609.25052",
+      "source": "arxiv",
+      "published": "2026-09-06",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.75,
+      "summary": "论文研究 Agent 将自身结论写回记忆库后的错误循环，用实测复制函数分析错误是否持续扩散。在 36 个 Wikidata 事实上，判据预测了 360 次运行中 353 次的漂移方向；220 次运行呈现明显双峰，均值只代表少数轨迹，作者同时披露失败、撤回和未定论的实验行。",
+      "key_insight": "社区搜索若把生成答案再次作为可检索知识，可能逐步放大未经证实的结论。可以借鉴按随机种子与事实分别报告轨迹的审计方法，并区分原始帖子和 Agent 派生记忆的来源；这项研究提供风险诊断而非现成修复方案，单看平均正确率下降不足以说明系统已经自我纠错。",
+      "company": [],
+      "evidence_url": "https://arxiv.org/abs/2609.25052",
+      "rank": 7
+    },
+    {
+      "id": "hf:2609.26457",
+      "title": "Recursive self-improvement of AI research agents",
+      "authors": "Dhruv Srikanth, Bingchen Zhao, Dixing Xu, Yuxiang Wu, Zhengyao Jiang",
+      "abstract": "AI agents are beginning to automate research and development across the AI stack, from improving training efficiency to optimizing inference. A natural next step is to improve the research efficiency of the agents themselves. When an AI research agent's own code is the object of optimization, each accepted rewrite becomes the agent that the next round edits. We refer to this loop as recursive self-improvement. Its significance lies in a long-standing trend, in which increased cumulative spending on R&D yields diminishing returns. Sustained self-improvement offers a way to counter this trend. We present AIDE^2, a system that implements this loop for a frontier AI research agent. It proposes changes to its own code, benchmarks modified versions of itself on a suite of AI R&D tasks, and keeps the changes that perform best on hidden evaluations. In an autonomous 8-day run, AIDE^2 discovered seven successive improvements, ranging from a new search policy to memory mechanisms that compress a",
+      "url": "https://huggingface.co/papers/2609.26457",
+      "source": "huggingface",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.55,
+      "summary": "AIDE² 让研究 Agent 修改自身代码，通过任务基准和隐藏评估筛选版本，再让获胜版本继续迭代。8 天自主运行获得 7 次连续改进，并迁移到 4 个留出基准；独立任务族上的奖励投机率从 55% 降至 32%，该指标并非循环显式优化的目标。",
+      "key_insight": "对社区搜索，可借鉴其隐藏评测与版本晋升机制，用离线数据优化查询规划、证据压缩和记忆策略。论文研究的是研发 Agent，尚未证明搜索线上收益；应固定模型和预算，并以未参与优化的社区查询集检验 nDCG、引用准确率和成本，避免系统只学会迎合评测。",
+      "company": [
+        "Weco AI"
+      ],
+      "evidence_url": "https://huggingface.co/papers/2609.26457",
+      "rank": 8
+    },
+    {
+      "id": "hf:2609.26781",
+      "title": "Agensh: Scaling Organizational Intelligence to 1,024 Agents",
+      "authors": "Zhihao Zhan, Ting Song, Li Dong, Shaohan Huang, Jianxun Lian",
+      "abstract": "A multi-agent system can reduce latency on complex tasks by executing work concurrently. Several pioneering harness frameworks support multi-agent systems. However, the scalability of current multi-agent harnesses is often constrained by a central orchestrator's capacity to allocate tasks and coordinate workers. To address this limitation, we introduce Agensh, a scalable self-organized multi-agent harness without a central orchestrator: concurrent workers execute a multi-agent cooperation loop, continuously gathering context, claiming and self-assigning sub-tasks, taking action and sharing findings, verifying results, and merging progress in an asynchronous manner. The loop is supported by the agentic organization infrastructure comprising three components: a shared workspace holds proposed, ongoing, and completed work; a message interface lets workers communicate; and shared context retains reusable findings and work intentions. To test the scalability of Agensh, we evaluate it on the",
+      "url": "https://huggingface.co/papers/2609.26781",
+      "source": "huggingface",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.55,
+      "summary": "Agensh 通过共享工作区、消息接口和共享上下文让 Agent 自组织认领与核验任务，缓解中央调度瓶颈。在五个高难 ProgramBench 任务上，1 到 128 个 Agent 使平均测试通过率从 19.31% 升至 28.78%；pandoc 任务扩至 1,024 个时，通过率从 33.89% 升至 55.06%。",
+      "key_insight": "复杂社区研究查询可按子问题拆分检索，并共享已核实的帖子证据，减少多个 Agent 重复搜索。其结果来自代码构建任务和很大的并发规模，实践上应先以少量 Agent 验证工作认领、来源合并和冲突处理；必须把总 token 成本与延迟一起比较，不能由并发扩展直接推导搜索质量提升。",
+      "company": [
+        "Microsoft"
+      ],
+      "evidence_url": "https://huggingface.co/papers/2609.26781",
+      "rank": 9
+    },
+    {
+      "id": "blog_rss:openai_research_blog:https://openai.com/index/ringg",
+      "title": "Ringg’s AI agents resolve up to 65% of customer calls with OpenAI",
+      "authors": "",
+      "abstract": "Using GPT-5.6, Ringg powers multilingual agents across voice, chat, WhatsApp, and web for 90% less cost vs. GPT-4.1.",
+      "url": "https://openai.com/index/ringg",
+      "source": "blog_rss",
+      "published": "2026-09-23",
+      "discovered_at": "2026-09-23",
+      "source_type": "blog",
+      "source_detail": "openai_research_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.5,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.55,
+      "summary": "Ringg 的工业案例将结构化过滤、语义检索与工具编排结合，支持语音、聊天及网页中的多步客户请求。厂商报告每月处理超过 700 万通已接通电话，Agent 最多解决 65% 的常规咨询；部分实时工作负载切换模型后成本约降 90%，这些为业务自报数据，缺少统一受控对照。",
+      "key_insight": "社区问答服务可借鉴其离线历史对话评测、小流量上线和按任务路由的流程，把检索、回答与转人工串成闭环。应保留检索证据及升级处理的上下文，按引用正确率、完成率和延迟选择模型；案例中的成本降幅仅针对特定负载，不能直接用于估计社区搜索预算。",
+      "company": [
+        "Ringg",
+        "OpenAI"
+      ],
+      "evidence_url": "https://openai.com/index/ringg",
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "hf_dataset:Qwen/RecreationBench",
+      "title": "Qwen/RecreationBench",
+      "authors": "Qwen",
+      "description": "RecreationBench GitHub · Website · Leaderboard · Report ↗ RecreationBench is a benchmark of 250 application-recreation tasks across Ubuntu, macOS, Windows, Android, and Web. It is the held-out evaluation suite of RecreationWorld, a framework for scalable and verifiable environmen; tags: task_categories:text-generation, language:en, license:other, size_categories:n<1K, modality:image, modality:text, arxiv:2609.22000, region:us",
+      "abstract": "RecreationBench GitHub · Website · Leaderboard · Report ↗ RecreationBench is a benchmark of 250 application-recreation tasks across Ubuntu, macOS, Windows, Android, and Web. It is the held-out evaluation suite of RecreationWorld, a framework for scalable and verifiable environmen; tags: task_categories:text-generation, language:en, license:other, size_categories:n<1K, modality:image, modality:text, arxiv:2609.22000, region:us",
+      "url": "https://huggingface.co/datasets/Qwen/RecreationBench",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_dataset",
+      "stars": 10,
+      "language": "dataset",
+      "created_at": "2026-09-18",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-18",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "dataset",
+        "repo_id": "Qwen/RecreationBench",
+        "likes": 10,
+        "downloads": 3677,
+        "pipeline_tag": "",
+        "tags": [
+          "task_categories:text-generation",
+          "language:en",
+          "license:other",
+          "size_categories:n<1K",
+          "modality:image",
+          "modality:text",
+          "arxiv:2609.22000",
+          "region:us",
+          "agent",
+          "benchmark",
+          "evaluation",
+          "computer-use",
+          "software-recreation",
+          "multimodal",
+          "qwen"
+        ],
+        "created_at": "2026-09-18T11:19:15.000Z",
+        "last_modified": "2026-09-21T05:03:16.000Z"
+      },
+      "rank": 1
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2010,
+      "language": "model",
+      "created_at": "2026-09-14",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-14",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 2010,
+        "downloads": 28407,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "rgba",
+          "text-to-image",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-09-14T03:47:26.000Z",
+        "last_modified": "2026-09-21T04:50:49.000Z"
+      },
+      "rank": 2
+    },
+    {
+      "id": "hf_space:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 166,
+      "language": "space",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 166,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T10:15:59.000Z",
+        "last_modified": "2026-09-21T04:36:41.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1-PE-I2I",
+      "title": "Qwen/Qwen-Image-2.1-PE-I2I",
+      "authors": "Qwen",
+      "description": "tags: safetensors, qwen3_5, qwen, prompt-rewriting, image-editing, license:other, region:us",
+      "abstract": "tags: safetensors, qwen3_5, qwen, prompt-rewriting, image-editing, license:other, region:us",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1-PE-I2I",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 46,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-20",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1-PE-I2I",
+        "likes": 46,
+        "downloads": 6189,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "qwen3_5",
+          "qwen",
+          "prompt-rewriting",
+          "image-editing",
+          "license:other",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T08:46:47.000Z",
+        "last_modified": "2026-09-20T11:59:48.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:internlm/Intern-S2-397B",
+      "title": "internlm/Intern-S2-397B",
+      "authors": "internlm",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5_moe, image-text-to-text, conversational, license:apache-2.0, endpoints_compatible, region:us",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5_moe, image-text-to-text, conversational, license:apache-2.0, endpoints_compatible, region:us",
+      "url": "https://huggingface.co/internlm/Intern-S2-397B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 46,
+      "language": "model",
+      "created_at": "2026-09-13",
+      "updated_at": "2026-09-22",
+      "published": "2026-09-13",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Intern-S2-397B",
+        "likes": 46,
+        "downloads": 619,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5_moe",
+          "image-text-to-text",
+          "conversational",
+          "license:apache-2.0",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-09-13T03:20:35.000Z",
+        "last_modified": "2026-09-22T08:16:51.000Z"
+      },
+      "rank": 5
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recent": true,
+    "source_diversity": true,
+    "sources": {
+      "arxiv": 6,
+      "huggingface": 3,
+      "blog_rss": 1
+    },
+    "chinese_source": false
+  },
+  "warnings": [
+    "Semantic Scholar 限流，OpenReview/DBLP 请求失败，会议来源缺失。",
+    "中文候选已搜索；适配 agentic 的国内博客被历史去重排除，最终无中文来源。",
+    "--days 3 用于发现窗口；RSS 公告含较早投稿，报告改用原文日期评分，补充搜索允许 90 天内内容。",
+    "PDF 渲染脚本未找到支持的渲染器，未生成 PDF。",
+    "Chrome 前台截图检查在 45 秒超时，未完成视觉检查；HTML/JSON 一致性校验通过。"
+  ],
+  "parameters": {
+    "top": 10,
+    "days": 3,
+    "min_score": 3.0
+  },
+  "scoring_notes": "79 篇候选逐项筛选评分，14 篇补取原文/摘要核验；范围外条目以低商业相关分排除。偏好中强化学习对 SpeakerMem-R1 加 0.16；商业相关与实用性均 >=4 加 0.05，按基础加权分主排序。"
+}

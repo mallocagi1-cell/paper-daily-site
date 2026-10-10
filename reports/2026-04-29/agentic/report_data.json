@@ -1,0 +1,240 @@
+{
+  "date": "2026-04-29",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 60,
+    "papers_selected": 10,
+    "score_min": 3.25,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.24198",
+      "title": "Rewarding the Scientific Process: Process-Level Reward Modeling for Agentic Data Analysis",
+      "url": "https://huggingface.co/papers/2604.24198",
+      "authors": "Zhisong Qiu, Shuofei Qiao, Kewei Xu, Yuqi Zhu, Lun Du",
+      "company": [
+        "Zhejiang University",
+        "Alibaba"
+      ],
+      "source": "huggingface",
+      "published": "2026-04-26",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对动态数据分析 Agent 任务，作者发现通用 PRM 难以发现执行无异常但结果错误的「静默错误」，且会错误惩罚必要的探索性步骤。论文提出 DataPRM——一个具备环境交互能力的生成式过程奖励模型：作为主动验证器自主执行代码探查中间状态以揭露静默错误，并采用「反思感知三元奖励」区分可纠正的执行失败与真正的逻辑错误。在多个数据分析基准上 DataPRM 显著提升 Agent 执行成功率，且作为 RL 监督信号能稳定训练 8B 数据分析 Agent。",
+      "key_insight": "对于多步骤 Agent 任务，单纯沿用「数学推理 PRM」会把试错惩罚混入训练信号，是当前 search/rec Agent 落地的核心痛点。论文给出两条可借鉴的工程做法：一是让 PRM 像 Agent 一样主动调用工具回放执行环境去判分，而不是只看文本轨迹；二是用「正确/中性/负」的三元奖励对探索性 trial-and-error 留出空间。这套思路可直接迁移到搜索 Agent 的 query 改写、检索回退等多轮决策的过程级奖励训练。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.24198",
+        "title": "Rewarding the Scientific Process: Process-Level Reward Modeling for Agentic Data Analysis",
+        "status": "completed",
+        "content": "# 深度解读：DataPRM — 面向 Agentic 数据分析的过程级奖励模型\n\n## 1. 问题与动机\n\n当前 LLM 数据分析 Agent 几乎全部采用「结果级监督」（只看最终答案对不对），这会让中间出现的逻辑漏洞（hallucinated logic）一路传到最终输出且不被发现。Process Reward Model（PRM）在数学推理这种「静态」领域已经被验证有效，但作者指出，把数学 PRM 直接搬到数据分析这种「动态、需与环境交互」的任务上会失败。论文具体识别出两个失效模式：\n\n- **Silent Errors（静默错误）**：代码可执行成功但结果在逻辑上是错的。一般 PRM 只做静态代码审查，不能感知执行环境，因而这类错误一律滑过去。\n- **Grounding Errors（试错型错误）**：数据分析 Agent 在熟悉数据 schema/路径时必然会产生小错误（语法、文件名拼错等），这是「正常的探索」。但通用 PRM 会把这些步骤一律打低分，导致最终能成功的轨迹被剪枝。\n\nFigure 2b 给出了具体证据：通用 PRM 对含 grounding error 但最终答案正确的轨迹给出整体低分。这两个失效模式的本质是「现有 PRM 无法区分致命错误和可恢复的探索性步骤」，正是论文要解决的问题。\n\n## 2. 方法详解\n\nDataPRM 的核心设计：把 PRM 本身做成一个会主动调用代码环境的 Agent，并使用三元奖励替代二元奖励。\n\n**架构（Equation 3-6）**：DataPRM 采用「生成式 ReAct 范式」对每一步打分，输入是：完整轨迹历史 + 当前步骤 + 之前步骤的 verification feedback；输出是内部三元组（reasoning, code action, observation），这些 action 可以是任意可执行代码或工具调用。这意味着评判一步是否正确时，DataPRM 可以自己执行 SQL、读文件、跑 python 来验证，而不只是基于文本判断。\n\n**工具调用能力**：集成两种工具——`query_document`（读文档）与 `query_image`（解读图）——使 PRM 同时拥有多模态与长上下文能力，可以查询专家模型来理解超出代码本身范围的内容。\n\n**三元奖励（替代 0/1 二元奖励）**：\n- **1.0 (Strictly Correct)**：步骤逻辑正确，朝着解题方向推进；\n- **0.5 (Correctable Error)**：syntax 错误、文件路径错误等会触发环境反馈、可恢复的错误；\n- **0.0 (Irrecoverable Error)**：根本性逻辑错误或幻觉，无法恢复。\n\n这是 DataPRM 的关键创新——0.5 这一档明确区分「探索性试错」和「真正错误」，让 RL 训练不会一刀切地惩罚试错。\n\n**训练数据构造（约 7K 高质量样本）**：\n1. 从 GitHub 与人工专家收集真实数据文件；\n2. 用 Qwen3-235B-A22B-Instruct 对每条已验证 query 生成 K=4 条多样轨迹；\n3. 只保留「最终答案不一致」的 case（最大化信息增益、聚焦边界 case）；\n4. 用 LLM 做初始 step-level 评分与错误归因；\n5. 把已识别错误整理成 few-shot examples 作为外部知识；\n6. DeepSeek-V3.2 作为专家 annotator，用错误知识做 ternary reward 标注。\n\n**训练设置**：基模型 Qwen3-4B-Instruct；SFT，learning rate=1e-5，batch size=32，epoch=3，硬件 8×H20。\n\n**端到端 RL 集成**：使用 GRPO 算法，奖励组合 r_total = (1-β)·r_outcome + β·(1/T·Σ r_prm)；并引入一致性约束（Equation 10）：要求 PRM 给最后一步的奖励与最终结果是否正确保持一致。\n\n## 3. 核心技术贡献\n\n1. **环境感知验证（Environment-Aware Verification）**：首个让 PRM 主动与执行环境交互的工作。本质机制：当评判某步骤时，PRM 自己跑一段验证代码（例如查询表 schema、跑 sanity check）从而捕获「执行无异常但结果错」的 silent error；这是任何静态 PRM 都做不到的。\n\n2. **三元奖励设计（Ternary Reward）**：附录 A 给出了理论推导，把奖励分成「任务推进 G」与「信息增益 I」两部分；0.5 这一档对应高 I 但低 G 的步骤，恰好对应探索性 trial-and-error。这一设计对应实验里 entropy 不坍塌的训练动力学。\n\n3. **可扩展数据 pipeline**：diversity-driven 生成 + knowledge-augmented annotation 让 7K 样本就能训出强 PRM，且无需 reference correctness（不需要标准答案）。\n\n4. **参数效率（58× 优势）**：4B 模型在 ScienceAgentBench 上击败 72B 通用数学 PRM（详见实验）。\n\n## 4. 实验结果分析\n\n### 4.1 测试时扩展（Best-of-N）\n\n**ScienceAgentBench**（Qwen3-235B 做 policy，N=16）：\n\n| 验证器 | Easy | Hard |\n|--------|------|------|\n| DataPRM (4B) | **40.89%** | **25.64%** |\n| Qwen2.5-Math-PRM-72B | 20.51% | 23.08% |\n\nDataPRM 用 1/18 的参数取得 Easy 上 +20% 的绝对提升。\n\n**DABStep**（N=16）：DataPRM 在 Hard 上 33.86%，Easy 上 32.80%；Majority Voting 仅 30.69%；ScienceAgentBench 上相对 +7.21%，DABStep 上 +11.28%。\n\n**Scaling 行为**：DataPRM 随 N（4→8→16）持续改进；Qwen2.5-Math-PRM-72B 反而从 33.33% 退化到 31.33%——典型的 reward hacking 表现，规模越大越被攻击。这是 PRM 鲁棒性的硬证据。\n\n**跨搜索策略泛化**（Figure 4）：\n- Beam Search：DataPRM 38.89% vs 72B PRM 32.44%；\n- Diverse Verifier Tree Search：DataPRM 持续领先且未发生 entropy collapse；\n- 这说明 DataPRM 的优势不依赖特定搜索算法。\n\n### 4.2 强化学习训练\n\n- **DABench pass@1**：78.73%（process-supervised RL）\n- **TableBench pass@1**：64.84%\n\n**训练动力学**（Figure 5）是最重要的结果之一：process-supervised RL 整个训练过程 entropy 维持在 ~0.18；outcome-only baseline 在 200 步后 entropy 坍缩到 0.12。这直接证明 ternary reward 中 0.5 这一档保留了探索性，避免了过早收敛。pass@3 也因此显著提升。\n\n### 4.3 关键消融\n\n**Table 3 组件分析**（Hard, N=16）：\n- CoT baseline（无代码环境）：35.71%\n- 单轮 code + 环境：36.51%（+0.80）\n- 多轮 code 但无环境：36.67%（边际改进）\n- 多轮 code + 环境：36.77%（+1.06）\n- **完整 DataPRM**：37.57%（绝对 +1.86，相对 +5.2%）\n\n结论：环境感知和多轮交互单独都只带来 +1% 左右收益，但联合使用才能解锁 silent error 检测，这是 DataPRM 的核心技术机制。\n\n**Table 4 数据纯度 vs 多样性**：\n- 不过滤（保留全部多样轨迹）：**40.89%**（最佳）\n- Meta-Critic 过滤：40.00%\n- Process-Consistency 过滤：39.34%\n\n这是一个反直觉的发现：在数据分析 PRM 训练中，数据多样性比纯度更重要；激进过滤会扔掉「带噪声但提供有效监督」的多样化样本。\n\n## 5. 局限与未来方向\n\n作者明确指出三点局限：\n\n1. **任务范围**：仅覆盖含推理与可视化的数据分析，不包含复杂工程任务（模型训练、预测部署）；\n2. **数据依赖**：依赖高质量轨迹数据 + SFT，未来需探索 less-supervised 路径（RL、skill learning）；\n3. **标注规模**：7K 样本对 frontier 模型或全新分析范式可能不够。\n\n未明示但可识别的局限：（a）使用 DeepSeek-V3.2 做专家 annotator 时该模型本身的偏置会传到 DataPRM；（b）三元奖励分档（0/0.5/1.0）的边界由人工启发式定义，不一定是连续奖励意义下的最优 quantization。\n\n## 6. 工业实践意义\n\n**对搜索/推荐 Agent 训练的直接启示**：\n\n1. **过程奖励是 Agent 训练的关键差异化**：仅做 outcome reward 训练的 search Agent 会出现 entropy collapse、过早收敛——DataPRM 在 200 步训练时的 entropy 0.18 vs 0.12 直接量化了这一差异。落地时，搜索 Agent 的 RL 训练应该考虑 process reward。\n\n2. **PRM 必须能调用真实环境**：把 PRM 设计成「只读文本」的 Agent 是常见错误。社区搜索 Agent 的训练中，PRM 应该能调用真实搜索引擎执行查询、查看返回结果，否则也会出现 search 任务里的 silent error（query 看似合理但实际召回离题）。\n\n3. **三元奖励比二元更稳**：query 改写、tool selection 等多步任务里，把「合理但非最优的尝试」直接判 0 是大多数 RLHF 失败的根源。建议把这一档明确建模成 0.5 而非 0/1 切换。\n\n4. **小模型 PRM 完全可行**：4B 模型胜 72B PRM 是工程上巨大利好。生产环境完全可以用 7B 量级 PRM 给 70B 量级 policy 提供监督，serving 成本接近 1/10。\n\n5. **训练数据：多样性 > 纯度**：很多团队过度清洗 RL 训练轨迹，本论文反向给出了证据——保留多样性带噪轨迹比激进过滤更好。这一点对处于「数据冷启动」的 search Agent 团队尤为重要。\n\n**部署考虑**：DataPRM 4B 在 8×H20 上 SFT 完成；推理时作为 verifier 与 policy 联合 serving，KV cache 与多轮工具调用会显著影响延迟，建议在异步打分模式（不阻塞主推理）下使用。",
+        "content_html": "<h1>深度解读：DataPRM — 面向 Agentic 数据分析的过程级奖励模型</h1>\n<h2>1. 问题与动机</h2>\n<p>当前 LLM 数据分析 Agent 几乎全部采用「结果级监督」（只看最终答案对不对），这会让中间出现的逻辑漏洞（hallucinated logic）一路传到最终输出且不被发现。Process Reward Model（PRM）在数学推理这种「静态」领域已经被验证有效，但作者指出，把数学 PRM 直接搬到数据分析这种「动态、需与环境交互」的任务上会失败。论文具体识别出两个失效模式：</p>\n<ul>\n<li><strong>Silent Errors（静默错误）</strong>：代码可执行成功但结果在逻辑上是错的。一般 PRM 只做静态代码审查，不能感知执行环境，因而这类错误一律滑过去。</li>\n<li><strong>Grounding Errors（试错型错误）</strong>：数据分析 Agent 在熟悉数据 schema/路径时必然会产生小错误（语法、文件名拼错等），这是「正常的探索」。但通用 PRM 会把这些步骤一律打低分，导致最终能成功的轨迹被剪枝。</li>\n</ul>\n<p>Figure 2b 给出了具体证据：通用 PRM 对含 grounding error 但最终答案正确的轨迹给出整体低分。这两个失效模式的本质是「现有 PRM 无法区分致命错误和可恢复的探索性步骤」，正是论文要解决的问题。</p>\n<h2>2. 方法详解</h2>\n<p>DataPRM 的核心设计：把 PRM 本身做成一个会主动调用代码环境的 Agent，并使用三元奖励替代二元奖励。</p>\n<p><strong>架构（Equation 3-6）</strong>：DataPRM 采用「生成式 ReAct 范式」对每一步打分，输入是：完整轨迹历史 + 当前步骤 + 之前步骤的 verification feedback；输出是内部三元组（reasoning, code action, observation），这些 action 可以是任意可执行代码或工具调用。这意味着评判一步是否正确时，DataPRM 可以自己执行 SQL、读文件、跑 python 来验证，而不只是基于文本判断。</p>\n<p><strong>工具调用能力</strong>：集成两种工具——<code>query_document</code>（读文档）与 <code>query_image</code>（解读图）——使 PRM 同时拥有多模态与长上下文能力，可以查询专家模型来理解超出代码本身范围的内容。</p>\n<p><strong>三元奖励（替代 0/1 二元奖励）</strong>：</p>\n<ul>\n<li><strong>1.0 (Strictly Correct)</strong>：步骤逻辑正确，朝着解题方向推进；</li>\n<li><strong>0.5 (Correctable Error)</strong>：syntax 错误、文件路径错误等会触发环境反馈、可恢复的错误；</li>\n<li><strong>0.0 (Irrecoverable Error)</strong>：根本性逻辑错误或幻觉，无法恢复。</li>\n</ul>\n<p>这是 DataPRM 的关键创新——0.5 这一档明确区分「探索性试错」和「真正错误」，让 RL 训练不会一刀切地惩罚试错。</p>\n<p><strong>训练数据构造（约 7K 高质量样本）</strong>：</p>\n<ol>\n<li>从 GitHub 与人工专家收集真实数据文件；</li>\n<li>用 Qwen3-235B-A22B-Instruct 对每条已验证 query 生成 K=4 条多样轨迹；</li>\n<li>只保留「最终答案不一致」的 case（最大化信息增益、聚焦边界 case）；</li>\n<li>用 LLM 做初始 step-level 评分与错误归因；</li>\n<li>把已识别错误整理成 few-shot examples 作为外部知识；</li>\n<li>DeepSeek-V3.2 作为专家 annotator，用错误知识做 ternary reward 标注。</li>\n</ol>\n<p><strong>训练设置</strong>：基模型 Qwen3-4B-Instruct；SFT，learning rate=1e-5，batch size=32，epoch=3，硬件 8×H20。</p>\n<p><strong>端到端 RL 集成</strong>：使用 GRPO 算法，奖励组合 r_total = (1-β)·r_outcome + β·(1/T·Σ r_prm)；并引入一致性约束（Equation 10）：要求 PRM 给最后一步的奖励与最终结果是否正确保持一致。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>环境感知验证（Environment-Aware Verification）</strong>：首个让 PRM 主动与执行环境交互的工作。本质机制：当评判某步骤时，PRM 自己跑一段验证代码（例如查询表 schema、跑 sanity check）从而捕获「执行无异常但结果错」的 silent error；这是任何静态 PRM 都做不到的。</li>\n</ol>\n<ol>\n<li><strong>三元奖励设计（Ternary Reward）</strong>：附录 A 给出了理论推导，把奖励分成「任务推进 G」与「信息增益 I」两部分；0.5 这一档对应高 I 但低 G 的步骤，恰好对应探索性 trial-and-error。这一设计对应实验里 entropy 不坍塌的训练动力学。</li>\n</ol>\n<ol>\n<li><strong>可扩展数据 pipeline</strong>：diversity-driven 生成 + knowledge-augmented annotation 让 7K 样本就能训出强 PRM，且无需 reference correctness（不需要标准答案）。</li>\n</ol>\n<ol>\n<li><strong>参数效率（58× 优势）</strong>：4B 模型在 ScienceAgentBench 上击败 72B 通用数学 PRM（详见实验）。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<h3>4.1 测试时扩展（Best-of-N）</h3>\n<p><strong>ScienceAgentBench</strong>（Qwen3-235B 做 policy，N=16）：</p>\n<table><thead><tr><th>验证器</th><th>Easy</th><th>Hard</th></tr></thead><tbody><tr><td>DataPRM (4B)</td><td><strong>40.89%</strong></td><td><strong>25.64%</strong></td></tr><tr><td>Qwen2.5-Math-PRM-72B</td><td>20.51%</td><td>23.08%</td></tr></tbody></table>\n<p>DataPRM 用 1/18 的参数取得 Easy 上 +20% 的绝对提升。</p>\n<p><strong>DABStep</strong>（N=16）：DataPRM 在 Hard 上 33.86%，Easy 上 32.80%；Majority Voting 仅 30.69%；ScienceAgentBench 上相对 +7.21%，DABStep 上 +11.28%。</p>\n<p><strong>Scaling 行为</strong>：DataPRM 随 N（4→8→16）持续改进；Qwen2.5-Math-PRM-72B 反而从 33.33% 退化到 31.33%——典型的 reward hacking 表现，规模越大越被攻击。这是 PRM 鲁棒性的硬证据。</p>\n<p><strong>跨搜索策略泛化</strong>（Figure 4）：</p>\n<ul>\n<li>Beam Search：DataPRM 38.89% vs 72B PRM 32.44%；</li>\n<li>Diverse Verifier Tree Search：DataPRM 持续领先且未发生 entropy collapse；</li>\n<li>这说明 DataPRM 的优势不依赖特定搜索算法。</li>\n</ul>\n<h3>4.2 强化学习训练</h3>\n<ul>\n<li><strong>DABench pass@1</strong>：78.73%（process-supervised RL）</li>\n<li><strong>TableBench pass@1</strong>：64.84%</li>\n</ul>\n<p><strong>训练动力学</strong>（Figure 5）是最重要的结果之一：process-supervised RL 整个训练过程 entropy 维持在 ~0.18；outcome-only baseline 在 200 步后 entropy 坍缩到 0.12。这直接证明 ternary reward 中 0.5 这一档保留了探索性，避免了过早收敛。pass@3 也因此显著提升。</p>\n<h3>4.3 关键消融</h3>\n<p><strong>Table 3 组件分析</strong>（Hard, N=16）：</p>\n<ul>\n<li>CoT baseline（无代码环境）：35.71%</li>\n<li>单轮 code + 环境：36.51%（+0.80）</li>\n<li>多轮 code 但无环境：36.67%（边际改进）</li>\n<li>多轮 code + 环境：36.77%（+1.06）</li>\n<li><strong>完整 DataPRM</strong>：37.57%（绝对 +1.86，相对 +5.2%）</li>\n</ul>\n<p>结论：环境感知和多轮交互单独都只带来 +1% 左右收益，但联合使用才能解锁 silent error 检测，这是 DataPRM 的核心技术机制。</p>\n<p><strong>Table 4 数据纯度 vs 多样性</strong>：</p>\n<ul>\n<li>不过滤（保留全部多样轨迹）：<strong>40.89%</strong>（最佳）</li>\n<li>Meta-Critic 过滤：40.00%</li>\n<li>Process-Consistency 过滤：39.34%</li>\n</ul>\n<p>这是一个反直觉的发现：在数据分析 PRM 训练中，数据多样性比纯度更重要；激进过滤会扔掉「带噪声但提供有效监督」的多样化样本。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出三点局限：</p>\n<ol>\n<li><strong>任务范围</strong>：仅覆盖含推理与可视化的数据分析，不包含复杂工程任务（模型训练、预测部署）；</li>\n<li><strong>数据依赖</strong>：依赖高质量轨迹数据 + SFT，未来需探索 less-supervised 路径（RL、skill learning）；</li>\n<li><strong>标注规模</strong>：7K 样本对 frontier 模型或全新分析范式可能不够。</li>\n</ol>\n<p>未明示但可识别的局限：（a）使用 DeepSeek-V3.2 做专家 annotator 时该模型本身的偏置会传到 DataPRM；（b）三元奖励分档（0/0.5/1.0）的边界由人工启发式定义，不一定是连续奖励意义下的最优 quantization。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>对搜索/推荐 Agent 训练的直接启示</strong>：</p>\n<ol>\n<li><strong>过程奖励是 Agent 训练的关键差异化</strong>：仅做 outcome reward 训练的 search Agent 会出现 entropy collapse、过早收敛——DataPRM 在 200 步训练时的 entropy 0.18 vs 0.12 直接量化了这一差异。落地时，搜索 Agent 的 RL 训练应该考虑 process reward。</li>\n</ol>\n<ol>\n<li><strong>PRM 必须能调用真实环境</strong>：把 PRM 设计成「只读文本」的 Agent 是常见错误。社区搜索 Agent 的训练中，PRM 应该能调用真实搜索引擎执行查询、查看返回结果，否则也会出现 search 任务里的 silent error（query 看似合理但实际召回离题）。</li>\n</ol>\n<ol>\n<li><strong>三元奖励比二元更稳</strong>：query 改写、tool selection 等多步任务里，把「合理但非最优的尝试」直接判 0 是大多数 RLHF 失败的根源。建议把这一档明确建模成 0.5 而非 0/1 切换。</li>\n</ol>\n<ol>\n<li><strong>小模型 PRM 完全可行</strong>：4B 模型胜 72B PRM 是工程上巨大利好。生产环境完全可以用 7B 量级 PRM 给 70B 量级 policy 提供监督，serving 成本接近 1/10。</li>\n</ol>\n<ol>\n<li><strong>训练数据：多样性 &gt; 纯度</strong>：很多团队过度清洗 RL 训练轨迹，本论文反向给出了证据——保留多样性带噪轨迹比激进过滤更好。这一点对处于「数据冷启动」的 search Agent 团队尤为重要。</li>\n</ol>\n<p><strong>部署考虑</strong>：DataPRM 4B 在 8×H20 上 SFT 完成；推理时作为 verifier 与 policy 联合 serving，KV cache 与多轮工具调用会显著影响延迟，建议在异步打分模式（不阻塞主推理）下使用。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.24003",
+      "title": "Stabilizing Efficient Reasoning with Step-Level Advantage Selection",
+      "url": "https://huggingface.co/papers/2604.24003",
+      "authors": "Han Wang, Xiaodong Yu, Jialian Wu, Jiang Liu, Ximeng Sun",
+      "company": [
+        "AMD"
+      ],
+      "source": "huggingface",
+      "published": "2026-04-26",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "高效推理 LLM 在短上下文下做 GRPO 后训练能自动压缩推理长度，但训练动态会越来越不稳，准确率下滑。作者把不稳定原因归结为：截断与验证器误判会让正确答案被错误反传梯度，常规 GRPO 把句段级 advantage 一刀切到所有 token。论文提出 SAS（Step-level Advantage Selection），在每个推理步上根据置信度细粒度地选择是否回传 advantage——对正确轨迹中的低置信步置零 advantage，对验证失败轨迹中的高置信步置零 advantage，从而过滤截断/验证噪声。在数学与代码推理基准上 SAS 在大幅压缩推理长度的同时保持或提升准确率，训练曲线显著更平滑。",
+      "key_insight": "RL 后训练里「token 全部用同一 advantage」是一个隐藏的稳定性陷阱，这在 search Agent 的工具调用 RL 训练中同样存在。论文揭示：失败 rollout 中真正错误的不是所有 token，而是少量关键决策步；用置信度做轨迹内 step-level 过滤是一个比奖励 reshape 更直接的稳定化手段。对实际部署的启示：训练搜索 Agent 时不要一刀切惩罚整个轨迹，可以借助置信度或 verifier 信号识别真正出错的子步骤，否则 RL 训练会逐步退化。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.24583",
+      "title": "Improving Vision-language Models with Perception-centric Process Reward Models",
+      "url": "https://huggingface.co/papers/2604.24583",
+      "authors": "Yingqian Min, Kun Zhou, Yifan Li, Yuhuan Wu, Han Peng",
+      "company": [
+        "RUC"
+      ],
+      "source": "huggingface",
+      "published": "2026-04-26",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "RLVR 在 VLM 上以「结果级」奖励监督，对推理链中的中间感知错误无能为力。论文提出 Perceval：一个面向感知的过程奖励模型，可从 VLM 输出中抽取与图像相关的声明并逐条与图像证据比对，定位幻觉 span。Perceval 用感知密集型 SFT 数据训练，并嵌入到 RL 训练流程：相比传统 GRPO 的序列级 advantage，Perceval 在被识别的幻觉 span 上施加 token 级负向 advantage，提供细粒度监督。多个 VLM 推理 benchmark 上感知幻觉显著下降，多步推理准确率提升。",
+      "key_insight": "把 PRM 设计为「token 级幻觉检测器」而非整段评分器，是当前多模态 Agent 的关键技术分水岭。对搜索/推荐场景的启示：当 LLM 用做检索结果改写或归纳时，可在「与文档证据冲突的 span」上施加局部惩罚，而不是仅做最终答案打分；这种细粒度 token-level RL 有望显著降低事实幻觉，是落地 search Agent 必须考虑的训练信号设计方向。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.22760",
+      "title": "Quantifying Divergence in Inter-LLM Communication Through API Retrieval and Ranking",
+      "url": "https://arxiv.org/abs/2604.22760",
+      "authors": "Eyhab Al-Masri",
+      "company": [
+        "University of Washington Tacoma"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.6,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "随着 LLM Agent 越来越多地通过 API 完成任务，不同 LLM 在「API 发现 / 排序」一致性上的可靠性尚不清晰。作者构建了一个统一基准，跨 15 个标准 API 领域、5 个主流模型家族评估 inter-LLM 一致性，使用 Average Overlap、Jaccard、Rank-Biased Overlap、Kendall's tau / W、Cronbach's alpha 等集合 / 排序 / 共识维度的指标。结果显示总体一致性中等（AO≈0.50, tau≈0.45），但领域差异强：结构化任务（Weather、Speech-to-Text）稳定，开放任务（Sentiment Analysis）发散明显。波动性与共识分析揭示一致性聚簇受任务结构而非模型规模主导。",
+      "key_insight": "对 Agentic 搜索系统的关键提示：把 LLM 当作 retriever 时，不同模型对同一 query 选 tool / API 的排序差异可能很大，且这种差异在开放语义任务上最严重——这正是社区搜索的典型场景。落地启示：1) 不要假设换一个更强模型就能稳定 tool ranking，反而需要在系统层面引入投票或 reranker 平滑模型间方差；2) 评估 search Agent 必须包含「跨模型 / 跨 prompt 一致性」指标，而不仅是单一模型的 nDCG。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.23563",
+      "title": "CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection with Formal Ontology Reasoning",
+      "url": "https://arxiv.org/abs/2604.23563",
+      "authors": "Safayat Bin Hakim, Aniqa Afzal, Qi Zhao, Vigna Majmundar, Pawel Sloboda, Houbing Herbert Song",
+      "company": [
+        "UMBC"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "隐私敏感场景的钓鱼检测需要同时满足极低误报、可解释、不向外部 API 暴露明文、抗 AI 攻击四个相互冲突的约束。作者提出 CyberCane：双阶段神经-符号 RAG 框架。首阶段对邮件元数据应用确定性符号规则；边界 case 升级到第二阶段，使用本地 RAG 检索（仅检索钓鱼专用语料），并通过自动敏感字段脱敏防止信息泄漏；同时引入 PhishOnt（OWL 本体）对攻击类做形式化推理与可验证解释。该 pipeline 在多个钓鱼基准上保持高召回的同时维持接近零误报，并提供可被合规审计的推理链。",
+      "key_insight": "Neuro-Symbolic RAG 是一种被 LLM-only RAG 长期忽视的 Agent 落地范式。其核心思想——「先用规则筛掉 95%，再让 LLM 处理 5% 的边界 case」——直接适用于社区搜索的安全 / 反垃圾场景：不要让 LLM 处理全量 query，而是用符号规则做硬过滤，把模糊 case 升级到 RAG/LLM。可借鉴的工程设计：检索源限定（只检索域内白名单语料）、自动 PII 脱敏、用本体做检索结果一致性校验，三者结合可显著降低 RAG 上线后的合规风险。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.22762",
+      "title": "Behavioral Intelligence Platforms: From Event Streams to Autonomous Insight via Probabilistic Journey Graphs, Behavioral Knowledge Extraction, and Grounded Language Generation",
+      "url": "https://arxiv.org/abs/2604.22762",
+      "authors": "Arun Patra, Bhushan Vadgave",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.5,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "现行产品分析平台依赖用户主动写 SQL / 配置看板，门槛高且假设用户事先知道要问什么。作者提出 BIP（Behavioral Intelligence Platform）四层架构，把原始事件流转化为自动洞察：1) NSD 层标准化事件并映射到语义状态层级；2) BGE 层用吸收马尔可夫链建模用户旅程，计算转移概率与 removal effect；3) BKE 层抽取行为知识；4) GLG 层用 LLM 生成有据可查的自然语言解释。系统从被动答查询转向主动检测并解释行为现象。",
+      "key_insight": "对搜索/推荐运营的启示：把「分析」从 pull 模式转成 push 模式是一种典型的 agentic 改造。BIP 的 removal effect 公式可以无缝迁移到搜索归因——评估某个排序信号或某个召回通道「拿掉之后用户旅程会发生多少概率分布变化」，比传统 A/B 更细粒度。其工程做法是把事件流先转成马尔可夫图，再让 LLM 在已结构化的图上生成解释，这套「先结构化、后 grounding」的范式比直接喂事件流给 LLM 更可靠。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.22755",
+      "title": "RADIANT-LLM: an Agentic Retrieval Augmented Generation Framework for Reliable Decision Support in Safety-Critical Nuclear Engineering",
+      "url": "https://arxiv.org/abs/2604.22755",
+      "authors": "Zavier Ndum Ndum, Jian Tao, John Ford, Mansung Yim, Yang Liu",
+      "company": [
+        "Texas A&M"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "面向核工程安全决策这一高合规场景，作者提出 RADIANT-LLM 多模态 Agentic RAG 框架。核心特性：本地优先、模型无关；多模态文档摄取管线 + 结构化 metadata-rich 知识库，支持页/图级检索；Agent 层协调领域工具，对响应强制要求带溯源标注的引用，并保留人工 in-the-loop 验证；同时通过自动 redaction 防止敏感数据外泄。框架在内部核安全 QA 工作流上证明了相比纯 LLM 基线显著降低幻觉、提升溯源可审计性。",
+      "key_insight": "RADIANT-LLM 是把 RAG 工程化到强合规场景的一个完整模板，对企业内部知识搜索（社区运营手册、客服知识库）有直接复用价值。可借鉴的设计点：1) 多模态摄取必须保留页/图级粒度，否则下游引用无法溯源；2) Agent 层强制 citation-backed 响应是降低幻觉最有效的工程手段，胜过模型层调优；3) 「local-first、model-agnostic」架构让模型升级不影响 RAG pipeline，是搜索系统长期演进必须考虑的解耦原则。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.24479",
+      "title": "Zero-to-CAD: Agentic Synthesis of Interpretable CAD Programs at Million-Scale Without Real Data",
+      "url": "https://huggingface.co/papers/2604.24479",
+      "authors": "Mohammadmehdi Ataei, Farzaneh Askari, Kamal Rahimi Malekshan, Pradeep Kumar Jayaraman",
+      "company": [
+        "Autodesk"
+      ],
+      "source": "huggingface",
+      "published": "2026-04-26",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "现有大规模 3D 数据集主要是 B-Rep / mesh，缺少表达设计意图的「构造历史」。Zero-to-CAD 把合成问题建模为 agentic search：将 LLM 嵌入到一个有反馈的 CAD 环境中，迭代「生成 → 执行 → 校验」代码，并在过程中调用工具与文档查找，以促进几何有效性与操作多样性。整个 pipeline 无需真实 CAD 数据，最终合成约 100 万条可执行、可读、可编辑的 CAD 序列，并发布 10 万条精选高质量子集。",
+      "key_insight": "「无真实数据，靠 Agent + 验证环境合成训练数据」是一种被低估的数据飞轮范式。对搜索/推荐的启示：当人工标注成本极高（例如 query 改写、复杂多轮搜索意图）时，可以构造一个带验证器的环境，让 LLM Agent 自我「生成 query → 执行检索 → 校验」从而合成高质量训练样本。关键是验证环节必须是「可执行 + 可机验」，否则合成数据噪声会反向毒化模型——这点也是与「self-instruct」最大的区别。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2604.22800",
+      "title": "RCSB PDB AI Help Desk: retrieval-augmented generation for protein structure deposition support",
+      "url": "https://arxiv.org/abs/2604.22800",
+      "authors": "Vivek Reddy Chithari et al. (RCSB PDB)",
+      "company": [
+        "Rutgers"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "RCSB PDB 每年要处理约 19000 条来自 8000 条目深存的结构存档求助消息，人工 biocurator 负担巨大。作者构建了基于 LangChain + pgvector (PostgreSQL) + GPT-4.1-mini 的 RAG help desk：使用 pymupdf4llm 做保留 Markdown 结构的 PDF 抽取、两阶段文档切块、MMR 检索、话题 guardrail 拦截 off-topic 查询，并通过专用 system prompt 防止内部术语外泄。系统在内部评估中显著降低了人工响应时间。",
+      "key_insight": "这是一个朴素但工程参考价值很高的 RAG 落地案例，几乎所有「企业内部 RAG 客服 / 文档问答」都可直接抄此栈。可借鉴的细节：1) PDF 抽取保留 Markdown 结构是 RAG 质量的隐性瓶颈，pymupdf4llm 是当前社区共识；2) 两阶段切块（粗粒度索引、细粒度回填）+ MMR 检索是对长文档最稳的检索方案；3) Topical guardrail 必须放在 retrieval 之前而非之后，可防止无关 query 被强行拼接进上下文。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2604.23585",
+      "title": "ComplianceNLP: Knowledge-Graph-Augmented RAG for Multi-Framework Regulatory Gap Detection",
+      "url": "https://arxiv.org/abs/2604.23585",
+      "authors": "Dongxin Guo, Jikun Wu, Siu Ming Yiu",
+      "company": [
+        "HKU"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "金融机构每年要追踪超 6 万条监管事件，作者提出 ComplianceNLP 端到端系统自动检测合规缺口，包含三个组件：1) 基于知识图谱的 RAG，将生成 grounding 在含 12847 条 SEC / MiFID II / Basel III 条款的图上；2) 共享 LEGAL-BERT 编码器的多任务义务抽取，融合 NER、deontic 分类、跨引用消解；3) 基于严重程度的合规缺口打分。在自有 benchmark 上 ComplianceNLP 在 gap detection 上取得 87.7 F1，相比 GPT-4o+RAG 提升 +3.5 F1。",
+      "key_insight": "这是「Knowledge-Graph-Augmented RAG」打过纯向量 RAG 的具体证据：当查询本身需要满足多条件交叉（条款引用、责任主体、生效时间）时，向量相似度往往找不到「全部条件成立」的文档子集，必须借助 KG 上的子图匹配。落地启示：在搜索关注「关系约束 query」（例如「同时满足 X 和 Y 的帖子」）时，纯 dense retrieval 会输给 KG-augmented 检索；可以投入产出比较高地从「构建小型领域知识图」入手，作为现有 RAG 的补强而非替换。"
+    }
+  ],
+  "code_projects": []
+}

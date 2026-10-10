@@ -1,0 +1,644 @@
+{
+  "date": "2026-10-02",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "papers_scored": 78,
+    "papers_selected": 10,
+    "score_min": 3.75,
+    "score_max": 4.45
+  },
+  "papers": [
+    {
+      "id": "arxiv:oai:arXiv.org:2609.39327",
+      "title": "Generative End-to-end Ad Retrieval at Douyin",
+      "authors": "Shaowen Zeng, Yanhua Huang, Jiacheng Sun, Jiarui Liu, Qian Dai, Zhikai Yang, Hancheng Li, Boya Wu, Tuoyu Zhang, Yekui Chen, Xiang Sun",
+      "abstract": "arXiv:2609.39327v1 Announce Type: new \nAbstract: Generative retrieval reformulates recommendation as the generation of discrete item tokens. However, scaling this paradigm to real-world recommender systems reveals two critical bottlenecks: 1) Representation collapse, where the item tokenizer converges to degenerate results under continuous distribution shifts, fundamentally hindering stable end-to-end adaptation. 2) Item collisions, where the massive candidate pool causes distinct items to share identical token sequences, compromising the final retrieval precision. Crucially, these bottlenecks are inherently coupled: expanding codebook capacity to mitigate collisions inevitably exacerbates collapse. To address them simultaneously, we propose GEAR, an end-to-end framework that jointly optimizes the tokenizer, generator, and reranker. To mitigate representation collapse, we introduce BasisVQ, which re-parameterizes the codebook via an orthogonal basis to enable global gradient sharing an",
+      "url": "https://arxiv.org/abs/2609.39327",
+      "source": "arxiv",
+      "published": "2026-09-30",
+      "discovered_at": "2026-10-01",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "total_score": 4.45,
+      "company": [
+        "ByteDance"
+      ],
+      "summary": "针对广告生成式检索中的码本坍缩和物品碰撞，GEAR联合训练分词器、生成器与轻量重排器。BasisVQ以正交基参数化码本，前缀感知量化增强区分能力。抖音全量部署的ADSS和ADVV分别提升0.563%和0.658%，冷启动广告激活率相对提升1.46%。",
+      "key_insight": "社区UGC内容持续新增，语义ID碰撞与在线分布变化同样影响召回稳定性。可先借鉴码本全局梯度共享和生成后桶内重排，再评估端到端联训。论文最优配置仍有52.3%的物品碰撞率，因此不能把生成ID直接等同于唯一帖子，也不能把广告收益直接折算为社区搜索CTR。",
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.75,
+      "evidence_url": "https://arxiv.org/html/2609.39327",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2609.39327",
+        "title": "Generative End-to-end Ad Retrieval at Douyin",
+        "status": "completed",
+        "content": "# GEAR：抖音广告生成式检索的端到端联训与碰撞消歧\n\n来源：https://arxiv.org/html/2609.39327 。本解读依据正文第3、5、6节及附录C；数字来自论文在线实验和分词器对照。下文将作者报告的结果与面向社区搜索的迁移建议分别说明。\n\n## 1. 问题与动机\n\n生成式检索把候选检索变成离散物品词元的自回归生成，但工业内容池持续变化，新广告、特征更新与兴趣迁移会同时改变物品表示。作者指出，冻结分词器虽然避开在线量化训练不稳定，却无法适应这种分布变化；直接更新码本又常出现少数码字得到训练、大量码字失活的表示坍缩。EMA或重初始化提供了工程缓解，但没有解决稳定直接梯度优化的问题。\n\n另一个困难是多个物品共用同一个语义ID。生成器只能判断这组词元的概率，无法区分组内广告。给每个物品添加唯一词元会损失语义共享；外接复杂精排则可能增加开销并形成割裂的训练目标。更棘手的是两者耦合：扩大码本想减少碰撞，可能让更新更稀疏、坍缩更严重。因此论文同时改造分词器和组内消歧，而不是孤立优化ID。\n\n这一问题在本文对照中有明确量化依据：普通RQ的物品碰撞率为84.2%，最优方案仍有52.3%，说明碰撞绝非仅靠增大词表就能消失。对不断新增帖子、评论和问答的社区UGC，这种动态内容池和语义近邻的共存具有实际参考价值。\n\n## 2. 方法详解\n\n系统由物品分词器、用户条件生成器、联合重排器组成。物品塔先把静态多模态特征和动态稀疏特征编码，再用三层残差量化得到ID。第l层量化当前表示减去此前选中码向量的残差，选出最近码字；其目标仍是离散序列，但训练要使连续表示和码本共同适应业务数据。\n\nBasisVQ将码本C改写为C乘以一个近似正交矩阵。矩阵W先除以自身Frobenius范数与1e-6中的较大值，使初始谱范数不超过1；然后执行Newton–Schulz迭代：把W更新为二分之一乘W乘括号中的3I减W转置乘W。论文认为五次迭代已足够。活跃码字上的梯度由共同基矩阵传播到整个码本，正交约束让坐标系近似刚性旋转，保持码向量的范数和相互空间结构，使失活码字随整体运动重新接触新数据分布，而不是被不受约束的线性变换拉离数据流形。\n\n前缀感知BasisRQ再使后层码本依赖前层决策。根据此前词元查询逐维缩放与偏置，按顺序合成为当前层的缩放γ和偏置β。最直接的实现会为每个样本物化一个完整码本，产生批量×码字数×维度的中间张量。作者把平方距离拆成三项：移除偏置后的输入平方范数、缩放后的码本平方范数，以及输入与缩放码本的交叉乘积，借矩阵乘法得到距离矩阵，维持普通量化的O(bNd)渐近时间复杂度。\n\n生成器采用轻量编码器加两层Transformer解码器。非序列特征分成28组，各组通过独立FFN投影；点击序列长度200、转化序列长度100，与非序列特征拼接成共享KV，供所有解码层交叉注意力使用。每层包含预归一化的交叉注意力、门控FFN、因果自注意力和第二个门控FFN；采用RMSNorm，门控形式为SiLU投影与另一投影逐元素相乘。解码器6个注意力头，每头64维，中间FFN维度384。\n\n三层ID生成完后再做一次解码，得到用户和当前ID共同条件化的状态，经MLP映射成96维用户向量，与对应桶内物品塔向量点积打分。该状态不是所有候选共享的单个用户向量：不同ID桶具有不同表示，因此轻量点积仍能表达上下文差异。\n\n训练按三个阶段开启损失：先训练双塔排序，再启用量化，最后加入生成和重排，防止生成器依赖尚不稳定的ID。双塔与重排均用LambdaLoss，成对排序误差以交换两物品造成的绝对ΔNDCG加权。量化损失包括码本项与commitment项，后者权重0.1。生成使用teacher forcing及因果掩码，对曝光样本按log(1+secpm)加权，其他样本生成权重为0。四项总损失权重依次是1、1、10、1，LambdaLoss缩放系数为1。附录披露双塔输出96维、码向量128维，但没有解释二者之间的具体映射；复现时需要核实，不能自行把这段补成作者设置。论文未披露优化器、学习率、全局batch、GPU型号、训练步数及训练样本总量，这些必须保留为空缺。\n\n## 3. 核心技术贡献\n\n第一项贡献是以正交基共享梯度改进码本动态更新。与只更新选中码字的普通VQ相比，它让未选中码字也受到基变换影响；与不受约束的线性变换相比，正交约束减少空间形变。需要注意，几何解释说的是基变换部分保持拓扑，不能外推为整个可训练码本在所有更新中距离不变。对照中非前缀BasisRQ的利用率7.45%，普通RQ为4.22%，碰撞率分别63.8%和84.2%。\n\n第二项贡献是前缀条件化量化与低内存距离计算。后层码本不再忽视粗层所属区域，而以已有前缀改变自身有效几何结构。完整方案相对去掉前缀感知，把碰撞率从63.8%降到52.3%，重构误差从2.03e-3降到1.82e-3。这里的收益来自表达能力和量化稳定性共同作用；在线消融替换了整个分词器，不能从该消融单独分离正交化的线上贡献。\n\n第三项贡献是复用生成状态完成联合组内排序，避免唯一ID破坏语义分享，也避免为每个物品重新运行重模型。只有一个额外解码步与桶内点积，且训练目标直接对齐相对顺序。去掉重排后，子集ADVV增益从0.498%变成0.341%，支持生成概率不足以区分共享ID物品的论点，但论文没有给出独立毫秒延迟量化。\n\n第四项贡献是训练、近线索引和在线算图协同。所有物品相关计算离开在线关键路径，模型与ID索引一起更新；在线串联生成、桶展开和打分。这样动态分词器才能在生产中持续变化，而不是依赖永久固定的语义索引。\n\n## 4. 实验结果分析\n\n在线A/B在抖音广告平台进行7天，每个实验组使用5%流量。基线是没有GEAR附加通路的原生产系统，其余组件不变。论文部署方式是新增生成式召回通路，不能读成替换全部已有稠密检索系统。以下所有数字均为相对生产基线的收益百分比；子集消融与全量部署是不同范围。\n\n| 范围与方法 | ADSS增益 | ADVV增益 |\n| --- | ---: | ---: |\n| 子集完整GEAR | 0.446% | 0.498% |\n| 子集去掉前缀感知BasisRQ | 0.288% | 0.219% |\n| 子集去掉联合重排 | 0.358% | 0.341% |\n| 子集去掉secpm加权 | 0.395% | 0.354% |\n| 全量部署GEAR | 0.563% | 0.658% |\n\n在同一子集范围，替换分词器导致ADSS增益少0.158个百分点、ADVV少0.279个百分点，是三项消融中最大损失。移除重排分别少0.088和0.157个百分点；移除价值加权分别少0.051和0.144个百分点。不能将全量0.658%和子集0.219%直接相减当作分词器贡献。secpm加权影响说明业务价值目标不仅存在于末端排序，生成候选阶段也需要价值对齐。\n\n| 分词器配置 | ID组合利用率 | 物品碰撞率 | MSE（乘10^-3） |\n| --- | ---: | ---: | ---: |\n| 前缀感知BasisRQ，2048/512/128 | 8.83% | 52.3% | 1.82 |\n| 前缀感知BasisRQ，512/512/512 | 6.16% | 75.6% | 2.04 |\n| 无前缀感知BasisRQ，2048/512/128 | 7.45% | 63.8% | 2.03 |\n| 普通RQ，2048/512/128 | 4.22% | 84.2% | 2.32 |\n\n两组大小配置的组合空间同为134217728，但每层容量分配不同，前大后小的方案在三个指标都更好。需要区分组合空间相同与实际参数数目相同：两配置码字总数不同，论文的比较不能被解读为严格等参数消融。碰撞率下降31.9个百分点是最优完整方案对普通RQ的差值；20.4个百分点则是无前缀BasisRQ对普通RQ的差值，二者不可混用。利用率衡量被激活的词元组合比例，也不能当作单层码字利用率。\n\n冷启动广告激活率相对提高1.46%，定义为新广告主在给定时间窗内达到预设流量门槛的比例。正文没有披露门槛与时间窗的具体值，因此证据支持冷启动收益方向，但不足以重建完整统计协议。论文没有按公开数据集报告细分结果，不能补造商品或社区数据上的泛化性能。\n\n## 5. 局限与未来方向\n\n作者结论明确提出未来要提高解码效率、降低推理延迟并扩展部署场景。正文讨论也承认，即使改进前缀量化，海量候选池仍会有共享ID，必须依赖重排消歧。52.3%的最优碰撞率说明ID是语义桶，不是唯一物品地址。BasisVQ在推理时可缓存变换码本，所谓零额外延迟仅针对该量化变换，不能扩展到完整生成、桶展开及重排流程。\n\n以下是本解读根据披露范围指出的限制，而非作者声明：虽然论文称在线收益显著，但表格未提供置信区间、p值、不同实验组样本量或多次重复；训练超参数和硬件披露有限，也没有吞吐、峰值显存和P95延迟。因此无法只凭论文把生产成本和统计可靠性完整复现。分词器消融更换整个方案，不能严格区分正交约束和前缀感知各自对线上收益的份额。现有结果来自广告价值指标，适用于社区搜索的nDCG与CTR仍需直接验证。\n\n## 6. 工业实践意义\n\n对社区UGC搜索，最可迁移的是动态语义桶和桶内消歧的联合设计。帖子同主题、评论同事件常共享粗语义，不应为了唯一地址把所有共享结构拆散。可以先把GEAR作为额外召回通路，与原稀疏及向量检索合并候选，固定最终精排预算，评估是否补充新帖和长尾帖子，而不是直接移除成熟检索。本文生成器以用户特征为条件，社区搜索还必须显式加入query；这是迁移设计，并非论文已验证模块。\n\n部署部分提供了具体实现线索。参数服务器保存每个物品的ID和连续向量，实例监控器周期刷新旧物品并编码新物品；近线索引构造器生成类似CSR的映射，从排序后的ID目录指向物品列表和预计算向量。索引按分钟级刷新，并与模型一起分发。在线使用KV缓存的束搜索，三步宽度256、256、512；读取桶内向量后用有符号packed-INT4用户与物品向量点积，并对每个桶保留有限物品，防止一个大桶垄断最终候选。这里每桶截断上限没有具体数值，复现需另行选取并做召回损失评估。\n\n实操可分三次验证。首先在固定数据与模型下比较普通RQ、正交BasisRQ和前缀版本，监控码组合利用率、碰撞率、重构误差及内容新鲜度。然后固定生成候选，比较随机桶内截断与联合重排，查看收益是否来自碰撞消歧。最后在相同用户流量、召回配额和最终排序预算下上线额外通路，跟踪搜索nDCG、CTR、空召回率、新帖曝光和P95延迟。社区不应直接沿用广告secpm权重；可选用经过偏差审计的相关性或满意度监督，并保留曝光选择偏差诊断。\n\n训练显存方面，前缀距离矩阵改写值得优先实现，避免生成批量×码本×维度张量。近线动态ID则要求模型和索引版本一致，以防新模型生成的桶ID对不上旧快照；这是由作者部署架构推导的工程要求。由于公开论文未给出端到端延迟数字，在线预算必须本地压测后确定。最终应把生成式检索当作候选覆盖和内容泛化的一次可测尝试，以业务指标验证收益，不能把抖音的广告价值百分比当成社区CTR承诺。",
+        "content_html": "<h1>GEAR：抖音广告生成式检索的端到端联训与碰撞消歧</h1>\n<p>来源：https://arxiv.org/html/2609.39327 。本解读依据正文第3、5、6节及附录C；数字来自论文在线实验和分词器对照。下文将作者报告的结果与面向社区搜索的迁移建议分别说明。</p>\n<h2>1. 问题与动机</h2>\n<p>生成式检索把候选检索变成离散物品词元的自回归生成，但工业内容池持续变化，新广告、特征更新与兴趣迁移会同时改变物品表示。作者指出，冻结分词器虽然避开在线量化训练不稳定，却无法适应这种分布变化；直接更新码本又常出现少数码字得到训练、大量码字失活的表示坍缩。EMA或重初始化提供了工程缓解，但没有解决稳定直接梯度优化的问题。</p>\n<p>另一个困难是多个物品共用同一个语义ID。生成器只能判断这组词元的概率，无法区分组内广告。给每个物品添加唯一词元会损失语义共享；外接复杂精排则可能增加开销并形成割裂的训练目标。更棘手的是两者耦合：扩大码本想减少碰撞，可能让更新更稀疏、坍缩更严重。因此论文同时改造分词器和组内消歧，而不是孤立优化ID。</p>\n<p>这一问题在本文对照中有明确量化依据：普通RQ的物品碰撞率为84.2%，最优方案仍有52.3%，说明碰撞绝非仅靠增大词表就能消失。对不断新增帖子、评论和问答的社区UGC，这种动态内容池和语义近邻的共存具有实际参考价值。</p>\n<h2>2. 方法详解</h2>\n<p>系统由物品分词器、用户条件生成器、联合重排器组成。物品塔先把静态多模态特征和动态稀疏特征编码，再用三层残差量化得到ID。第l层量化当前表示减去此前选中码向量的残差，选出最近码字；其目标仍是离散序列，但训练要使连续表示和码本共同适应业务数据。</p>\n<p>BasisVQ将码本C改写为C乘以一个近似正交矩阵。矩阵W先除以自身Frobenius范数与1e-6中的较大值，使初始谱范数不超过1；然后执行Newton–Schulz迭代：把W更新为二分之一乘W乘括号中的3I减W转置乘W。论文认为五次迭代已足够。活跃码字上的梯度由共同基矩阵传播到整个码本，正交约束让坐标系近似刚性旋转，保持码向量的范数和相互空间结构，使失活码字随整体运动重新接触新数据分布，而不是被不受约束的线性变换拉离数据流形。</p>\n<p>前缀感知BasisRQ再使后层码本依赖前层决策。根据此前词元查询逐维缩放与偏置，按顺序合成为当前层的缩放γ和偏置β。最直接的实现会为每个样本物化一个完整码本，产生批量×码字数×维度的中间张量。作者把平方距离拆成三项：移除偏置后的输入平方范数、缩放后的码本平方范数，以及输入与缩放码本的交叉乘积，借矩阵乘法得到距离矩阵，维持普通量化的O(bNd)渐近时间复杂度。</p>\n<p>生成器采用轻量编码器加两层Transformer解码器。非序列特征分成28组，各组通过独立FFN投影；点击序列长度200、转化序列长度100，与非序列特征拼接成共享KV，供所有解码层交叉注意力使用。每层包含预归一化的交叉注意力、门控FFN、因果自注意力和第二个门控FFN；采用RMSNorm，门控形式为SiLU投影与另一投影逐元素相乘。解码器6个注意力头，每头64维，中间FFN维度384。</p>\n<p>三层ID生成完后再做一次解码，得到用户和当前ID共同条件化的状态，经MLP映射成96维用户向量，与对应桶内物品塔向量点积打分。该状态不是所有候选共享的单个用户向量：不同ID桶具有不同表示，因此轻量点积仍能表达上下文差异。</p>\n<p>训练按三个阶段开启损失：先训练双塔排序，再启用量化，最后加入生成和重排，防止生成器依赖尚不稳定的ID。双塔与重排均用LambdaLoss，成对排序误差以交换两物品造成的绝对ΔNDCG加权。量化损失包括码本项与commitment项，后者权重0.1。生成使用teacher forcing及因果掩码，对曝光样本按log(1+secpm)加权，其他样本生成权重为0。四项总损失权重依次是1、1、10、1，LambdaLoss缩放系数为1。附录披露双塔输出96维、码向量128维，但没有解释二者之间的具体映射；复现时需要核实，不能自行把这段补成作者设置。论文未披露优化器、学习率、全局batch、GPU型号、训练步数及训练样本总量，这些必须保留为空缺。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是以正交基共享梯度改进码本动态更新。与只更新选中码字的普通VQ相比，它让未选中码字也受到基变换影响；与不受约束的线性变换相比，正交约束减少空间形变。需要注意，几何解释说的是基变换部分保持拓扑，不能外推为整个可训练码本在所有更新中距离不变。对照中非前缀BasisRQ的利用率7.45%，普通RQ为4.22%，碰撞率分别63.8%和84.2%。</p>\n<p>第二项贡献是前缀条件化量化与低内存距离计算。后层码本不再忽视粗层所属区域，而以已有前缀改变自身有效几何结构。完整方案相对去掉前缀感知，把碰撞率从63.8%降到52.3%，重构误差从2.03e-3降到1.82e-3。这里的收益来自表达能力和量化稳定性共同作用；在线消融替换了整个分词器，不能从该消融单独分离正交化的线上贡献。</p>\n<p>第三项贡献是复用生成状态完成联合组内排序，避免唯一ID破坏语义分享，也避免为每个物品重新运行重模型。只有一个额外解码步与桶内点积，且训练目标直接对齐相对顺序。去掉重排后，子集ADVV增益从0.498%变成0.341%，支持生成概率不足以区分共享ID物品的论点，但论文没有给出独立毫秒延迟量化。</p>\n<p>第四项贡献是训练、近线索引和在线算图协同。所有物品相关计算离开在线关键路径，模型与ID索引一起更新；在线串联生成、桶展开和打分。这样动态分词器才能在生产中持续变化，而不是依赖永久固定的语义索引。</p>\n<h2>4. 实验结果分析</h2>\n<p>在线A/B在抖音广告平台进行7天，每个实验组使用5%流量。基线是没有GEAR附加通路的原生产系统，其余组件不变。论文部署方式是新增生成式召回通路，不能读成替换全部已有稠密检索系统。以下所有数字均为相对生产基线的收益百分比；子集消融与全量部署是不同范围。</p>\n<table><thead><tr><th>范围与方法</th><th>ADSS增益</th><th>ADVV增益</th></tr></thead><tbody><tr><td>子集完整GEAR</td><td>0.446%</td><td>0.498%</td></tr><tr><td>子集去掉前缀感知BasisRQ</td><td>0.288%</td><td>0.219%</td></tr><tr><td>子集去掉联合重排</td><td>0.358%</td><td>0.341%</td></tr><tr><td>子集去掉secpm加权</td><td>0.395%</td><td>0.354%</td></tr><tr><td>全量部署GEAR</td><td>0.563%</td><td>0.658%</td></tr></tbody></table>\n<p>在同一子集范围，替换分词器导致ADSS增益少0.158个百分点、ADVV少0.279个百分点，是三项消融中最大损失。移除重排分别少0.088和0.157个百分点；移除价值加权分别少0.051和0.144个百分点。不能将全量0.658%和子集0.219%直接相减当作分词器贡献。secpm加权影响说明业务价值目标不仅存在于末端排序，生成候选阶段也需要价值对齐。</p>\n<table><thead><tr><th>分词器配置</th><th>ID组合利用率</th><th>物品碰撞率</th><th>MSE（乘10^-3）</th></tr></thead><tbody><tr><td>前缀感知BasisRQ，2048/512/128</td><td>8.83%</td><td>52.3%</td><td>1.82</td></tr><tr><td>前缀感知BasisRQ，512/512/512</td><td>6.16%</td><td>75.6%</td><td>2.04</td></tr><tr><td>无前缀感知BasisRQ，2048/512/128</td><td>7.45%</td><td>63.8%</td><td>2.03</td></tr><tr><td>普通RQ，2048/512/128</td><td>4.22%</td><td>84.2%</td><td>2.32</td></tr></tbody></table>\n<p>两组大小配置的组合空间同为134217728，但每层容量分配不同，前大后小的方案在三个指标都更好。需要区分组合空间相同与实际参数数目相同：两配置码字总数不同，论文的比较不能被解读为严格等参数消融。碰撞率下降31.9个百分点是最优完整方案对普通RQ的差值；20.4个百分点则是无前缀BasisRQ对普通RQ的差值，二者不可混用。利用率衡量被激活的词元组合比例，也不能当作单层码字利用率。</p>\n<p>冷启动广告激活率相对提高1.46%，定义为新广告主在给定时间窗内达到预设流量门槛的比例。正文没有披露门槛与时间窗的具体值，因此证据支持冷启动收益方向，但不足以重建完整统计协议。论文没有按公开数据集报告细分结果，不能补造商品或社区数据上的泛化性能。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者结论明确提出未来要提高解码效率、降低推理延迟并扩展部署场景。正文讨论也承认，即使改进前缀量化，海量候选池仍会有共享ID，必须依赖重排消歧。52.3%的最优碰撞率说明ID是语义桶，不是唯一物品地址。BasisVQ在推理时可缓存变换码本，所谓零额外延迟仅针对该量化变换，不能扩展到完整生成、桶展开及重排流程。</p>\n<p>以下是本解读根据披露范围指出的限制，而非作者声明：虽然论文称在线收益显著，但表格未提供置信区间、p值、不同实验组样本量或多次重复；训练超参数和硬件披露有限，也没有吞吐、峰值显存和P95延迟。因此无法只凭论文把生产成本和统计可靠性完整复现。分词器消融更换整个方案，不能严格区分正交约束和前缀感知各自对线上收益的份额。现有结果来自广告价值指标，适用于社区搜索的nDCG与CTR仍需直接验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区UGC搜索，最可迁移的是动态语义桶和桶内消歧的联合设计。帖子同主题、评论同事件常共享粗语义，不应为了唯一地址把所有共享结构拆散。可以先把GEAR作为额外召回通路，与原稀疏及向量检索合并候选，固定最终精排预算，评估是否补充新帖和长尾帖子，而不是直接移除成熟检索。本文生成器以用户特征为条件，社区搜索还必须显式加入query；这是迁移设计，并非论文已验证模块。</p>\n<p>部署部分提供了具体实现线索。参数服务器保存每个物品的ID和连续向量，实例监控器周期刷新旧物品并编码新物品；近线索引构造器生成类似CSR的映射，从排序后的ID目录指向物品列表和预计算向量。索引按分钟级刷新，并与模型一起分发。在线使用KV缓存的束搜索，三步宽度256、256、512；读取桶内向量后用有符号packed-INT4用户与物品向量点积，并对每个桶保留有限物品，防止一个大桶垄断最终候选。这里每桶截断上限没有具体数值，复现需另行选取并做召回损失评估。</p>\n<p>实操可分三次验证。首先在固定数据与模型下比较普通RQ、正交BasisRQ和前缀版本，监控码组合利用率、碰撞率、重构误差及内容新鲜度。然后固定生成候选，比较随机桶内截断与联合重排，查看收益是否来自碰撞消歧。最后在相同用户流量、召回配额和最终排序预算下上线额外通路，跟踪搜索nDCG、CTR、空召回率、新帖曝光和P95延迟。社区不应直接沿用广告secpm权重；可选用经过偏差审计的相关性或满意度监督，并保留曝光选择偏差诊断。</p>\n<p>训练显存方面，前缀距离矩阵改写值得优先实现，避免生成批量×码本×维度张量。近线动态ID则要求模型和索引版本一致，以防新模型生成的桶ID对不上旧快照；这是由作者部署架构推导的工程要求。由于公开论文未给出端到端延迟数字，在线预算必须本地压测后确定。最终应把生成式检索当作候选覆盖和内容泛化的一次可测尝试，以业务指标验证收益，不能把抖音的广告价值百分比当成社区CTR承诺。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.39312",
+      "title": "Learning Multiresolution Relevance for Hierarchical Generative Retrieval",
+      "authors": "Weihao Shen, Wei Chen, Fuwei Zhang, Guojun Liu, Qingsong Hua, Wei Lin, Fuzhen Zhuang",
+      "abstract": "arXiv:2609.39312v1 Announce Type: new \nAbstract: Generative retrieval with semantic identifiers (SIDs) makes successive decisions over a document hierarchy. Relevant documents for the same query may share coarse prefixes and diverge at finer depths, with branching patterns varying across queries. These paths reveal how relevance is distributed across successive refinements, yet standard full-SID supervision treats them as separate training targets. To make this allocation explicit, we formulate multiresolution relevance as consistent conditional distributions induced by a single document-level relevance measure across the SID hierarchy. We introduce \\textbf{RARS}, \\textbf{R}esolution-\\textbf{A}ligned \\textbf{R}elevance \\textbf{S}upervision, which uses the resulting refinement-level distributions to supervise a shared query representation. RARS aggregates document relevance over prefixes and trains a prefix-conditioned predictor to allocate relevance among sibling branches. All relevanc",
+      "url": "https://arxiv.org/abs/2609.39312",
+      "source": "arxiv",
+      "published": "2026-09-30",
+      "discovered_at": "2026-10-01",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.4,
+      "company": [
+        "Meituan",
+        "Beihang University"
+      ],
+      "summary": "RARS把文档级相关性聚合为语义ID各层的一致条件分布，显式监督同一前缀下相关性的分支分配，避免完整ID单目标训练丢失多相关文档结构。在ESCI-US的四层RQ-VAE配置下，Recall@100从38.24提升到39.62，NDCG@10从12.00提升到13.00，均为五种子均值。",
+      "key_insight": "社区短文本搜索常有多个相关帖子共享粗主题而在细节上分叉，层级软监督可减少早期前缀选择过度确定的问题。应从同一批多级相关性标注构造所有层的目标，并固定SID和解码预算进行对照。论文发现标注稀疏会制造虚假的确定性，因此先检查多正例覆盖，再比较nDCG和召回。",
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.7,
+      "evidence_url": "https://arxiv.org/html/2609.39312",
+      "rank": 2
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.38646",
+      "title": "Exploring Forum Post Retrieval with Generative Modeling",
+      "authors": "Yang Li, Yaguang Liu, Heng Liu, Shengbo Guo, Samson Komo, Jane Kou, Yulian Zhou, Gang Yang, Shubhojeet Sarkar, Gaurav Chakravorty, Yujie Liu, Haipeng Chen, Yonghuan Yang, Deepti Chheda, Yamin Wang, Mike Plumpe, Rish Tandon",
+      "abstract": "arXiv:2609.38646v1 Announce Type: new \nAbstract: Generative recommendation (GR) has emerged as an alternative to embedding-based retrieval, building on the success of generative models in language and vision. We are exploring GR on Facebook Forum, a standalone application for medium-to-heavy users of Facebook Groups. Because Forum is a new surface, its own interaction data are too sparse to train a GR model from scratch. We address this with transfer along two axes: we train on a broader corpus of Facebook Groups engagements rather than Forum sessions alone, and we reuse hierarchical, prefix-based semantic IDs (SIDs) learned from cross-platform Facebook Feed data instead of fitting a Forum-specific tokenizer. A 3B-parameter instruction-tuned language model is then supervised-fine-tuned to generate SIDs directly from user context. We systematically ablate the design choices that matter most in practice, including SID construction, the composition and length of user history, and the incl",
+      "url": "https://arxiv.org/abs/2609.38646",
+      "source": "arxiv",
+      "published": "2026-09-29",
+      "discovered_at": "2026-10-01",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.4,
+      "company": [
+        "Meta",
+        "William & Mary"
+      ],
+      "summary": "Facebook Forum在自身行为稀疏时，复用Facebook Groups训练行为和Feed语义ID，用3B语言模型直接生成帖子ID。固定训练预算下，三层ID的HR@10为0.0667，四层为0.0303；文本与ID对齐加动作描述使NDCG@10达到0.0420。更大模型和1000步GRPO均未带来收益。",
+      "key_insight": "与社区UGC业务最接近的启示是优先复用成熟内容侧语义空间，并把点赞等动作写入历史提示。三层ID优势部分来自更高碰撞率，必须接桶内重排后再比较最终帖子命中。短历史与长历史的评测用户集合不同，不能把结果解读为长历史无用；先统一用户集合、训练预算及搜索nDCG口径。",
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.7,
+      "evidence_url": "https://arxiv.org/html/2609.38646",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.39696",
+      "title": "When the Label Ignores the Request: Auditing Policy-Selected Targets in Synthetic Conversational Music Recommendation",
+      "authors": "Sanjeev Suresh",
+      "abstract": "arXiv:2609.39696v1 Announce Type: new \nAbstract: Synthetic dialogues generated by LLM pipelines now serve as complete conversational-recommendation benchmarks: an LLM listener talks to an LLM recommender, and the track logged next in the conversation becomes the official label for each turn. These policy-selected labels make large-scale evaluation reproducible, but they are proxies for what the simulated user asked. We audit the one place where label and request are directly comparable: turns where the user asks for an exact song by name. In the RecSys Challenge 2026 TalkPlay benchmark, using visible dialogue and catalog metadata alone, we find that the official label contradicts the user's exact-song request in half of the audited development turns. This matters beyond one benchmark: naming the desired item is the dominant intent in real music search, where deployed systems avoid substituting an alternative for an exactly named item, on the premise that it costs satisfaction. A small ",
+      "url": "https://arxiv.org/abs/2609.39696",
+      "source": "arxiv",
+      "published": "2026-09-30",
+      "discovered_at": "2026-10-01",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.4,
+      "company": [],
+      "summary": "论文审计LLM合成对话推荐中的标签与真实请求冲突：TalkPlay开发集82个明确歌曲请求中，41个官方标签指向其他歌曲。仅对约1.5%的训练轮次补充请求满足目标，冲突切片nDCG@20从0.5231升至0.8018，相对提升53.3%，全量官方指标从0.1908升至0.1914。",
+      "key_insight": "社区搜索用LLM生成训练样本时，应同时保留用户明确约束和生成策略给出的目标，不把后者自动当成真值。可对帖子标题、作者或实体的精确查询建立可自动验证的切片，再增加小比例纠正监督。53.3%仅对应冲突切片，不能外推为全量收益；CTR和nDCG需分别检查精确满足与主题推荐。",
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.55,
+      "evidence_url": "https://arxiv.org/html/2609.39696",
+      "rank": 4
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.39319",
+      "title": "Residual Trajectory Distillation for Generative Retrieval",
+      "authors": "Weihao Shen, Wei Chen, Fuwei Zhang, Guojun Liu, Qingsong Hua, Wei Lin, Fuzhen Zhuang",
+      "abstract": "arXiv:2609.39319v1 Announce Type: new \nAbstract: Generative retrieval has emerged as a general retrieval paradigm, representing items with discrete Semantic IDs (SIDs) and retrieving them through autoregressive identifier generation. When SIDs are constructed with residual quantization (RQ), standard retrieval training supervises only the selected codes and discards the residual trajectories that produce them. The same hard code can nevertheless arise from different preferences over competing codewords, while the residual trajectory also contains information about subsequent quantization decisions. As a result, hard SID supervision collapses distinct quantization behaviors into identical targets and leaves information available during indexing unused in retrieval training. We introduce ResTD, a Residual Trajectory Distillation framework that transfers this discarded indexing information into retrieval training. Treating the frozen RQ indexer as a process teacher, it distills residual-i",
+      "url": "https://arxiv.org/abs/2609.39319",
+      "source": "arxiv",
+      "published": "2026-09-30",
+      "discovered_at": "2026-10-01",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.15,
+      "company": [],
+      "summary": "ResTD将冻结残差量化索引器视为过程教师，把硬语义ID丢弃的码字偏好与多步残差轨迹蒸馏到检索训练。ESCI-US在相同1200次更新预算下，Base-FT的Recall@100为37.60、NDCG@10为11.25，四步ResTD分别达到39.58和12.99；打乱教师轨迹后收益基本消失。",
+      "key_insight": "对社区搜索，码本构建过程不必只输出最终离散标签，还可保留候选码字概率作为额外监督。先固定索引器、模型和解码，再比较单层、两步及四步蒸馏，检验提升是否源于正确轨迹。该方法主要增加训练侧信息，部署仍需评估ID碰撞处理；离线商品检索增益不能直接替代UGC线上验证。",
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.45,
+      "evidence_url": "https://arxiv.org/html/2609.39319",
+      "rank": 5
+    },
+    {
+      "id": "arxiv:2609.35430",
+      "title": "Can Generative Retrievers Learn Semantic IDs Without Forgetting How to Speak?",
+      "authors": "Fu, Junchen, Katevas, Kleomenis, Rajan, Vandana, Celi, Sofía, Haddadi, Hamed",
+      "published": "2026-09-28",
+      "abstract": "Abstract: Generative retrieval (GR) enables end-to-end retrieval by generating document semantic identifiers (SIDs). However, retrieval-only fine-tuning can over-specialize pretrained language models to SID prediction, substantially distorting their natural-language distribution and limiting their suitability for interactive systems that must both retrieve documents and generate natural-language responses. We introduce SpeakGR, a dual-objective framework that learns SIDs while preserving language generation. It combines supervised SID learning with speak-preserving regularization: an on-policy distillation objective that aligns the current model with a frozen copy of the original model on student-generated prefixes using forward KL over the original text vocabulary. We further propose Adaptive SpeakGR, which dynamically adjusts the preservation strength based on observed language drift. Compared with SFT-only, SpeakGR reduces WikiText-2 forward KL by 81.3-93.8% on MS MARCO and 81.2-85.2% on Natural Questions (NQ) while retaining effective retrieval across three different LLMs. Adaptive SpeakGR further improves retrieval over SpeakGR in most settings while maintaining substantially lower language drift than SFT-only.",
+      "url": "https://arxiv.org/abs/2609.35430",
+      "source": "web_search",
+      "discovered_at": "2026-10-02",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.05,
+      "company": [
+        "Brave",
+        "University of Glasgow"
+      ],
+      "summary": "SpeakGR解决语言模型学习文档语义ID后自然语言能力退化的问题，在SID监督之外，对学生生成前缀施加冻结原模型的前向KL蒸馏，并可自适应调节保护强度。在三个模型上，MS MARCO的WikiText-2前向KL相对纯SFT下降81.3%至93.8%，同时保持有效检索。",
+      "key_insight": "社区搜索若同一模型既输出帖子ID又生成解释，应同步监控语言分布漂移与召回质量。保护损失只在原文本词表归一化，避免新增SID词元干扰语言蒸馏。WikiText分布恢复不等于推理、代码或所有对话能力都被保留，需要补充业务解释质量和用户指令测试，并核算冻结教师带来的训练成本。",
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.35,
+      "evidence_url": "https://arxiv.org/html/2609.35430",
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2609.36670",
+      "title": "FineSID: Scalable and Efficient Semantic Identifier Learning for Generative Recommendation",
+      "authors": "Wu, Song-Li, Gan, Weinan, Du, Zhaocheng, Wang, Xianquan, Wang, Jingyi",
+      "published": "2026-09-29",
+      "abstract": "Abstract: A critical prerequisite of generative recommendation is designing semantic identifiers (SIDs) that are both scalable to large item sets and efficiently learnable. Existing SID learning methods fundamentally rely on Top-1 hard assignment during vector quantization. While heuristic strategies -- such as clustering-based initialization or forced post-hoc collision resolution -- can artificially inflate codebook coverage, they often disrupt end-to-end semantic alignment and fail to address the underlying optimization bottleneck: sparse gradient propagation. In standard Top-1 assignment, gradients concentrate on a narrow subset of frequently selected codewords, leaving the majority inherently under-trained and causing severe SID collisions. To overcome this limitation natively without relying on complex initialization priors, we propose FineSID, a unified quantization framework that moves beyond Top-1 assignment by enabling fine-grained gradient propagation across the entire codebook. Instead of updating only a single selected codeword, FineSID distributes learning signals to all codewords in a soft, differentiable manner. This design promotes globally balanced codebook optimization while strictly preserving semantic consistency, effectively alleviating SID collisions and stabilizing training in large, high-dimensional codebooks. Extensive experiments on multiple public benchmarks demonstrate that FineSID is robust to initialization configurations and consistently improves both codebook utilization and recommendation accuracy. Our work provides a principled, initialization-agnostic solution for semantic identifier learning, advancing the practicality of generative recommendation.",
+      "url": "https://arxiv.org/abs/2609.36670",
+      "source": "web_search",
+      "discovered_at": "2026-10-02",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "company": [],
+      "summary": "FineSID通过全局与局部量化和语义一致性约束，将梯度分配到整个码本，缓解Top-1硬分配导致的大量码字欠训练及ID碰撞。在Instrument数据上Recall@10从CAR的0.0624升至0.0703，Game数据上从0.0947升至0.1031；实验还检验初始化、码本利用率和训练效率。",
+      "key_insight": "社区内容规模扩大时，应把码本利用率、碰撞率与搜索相关性一起监控，不能只追求重构误差下降。可先在固定生成器下替换SID学习模块，核验软梯度是否提高长尾内容的可区分性。公开商品推荐结果与UGC检索仍有场景差异，需统一候选集、碰撞消歧和排序预算再判断可迁移收益。",
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.3,
+      "evidence_url": "https://arxiv.org/html/2609.36670",
+      "rank": 7
+    },
+    {
+      "id": "arxiv:2609.35285",
+      "title": "Textual User Taste: Natural-Language User Context for Foundation-Model Recommender System at Scale",
+      "authors": "Fazelnia, Ghazal, Gigioli, Paul, Klyce, Eliza, Zheng, Sharon, Zelvin, Katie, Thein, Ye Myat, Deshpande, Anurag, Davtyan, Seda, Remeika, Kate, Hristakeva, Maya, Franco, Erik, Banzon, Karen, Ge, Peng, Wood, Jacqueline, Singh, Nandini, Murgatroyd, David, Lalmas, Mounia, Raimond, Yves, Damianou, Andreas",
+      "published": "2026-09-28",
+      "abstract": "Abstract: Foundation model recommender systems require user context that can be consumed by large language models, reasoned over, and refined through natural-language interaction. Traditional behavioral embedding vectors remain highly effective for retrieval and ranking, but they are opaque to users and not natively expressed for language model workflows. We present Textual User Taste, a system that generates structured natural-language taste profiles from listening behavior, interaction signals, content metadata, and optional user feedback, and deploys them to millions of Spotify users. We describe the end-to-end production lifecycle required to generate, evaluate, optimize, and maintain these representations at industrial scale, including prompt development and compression, user steering, and integration with downstream personalization systems. Because no unique ground-truth taste profile exists, we introduce a multi-faceted evaluation framework to evaluate taste profiles as a production representation: they carry user-specific predictive signal independently, and when integrated with behavioral embeddings, improve MRR by 0.6% for future-track prediction and NDCG@7 by 2.2% for search ranking. Our evaluation also reveals that taste profiles support positive natural-language steering, while exposing important limitations, including challenges with negation and short-term temporal adaptation. These findings position taste profiles not as replacements for behavioral embeddings, but as an interpretable and steerable interface between evolving user context and foundation-model recommender systems.",
+      "url": "https://arxiv.org/abs/2609.35285",
+      "source": "web_search",
+      "discovered_at": "2026-10-02",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "company": [
+        "Spotify"
+      ],
+      "summary": "Spotify把收听历史、内容元数据和用户反馈生成结构化自然语言偏好，部署到数百万用户。文本与行为向量联合使用时，未来歌曲预测MRR从0.956升至0.962；搜索排序相对无上下文的NDCG@7提升2.2%，而单独行为上下文提升1.7%。画像还支持正向语言调节，但否定指令和短期适应存在困难。",
+      "key_insight": "社区搜索可将偏好文本作为可解释的个性化上下文，与行为向量联合输入，先验证主题意图和历史兴趣是否互补。2.2%的提升以无上下文为基线，不能当作对行为向量的增益。应分别测试无画像、文本、行为及融合四组，并审计用户纠正、隐私过滤和过期兴趣对nDCG与CTR的影响。",
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.15,
+      "evidence_url": "https://arxiv.org/html/2609.35285",
+      "rank": 8
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.38455",
+      "title": "AdaM-Rec: Adaptive Modality Routing for Multimodal Recommendation",
+      "authors": "Honghao Fu, Jiacheng Chen, Manxi Lin, Junjun Zheng, Xiangheng Kong, Yiwei Wang, Xin Yu, Miao Xu, Yuning Jiang, Yujun Cai",
+      "abstract": "arXiv:2609.38455v1 Announce Type: new \nAbstract: While recent multimodal recommender systems have demonstrated the effectiveness of incorporating visual and textual information to improve downstream performance, most existing methods rely on static modality fusion, assuming that the relative importance of textual and visual signals remains stable across recommendation scenarios. This design may not fully account for an important variation across recommendation requests: some queries require fine-grained visual cues, whereas others are better served by textual or functional semantics, in which case indiscriminate modality fusion brings in uninformative cues and impairs recommendation quality. To address this, we propose AdaM-Rec, an LLM-based framework for adaptive modality routing in multimodal recommendation, which enables dynamic calibration of reliance on textual and multimodal evidence for user-specific queries. Built on structured natural-language representations of items and user",
+      "url": "https://arxiv.org/abs/2609.38455",
+      "source": "arxiv",
+      "published": "2026-09-29",
+      "discovered_at": "2026-10-01",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.85,
+      "company": [
+        "Alibaba",
+        "University of Queensland",
+        "Southeast University",
+        "Adelaide University"
+      ],
+      "summary": "AdaM-Rec以LLM生成结构化物品与用户表示，根据请求动态决定依赖文本还是多模态证据，再执行推荐，减少无关视觉信息干扰。Amazon Beauty查询推荐中HR@20达到0.1711、NDCG@20达到0.0979，对照TAIRA分别为0.1497和0.0798；顺序推荐另采用1000随机负例协议。",
+      "key_insight": "社区图文帖子中，文字意图与视觉意图可先由轻量路由区分，再调节多模态证据权重。需要分别评估视觉强需求、功能性文本需求和模态缺失用户，避免静态融合平均掉请求差异。论文的查询与偏好推荐评测协议不同，离线数值不能直接相互比较，线上还需测额外LLM调用延迟与搜索CTR。",
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.0,
+      "evidence_url": "https://arxiv.org/html/2609.38455",
+      "rank": 9
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.39828",
+      "title": "KUAISHOU Explorer LLM-Rec Challenge 2026: Reasoning Generative Recommendation",
+      "authors": "Jiangxia Cao, Hao Peng, Wenlong Xu, Jiaxin Deng, Zhixin Ling, Xingmei Wang, Kun Shang, Can Tang, Zhihuai Cai, Jun Du, Fang Su, Xiaojuan Liu, Yiling Li, Chenglong Yu, Chongling Rao, Haixuan Gao, Haitao Xu, Jian Liang, Ruiming Tang, Chenglong Chu, Guohong Mu, Honghui Bao, Hui Wang, Jialong Chen, Jiao Ou, Muhao Wei, Peng Zhang, Renpu Liu, Ruochen Yang, Shugui Liu, Xinqi Jin, Yan Sun, Yifan Wang, Yingzhi He, Yufei Ye, Yusen Huo, Tingkuo Wang, Jihong Zhang, Lanxi Zhu, Pengyuan Liu, Zhipeng Yi, Luankang Zhang, Hang Lv, Xuyang Zhi, Tianyu Li, Bintao Wu, Chuang Ou, Siyue Su, Ziyuan Wang, Yuliang Sun, Baiyan Che, Feiyang Xu, Shiwen Zhang, Shiteng Cao, Chongcong Jiang, Yuan Fang, Xiangwu Yang, Hao Deng, Zijian Du, Pengxun Wang, Xiaoming Wang, Shun Qin, Yingqi Song, Tianyi Li, Naixiao Peng, Chenyu Zhou, Qiliang Jiang, Quan Zheng, Cheng Jin, Siying Zeng, Hongjia Xu, Junwu Hu, Teng Fu, Zhengkang Mei, Haijun Yu, Kai Li, Shengyang Zhou, Zhijia Wei, Siyi Xiong, Bo Liu, Zichun Guo, Zhubin Han, Jinpeng Fu, Bingqian Liu, Yuyi Wang, Yu Liu, Qinghai Tan, Ruijie Zhou, Zhuohang Li, Zhijia Zhong, Xiangnan He, Jirong Wen, Min Zhang, Wenwu Ou, Peng Jiang, Han Li, Kaiqiao Zhan, Yanan Niu, Lantao Hu, Kun Gai",
+      "abstract": "arXiv:2609.39828v1 Announce Type: new \nAbstract: Generative recommendation, has been attracted a surge of attentions in industrial and academic research community, towards to build more smart system to build next-generation recommender. Under the significant developing wave of large language model, our team have been developed Semantic ID based OneRec/OneRec-V2. These models have been widely deployed in production and demonstrate the scaling potential of the autoregressive next-item prediction paradigm for industrial recommender systems. Building on the success of OneRec, we further explored a series of models, including OneRec-Think, OpenOneRec, and OneReason, that connect item Semantic IDs with natural language in a unified representation space and seek to unlock the potential of natural-language chain-of-thought (CoT) reasoning for recommendation. However, our preliminary works found that introducing reasoning CoT does not always improve the recommendation performance. To address th",
+      "url": "https://arxiv.org/abs/2609.39828",
+      "source": "arxiv",
+      "published": "2026-09-30",
+      "discovered_at": "2026-10-01",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "company": [
+        "Kuaishou"
+      ],
+      "summary": "快手LLM-Rec挑战将物品理解、用户理解、推荐和通识能力放入统一语义ID与自然语言空间，以多粒度对齐预训练和分阶段后训练研究推理推荐。公开历史统计覆盖50万用户，其中短视频行为为409416641条、平均长度818.8；短视频语义ID共享比例为20.84%，说明碰撞必须进入评测。",
+      "key_insight": "社区业务可借鉴统一评测设计，将兴趣解释质量与最终帖子命中分开度量，并避免让推理文本直接泄漏目标。历史跨度、动作含义和内容语义对齐比单纯延长思维链更值得先验证。挑战报告的资源统计不等于线上增益，推理是否改善nDCG和CTR还需匹配模型预算与数据量的消融实验。",
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.05,
+      "evidence_url": "https://arxiv.org/html/2609.39828",
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:strands-labs/strands-decider",
+      "title": "strands-decider: A small, fast decision model, or system one model, for agentic workflows. Pick between options or rate on a scale faster than an LLM, with a calibrated confidence on every decision.",
+      "authors": "strands-labs",
+      "abstract": "A small, fast decision model, or system one model, for agentic workflows. Pick between options or rate on a scale faster than an LLM, with a calibrated confidence on every decision.",
+      "url": "https://github.com/strands-labs/strands-decider",
+      "source": "github",
+      "published": "2026-09-29",
+      "discovered_at": "2026-10-01",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "strands-labs/strands-decider",
+        "owner": "strands-labs",
+        "description": "A small, fast decision model, or system one model, for agentic workflows. Pick between options or rate on a scale faster than an LLM, with a calibrated confidence on every decision.",
+        "created_at": "2026-09-29T16:36:38Z",
+        "updated_at": "2026-10-01",
+        "pushed_at": "2026-10-01",
+        "stargazers_count": 37,
+        "language": "Python",
+        "topics": [
+          "ai",
+          "machine-learning",
+          "natural-language-understanding",
+          "python",
+          "strands-agents",
+          "strands-labs",
+          "system-one",
+          "system-one-models"
+        ]
+      },
+      "description": "A small, fast decision model, or system one model, for agentic workflows. Pick between options or rate on a scale faster than an LLM, with a calibrated confidence on every decision.",
+      "language": "Python",
+      "stars": 37,
+      "created_at": "2026-09-29",
+      "rank": 1
+    },
+    {
+      "id": "github:apromisedland/trustworthy-agent-simulation",
+      "title": "trustworthy-agent-simulation: Auditable LLM multi-agent town simulation with AgentScope, Mesa, replay, policy experiments, and Streamlit",
+      "authors": "apromisedland",
+      "abstract": "Auditable LLM multi-agent town simulation with AgentScope, Mesa, replay, policy experiments, and Streamlit",
+      "url": "https://github.com/apromisedland/trustworthy-agent-simulation",
+      "source": "github",
+      "published": "2026-09-29",
+      "discovered_at": "2026-10-01",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "apromisedland/trustworthy-agent-simulation",
+        "owner": "apromisedland",
+        "description": "Auditable LLM multi-agent town simulation with AgentScope, Mesa, replay, policy experiments, and Streamlit",
+        "created_at": "2026-09-29T00:32:10Z",
+        "updated_at": "2026-10-01",
+        "pushed_at": "2026-09-29",
+        "stargazers_count": 25,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "Auditable LLM multi-agent town simulation with AgentScope, Mesa, replay, policy experiments, and Streamlit",
+      "language": "Python",
+      "stars": 25,
+      "created_at": "2026-09-29",
+      "rank": 2
+    },
+    {
+      "id": "github:Tuskira/ai-agent-gateway",
+      "title": "ai-agent-gateway: AI Agent Gateway - an open-source gateway that secures, governs and observes AI agents' MCP tool calls and LLM traffic",
+      "authors": "Tuskira",
+      "abstract": "AI Agent Gateway - an open-source gateway that secures, governs and observes AI agents' MCP tool calls and LLM traffic",
+      "url": "https://github.com/Tuskira/ai-agent-gateway",
+      "source": "github",
+      "published": "2026-10-01",
+      "discovered_at": "2026-10-01",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "Tuskira/ai-agent-gateway",
+        "owner": "Tuskira",
+        "description": "AI Agent Gateway - an open-source gateway that secures, governs and observes AI agents' MCP tool calls and LLM traffic",
+        "created_at": "2026-10-01T11:32:10Z",
+        "updated_at": "2026-10-01",
+        "pushed_at": "2026-10-01",
+        "stargazers_count": 24,
+        "language": "Go",
+        "topics": []
+      },
+      "description": "AI Agent Gateway - an open-source gateway that secures, governs and observes AI agents' MCP tool calls and LLM traffic",
+      "language": "Go",
+      "stars": 24,
+      "created_at": "2026-10-01",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3Guard-Stream-8B",
+      "title": "Qwen/Qwen3Guard-Stream-8B",
+      "authors": "Qwen",
+      "description": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-8B, base_model:finetune:Qwen/Qwen3-8B",
+      "abstract": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-8B, base_model:finetune:Qwen/Qwen3-8B",
+      "url": "https://huggingface.co/Qwen/Qwen3Guard-Stream-8B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 42,
+      "language": "model",
+      "created_at": "2025-09-23",
+      "updated_at": "2026-09-27",
+      "published": "2025-09-23",
+      "discovered_at": "2026-10-01",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3Guard-Stream-8B",
+        "likes": 42,
+        "downloads": 738,
+        "pipeline_tag": "feature-extraction",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3",
+          "feature-extraction",
+          "custom_code",
+          "arxiv:2510.14276",
+          "base_model:Qwen/Qwen3-8B",
+          "base_model:finetune:Qwen/Qwen3-8B",
+          "license:apache-2.0",
+          "text-embeddings-inference",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2025-09-23T11:52:50.000Z",
+        "last_modified": "2026-09-27T02:00:07.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3Guard-Stream-0.6B",
+      "title": "Qwen/Qwen3Guard-Stream-0.6B",
+      "authors": "Qwen",
+      "description": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-0.6B, base_model:finetune:Qwen/Qwen3-0.6B",
+      "abstract": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-0.6B, base_model:finetune:Qwen/Qwen3-0.6B",
+      "url": "https://huggingface.co/Qwen/Qwen3Guard-Stream-0.6B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 37,
+      "language": "model",
+      "created_at": "2025-09-23",
+      "updated_at": "2026-09-27",
+      "published": "2025-09-23",
+      "discovered_at": "2026-10-01",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3Guard-Stream-0.6B",
+        "likes": 37,
+        "downloads": 3910,
+        "pipeline_tag": "feature-extraction",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3",
+          "feature-extraction",
+          "custom_code",
+          "arxiv:2510.14276",
+          "base_model:Qwen/Qwen3-0.6B",
+          "base_model:finetune:Qwen/Qwen3-0.6B",
+          "license:apache-2.0",
+          "text-embeddings-inference",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2025-09-23T11:46:30.000Z",
+        "last_modified": "2026-09-27T02:00:16.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3Guard-Stream-4B",
+      "title": "Qwen/Qwen3Guard-Stream-4B",
+      "authors": "Qwen",
+      "description": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-4B, base_model:finetune:Qwen/Qwen3-4B",
+      "abstract": "pipeline: feature-extraction; tags: transformers, safetensors, qwen3, feature-extraction, custom_code, arxiv:2510.14276, base_model:Qwen/Qwen3-4B, base_model:finetune:Qwen/Qwen3-4B",
+      "url": "https://huggingface.co/Qwen/Qwen3Guard-Stream-4B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 28,
+      "language": "model",
+      "created_at": "2025-09-23",
+      "updated_at": "2026-09-27",
+      "published": "2025-09-23",
+      "discovered_at": "2026-10-01",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3Guard-Stream-4B",
+        "likes": 28,
+        "downloads": 543,
+        "pipeline_tag": "feature-extraction",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3",
+          "feature-extraction",
+          "custom_code",
+          "arxiv:2510.14276",
+          "base_model:Qwen/Qwen3-4B",
+          "base_model:finetune:Qwen/Qwen3-4B",
+          "license:apache-2.0",
+          "text-embeddings-inference",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2025-09-23T11:49:13.000Z",
+        "last_modified": "2026-09-27T02:00:18.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_dataset:zai-org/Vision2Web-Leaderboard",
+      "title": "zai-org/Vision2Web-Leaderboard",
+      "authors": "zai-org",
+      "description": "Vision2Web Leaderboard Submissions This repository accepts leaderboard submissions for Vision2Web, a benchmark for visual website development agents. Submissions should contain the inference outputs (i.e., the generated code/files) for each task. Evaluation is conducted by the ma; tags: task_categories:text-generation, language:en, license:apache-2.0, region:us, code",
+      "abstract": "Vision2Web Leaderboard Submissions This repository accepts leaderboard submissions for Vision2Web, a benchmark for visual website development agents. Submissions should contain the inference outputs (i.e., the generated code/files) for each task. Evaluation is conducted by the ma; tags: task_categories:text-generation, language:en, license:apache-2.0, region:us, code",
+      "url": "https://huggingface.co/datasets/zai-org/Vision2Web-Leaderboard",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_dataset",
+      "stars": 6,
+      "language": "dataset",
+      "created_at": "2026-03-29",
+      "updated_at": "2026-10-01",
+      "published": "2026-03-29",
+      "discovered_at": "2026-10-01",
+      "retrieval_meta": {
+        "repo_type": "dataset",
+        "repo_id": "zai-org/Vision2Web-Leaderboard",
+        "likes": 6,
+        "downloads": 31,
+        "pipeline_tag": "",
+        "tags": [
+          "task_categories:text-generation",
+          "language:en",
+          "license:apache-2.0",
+          "region:us",
+          "code"
+        ],
+        "created_at": "2026-03-29T15:50:28.000Z",
+        "last_modified": "2026-10-01T15:24:07.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 3976,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-01",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-01",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 3976,
+        "downloads": 748482,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-01T05:56:24.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recency": true,
+    "source_diversity": true,
+    "source_counts": {
+      "arxiv": 7,
+      "web_search": 3
+    },
+    "chinese_source": false
+  },
+  "warnings": [
+    "Semantic Scholar限流；OpenReview返回400；DBLP限流或超时，会议来源未返回候选。",
+    "中文工程博客候选均为历史重复或其他赛道；最终保留英文工业论文。",
+    "爬虫元数据采用UTC日期2026-10-01；报告目录与去重使用上海本地日期2026-10-02。"
+  ]
+}

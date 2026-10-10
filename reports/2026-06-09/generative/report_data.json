@@ -1,0 +1,267 @@
+{
+  "date": "2026-06-09",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 60,
+    "papers_selected": 8,
+    "score_min": 2.45,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.07075",
+      "title": "Beyond Matching: Category-Guided Latent Intent Reasoning for Generative Retrieval in E-Commerce",
+      "url": "https://arxiv.org/abs/2606.07075",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-08",
+      "total_score": 4.3,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "电商生成式检索把 query 直接映射到商品 Semantic ID (SID)，但电商 query 短、噪声大、属性密集，与人工构造的 SID 之间存在表征鸿沟；显式 Chain-of-Thought 推理能弥合却带来额外生成开销，难以满足在线低延迟。CaLIR 不生成显式文本 rationale，而是在 SID 解码前学习连续的 latent intent 状态，用商品类目层级做 coarse-to-fine 推理脚手架：hierarchical semantic reasoning 把 latent state 对齐到类目级意图，query-wise reasoning enhancement 建模多正样本 query 的多意图路径，再配合 query-specific 动态前缀 trie 与 reasoning-aware constrained decoding。在多语言电商检索数据集上，CaLIR 在检索效果与推理效率之间取得比现有方法更好的平衡，并在不同诱导层级、不同生成式 backbone 上展现迁移性。",
+      "key_insight": "把 CoT 从“生成文本”换成“连续 latent intent 状态”，是生成式检索绕开推理延迟的关键设计——既保留推理带来的意图建模收益，又避免 token 级 rationale 的解码开销。用类目层级做 coarse-to-fine 脚手架，对短文本、属性密集的社区/电商 query 尤其契合：先定位粗粒度意图再细化到 SID，缓解短 query 表征不足。动态前缀 trie + constrained decoding 保证生成的 SID 落在合法商品空间，这套“latent 推理 + 受约束解码”组合可直接借鉴到 UGC 短文本检索召回链路。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.07075",
+        "title": "Beyond Matching: Category-Guided Latent Intent Reasoning for Generative Retrieval in E-Commerce",
+        "status": "completed",
+        "content": "# Beyond Matching: Category-Guided Latent Intent Reasoning for Generative Retrieval in E-Commerce (CaLIR) 深度解读\n\n## 1. 问题与动机\n电商生成式检索把用户 query 直接映射到商品的 Semantic ID（SID），但论文指出存在一个根本的\"表征鸿沟\"：电商 query 短、噪声大、属性密集（\"short, noisy, attribute-heavy\"），且一个 query 常对应多个同类目商品；而 SID 是 RQ-VAE 量化出来的抽象 token（如 sid_17），本身不携带商品语义，两者之间的语义错配让 query→SID 的直接映射很难学好。论文用数据佐证：在 ESCI-us 上，最强基线 MERGE 的 R@100 仅 29.74%，稀疏、稠密、已有生成式检索方法在该指标上普遍低于 33%。一个自然的弥合手段是显式 Chain-of-Thought（CoT）推理，但显式生成 rationale token 会带来难以接受的在线延迟。论文据此提出 latent intent reasoning 作为折中：在连续隐空间做 coarse-to-fine 的意图推理，既拿到推理的语义对齐收益，又不付出显式 token 生成的解码开销。\n\n## 2. 方法详解\nCaLIR 是 indexing→training→inference 三阶段框架。索引阶段用 RQ-VAE 做 m=4 层残差量化、codebook size 256，生成层级化 SID。\n\n核心是在生成 SID 前先走 L 步（默认 L=3）latent 推理：h_l = DecoderBlock(h_{l-1}, H_enc)，得到连续 latent 状态路径 R_q={h_1,…,h_L}，让模型在连续空间先校准意图再落到离散 token。围绕这条 latent 路径有两个监督目标：(1) Hierarchical Semantic Reasoning（HSR）把第 l 步 latent 与商品类目层级第 l 层对齐，z_l=φ_l(h_l)，P(c^l|z_l,c^{l-1})=Softmax(W_c^l z_l + M(c^{l-1}))，其中 M(·) 把非法子类目 logit 置为 −∞，用 masked 交叉熵只监督有效深度层；(2) Query-wise Reasoning Enhancement（QRE）针对一个 query 对应多个正类目的 multi-positive 情况，用 multi-positive InfoNCE 把 query latent 与所有正类目原型拉近、与负样本推远，按有效深度累加。\n\n联合损失 L_total = L_gen + α·L_cls + β·L_con（α=β=0.1），L_gen 是以最终 latent h_L 为条件的 SID 生成交叉熵。推理阶段是 Reasoning-aware Constrained Decoding（RCD）：先从最终 latent 投影取 Top-K 类目（K=3），把离线预建的 category-level SID trie 动态拼成 query-specific trie，把候选空间从约 10^5 商品压到 10^3–10^4；再把 latent 推理状态与 encoder 输出拼接 H_full=[H_enc;H_reasoning] 做受约束 beam search，非法转移概率置 0。Backbone 用 T5-base（多语言用 mT5-base），商品文本用 BERT/mBERT 编码；训练 batch 512、lr 5e-4、300 epoch、A100。关键效率设计：L 步 latent 推理在 batch 级算一次（成本 BL），不随 beam 数 N 或 SID 长度 m 翻倍；动态 trie 组装只是 O(BK) 轻量查表（约 0.1ms/query）。\n\n## 3. 核心技术贡献\n1. Category-guided latent intent reasoning 框架：在连续空间弥合 query 与 SID 的表征鸿沟，用 latent 推理替代显式 CoT，兼顾语义 grounding 与在线延迟——消融显示\"空推理\"（无监督 latent）几乎没有增益（26.38% vs TIGER 25.98%），说明真正起作用的是把 latent 与类目层级对齐的监督。\n2. Coarse-to-fine 学习范式：把商品类目层级当作天然脚手架，HSR 做层级类目对齐、QRE 解决多意图，二者把 R@100 从 32.76%（仅 HSR）推到 34.10%（HSR+QRE）。\n3. Reasoning-aware constrained decoding：用推断出的意图类目动态拼 trie，既缩候选空间又保证生成 SID 合法，RCD 再把 R@100 从 34.10% 提到 36.15%。\n4. 跨数据集、跨 backbone、跨 SID 构造方法的系统验证，证明可迁移性与正交增益。\n\n## 4. 实验结果分析\n主结果（ESCI 三语种，对比最强基线 MERGE）：ESCI-us（288K 商品、20K 训练 query）R@5 7.22% vs 5.68%（相对 +27%）、R@10 11.75% vs 9.26%、R@100 36.15% vs 29.74%（+22%）、N@10 10.75% vs 9.05%、N@100 18.14% vs 15.17%；ESCI-es R@100 34.83% vs 30.86%（+13%）；ESCI-jp R@100 31.71% vs 27.64%（+15%）。均通过 p<0.05 配对 t 检验。\n\n消融（ESCI-us，R@100）很有说服力：TIGER 25.98% → 空推理 26.38%（几乎无效）→ 仅 HSR 32.76%（+26%）→ HSR+QRE 34.10% → 全量 CaLIR 36.15%（+39%）。这条链清楚说明：无监督的 latent token 没用，HSR 的类目监督才是主增益来源，QRE 处理多意图、RCD 的 trie 约束各再加一截。与显式推理对比（ESCI-us）：显式 CoT R@100 仅 24.05%、显式 SID 28.48%，都低于 CaLIR 36.15%——显式生成 rationale 不仅慢，效果反而更差，验证了 latent 路线。推理深度上 L=1 约 31%、L=3 最优 36.15%、L=5 退化到约 35%，过深引入噪声。通用域迁移（MS MARCO，用 k-means 50→200→2000 造伪层级）CaLIR MRR@10 0.382 vs RIPOR 0.333（+15%），说明不依赖预定义 taxonomy 也能用；叠加更强 SID 构造（MERGE/CAT-ID2）还能再涨 1–3%，是正交增益。\n\n## 5. 局限与未来方向\n作者明确或隐含的局限：(1) 强依赖类目层级——通用域要靠聚类造伪层级，层级质量差时性能会退化；(2) 推理深度 L=3 是数据集相关的，训练/推理深度不匹配会掉点（Fig.5b）；(3) Top-K=3 是 ESCI 上调的，缺少按 query 动态选 K 的机制；(4) 当 SID 构造已较好（MERGE/CAT-ID2）时增益收窄到 1–3%，边际递减；(5) RQ-VAE 的 SID 碰撞要靠事后 Sinkhorn 处理，增加索引复杂度；(6) QRE 假设有 ground-truth 多正类目标签，对隐式/未标注正样本的处理不清楚。未来方向自然指向动态推理深度、按 query 自适应选 Top-K，以及弱标注下的多意图建模。\n\n## 6. 工业实践意义\n对搜索/推荐从业者，CaLIR 最值得借鉴的是\"用 latent 推理替代显式 CoT\"这条在线可用的路线：在不牺牲在线延迟的前提下吃到推理收益，而它把延迟控制住的关键工程手法——latent 推理在 batch 级算一次、不随 beam/SID 长度翻倍，动态 trie 只做 O(BK) 查表——是任何生成式检索/推荐系统都能直接套用的优化。对社区短文本搜索尤为契合：UGC query 同样短、噪声大、一词多意，用内容类目层级做 coarse-to-fine 脚手架（先粗粒度意图、再细化到 SID），能缓解短 query 表征不足；动态前缀 trie + 受约束解码保证生成的 ID 一定落在合法内容空间，避免生成式方法常见的\"幻觉 ID\"。落地要点：需要一套可靠的内容类目体系（或用聚类造伪层级），离线预建 category-level trie 换在线效率；注意推理深度要与训练一致、Top-K 与 SID 长度需按自己语料调参。消融给出的明确信号——\"裸 latent 无用、类目监督才是主增益\"——提醒我们若要引入 latent 推理，必须配上有意义的中间监督信号，而不是简单堆 latent token。",
+        "content_html": "<h1>Beyond Matching: Category-Guided Latent Intent Reasoning for Generative Retrieval in E-Commerce (CaLIR) 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>电商生成式检索把用户 query 直接映射到商品的 Semantic ID（SID），但论文指出存在一个根本的&quot;表征鸿沟&quot;：电商 query 短、噪声大、属性密集（&quot;short, noisy, attribute-heavy&quot;），且一个 query 常对应多个同类目商品；而 SID 是 RQ-VAE 量化出来的抽象 token（如 sid_17），本身不携带商品语义，两者之间的语义错配让 query→SID 的直接映射很难学好。论文用数据佐证：在 ESCI-us 上，最强基线 MERGE 的 R@100 仅 29.74%，稀疏、稠密、已有生成式检索方法在该指标上普遍低于 33%。一个自然的弥合手段是显式 Chain-of-Thought（CoT）推理，但显式生成 rationale token 会带来难以接受的在线延迟。论文据此提出 latent intent reasoning 作为折中：在连续隐空间做 coarse-to-fine 的意图推理，既拿到推理的语义对齐收益，又不付出显式 token 生成的解码开销。</p>\n<h2>2. 方法详解</h2>\n<p>CaLIR 是 indexing→training→inference 三阶段框架。索引阶段用 RQ-VAE 做 m=4 层残差量化、codebook size 256，生成层级化 SID。</p>\n<p>核心是在生成 SID 前先走 L 步（默认 L=3）latent 推理：h_l = DecoderBlock(h_{l-1}, H_enc)，得到连续 latent 状态路径 R_q={h_1,…,h_L}，让模型在连续空间先校准意图再落到离散 token。围绕这条 latent 路径有两个监督目标：(1) Hierarchical Semantic Reasoning（HSR）把第 l 步 latent 与商品类目层级第 l 层对齐，z_l=φ_l(h_l)，P(c^l|z_l,c^{l-1})=Softmax(W_c^l z_l + M(c^{l-1}))，其中 M(·) 把非法子类目 logit 置为 −∞，用 masked 交叉熵只监督有效深度层；(2) Query-wise Reasoning Enhancement（QRE）针对一个 query 对应多个正类目的 multi-positive 情况，用 multi-positive InfoNCE 把 query latent 与所有正类目原型拉近、与负样本推远，按有效深度累加。</p>\n<p>联合损失 L_total = L_gen + α·L_cls + β·L_con（α=β=0.1），L_gen 是以最终 latent h_L 为条件的 SID 生成交叉熵。推理阶段是 Reasoning-aware Constrained Decoding（RCD）：先从最终 latent 投影取 Top-K 类目（K=3），把离线预建的 category-level SID trie 动态拼成 query-specific trie，把候选空间从约 10^5 商品压到 10^3–10^4；再把 latent 推理状态与 encoder 输出拼接 H_full=[H_enc;H_reasoning] 做受约束 beam search，非法转移概率置 0。Backbone 用 T5-base（多语言用 mT5-base），商品文本用 BERT/mBERT 编码；训练 batch 512、lr 5e-4、300 epoch、A100。关键效率设计：L 步 latent 推理在 batch 级算一次（成本 BL），不随 beam 数 N 或 SID 长度 m 翻倍；动态 trie 组装只是 O(BK) 轻量查表（约 0.1ms/query）。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li>Category-guided latent intent reasoning 框架：在连续空间弥合 query 与 SID 的表征鸿沟，用 latent 推理替代显式 CoT，兼顾语义 grounding 与在线延迟——消融显示&quot;空推理&quot;（无监督 latent）几乎没有增益（26.38% vs TIGER 25.98%），说明真正起作用的是把 latent 与类目层级对齐的监督。</li>\n<li>Coarse-to-fine 学习范式：把商品类目层级当作天然脚手架，HSR 做层级类目对齐、QRE 解决多意图，二者把 R@100 从 32.76%（仅 HSR）推到 34.10%（HSR+QRE）。</li>\n<li>Reasoning-aware constrained decoding：用推断出的意图类目动态拼 trie，既缩候选空间又保证生成 SID 合法，RCD 再把 R@100 从 34.10% 提到 36.15%。</li>\n<li>跨数据集、跨 backbone、跨 SID 构造方法的系统验证，证明可迁移性与正交增益。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p>主结果（ESCI 三语种，对比最强基线 MERGE）：ESCI-us（288K 商品、20K 训练 query）R@5 7.22% vs 5.68%（相对 +27%）、R@10 11.75% vs 9.26%、R@100 36.15% vs 29.74%（+22%）、N@10 10.75% vs 9.05%、N@100 18.14% vs 15.17%；ESCI-es R@100 34.83% vs 30.86%（+13%）；ESCI-jp R@100 31.71% vs 27.64%（+15%）。均通过 p&lt;0.05 配对 t 检验。</p>\n<p>消融（ESCI-us，R@100）很有说服力：TIGER 25.98% → 空推理 26.38%（几乎无效）→ 仅 HSR 32.76%（+26%）→ HSR+QRE 34.10% → 全量 CaLIR 36.15%（+39%）。这条链清楚说明：无监督的 latent token 没用，HSR 的类目监督才是主增益来源，QRE 处理多意图、RCD 的 trie 约束各再加一截。与显式推理对比（ESCI-us）：显式 CoT R@100 仅 24.05%、显式 SID 28.48%，都低于 CaLIR 36.15%——显式生成 rationale 不仅慢，效果反而更差，验证了 latent 路线。推理深度上 L=1 约 31%、L=3 最优 36.15%、L=5 退化到约 35%，过深引入噪声。通用域迁移（MS MARCO，用 k-means 50→200→2000 造伪层级）CaLIR MRR@10 0.382 vs RIPOR 0.333（+15%），说明不依赖预定义 taxonomy 也能用；叠加更强 SID 构造（MERGE/CAT-ID2）还能再涨 1–3%，是正交增益。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确或隐含的局限：(1) 强依赖类目层级——通用域要靠聚类造伪层级，层级质量差时性能会退化；(2) 推理深度 L=3 是数据集相关的，训练/推理深度不匹配会掉点（Fig.5b）；(3) Top-K=3 是 ESCI 上调的，缺少按 query 动态选 K 的机制；(4) 当 SID 构造已较好（MERGE/CAT-ID2）时增益收窄到 1–3%，边际递减；(5) RQ-VAE 的 SID 碰撞要靠事后 Sinkhorn 处理，增加索引复杂度；(6) QRE 假设有 ground-truth 多正类目标签，对隐式/未标注正样本的处理不清楚。未来方向自然指向动态推理深度、按 query 自适应选 Top-K，以及弱标注下的多意图建模。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者，CaLIR 最值得借鉴的是&quot;用 latent 推理替代显式 CoT&quot;这条在线可用的路线：在不牺牲在线延迟的前提下吃到推理收益，而它把延迟控制住的关键工程手法——latent 推理在 batch 级算一次、不随 beam/SID 长度翻倍，动态 trie 只做 O(BK) 查表——是任何生成式检索/推荐系统都能直接套用的优化。对社区短文本搜索尤为契合：UGC query 同样短、噪声大、一词多意，用内容类目层级做 coarse-to-fine 脚手架（先粗粒度意图、再细化到 SID），能缓解短 query 表征不足；动态前缀 trie + 受约束解码保证生成的 ID 一定落在合法内容空间，避免生成式方法常见的&quot;幻觉 ID&quot;。落地要点：需要一套可靠的内容类目体系（或用聚类造伪层级），离线预建 category-level trie 换在线效率；注意推理深度要与训练一致、Top-K 与 SID 长度需按自己语料调参。消融给出的明确信号——&quot;裸 latent 无用、类目监督才是主增益&quot;——提醒我们若要引入 latent 推理，必须配上有意义的中间监督信号，而不是简单堆 latent token。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.07317",
+      "title": "Gated Bidirectional Linear Attention for Generative Retrieval",
+      "url": "https://arxiv.org/abs/2606.07317",
+      "authors": "",
+      "company": [
+        "Yandex"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-08",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "生成式检索用 encoder-decoder：encoder 编码用户交互历史，autoregressive decoder 生成推荐 item。大规模流媒体里活跃用户历史极长，softmax attention 随序列长度平方增长，使 encoder 成为延迟瓶颈；实验发现 encoder 用双向 attention 能显著提升质量，但多数次平方 attention 只针对 causal。GBLA 提出线性时间的双向 linear attention，在 kernelized linear attention 上加三个轻量组件：局部 causal 混合（Conv1D）、序列级 key gating（软遗忘）、gated RMSNorm 输出。在 Yandex Music 上，按 1:2 交错 self-attention 与 GBLA 的 hybrid encoder 可匹配双向 self-attention 质量；H100 上序列长 32768 时单层相比 FlashAttention-v3 提速 8.2×，在公开 Amazon 数据上同样保持检索质量。",
+      "key_insight": "当用户历史长到几万 token，生成式推荐 encoder 的平方复杂度是真实落地瓶颈，GBLA 给出“双向 + 线性”的解法——既要双向 attention 的质量，又要线性复杂度的延迟。1:2 混合（1 个 self-attention 后接 2 个 GBLA）这种配方很实用：少量全 attention 块保住质量，多数线性块压成本，32768 长度 8.2× 提速直接转化为可服务更长历史。对需要编码超长行为序列的召回/推荐系统，这是把生成式检索推到长序列场景的可行工程路径。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.06947",
+      "title": "DREAM: Dynamic Refinement of Early Assignment Mappings",
+      "url": "https://arxiv.org/abs/2606.06947",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-08",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "SID-based 生成式推荐在离线 tokenize 阶段就给每个 item 分配一个静态 SID，此时还没观察到足够用户反馈；对冷启动 item，这种“一次性提交”产生区分度差的码，生成 misaligned 路径，且相关 token 训练中很少被采样而得不到修正。论文指出这种 early static commitment（而非模型容量）才是 SID 生成式推荐冷启动的根本瓶颈，提出三阶段框架 DREAM：intent-aware tokenizer 用反事实对比学习为冷启 item 重建 SID 空间、产生多样的行为对齐候选；冻结的推荐 backbone 当 evaluator，按多上下文用户支持选最可靠候选、无需重训；dynamic beam 在训练和推理中维护多个加权 SID 假设，避免过早坍缩到单一分配。在三个 Amazon 基准上冷启动指标显著超过 SOTA 生成式与序列基线。",
+      "key_insight": "把冷启动归因到“SID 过早静态提交”是有价值的视角——问题不在模型不够大，而在 item 身份在没有反馈时就被钉死。DREAM 的 dynamic beam 思路（同时保留多个 SID 假设、随训练演进再收敛）对所有用 RQ-VAE / 离线 tokenize 的生成式推荐都有借鉴意义：冷启 item 的语义码应是“可延迟、可修正”的，而非离线一锤定音。对 UGC 平台海量新内容冷启动，这种 tokenization 与 generation 联合优化范式值得跟进。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2511.04080",
+      "title": "Caption Injection for Optimization in Generative Search Engine",
+      "url": "https://arxiv.org/abs/2511.04080",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-08",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "生成式搜索引擎（GSE）用 RAG + LLM 整合多源信息直接生成答案，用户注意力从顺序浏览转向内容驱动的主观感知，由此催生 Generative Search Engine Optimization（G-SEO）——如何提升内容在生成式答案里的主观可见性。随着多模态 RAG（MRAG）能整合文本、图像、音频、视频，论文针对现有 G-SEO 方法的局限，提出 caption injection 优化方法，在多模态生成式搜索场景中提升目标内容被引用、被呈现的概率。",
+      "key_insight": "当搜索结果从“排序列表”变成“生成式答案”，内容方关心的指标从排名变成“是否被生成答案引用/突出”，这对 UGC 社区平台是新命题——平台既是内容生产方，也是被 GSE 抓取的对象。caption injection 这类在多模态内容上做可见性优化的思路，提示生成式搜索时代要重新设计内容的可被检索/可被引用表征。对自建生成式搜索的社区产品，理解 G-SEO 攻防有助于设计更鲁棒的内容呈现与引用机制。"
+    },
+    {
+      "rank": 5,
+      "id": "s2:eea27eb1dc9130d4b0e325d72fd815c11eedaa42",
+      "title": "Tunable LLM-based Proactive Recommendation Agent",
+      "url": "https://www.semanticscholar.org/paper/eea27eb1dc9130d4b0e325d72fd815c11eedaa42",
+      "authors": "Mingze Wang, Chongming Gao, Wenjie Wang, Yangyang Li, Fuli Feng",
+      "company": [
+        "USTC"
+      ],
+      "source": "semantic_scholar",
+      "published": "",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "传统推荐常强化用户既有兴趣、形成回声室、限制多样性；Proactive Recommendation System (PRS) 想通过多步推荐培养用户潜在兴趣，但在优化长期回报、适应实时反馈上仍有挑战。论文提出基于 LLM 的 Actor-Critic Agent 框架：用 LLM agent 根据实时反馈调整推荐，并用 agent-tuning 方法优化长期回报，让 proactive 推荐既能响应即时反馈，又兼顾长期兴趣培养。",
+      "key_insight": "把 proactive 推荐建模成 Actor-Critic、用 LLM agent 做策略，是“推荐即序贯决策”思路在生成式时代的延续——关键在优化长期回报而非单步 CTR。对内容平台，这提示可用 LLM agent 在多步交互中主动拓展用户兴趣边界、对抗回声室；agent-tuning 优化长期 reward 的做法，对希望提升用户长期留存与内容多样性的推荐场景有参考价值。需注意 LLM agent 实时调整的推理成本与线上延迟约束。"
+    },
+    {
+      "id": "arxiv:2606.06712",
+      "title": "Data-Efficient Autoregressive-to-Diffusion Language Models via On-Policy Distillation",
+      "url": "https://arxiv.org/abs/2606.06712",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-08",
+      "total_score": 3.15,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "把自回归语言模型（ARLM）转成扩散语言模型（DLM）时，常见做法是把因果 attention 换成双向 attention 再用 DLM 目标训练，但会引入两类分布漂移：从 next-token 目标切到 DLM 目标会丢弃 ARLM 已学到的知识；标准 DLM 的训练损失定义在随机 mask 序列上，与推理时 confidence-based 解码产生的轨迹不匹配。论文提出 On-Policy Diffusion Language Model (OPDLM)，用 self On-Policy Distillation：学生（带双向 attention 的 ARLM）自己生成轨迹，教师（原始冻结 ARLM）在这些轨迹上给出 target logits 做蒸馏。OPDLM 直接 on-policy 训练消除训练-推理不匹配，蒸馏又保留了原 ARLM 知识，实验显示训练 token 量减少 15× 到 7000×，在多种任务上保持强性能。",
+      "key_insight": "OPDLM 把“扩散语言模型转换”重新定位成 ARLM 的一种 post-training，而非从头预训练——用 on-policy 蒸馏对齐训练与推理轨迹，是解决 DLM train-inference mismatch 的关键设计。对关注生成式范式的团队，这条“低成本把已有自回归模型改造成扩散/并行解码模型”的路径值得关注：扩散式并行解码在低延迟生成场景（如生成式检索/推荐的并行 SID 解码）有潜在价值，而 15×–7000× 的训练 token 节省让这种范式迁移在工程上更可行。",
+      "rank": 6
+    },
+    {
+      "rank": 7,
+      "id": "blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/06/05/acl-2026.html",
+      "title": "ACL 2026 美团论文精选：从能力评测到推理优化，构建生成新范式",
+      "url": "https://tech.meituan.com/2026/06/05/ACL-2026.html",
+      "authors": "",
+      "company": [
+        "Meituan"
+      ],
+      "source": "blog_rss",
+      "published": "2026-06-05",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "美团技术团队解读了被 ACL 2026 收录的 6 篇论文，方向覆盖大模型能力评测、复杂流程推理、竞赛级数学思维优化、强化学习优化与生成式推荐等。文章从能力评测到推理优化串起美团在大模型方向的研究脉络，其中包含生成式推荐相关工作，反映工业团队把生成式范式从评测、推理一路延伸到推荐落地的整体布局。",
+      "key_insight": "工业团队的顶会论文精选是观察“研究往哪走、落地往哪投”的窗口——美团把生成式推荐与大模型评测、推理优化、RL 放在同一研究版图里，说明生成式推荐已不是孤立方向，而是与推理、RL 能力共享底座。对从业者而言，关注头部团队在 ACL 这类 NLP 顶会上的推荐相关投稿，有助于提前判断生成式推荐与 LLM 推理结合的技术趋势，建议追读其中生成式推荐具体论文获取方法细节。"
+    },
+    {
+      "rank": 8,
+      "id": "s2:6257bc53075bce2f25fe72c1c64cbd7eb02e379b",
+      "title": "Recommender Systems Meet Large Language Model Agents: A Survey",
+      "url": "https://www.semanticscholar.org/paper/6257bc53075bce2f25fe72c1c64cbd7eb02e379b",
+      "authors": "Xi Zhu, Yu Wang, Hang Gao, Wujiang Xu, Chen Wang",
+      "company": [
+        "Rutgers"
+      ],
+      "source": "semantic_scholar",
+      "published": "",
+      "total_score": 2.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 1
+      },
+      "summary": "这篇综述系统梳理了 LLM agent 与推荐系统结合的研究全景：先介绍 LLM agent 的组成与 LLM 在推荐中的应用，再阐述二者共生关系——LLM agent 如何增强推荐、推荐又如何支撑更好的 LLM agent。重点讨论了为推荐设计 LLM agent 的整体架构，涵盖 profile、memory、planning、action 四个组件以及多 agent 协作，并展望了挑战与未来方向。",
+      "key_insight": "把 LLM-as-recommender 升级为“LLM agent for recommendation”，核心是引入 profile/memory/planning/action 与多 agent 协作的架构范式，为想用 agent 改造推荐的团队提供清晰的组件拆解框架。虽为 2024 年综述、时效性较弱，但其架构分类（尤其 memory 与 planning 如何服务推荐）作为入门 LLM-agent 推荐的参考地图仍有价值，适合快速建立领域全景，落地仍需结合近一年的具体方法。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:grisuno/estorides",
+      "title": "grisuno/estorides: Open-source intelligence (OSINT) aggregator and correlation engine inspired by Palantir, Bellingcat, Maltego, and Citizen",
+      "url": "https://github.com/grisuno/estorides",
+      "source": "github",
+      "description": "Open-source intelligence (OSINT) aggregator and correlation engine inspired by Palantir, Bellingcat, Maltego, and Citizen Lab workflows. A pure open-source re-imagining of the original fucklantir / osint_palantir toolchain, with a much bigger source catalogue, a proper knowledge graph, structured pa",
+      "language": "Python",
+      "stars": 24,
+      "created_at": "2026-06-06"
+    },
+    {
+      "rank": 2,
+      "id": "github:ZhipengXx/DomainBed-Reasoning",
+      "title": "ZhipengXx/DomainBed-Reasoning: DomainBed-Reasoning Dataset for \"Reasoning-Driven Multimodal LLMs for Domain Generalization (ICLR 2026)\"",
+      "url": "https://github.com/ZhipengXx/DomainBed-Reasoning",
+      "source": "github",
+      "description": "DomainBed-Reasoning Dataset for \"Reasoning-Driven Multimodal LLMs for Domain Generalization (ICLR 2026)\"",
+      "language": "",
+      "stars": 9,
+      "created_at": "2026-06-05"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "language": "model",
+      "stars": 113,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 4711,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, license:mit, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 1443,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 6,
+      "id": "hf_space:Qwen/Qwen-Image",
+      "title": "Qwen/Qwen-Image",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 906,
+      "created_at": "2025-08-03"
+    },
+    {
+      "rank": 7,
+      "id": "hf_space:Qwen/Qwen-Image-Edit",
+      "title": "Qwen/Qwen-Image-Edit",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image-Edit",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 826,
+      "created_at": "2025-08-17"
+    }
+  ]
+}

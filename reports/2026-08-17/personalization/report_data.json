@@ -1,0 +1,259 @@
+{
+  "date": "2026-08-17",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "args": {
+    "top": 10,
+    "days": 3,
+    "min_score": 3.0
+  },
+  "stats": {
+    "papers_scored": 14,
+    "papers_selected": 5,
+    "score_min": 2.7,
+    "score_max": 4.3
+  },
+  "coverage": {
+    "status": "gaps",
+    "core_paper": "FEDIN: Frequency-Enhanced Deep Interest Network for Click-Through Rate Prediction",
+    "industry_practice": null,
+    "recency_7d": null,
+    "source_diversity": {
+      "web_search": 60,
+      "semantic_scholar": 20,
+      "conference_papers": 20
+    },
+    "chinese_source": false,
+    "notes": [
+      "未找到可保留的近7天论文：过滤后最近论文发表于2026-07-20；conference_papers的时效评分按discovered_at计算。",
+      "未找到可保留的个性化推荐工业实践条目；今日日志中的行业RSS条目均与个性化主赛道不匹配或已被历史去重。",
+      "Metric Distortion with Preference Intensities为来源多样性补位，低于--min-score，非直接推荐系统论文。"
+    ]
+  },
+  "papers": [
+    {
+      "id": "web_search:https://www.alphaxiv.org/abs/2605.01726",
+      "base_score": 4.1,
+      "preference_bonus": 0.2,
+      "total_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "summary": "论文针对CTR预估中用户兴趣的时序变化与频率模式难以同时利用的问题，提出频率增强Deep Interest Network（FEDIN），在时间域和频率域联合编码行为序列，并用频域分支提取周期性兴趣。在Tmall、Alipay、Taobao上，FEDIN的GAUC/AUC分别为0.9658/0.9666、0.9335/0.9320、0.9740/0.9729，均超过DIN、DIEN等七类基线。",
+      "key_insight": "频域建模为用户兴趣提供了“周期信号”视角，适合补足只依赖最近行为的序列模型。工程上可先把频域分支放入精排或预估实验，用GAUC和分桶校准验证它是否真正改善长周期兴趣；论文结果覆盖三个电商数据集，但在线延迟与频谱计算成本仍需单独压测。",
+      "company": [],
+      "rank": 1,
+      "title": "FEDIN: Frequency-Enhanced Deep Interest Network for Click-Through Rate Prediction",
+      "url": "https://www.alphaxiv.org/abs/2605.01726",
+      "authors": "Zenan Dai et al.",
+      "source": "web_search",
+      "published": "2026-07-20",
+      "discovered_at": "2026-08-17",
+      "adjusted_score": 4.3,
+      "deep_reading": {
+        "paper_id": "web_search:https://www.alphaxiv.org/abs/2605.01726",
+        "title": "FEDIN: Frequency-Enhanced Deep Interest Network for Click-Through Rate Prediction",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nFEDIN关注工业CTR预估里一个很具体的失效模式：用户历史行为同时包含长期周期性习惯和短期随机噪声，而常见的时间域序列模型容易把一次误点、探索性点击或缺失行为当成连续兴趣。论文的动机不是简单地“把FFT接到推荐模型上”，而是先观察目标商品条件下的注意力分布：当历史行为确实与候选商品相关时，注意力在频域往往呈现集中、低谱熵的峰；当行为是无关噪声时，频谱更分散、熵更高。也就是说，是否存在周期信号不能脱离当前候选商品判断，目标商品本身可以充当频率选择器。\n\n这一区分对CTR尤其重要。DIN、DIEN等目标注意力模型能回答“哪些历史行为与目标相关”，却仍主要在时间域处理逐点序列；DIFF等频域方法可以提取稳定模式，却通常先对用户序列独立滤波，忽略了候选商品改变兴趣解释方式的事实。论文把问题定位为目标无关的频域滤波不足，而不是单纯的模型容量不足。对社区UGC或电商推荐而言，同一用户的长期“数码产品”兴趣和当前“露营装备”兴趣，可能在不同候选下激活不同历史片段；如果预估模型只看最近若干次点击，长期周期和抗噪能力都会受损。\n\n## 2. 方法详解\n\nFEDIN的输入是用户行为序列X和目标物品向量X_tar，整体输出用户兴趣表示U。模型采用双分支去噪结构：时间域分支保留局部行为演化，频域分支提取全局周期共振，最后由User Interest Aggregator融合。两路可以并行执行，论文强调这一点是为了让频域增强不必把线上推理变成串行的重型模块。\n\n第一步是Reversible Instance Normalization（RevIN），用于缓解用户行为分布的非平稳性和不同序列之间的分布漂移。时间域分支先使用目标注意力做粗过滤，但不同于传统注意力池化，它保留加权后的完整序列：X_attn = Softmax(X_tar X^T / sqrt(d))^T ⊙ X。这样模型不仅知道哪些行为与目标相关，还保留这些行为的时间位置。随后将序列切成不重叠patch，不足一个patch的部分补零，再线性投影并送入Transformer encoder，得到X_time。patching同时降低长序列注意力开销，也把连续的局部行为片段作为更稳定的建模单元。\n\n频域分支的关键是目标感知。模型先计算历史行为对目标商品的相关分数X_score，再对该分数做FFT得到目标条件频谱。随后对频谱幅值做softmax，并与行为序列的FFT逐元素广播相乘：这一步不是对原始行为盲目做固定滤波，而是先用候选商品决定哪些频率更值得保留。接着使用复值MLP学习频谱到干净兴趣频谱的非线性映射，再做IFFT还原为时域表示X_freq。使用复值MLP是为了保留复频谱中的相位-幅值耦合，不把周期位置关系简单丢掉。\n\n作者进一步加入Adaptive Resonance Scaling。它根据目标条件频谱的幅值生成门控系数，用sigmoid动态缩放X_freq：谱结构清晰、低熵时提高频域分支权重；周期性弱或噪声占主导时降低频域贡献，让模型回退到时间域。两分支相加得到X_mix，再用Top-k Target Attention聚合最终兴趣U。Top-k做法把非前k个注意力分数掩为负无穷后再softmax，保留候选相关的少量兴趣，避免弱相关信号稀释预测。\n\n训练设置是可复现的：论文在Tmall、Taobao、Alipay三个公开数据集上按全局时间切分训练、验证、测试，用AUC和GAUC评价；模型以FuxiCTR实现，优化器为Adam，学习率5×10^-4，batch size 2048，embedding维度32，最大行为序列长度100。噪声实验额外以0.0、0.2、0.4、0.6、0.8五个污染比例，分别模拟随机删除历史行为和用随机物品替换真实行为。\n\n## 3. 核心技术贡献\n\n第一，论文给出目标条件谱熵这一可解释观察：正样本注意力更集中、负样本更像高熵白噪声。它把“频域有用”从经验技巧变成了与候选物品相关的判别信号，改进了只对用户序列独立滤波的做法。\n\n第二，FEDIN把时间域和频域设计为互补而非替代。时间域保留即时兴趣和局部顺序，频域负责稳定周期与抗噪；消融显示去掉时间域后Tmall GAUC从0.9658降到0.9482，去掉频域后降到0.9605，说明两类信号都不可缺。\n\n第三，目标感知频域注意力是方法的核心增量。把它替换成静态可学习滤波后，Tmall AUC从0.9666降至0.9626，Alipay AUC从0.9320降至0.9293，Taobao AUC从0.9729降至0.9724，说明候选商品确实参与了频率选择，而不是装饰性条件。\n\n第四，自适应频域缩放解决了“所有用户都存在周期兴趣”的错误假设。去掉缩放后，Taobao GAUC从0.9740降至0.9662、AUC从0.9729降至0.9655；这说明频域分支应该按样本的谱清晰度启用，而不是固定加权。\n\n## 4. 实验结果分析\n\n整体结果如下，FEDIN在三个数据集、两个指标上都取得最高值；带星号的结果在论文中表示相对最佳基线具有统计显著性（p<0.05）。\n\n| 模型 | Tmall GAUC/AUC | Alipay GAUC/AUC | Taobao GAUC/AUC |\n|---|---:|---:|---:|\n| DIN | 0.9547 / 0.9518 | 0.8897 / 0.8832 | 0.9689 / 0.9664 |\n| DIEN | 0.9237 / 0.9157 | 0.8980 / 0.8953 | 0.9443 / 0.9442 |\n| BERT4Rec | 0.9103 / 0.9157 | 0.9179 / 0.9189 | 0.9523 / 0.9535 |\n| DIFF | 0.8513 / 0.8618 | 0.8962 / 0.8995 | 0.9463 / 0.9475 |\n| FEDIN | **0.9658 / 0.9666** | **0.9335 / 0.9320** | **0.9740 / 0.9729** |\n\n数据集差异也很有信息。DIN在Tmall和Taobao表现很强，但在Alipay相对弱；论文将其归因于数据稀疏性和行为复杂度差异。FEDIN三个场景都稳定领先，说明频域分支并不只是在某一个数据集上过拟合周期，而是能补偿时间域兴趣在稀疏、噪声环境中的不稳定性。\n\n消融实验揭示了贡献排序。去掉时间域分支造成最大幅度的结构性损失，表明频域不能独立承担即时兴趣预测；去掉频域分支也在三个数据集上普遍下降，证明全局周期模式提供了增量信息。将目标感知滤波替换为静态滤波后，三个数据集都下降，验证“目标商品是频率选择器”的核心假设。去掉自适应缩放后Taobao下降尤其明显，说明不是每个用户-商品对都存在强周期共振。\n\n噪声实验进一步支持这一解释。随机删除或替换行为比例从0.0增加到0.8时，频域分支的相对性能衰减比时间域分支更缓；随机噪声在频域表现为分散的高熵波动，而真实兴趣保留集中能量。复杂度上，FFT分支主导成本为O(L log L)，而标准自注意力为O(L^2)，长序列时有潜在优势。不过论文的复杂度优势是模块级分析，真正线上收益仍取决于FFT、复值MLP、Top-k筛选和特征搬运的实现常数。\n\n## 5. 局限与未来方向\n\n论文明确的局限信息较少，结论部分主要强调三数据集效果和频域、时间域联合建模，并没有给出线上A/B、真实QPS、显存占用或端到端延迟。实验使用公开电商日志，行为序列最大长度固定为100，尚不能直接证明在更长的社区UGC历史、强实时流式行为和冷启动用户上同样成立。复值频域过滤器与patch超参还需要在不同业务分布上重新调节；论文的噪声实验使用合成删除/替换，和真实曝光偏差、机器人流量、埋点缺失并不完全等价。\n\n后续更值得做的是把谱熵作为可监控信号接入线上诊断：区分哪些用户-候选对真正受周期兴趣驱动，哪些只需要短期行为。还可以探索在线增量FFT、低秩复值MLP、动态序列长度和蒸馏到轻量CTR塔，验证频域收益是否能在延迟预算内保留。\n\n## 6. 工业实践意义\n\n对于社区短文本搜索与推荐，FEDIN最可借鉴的不是直接照搬FFT，而是“候选条件下的兴趣去噪”。可以在精排阶段增加一个轻量频域支路：输入用户最近一段点击、停留、收藏或负反馈序列，用当前帖子/商品向量生成目标注意力频谱；频谱清晰时利用周期兴趣，频谱高熵时主要依赖时间域即时信号。这样能够把长期主题偏好和当前意图分开处理，减少偶发点击对CTR的污染。\n\n落地建议分三步。第一，在现有DIN/DIEN或Transformer基线旁加入离线频域特征，不改变主排序塔，先检查GAUC、nDCG和分用户活跃度分桶的收益。第二，复现论文的两个污染实验，但把随机噪声替换成业务中的真实缺失、误触和曝光截断，确认收益来自抗噪而不是数据集偶然性。第三，针对长序列压测FFT和复值MLP的CPU/GPU成本，并以候选相关Top-k聚合替代全量注意力。\n\n论文没有线上A/B证据，因此不应直接承诺CTR提升。对于生产系统，建议保留时间域兜底、对频域门控做灰度开关，并监控不同内容垂类的谱熵、延迟、内存和校准误差；如果频域支路只改善高活跃用户，应考虑分层启用，避免把复杂度扩散到冷启动流量。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>FEDIN关注工业CTR预估里一个很具体的失效模式：用户历史行为同时包含长期周期性习惯和短期随机噪声，而常见的时间域序列模型容易把一次误点、探索性点击或缺失行为当成连续兴趣。论文的动机不是简单地“把FFT接到推荐模型上”，而是先观察目标商品条件下的注意力分布：当历史行为确实与候选商品相关时，注意力在频域往往呈现集中、低谱熵的峰；当行为是无关噪声时，频谱更分散、熵更高。也就是说，是否存在周期信号不能脱离当前候选商品判断，目标商品本身可以充当频率选择器。</p>\n<p>这一区分对CTR尤其重要。DIN、DIEN等目标注意力模型能回答“哪些历史行为与目标相关”，却仍主要在时间域处理逐点序列；DIFF等频域方法可以提取稳定模式，却通常先对用户序列独立滤波，忽略了候选商品改变兴趣解释方式的事实。论文把问题定位为目标无关的频域滤波不足，而不是单纯的模型容量不足。对社区UGC或电商推荐而言，同一用户的长期“数码产品”兴趣和当前“露营装备”兴趣，可能在不同候选下激活不同历史片段；如果预估模型只看最近若干次点击，长期周期和抗噪能力都会受损。</p>\n<h2>2. 方法详解</h2>\n<p>FEDIN的输入是用户行为序列X和目标物品向量X_tar，整体输出用户兴趣表示U。模型采用双分支去噪结构：时间域分支保留局部行为演化，频域分支提取全局周期共振，最后由User Interest Aggregator融合。两路可以并行执行，论文强调这一点是为了让频域增强不必把线上推理变成串行的重型模块。</p>\n<p>第一步是Reversible Instance Normalization（RevIN），用于缓解用户行为分布的非平稳性和不同序列之间的分布漂移。时间域分支先使用目标注意力做粗过滤，但不同于传统注意力池化，它保留加权后的完整序列：X_attn = Softmax(X_tar X^T / sqrt(d))^T ⊙ X。这样模型不仅知道哪些行为与目标相关，还保留这些行为的时间位置。随后将序列切成不重叠patch，不足一个patch的部分补零，再线性投影并送入Transformer encoder，得到X_time。patching同时降低长序列注意力开销，也把连续的局部行为片段作为更稳定的建模单元。</p>\n<p>频域分支的关键是目标感知。模型先计算历史行为对目标商品的相关分数X_score，再对该分数做FFT得到目标条件频谱。随后对频谱幅值做softmax，并与行为序列的FFT逐元素广播相乘：这一步不是对原始行为盲目做固定滤波，而是先用候选商品决定哪些频率更值得保留。接着使用复值MLP学习频谱到干净兴趣频谱的非线性映射，再做IFFT还原为时域表示X_freq。使用复值MLP是为了保留复频谱中的相位-幅值耦合，不把周期位置关系简单丢掉。</p>\n<p>作者进一步加入Adaptive Resonance Scaling。它根据目标条件频谱的幅值生成门控系数，用sigmoid动态缩放X_freq：谱结构清晰、低熵时提高频域分支权重；周期性弱或噪声占主导时降低频域贡献，让模型回退到时间域。两分支相加得到X_mix，再用Top-k Target Attention聚合最终兴趣U。Top-k做法把非前k个注意力分数掩为负无穷后再softmax，保留候选相关的少量兴趣，避免弱相关信号稀释预测。</p>\n<p>训练设置是可复现的：论文在Tmall、Taobao、Alipay三个公开数据集上按全局时间切分训练、验证、测试，用AUC和GAUC评价；模型以FuxiCTR实现，优化器为Adam，学习率5×10^-4，batch size 2048，embedding维度32，最大行为序列长度100。噪声实验额外以0.0、0.2、0.4、0.6、0.8五个污染比例，分别模拟随机删除历史行为和用随机物品替换真实行为。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文给出目标条件谱熵这一可解释观察：正样本注意力更集中、负样本更像高熵白噪声。它把“频域有用”从经验技巧变成了与候选物品相关的判别信号，改进了只对用户序列独立滤波的做法。</p>\n<p>第二，FEDIN把时间域和频域设计为互补而非替代。时间域保留即时兴趣和局部顺序，频域负责稳定周期与抗噪；消融显示去掉时间域后Tmall GAUC从0.9658降到0.9482，去掉频域后降到0.9605，说明两类信号都不可缺。</p>\n<p>第三，目标感知频域注意力是方法的核心增量。把它替换成静态可学习滤波后，Tmall AUC从0.9666降至0.9626，Alipay AUC从0.9320降至0.9293，Taobao AUC从0.9729降至0.9724，说明候选商品确实参与了频率选择，而不是装饰性条件。</p>\n<p>第四，自适应频域缩放解决了“所有用户都存在周期兴趣”的错误假设。去掉缩放后，Taobao GAUC从0.9740降至0.9662、AUC从0.9729降至0.9655；这说明频域分支应该按样本的谱清晰度启用，而不是固定加权。</p>\n<h2>4. 实验结果分析</h2>\n<p>整体结果如下，FEDIN在三个数据集、两个指标上都取得最高值；带星号的结果在论文中表示相对最佳基线具有统计显著性（p&lt;0.05）。</p>\n<table><thead><tr><th>模型</th><th>Tmall GAUC/AUC</th><th>Alipay GAUC/AUC</th><th>Taobao GAUC/AUC</th></tr></thead><tbody><tr><td>DIN</td><td>0.9547 / 0.9518</td><td>0.8897 / 0.8832</td><td>0.9689 / 0.9664</td></tr><tr><td>DIEN</td><td>0.9237 / 0.9157</td><td>0.8980 / 0.8953</td><td>0.9443 / 0.9442</td></tr><tr><td>BERT4Rec</td><td>0.9103 / 0.9157</td><td>0.9179 / 0.9189</td><td>0.9523 / 0.9535</td></tr><tr><td>DIFF</td><td>0.8513 / 0.8618</td><td>0.8962 / 0.8995</td><td>0.9463 / 0.9475</td></tr><tr><td>FEDIN</td><td><strong>0.9658 / 0.9666</strong></td><td><strong>0.9335 / 0.9320</strong></td><td><strong>0.9740 / 0.9729</strong></td></tr></tbody></table>\n<p>数据集差异也很有信息。DIN在Tmall和Taobao表现很强，但在Alipay相对弱；论文将其归因于数据稀疏性和行为复杂度差异。FEDIN三个场景都稳定领先，说明频域分支并不只是在某一个数据集上过拟合周期，而是能补偿时间域兴趣在稀疏、噪声环境中的不稳定性。</p>\n<p>消融实验揭示了贡献排序。去掉时间域分支造成最大幅度的结构性损失，表明频域不能独立承担即时兴趣预测；去掉频域分支也在三个数据集上普遍下降，证明全局周期模式提供了增量信息。将目标感知滤波替换为静态滤波后，三个数据集都下降，验证“目标商品是频率选择器”的核心假设。去掉自适应缩放后Taobao下降尤其明显，说明不是每个用户-商品对都存在强周期共振。</p>\n<p>噪声实验进一步支持这一解释。随机删除或替换行为比例从0.0增加到0.8时，频域分支的相对性能衰减比时间域分支更缓；随机噪声在频域表现为分散的高熵波动，而真实兴趣保留集中能量。复杂度上，FFT分支主导成本为O(L log L)，而标准自注意力为O(L^2)，长序列时有潜在优势。不过论文的复杂度优势是模块级分析，真正线上收益仍取决于FFT、复值MLP、Top-k筛选和特征搬运的实现常数。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文明确的局限信息较少，结论部分主要强调三数据集效果和频域、时间域联合建模，并没有给出线上A/B、真实QPS、显存占用或端到端延迟。实验使用公开电商日志，行为序列最大长度固定为100，尚不能直接证明在更长的社区UGC历史、强实时流式行为和冷启动用户上同样成立。复值频域过滤器与patch超参还需要在不同业务分布上重新调节；论文的噪声实验使用合成删除/替换，和真实曝光偏差、机器人流量、埋点缺失并不完全等价。</p>\n<p>后续更值得做的是把谱熵作为可监控信号接入线上诊断：区分哪些用户-候选对真正受周期兴趣驱动，哪些只需要短期行为。还可以探索在线增量FFT、低秩复值MLP、动态序列长度和蒸馏到轻量CTR塔，验证频域收益是否能在延迟预算内保留。</p>\n<h2>6. 工业实践意义</h2>\n<p>对于社区短文本搜索与推荐，FEDIN最可借鉴的不是直接照搬FFT，而是“候选条件下的兴趣去噪”。可以在精排阶段增加一个轻量频域支路：输入用户最近一段点击、停留、收藏或负反馈序列，用当前帖子/商品向量生成目标注意力频谱；频谱清晰时利用周期兴趣，频谱高熵时主要依赖时间域即时信号。这样能够把长期主题偏好和当前意图分开处理，减少偶发点击对CTR的污染。</p>\n<p>落地建议分三步。第一，在现有DIN/DIEN或Transformer基线旁加入离线频域特征，不改变主排序塔，先检查GAUC、nDCG和分用户活跃度分桶的收益。第二，复现论文的两个污染实验，但把随机噪声替换成业务中的真实缺失、误触和曝光截断，确认收益来自抗噪而不是数据集偶然性。第三，针对长序列压测FFT和复值MLP的CPU/GPU成本，并以候选相关Top-k聚合替代全量注意力。</p>\n<p>论文没有线上A/B证据，因此不应直接承诺CTR提升。对于生产系统，建议保留时间域兜底、对频域门控做灰度开关，并监控不同内容垂类的谱熵、延迟、内存和校准误差；如果频域支路只改善高活跃用户，应考虑分层启用，避免把复杂度扩散到冷启动流量。</p>"
+      }
+    },
+    {
+      "id": "web_search:https://www.sciencedirect.com/science/article/pii/S0957417426023298",
+      "base_score": 4.0,
+      "preference_bonus": 0.15,
+      "total_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "CADiff面向扩散式序列推荐中长期兴趣表示不完整、长短期兴趣权重固定的问题，提出非对称感知编码器APE与自适应多兴趣融合AMF：前者让序列上下文注入用户特定表示，后者按当前场景动态生成扩散引导信号。模型在MovieLens、KuaiRec、Yelp和Book四个真实数据集上同时改善推荐准确率与个性化效果，并提供了公开代码。",
+      "key_insight": "长短期兴趣不应使用全局固定权重，用户当前会话与内容类型决定两者的相对贡献。对社区UGC推荐可借鉴“用户状态+当前序列”的门控融合，再把扩散生成限制在候选集合内；同时要警惕多步采样带来的线上延迟，优先验证蒸馏或少步采样方案。",
+      "company": [],
+      "rank": 2,
+      "title": "Context-aware diffusion model for sequential recommendation",
+      "url": "https://www.sciencedirect.com/science/article/pii/S0957417426023298",
+      "authors": "Hao Chen, Youcai Wang, Yue Xu, Yanyan Chen",
+      "source": "web_search",
+      "published": "2026-07-01",
+      "discovered_at": "2026-08-17",
+      "adjusted_score": 4.15,
+      "deep_reading": {
+        "paper_id": "web_search:https://www.sciencedirect.com/science/article/pii/S0957417426023298",
+        "title": "Context-aware diffusion model for sequential recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nCADiff研究扩散式序列推荐中的两个相互关联的问题。第一，已有方法往往把用户的长期兴趣和短期兴趣分别编码，用户特定表示无法读取历史序列中的上下文，因此长期兴趣容易退化为静态摘要。第二，扩散反向去噪需要条件引导信号，但已有方法通常对所有用户、所有行为场景使用同质化引导，默认长期与短期兴趣的贡献比例固定。论文用两个行为例子说明这个问题：看过Frozen、Moana 2、Zootopia和Mission: Impossible的用户，下一次更可能受长期动画偏好影响；而在短视频中，连续消费体育和音乐内容时，刚刚观看的音乐内容可能更能代表即时意图。\n\n这类错误会在扩散模型中被放大。扩散推荐先把目标物品表示加噪，再在用户条件下逐步反向去噪；如果条件向量不完整或不符合当前场景，每一步的score估计都会沿着错误方向修正，最终生成的物品表示也会偏离用户意图。论文因此把核心任务定义为：让长期兴趣能够吸收结构化的序列上下文，同时让长期、短期兴趣在每个用户和每段历史上动态组合，而不是只追求更大的去噪网络。\n\n## 2. 方法详解\n\nCADiff的输入是用户交互序列和目标物品表示。论文沿用扩散式序列推荐的基本过程：先将真实目标物品嵌入作为干净变量，通过前向过程逐步加入高斯噪声；训练一个依赖时间步、用户历史和兴趣条件的去噪网络，预测并移除噪声；推理时从噪声出发，经反向过程得到候选物品的潜在表示，再与物品空间匹配。用户历史会先被切分为固定长度的子序列，模型以这些序列学习下一物品偏好。\n\n第一项改动是Asymmetric Perception Encoding（APE）。模型新增一个user-specific token，用它表示长期兴趣，并把这个token与最近交互序列一起送入Transformer编码器。普通Transformer允许所有token互相注意，容易让短期行为反复吸收长期摘要，造成两个兴趣通道混合。APE施加非对称注意力掩码：交互物品token不能注意user-specific token，但user-specific token可以注意所有交互物品。结果是，user-specific token能够聚合完整序列上下文形成时间感知的长期表示；交互token仍然只在序列内部建模即时变化，避免长期向短期路径反向泄漏。\n\n从实现角度看，APE不是简单的双塔。它共享序列编码器，但对注意力矩阵施加方向约束。长期token的更新可以读取所有历史项，短期项之间可以按Transformer规则交互，而短期项读取不到长期token。这个设计同时保留了两类表示的互补性与可分离性：长期表示不是无上下文的用户ID向量，短期表示也不会被一个粗粒度的长期摘要覆盖。\n\n第二项改动是Adaptive Multi-Interest Fusion（AMF）。它读取APE得到的长期表示和短期兴趣表示，再通过上下文感知网络计算一组归一化融合系数。这些系数随用户和当前行为上下文变化，用于重加权并合成扩散模型的统一guidance signal。论文强调，系数不是一个全局超参数，而是当前序列条件下的相对贡献估计：动画偏好场景可以提高长期兴趣权重，短视频即时消费场景则可以提高短期兴趣权重。\n\n在反向扩散中，条件信息决定score函数如何把噪声表示推向真实物品分布。AMF的动态引导使去噪轨迹与情境意图更一致，减少长期、短期信号冲突造成的方向歧义。与之相对，GCDR等已有设计采用相互独立的兴趣编码和固定引导，无法感知同一用户在不同场景下兴趣贡献的变化。论文页面公开了CADiff代码；但因出版页面的完整实验附表受访问限制，当前可获取正文片段没有展示优化器、batch size、扩散步数等全部训练超参，复现时需要以代码为准。\n\n## 3. 核心技术贡献\n\n第一，APE把“长期用户表示是否能理解序列上下文”从表示学习问题转成注意力流向问题。它只允许长期token读取行为序列，不允许行为token反向读取长期摘要，因而减少了长期与短期兴趣的过度混合。相较完全独立的长期/短期编码，这是一个结构级改动，而不是增加一层MLP。\n\n第二，AMF把固定兴趣融合改为上下文条件融合。对推荐系统而言，兴趣不是静态比例：同一个用户在电影、短视频、新闻或电商场景中可能依赖不同时间尺度。归一化融合系数让扩散条件成为每个用户-序列对的动态状态，理论上可以降低反向去噪的条件不确定性。\n\n第三，论文把表示建模和扩散条件连接起来。APE产生的长期与短期表示不是只用于离线分析，而是直接影响score估计和反向采样轨迹；AMF也不是输出层的加权平均，而是作用于生成过程的引导信号。因此方法把用户建模误差与扩散生成误差放到同一条链路中优化。\n\n下面用结构对照总结论文的关键差异，其中“1/0”表示该能力是否具备，而不是性能百分比。\n\n| 设计能力 | 传统独立兴趣编码/GCDR式方案 | CADiff |\n|---|---:|---:|\n| 长期表示读取序列上下文 | 0 | 1 |\n| 短期token读取长期token | 1 | 0 |\n| 长短期兴趣动态融合 | 0 | 1 |\n| 用于扩散条件的统一引导 | 1 | 1 |\n| 公开评测数据集数量 | — | 4 |\n\n## 4. 实验结果分析\n\n论文在四个公开数据集上评估：MovieLens、KuaiRec、Yelp和Book。它们覆盖电影评分、快手短视频、餐馆评论/签到和图书偏好，场景跨度大于单一电商日志；其中KuaiRec直接包含短视频交互，和短内容推荐的用户序列问题较接近。论文报告CADiff在多个真实数据集上优于现有方法，并同时提升准确率与个性化效果，但当前可访问的出版页面正文只暴露了数据集、模块和结论描述，没有公开完整的数值对比表，因此这里不臆造Recall@K或NDCG@K提升幅度。\n\n| 实验对象 | 数量/设置 | 论文中可确认的比较点 |\n|---|---:|---|\n| 公开推荐数据集 | 4 | MovieLens、KuaiRec、Yelp、Book |\n| 核心新增模块 | 2 | APE、AMF |\n| 主要失效模式 | 2 | 非交互兴趣编码、同质化扩散引导 |\n| 重点对比思路 | 1 | CADiff的动态引导 vs GCDR的固定引导 |\n\n从消融逻辑看，APE和AMF分别对应两个动机，应该按以下方式解释实验：去掉APE后，长期token无法从序列获取结构化上下文，长期兴趣会退化；去掉AMF后，模型会回到固定或同质化引导，无法响应不同场景下长短期贡献的变化。论文摘要和结论明确将两者都列为必要贡献，但可获取页面没有给出每个消融项的具体百分点，因此只能确认方向，不能把“显著提升”改写成未经证实的数值。\n\n方法上的一个重要结果是“长期兴趣也应当是时间感知的”。传统长期画像往往把历史行为压缩为静态向量，CADiff让user-specific token读取整个交互序列，借助注意力消息传递得到带上下文的长期表示。另一个结果是“上下文决定融合比例”：例如动画电影案例更依赖长期主题，体育/音乐短视频案例更依赖近期内容，AMF把这种差异编码为归一化系数。\n\n论文的效果边界也值得注意。扩散模型通常需要多步采样，生成式序列推荐的离线准确率提升不能自动转化为线上吞吐提升；四个公开数据集也不能覆盖社区UGC中的文本语义、内容生命周期、曝光偏差和实时用户反馈。尤其是MovieLens、Yelp等数据更多是评分或交互记录，和生产CTR日志的曝光-点击选择机制不同。因而CADiff的实验更适合作为用户状态建模和条件融合的证据，而不是直接证明可在毫秒级精排中部署。\n\n## 5. 局限与未来方向\n\n论文明确讨论的不足集中在既有扩散式序列推荐的兴趣编码和引导机制，针对自身的线上限制、训练成本和隐私风险披露较少。当前可获取的正文片段未给出完整的优化器、批大小、扩散步数、单次请求延迟、显存占用或线上A/B数据，这些都是从研究原型走向工业系统必须补齐的信息。模型依赖固定长度子序列，超长用户历史如何分层采样、如何增量更新兴趣状态，也没有在页面片段中得到充分说明。\n\n未来可以沿三个方向推进：将AMF融合系数做成可解释的用户状态监控；用蒸馏、少步采样或候选集约束替代全量生成；将APE的非对称注意力迁移到CTR/排序模型，让现有判别式系统先受益，再评估是否值得引入扩散生成。对UGC平台，还需要把内容文本、时间衰减、负反馈和曝光策略一起纳入条件建模。\n\n## 6. 工业实践意义\n\n最可落地的不是立刻把精排换成扩散推荐，而是复用APE的注意力流向和AMF的动态融合。社区搜索或推荐可以维护两类用户状态：长期主题/作者/内容类型偏好，以及当前会话的短期意图。通过一个共享序列编码器加非对称mask，让长期token读取历史而不让每个短期token被长期摘要污染；再用轻量门控网络根据query、当前帖子和最近行为计算长短期权重。\n\n在工程上，建议采用渐进式方案。第一阶段只把APE输出作为现有CTR或nDCG排序模型的用户特征，保持候选集与在线召回逻辑不变。第二阶段在候选集内做AMF融合，用离线回放比较固定权重、用户级权重和上下文级权重。第三阶段才评估扩散生成：限定生成结果必须映射回可服务候选，控制采样步数，并对冷启动用户回退到内容和群体特征。\n\n评估要同时看准确率、覆盖、多样性、长尾曝光和延迟。CADiff的四数据集证据说明模型能处理不同交互场景，但没有线上A/B数据，所以不应直接承诺CTR或留存提升。对社区UGC尤其要注意兴趣漂移：热点事件会让短期兴趣快速变化，AMF应允许短期权重快速升高，也要有时间衰减避免一次误点击永久改变用户画像。最后，扩散模型增加了采样和向量匹配成本，适合先放在离线候选增强或低频场景，在线高QPS精排应优先采用APE/AMF的轻量判别式版本。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>CADiff研究扩散式序列推荐中的两个相互关联的问题。第一，已有方法往往把用户的长期兴趣和短期兴趣分别编码，用户特定表示无法读取历史序列中的上下文，因此长期兴趣容易退化为静态摘要。第二，扩散反向去噪需要条件引导信号，但已有方法通常对所有用户、所有行为场景使用同质化引导，默认长期与短期兴趣的贡献比例固定。论文用两个行为例子说明这个问题：看过Frozen、Moana 2、Zootopia和Mission: Impossible的用户，下一次更可能受长期动画偏好影响；而在短视频中，连续消费体育和音乐内容时，刚刚观看的音乐内容可能更能代表即时意图。</p>\n<p>这类错误会在扩散模型中被放大。扩散推荐先把目标物品表示加噪，再在用户条件下逐步反向去噪；如果条件向量不完整或不符合当前场景，每一步的score估计都会沿着错误方向修正，最终生成的物品表示也会偏离用户意图。论文因此把核心任务定义为：让长期兴趣能够吸收结构化的序列上下文，同时让长期、短期兴趣在每个用户和每段历史上动态组合，而不是只追求更大的去噪网络。</p>\n<h2>2. 方法详解</h2>\n<p>CADiff的输入是用户交互序列和目标物品表示。论文沿用扩散式序列推荐的基本过程：先将真实目标物品嵌入作为干净变量，通过前向过程逐步加入高斯噪声；训练一个依赖时间步、用户历史和兴趣条件的去噪网络，预测并移除噪声；推理时从噪声出发，经反向过程得到候选物品的潜在表示，再与物品空间匹配。用户历史会先被切分为固定长度的子序列，模型以这些序列学习下一物品偏好。</p>\n<p>第一项改动是Asymmetric Perception Encoding（APE）。模型新增一个user-specific token，用它表示长期兴趣，并把这个token与最近交互序列一起送入Transformer编码器。普通Transformer允许所有token互相注意，容易让短期行为反复吸收长期摘要，造成两个兴趣通道混合。APE施加非对称注意力掩码：交互物品token不能注意user-specific token，但user-specific token可以注意所有交互物品。结果是，user-specific token能够聚合完整序列上下文形成时间感知的长期表示；交互token仍然只在序列内部建模即时变化，避免长期向短期路径反向泄漏。</p>\n<p>从实现角度看，APE不是简单的双塔。它共享序列编码器，但对注意力矩阵施加方向约束。长期token的更新可以读取所有历史项，短期项之间可以按Transformer规则交互，而短期项读取不到长期token。这个设计同时保留了两类表示的互补性与可分离性：长期表示不是无上下文的用户ID向量，短期表示也不会被一个粗粒度的长期摘要覆盖。</p>\n<p>第二项改动是Adaptive Multi-Interest Fusion（AMF）。它读取APE得到的长期表示和短期兴趣表示，再通过上下文感知网络计算一组归一化融合系数。这些系数随用户和当前行为上下文变化，用于重加权并合成扩散模型的统一guidance signal。论文强调，系数不是一个全局超参数，而是当前序列条件下的相对贡献估计：动画偏好场景可以提高长期兴趣权重，短视频即时消费场景则可以提高短期兴趣权重。</p>\n<p>在反向扩散中，条件信息决定score函数如何把噪声表示推向真实物品分布。AMF的动态引导使去噪轨迹与情境意图更一致，减少长期、短期信号冲突造成的方向歧义。与之相对，GCDR等已有设计采用相互独立的兴趣编码和固定引导，无法感知同一用户在不同场景下兴趣贡献的变化。论文页面公开了CADiff代码；但因出版页面的完整实验附表受访问限制，当前可获取正文片段没有展示优化器、batch size、扩散步数等全部训练超参，复现时需要以代码为准。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，APE把“长期用户表示是否能理解序列上下文”从表示学习问题转成注意力流向问题。它只允许长期token读取行为序列，不允许行为token反向读取长期摘要，因而减少了长期与短期兴趣的过度混合。相较完全独立的长期/短期编码，这是一个结构级改动，而不是增加一层MLP。</p>\n<p>第二，AMF把固定兴趣融合改为上下文条件融合。对推荐系统而言，兴趣不是静态比例：同一个用户在电影、短视频、新闻或电商场景中可能依赖不同时间尺度。归一化融合系数让扩散条件成为每个用户-序列对的动态状态，理论上可以降低反向去噪的条件不确定性。</p>\n<p>第三，论文把表示建模和扩散条件连接起来。APE产生的长期与短期表示不是只用于离线分析，而是直接影响score估计和反向采样轨迹；AMF也不是输出层的加权平均，而是作用于生成过程的引导信号。因此方法把用户建模误差与扩散生成误差放到同一条链路中优化。</p>\n<p>下面用结构对照总结论文的关键差异，其中“1/0”表示该能力是否具备，而不是性能百分比。</p>\n<table><thead><tr><th>设计能力</th><th>传统独立兴趣编码/GCDR式方案</th><th>CADiff</th></tr></thead><tbody><tr><td>长期表示读取序列上下文</td><td>0</td><td>1</td></tr><tr><td>短期token读取长期token</td><td>1</td><td>0</td></tr><tr><td>长短期兴趣动态融合</td><td>0</td><td>1</td></tr><tr><td>用于扩散条件的统一引导</td><td>1</td><td>1</td></tr><tr><td>公开评测数据集数量</td><td>—</td><td>4</td></tr></tbody></table>\n<h2>4. 实验结果分析</h2>\n<p>论文在四个公开数据集上评估：MovieLens、KuaiRec、Yelp和Book。它们覆盖电影评分、快手短视频、餐馆评论/签到和图书偏好，场景跨度大于单一电商日志；其中KuaiRec直接包含短视频交互，和短内容推荐的用户序列问题较接近。论文报告CADiff在多个真实数据集上优于现有方法，并同时提升准确率与个性化效果，但当前可访问的出版页面正文只暴露了数据集、模块和结论描述，没有公开完整的数值对比表，因此这里不臆造Recall@K或NDCG@K提升幅度。</p>\n<table><thead><tr><th>实验对象</th><th>数量/设置</th><th>论文中可确认的比较点</th></tr></thead><tbody><tr><td>公开推荐数据集</td><td>4</td><td>MovieLens、KuaiRec、Yelp、Book</td></tr><tr><td>核心新增模块</td><td>2</td><td>APE、AMF</td></tr><tr><td>主要失效模式</td><td>2</td><td>非交互兴趣编码、同质化扩散引导</td></tr><tr><td>重点对比思路</td><td>1</td><td>CADiff的动态引导 vs GCDR的固定引导</td></tr></tbody></table>\n<p>从消融逻辑看，APE和AMF分别对应两个动机，应该按以下方式解释实验：去掉APE后，长期token无法从序列获取结构化上下文，长期兴趣会退化；去掉AMF后，模型会回到固定或同质化引导，无法响应不同场景下长短期贡献的变化。论文摘要和结论明确将两者都列为必要贡献，但可获取页面没有给出每个消融项的具体百分点，因此只能确认方向，不能把“显著提升”改写成未经证实的数值。</p>\n<p>方法上的一个重要结果是“长期兴趣也应当是时间感知的”。传统长期画像往往把历史行为压缩为静态向量，CADiff让user-specific token读取整个交互序列，借助注意力消息传递得到带上下文的长期表示。另一个结果是“上下文决定融合比例”：例如动画电影案例更依赖长期主题，体育/音乐短视频案例更依赖近期内容，AMF把这种差异编码为归一化系数。</p>\n<p>论文的效果边界也值得注意。扩散模型通常需要多步采样，生成式序列推荐的离线准确率提升不能自动转化为线上吞吐提升；四个公开数据集也不能覆盖社区UGC中的文本语义、内容生命周期、曝光偏差和实时用户反馈。尤其是MovieLens、Yelp等数据更多是评分或交互记录，和生产CTR日志的曝光-点击选择机制不同。因而CADiff的实验更适合作为用户状态建模和条件融合的证据，而不是直接证明可在毫秒级精排中部署。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文明确讨论的不足集中在既有扩散式序列推荐的兴趣编码和引导机制，针对自身的线上限制、训练成本和隐私风险披露较少。当前可获取的正文片段未给出完整的优化器、批大小、扩散步数、单次请求延迟、显存占用或线上A/B数据，这些都是从研究原型走向工业系统必须补齐的信息。模型依赖固定长度子序列，超长用户历史如何分层采样、如何增量更新兴趣状态，也没有在页面片段中得到充分说明。</p>\n<p>未来可以沿三个方向推进：将AMF融合系数做成可解释的用户状态监控；用蒸馏、少步采样或候选集约束替代全量生成；将APE的非对称注意力迁移到CTR/排序模型，让现有判别式系统先受益，再评估是否值得引入扩散生成。对UGC平台，还需要把内容文本、时间衰减、负反馈和曝光策略一起纳入条件建模。</p>\n<h2>6. 工业实践意义</h2>\n<p>最可落地的不是立刻把精排换成扩散推荐，而是复用APE的注意力流向和AMF的动态融合。社区搜索或推荐可以维护两类用户状态：长期主题/作者/内容类型偏好，以及当前会话的短期意图。通过一个共享序列编码器加非对称mask，让长期token读取历史而不让每个短期token被长期摘要污染；再用轻量门控网络根据query、当前帖子和最近行为计算长短期权重。</p>\n<p>在工程上，建议采用渐进式方案。第一阶段只把APE输出作为现有CTR或nDCG排序模型的用户特征，保持候选集与在线召回逻辑不变。第二阶段在候选集内做AMF融合，用离线回放比较固定权重、用户级权重和上下文级权重。第三阶段才评估扩散生成：限定生成结果必须映射回可服务候选，控制采样步数，并对冷启动用户回退到内容和群体特征。</p>\n<p>评估要同时看准确率、覆盖、多样性、长尾曝光和延迟。CADiff的四数据集证据说明模型能处理不同交互场景，但没有线上A/B数据，所以不应直接承诺CTR或留存提升。对社区UGC尤其要注意兴趣漂移：热点事件会让短期兴趣快速变化，AMF应允许短期权重快速升高，也要有时间衰减避免一次误点击永久改变用户画像。最后，扩散模型增加了采样和向量匹配成本，适合先放在离线候选增强或低频场景，在线高QPS精排应优先采用APE/AMF的轻量判别式版本。</p>"
+      }
+    },
+    {
+      "id": "web_search:https://www.sciencedirect.com/science/article/abs/pii/S0950705126010592",
+      "base_score": 3.75,
+      "preference_bonus": 0.1,
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "TF-Rec针对序列推荐中的多意图与周期性行为，组合三部分机制：用自适应可学习原型聚类发现潜在意图，用意图引导扩散生成刻画动态偏好演化，再以时间-频率多任务对比学习对齐不同视角的行为表示。论文发表于2026年7月19日，核心目标是让兴趣表示同时保留短期变化、周期规律和意图结构。",
+      "key_insight": "当UGC用户同时存在“长期主题偏好”和“本次会话意图”时，先聚类意图再做序列建模比单一兴趣向量更可解释。可将原型聚类作为离线用户状态特征接入现有CTR模型，先做轻量A/B；扩散生成与多任务对比学习会增加训练复杂度，应以增量收益和资源成本共同评估。",
+      "company": [],
+      "rank": 3,
+      "title": "TF-Rec: Time–Frequency Enhanced Sequential Recommendation Based on Adaptive Intent Clustering",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0950705126010592",
+      "authors": "",
+      "source": "web_search",
+      "published": "2026-07-19",
+      "discovered_at": "2026-08-17",
+      "adjusted_score": 3.85
+    },
+    {
+      "id": "s2:e9a4d9fe77dddcc119ddac89b63f91b1047babb2",
+      "base_score": 3.7,
+      "preference_bonus": 0.0,
+      "total_score": 3.7,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "summary": "GEEMOO面向教育推荐中相关性、学习效果和多样性相互冲突的问题，把梯度法的快速整合能力与进化策略的全局搜索结合，寻找Pareto最优解。实验中Hypervolume为0.85、Generational Distance为0.02、Spread Indicator为0.88、Crowding Distance为0.92；相较NSGA-II，适应度评估从60,000次降至50,000次。",
+      "key_insight": "多目标推荐不应把CTR、深度消费和内容生态简单线性加权后长期固定，Pareto前沿可以保留多种业务取舍。社区搜索/推荐可借鉴其“候选解集+在线策略选择”思路，将相关性、点击和多样性约束分层验证；但教育场景与UGC场景不同，不能直接迁移指标权重。",
+      "company": [],
+      "rank": 4,
+      "title": "Gradient-enhanced evolutionary multi-objective optimization (GEEMOO): Balancing relevance, learning outcomes, and diversity in educational recommendation systems",
+      "url": "https://www.semanticscholar.org/paper/e9a4d9fe77dddcc119ddac89b63f91b1047babb2",
+      "authors": "Y. Jdidou, S. Aammou, Hicham Er-radi, Ilias Aarab",
+      "source": "semantic_scholar",
+      "published": "2025-09-01",
+      "discovered_at": "2026-08-16",
+      "adjusted_score": 3.7
+    },
+    {
+      "id": "dblp:conf/aaai/AbbaszadehALS26",
+      "base_score": 2.7,
+      "preference_bonus": 0.0,
+      "total_score": 2.7,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "论文研究带偏好强度的排序投票：在传统“先后顺序”之外，允许用户表达强烈或普通偏好，并提出Positional Scoring Matching规则，通过零和博弈求出该规则类中的最优成员。在度量失真框架下，利用偏好强度可把失真控制在3以下，论文同时给出了忽略强度信息的代价界。",
+      "key_insight": "它不是推荐系统论文，但提醒我们点击顺序并不等于偏好强度：一次快速点击和持续深度消费可能代表不同的满意度。对多目标排序可把停留、收藏、负反馈等信号转成强度或置信度，再做鲁棒聚合；落地前必须处理反馈噪声、可比性和隐私约束。",
+      "company": [],
+      "rank": 5,
+      "title": "Metric Distortion with Preference Intensities.",
+      "url": "https://doi.org/10.1609/aaai.v40i20.38701",
+      "authors": "Mehrad Abbaszadeh, Ali Ansarifar, Mohamad Latifian, Masoud Seddighin",
+      "source": "conference_papers",
+      "published": "2026-01-01",
+      "discovered_at": "2026-08-16",
+      "adjusted_score": 2.7
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:xing-kj/XingGraph",
+      "title": "XingGraph: Knowledge-graph RAG for LLM agents: ontology-driven graph building (RDF/OWL), structured-doc chunking with title attribution, multi-subject WIKI-completion retrieval, model-hop traversal, traceable answers on Neo4j. Built for traceable, low-hallucination LLM memory.",
+      "url": "https://github.com/xing-kj/XingGraph",
+      "source": "github",
+      "description": "Knowledge-graph RAG for LLM agents: ontology-driven graph building (RDF/OWL), structured-doc chunking with title attribution, multi-subject WIKI-completion retrieval, model-hop traversal, traceable answers on Neo4j. Built for traceable, low-hallucination LLM memory.",
+      "language": "Python",
+      "stars": 10,
+      "created_at": "2026-08-10"
+    },
+    {
+      "rank": 2,
+      "id": "github:iikarus/Dragon-Brain",
+      "title": "Dragon-Brain: Dragon Brain — persistent long-term memory for AI agents via MCP (Model Context Protocol). Knowledge graph (FalkorDB) + vector search (Qdrant) + CUDA GPU embeddings. Works with Claude, Gemini CLI, Cursor, Windsurf, VS Code Copilot. 30 tools, 1121 tests.",
+      "url": "https://github.com/iikarus/Dragon-Brain",
+      "source": "github",
+      "description": "Dragon Brain — persistent long-term memory for AI agents via MCP (Model Context Protocol). Knowledge graph (FalkorDB) + vector search (Qdrant) + CUDA GPU embeddings. Works with Claude, Gemini CLI, Cursor, Windsurf, VS Code Copilot. 30 tools, 1121 tests.",
+      "language": "Python",
+      "stars": 50,
+      "created_at": "2026-02-23"
+    },
+    {
+      "rank": 3,
+      "id": "github:gongsun947-jpg/pm-knowledge-qa",
+      "title": "pm-knowledge-qa: Local AI Personal Knowledge Base Q&A · Full‑Link RAG Practical Implementation (Hybrid Retrieval + Rerank Fine‑Ranking + Citation‑Enabled Generation)",
+      "url": "https://github.com/gongsun947-jpg/pm-knowledge-qa",
+      "source": "github",
+      "description": "Local AI Personal Knowledge Base Q&A · Full‑Link RAG Practical Implementation (Hybrid Retrieval + Rerank Fine‑Ranking + Citation‑Enabled Generation)",
+      "language": "Python",
+      "stars": 7,
+      "created_at": "2026-08-15"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:internlm/WildClawBench-Trajectories",
+      "title": "internlm/WildClawBench-Trajectories",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench-Trajectories",
+      "source": "huggingface",
+      "description": "WildClawBench Trajectories Complete OpenClaw agent trajectories from the WildClawBench evaluation — every message, reasoning block, tool call, and tool result from real long-horizon agent runs, released for independent verification, side-by-side comparison, and trace-level analys; tags: task_categories:text-generation, language:en, language:zh, license:mit, size_categories:n<1K, format:parquet, modality:text, library:datasets",
+      "language": "dataset",
+      "stars": 5,
+      "created_at": "2026-07-30"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "WildClawBench Hard, practical, end-to-end evaluation for AI agents — in the wild. WildClawBench is an agent benchmark that tests what actually matters: can an AI agent do real work, end-to-end, without hand-holding? We drop agents into a live OpenClaw environment — the same open-; tags: benchmark:official, benchmark:eval-yaml, task_categories:visual-question-answering, task_categories:image-text-to-text, task_categories:question-answering, language:en, language:zh, license:mit",
+      "language": "dataset",
+      "stars": 68,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 6,
+      "id": "hf_dataset:internlm/WildClawBench-Harbor",
+      "title": "internlm/WildClawBench-Harbor",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench-Harbor",
+      "source": "huggingface",
+      "description": "WildClawBench-Harbor This repository is the WildClawBench benchmark converted to the Harbor task format, so that all 60 tasks can be run directly with harbor run against any Harbor-supported agent (Claude Code, OpenHands, Codex CLI, custom agents, ...). WildClawBench is a benchma; tags: language:en, language:zh, license:mit, size_categories:n<1K, arxiv:2605.10912, region:us, agent, agent-evaluation",
+      "language": "dataset",
+      "stars": 2,
+      "created_at": "2026-08-12"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:Qwen/Qwen3.8-27B",
+      "title": "Qwen/Qwen3.8-27B",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, conversational, license:apache-2.0, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 10231,
+      "created_at": "2026-08-05"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/GLM-5",
+      "title": "zai-org/GLM-5",
+      "url": "https://huggingface.co/zai-org/GLM-5",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 2122,
+      "created_at": "2026-02-11"
+    }
+  ]
+}

@@ -1,0 +1,248 @@
+{
+  "date": "2026-03-27",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 522,
+    "papers_selected": 10,
+    "score_min": 3.45,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2603.23710",
+      "title": "An In-Depth Study of Filter-Agnostic Vector Search on a PostgreSQL Database System",
+      "url": "https://arxiv.org/abs/2603.23710",
+      "authors": "Duo Lu, Helena Caminal, Manos Chatzakis, Yannis Papakonstantinou, Yannis Chronis, Vaibhav Jain, Fatma Özcan",
+      "company": [
+        "Google",
+        "Brown University",
+        "ETH Zurich"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 4.4,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.4,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文首次在生产级 PostgreSQL 兼容数据库中系统评估了 Filter-Agnostic 向量搜索 (FVS) 算法。研究发现，在企业级数据库系统中，常用假设（如距离计算主导开销）并不成立，最优算法取决于选择率和相关性等多维因素。论文系统比较了 post-filtering 和 inline-filtering 策略，揭示了与独立库评估截然不同的性能特征和算法权衡，为生产环境下的语义搜索和 GenAI 应用提供了关键的系统级指导。",
+      "key_insight": "该研究的核心发现是：在生产级数据库系统中，向量搜索的性能瓶颈不仅在于距离计算，还受 I/O、缓存、索引维护等系统级因素的显著影响。对搜索系统实践者而言，这意味着不能简单照搬独立库的 benchmark 结论来选择 ANN 算法，需要在实际数据库环境中进行端到端评估。论文提供的 filter-agnostic 策略对比为混合过滤+语义检索的场景（如 UGC 搜索中的标签过滤+向量召回）提供了直接可参考的工程选型依据。",
+      "deep_reading": {
+        "paper_id": "arxiv:2603.23710",
+        "title": "An In-Depth Study of Filter-Agnostic Vector Search on a PostgreSQL Database System",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n带过滤条件的向量搜索 (Filtered Vector Search, FVS) 是支撑语义搜索和 GenAI 应用的关键能力。然而，现有研究绝大多数在 HNSWLib 等独立向量库中评估算法性能，这些环境做出了乐观假设——连续内存布局、裸指针直接解引用、无页面管理开销。当同样的算法部署到生产级数据库系统（如 PostgreSQL）中时，性能特征发生根本性变化。作者通过实证表明，独立库与数据库的系统延迟差距可达 10 倍，更关键的是，算法间的优劣关系（即不同选择率下哪个算法更优的交叉点）也会完全改变。\n\n这一差距的根源在于：数据库系统使用基于元组的存储（8KB 页面）、需要通过 buffer manager 进行散落页面访问、过滤条件验证需要额外的 TID（Tuple ID）间接寻址。这些系统级开销使得传统以\"最小化距离计算次数\"为优化目标的假设不再成立——在 PostgreSQL 中，页面访问和数据检索的系统开销才是主导因素。\n\n## 2. 方法详解\n\n### 评估的算法族\n\n论文系统评估了两大类五种 filter-agnostic 向量搜索算法：\n\n**图方法（基于 HNSW）：**\n- **ACORN (Filter-First)**：在 HNSW 图上执行谓词子图遍历，每步收集 1-hop 和 2-hop 邻居，先过滤再计算距离。\n- **NaviX (Filter-First + 自适应)**：提供 Blind、Directed、Onehop-s 三种启发式，根据运行时观察到的过滤选择率动态切换。Directed 模式从最近的 1-hop 节点出发优先探索 2-hop 邻居。\n- **Sweeping (Traversal-First)**：先按近邻关系遍历，仅在加入结果集时检查过滤条件。\n- **Iterative Scan (Traversal-First)**：可恢复的后过滤方式，维护被丢弃候选的队列以支持暂停节点的恢复。\n\n**聚类方法：**\n- **Filtered ScaNN**：三层树结构（根质心→分支质心→叶向量），仅对满足过滤条件的叶向量计算距离，天然支持 SIMD 向量化和量化压缩。\n\n### 关键系统优化\n\n论文在 PostgreSQL 中实现了两个关键优化：\n1. **Translation Map**：在索引构建时预计算一个内存哈希表，将 indextid 直接映射到 heaptid，消除了 2-hop 邻居解析时的整类页面访问。\n2. **自适应 2-hop 扩展**：当 1-hop 邻居已通过过滤条件时，跳过该分支的 2-hop 扩展，在高选择率下显著减少页面访问。\n\n### 工作负载生成\n\n设计了支持指定选择率 (1%-90%) 和相关性类型（高/中/低正相关、负相关、无相关）的工作负载生成器，通过 softmax 偏置采样从距离排序的向量中生成满足条件的行 ID，无需合成结构化数据。\n\n## 3. 核心技术贡献\n\n**贡献一：揭示系统开销主导性。** 即使在单线程执行中，系统开销（页面访问、buffer manager 查找、TID 间接寻址）占总 CPU 周期的 55.9%-84.4%。在 16 线程并发下，系统开销比例进一步上升至 73.5%-91.0%。这证明高开销是算法内在架构成本，而非并发争用导致。\n\n**贡献二：发现选择率交叉点的系统依赖性。** Filter-first 方法（NaviX/ACORN）在低选择率（1%-5%）下表现更优，traversal-first 方法在高选择率（≥50%）下反转优势。NaviX-Directed 在 5%-30% 的中间选择率区间一致优于 ACORN（跳数分别为 12.8 vs 21.9 at 10% 选择率）。\n\n**贡献三：图方法与聚类方法的系统级权衡。** ScaNN 在低维数据上有 2-3 倍优势（得益于顺序访问和 SIMD），在高维数据上优势缩小。图方法在结果集 k 值增大时更鲁棒（NaviX 跳数增长 86% vs ScaNN 叶访问增长 220%）。ScaNN 在负相关场景下表现稳健（性能仅降 6%），而图方法可降 53%。\n\n**贡献四：量化对不同架构的差异化影响。** HNSW 的 halfvec/binary 量化在 PostgreSQL 中几乎无加速效果（0.75-1.04×），因为瓶颈在随机页面访问而非距离计算。而 ScaNN 的 PCA+SQ8 量化可获得 7-50 倍加速，因为顺序扫描模式天然兼容量化。\n\n## 4. 实验结果分析\n\n实验在四个数据集上进行：sift10M (10M×128D)、openai5M (5M×1536D)、cohere10M (10M×768D)、text2image10M (10M×200D)，使用 95% Recall@10 为目标，16 并发连接。\n\n**关键数据对比（OpenAI-5M, 10% 选择率）：**\n\n| 算法 | 距离计算 | 过滤检查 | 跳数/叶数 | 页面访问 |\n|------|---------|---------|----------|---------|\n| NaviX | 627 | 36.2K | 13.0 | 1.1K |\n| ACORN | 614 | 34.9K | 23.0 | 1.4K |\n| Sweeping | 5.0K | 910 | 197 | 5.2K |\n| ScaNN | 3.8K | 76.9K | 80 | 2.8K |\n\nNaviX 以更少的跳数（13.0 vs ACORN 的 23.0）和更少的页面访问（1.1K vs 1.4K）取得优势。Sweeping 的距离计算高出 8 倍，但过滤检查仅为 NaviX 的 1/40。\n\n**非单调性能现象：** 自适应算法在 10%-30% 选择率区间出现性能凹陷，原因是启发式策略的相变：激进过滤期（1%-5%）→过渡区（5%-30%，过滤检查仍高但距离计算已增加）→收敛期（≥50%，切换到标准 1-hop 遍历）。\n\n**CPU 周期分解分析揭示：** 在 1% 选择率下，Sweeping 的向量数据检索系统开销超过 3 亿 CPU 周期，远超距离计算本身。ScaNN 的主要开销来自重排序步骤需要从堆中检索全精度向量（OpenAI-5M 的 32× 压缩意味着每个向量约需 1 页）。\n\n## 5. 局限与未来方向\n\n作者明确指出的局限：(1) 研究聚焦于内存场景（使用 pg_prewarm），未涉及磁盘 I/O 变异性；(2) 实验假设过滤条件为\"低开销过滤\"（通过预计算 bitmap 评估），未覆盖过滤评估本身成为瓶颈的场景；(3) HNSW 使用固定构建参数（M=32, ef_construction=200），未做全面的参数调优；(4) 结果基于 AMD EPYC 7B13 CPU，在不同缓存层次或 SIMD 能力的硬件上行为可能不同；(5) 聚类方法仅用 ScaNN 代表，其他聚类变体可能有不同表现。\n\n## 6. 工业实践意义\n\n**直接可借鉴的工程决策：**\n1. **选型建议**：如果搜索系统使用 PostgreSQL 兼容数据库（如许多社区产品），不应盲目选择 HNSW——在低维 embedding 或低选择率场景下，ScaNN 类聚类索引可能更优。\n2. **量化策略**：在数据库系统中，HNSW 的向量量化几乎无法带来延迟收益（因瓶颈在页面访问），应优先考虑 Translation Map 等系统级优化。ScaNN 可从 PCA+量化获得数量级加速。\n3. **选择率感知路由**：生产系统应根据查询的预估过滤选择率动态选择算法——低选择率用 NaviX-Directed，高选择率用 Sweeping 或标准 HNSW。\n4. **负相关防御**：当过滤条件与向量相似度呈负相关时（如搜索\"最近发布的相似内容\"，时效性与相似度可能负相关），ScaNN 比图方法更鲁棒。\n5. **Benchmark 警示**：团队在评估向量搜索方案时，必须在实际数据库环境而非独立向量库中进行，否则选型结论可能完全错误。\n\n**部署考量：** 论文使用的 Translation Map 优化已在 PostgreSQL 中实现，额外内存开销可控。论文作者团队来自 Google，系统设计具有工业级水准。PACMMOD 2026 录用进一步验证了工作的学术严谨性。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>带过滤条件的向量搜索 (Filtered Vector Search, FVS) 是支撑语义搜索和 GenAI 应用的关键能力。然而，现有研究绝大多数在 HNSWLib 等独立向量库中评估算法性能，这些环境做出了乐观假设——连续内存布局、裸指针直接解引用、无页面管理开销。当同样的算法部署到生产级数据库系统（如 PostgreSQL）中时，性能特征发生根本性变化。作者通过实证表明，独立库与数据库的系统延迟差距可达 10 倍，更关键的是，算法间的优劣关系（即不同选择率下哪个算法更优的交叉点）也会完全改变。</p>\n<p>这一差距的根源在于：数据库系统使用基于元组的存储（8KB 页面）、需要通过 buffer manager 进行散落页面访问、过滤条件验证需要额外的 TID（Tuple ID）间接寻址。这些系统级开销使得传统以&quot;最小化距离计算次数&quot;为优化目标的假设不再成立——在 PostgreSQL 中，页面访问和数据检索的系统开销才是主导因素。</p>\n<h2>2. 方法详解</h2>\n<h3>评估的算法族</h3>\n<p>论文系统评估了两大类五种 filter-agnostic 向量搜索算法：</p>\n<p><strong>图方法（基于 HNSW）：</strong></p>\n<ul>\n<li><strong>ACORN (Filter-First)</strong>：在 HNSW 图上执行谓词子图遍历，每步收集 1-hop 和 2-hop 邻居，先过滤再计算距离。</li>\n<li><strong>NaviX (Filter-First + 自适应)</strong>：提供 Blind、Directed、Onehop-s 三种启发式，根据运行时观察到的过滤选择率动态切换。Directed 模式从最近的 1-hop 节点出发优先探索 2-hop 邻居。</li>\n<li><strong>Sweeping (Traversal-First)</strong>：先按近邻关系遍历，仅在加入结果集时检查过滤条件。</li>\n<li><strong>Iterative Scan (Traversal-First)</strong>：可恢复的后过滤方式，维护被丢弃候选的队列以支持暂停节点的恢复。</li>\n</ul>\n<p><strong>聚类方法：</strong></p>\n<ul>\n<li><strong>Filtered ScaNN</strong>：三层树结构（根质心→分支质心→叶向量），仅对满足过滤条件的叶向量计算距离，天然支持 SIMD 向量化和量化压缩。</li>\n</ul>\n<h3>关键系统优化</h3>\n<p>论文在 PostgreSQL 中实现了两个关键优化：</p>\n<ol>\n<li><strong>Translation Map</strong>：在索引构建时预计算一个内存哈希表，将 indextid 直接映射到 heaptid，消除了 2-hop 邻居解析时的整类页面访问。</li>\n<li><strong>自适应 2-hop 扩展</strong>：当 1-hop 邻居已通过过滤条件时，跳过该分支的 2-hop 扩展，在高选择率下显著减少页面访问。</li>\n</ol>\n<h3>工作负载生成</h3>\n<p>设计了支持指定选择率 (1%-90%) 和相关性类型（高/中/低正相关、负相关、无相关）的工作负载生成器，通过 softmax 偏置采样从距离排序的向量中生成满足条件的行 ID，无需合成结构化数据。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献一：揭示系统开销主导性。</strong> 即使在单线程执行中，系统开销（页面访问、buffer manager 查找、TID 间接寻址）占总 CPU 周期的 55.9%-84.4%。在 16 线程并发下，系统开销比例进一步上升至 73.5%-91.0%。这证明高开销是算法内在架构成本，而非并发争用导致。</p>\n<p><strong>贡献二：发现选择率交叉点的系统依赖性。</strong> Filter-first 方法（NaviX/ACORN）在低选择率（1%-5%）下表现更优，traversal-first 方法在高选择率（≥50%）下反转优势。NaviX-Directed 在 5%-30% 的中间选择率区间一致优于 ACORN（跳数分别为 12.8 vs 21.9 at 10% 选择率）。</p>\n<p><strong>贡献三：图方法与聚类方法的系统级权衡。</strong> ScaNN 在低维数据上有 2-3 倍优势（得益于顺序访问和 SIMD），在高维数据上优势缩小。图方法在结果集 k 值增大时更鲁棒（NaviX 跳数增长 86% vs ScaNN 叶访问增长 220%）。ScaNN 在负相关场景下表现稳健（性能仅降 6%），而图方法可降 53%。</p>\n<p><strong>贡献四：量化对不同架构的差异化影响。</strong> HNSW 的 halfvec/binary 量化在 PostgreSQL 中几乎无加速效果（0.75-1.04×），因为瓶颈在随机页面访问而非距离计算。而 ScaNN 的 PCA+SQ8 量化可获得 7-50 倍加速，因为顺序扫描模式天然兼容量化。</p>\n<h2>4. 实验结果分析</h2>\n<p>实验在四个数据集上进行：sift10M (10M×128D)、openai5M (5M×1536D)、cohere10M (10M×768D)、text2image10M (10M×200D)，使用 95% Recall@10 为目标，16 并发连接。</p>\n<p><strong>关键数据对比（OpenAI-5M, 10% 选择率）：</strong></p>\n<table><thead><tr><th>算法</th><th>距离计算</th><th>过滤检查</th><th>跳数/叶数</th><th>页面访问</th></tr></thead><tbody><tr><td>NaviX</td><td>627</td><td>36.2K</td><td>13.0</td><td>1.1K</td></tr><tr><td>ACORN</td><td>614</td><td>34.9K</td><td>23.0</td><td>1.4K</td></tr><tr><td>Sweeping</td><td>5.0K</td><td>910</td><td>197</td><td>5.2K</td></tr><tr><td>ScaNN</td><td>3.8K</td><td>76.9K</td><td>80</td><td>2.8K</td></tr></tbody></table>\n<p>NaviX 以更少的跳数（13.0 vs ACORN 的 23.0）和更少的页面访问（1.1K vs 1.4K）取得优势。Sweeping 的距离计算高出 8 倍，但过滤检查仅为 NaviX 的 1/40。</p>\n<p><strong>非单调性能现象：</strong> 自适应算法在 10%-30% 选择率区间出现性能凹陷，原因是启发式策略的相变：激进过滤期（1%-5%）→过渡区（5%-30%，过滤检查仍高但距离计算已增加）→收敛期（≥50%，切换到标准 1-hop 遍历）。</p>\n<p><strong>CPU 周期分解分析揭示：</strong> 在 1% 选择率下，Sweeping 的向量数据检索系统开销超过 3 亿 CPU 周期，远超距离计算本身。ScaNN 的主要开销来自重排序步骤需要从堆中检索全精度向量（OpenAI-5M 的 32× 压缩意味着每个向量约需 1 页）。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出的局限：(1) 研究聚焦于内存场景（使用 pg_prewarm），未涉及磁盘 I/O 变异性；(2) 实验假设过滤条件为&quot;低开销过滤&quot;（通过预计算 bitmap 评估），未覆盖过滤评估本身成为瓶颈的场景；(3) HNSW 使用固定构建参数（M=32, ef_construction=200），未做全面的参数调优；(4) 结果基于 AMD EPYC 7B13 CPU，在不同缓存层次或 SIMD 能力的硬件上行为可能不同；(5) 聚类方法仅用 ScaNN 代表，其他聚类变体可能有不同表现。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可借鉴的工程决策：</strong></p>\n<ol>\n<li><strong>选型建议</strong>：如果搜索系统使用 PostgreSQL 兼容数据库（如许多社区产品），不应盲目选择 HNSW——在低维 embedding 或低选择率场景下，ScaNN 类聚类索引可能更优。</li>\n<li><strong>量化策略</strong>：在数据库系统中，HNSW 的向量量化几乎无法带来延迟收益（因瓶颈在页面访问），应优先考虑 Translation Map 等系统级优化。ScaNN 可从 PCA+量化获得数量级加速。</li>\n<li><strong>选择率感知路由</strong>：生产系统应根据查询的预估过滤选择率动态选择算法——低选择率用 NaviX-Directed，高选择率用 Sweeping 或标准 HNSW。</li>\n<li><strong>负相关防御</strong>：当过滤条件与向量相似度呈负相关时（如搜索&quot;最近发布的相似内容&quot;，时效性与相似度可能负相关），ScaNN 比图方法更鲁棒。</li>\n<li><strong>Benchmark 警示</strong>：团队在评估向量搜索方案时，必须在实际数据库环境而非独立向量库中进行，否则选型结论可能完全错误。</li>\n</ol>\n<p><strong>部署考量：</strong> 论文使用的 Translation Map 优化已在 PostgreSQL 中实现，额外内存开销可控。论文作者团队来自 Google，系统设计具有工业级水准。PACMMOD 2026 录用进一步验证了工作的学术严谨性。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2603.24580",
+      "title": "Retrieval Improvements Do Not Guarantee Better Answers: A Study of RAG for AI Policy QA",
+      "url": "https://arxiv.org/abs/2603.24580",
+      "authors": "Saahil Mathur, Ryan David Rittner, Vedant Ajit Thakur, Daniel Stuart Schiff, Tunazzina Islam",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.95,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文在 AI 治理与政策分析领域研究了 RAG 系统中检索质量提升与端到端问答质量之间的脱节现象。使用 947 篇 AI 政策文档构建的 AGORA 语料库，结合基于 ColBERT 的检索器（对比学习微调）和 DPO 对齐的生成器进行实验。结果表明，领域特定微调虽然提升了检索指标，但并不总能带来端到端问答的一致性提升，揭示了检索改进和生成质量之间的复杂关系。",
+      "key_insight": "该研究的核心启示在于：对搜索系统而言，仅优化召回和排序指标不足以保证用户体验的提升。ColBERT + 对比学习微调的检索器是值得尝试的技术选型，DPO 对齐可用于优化生成端。但更关键的是需要建立检索到生成的端到端评估体系，而非仅关注检索阶段指标。这对社区搜索场景中\"搜的到但答不好\"的问题提供了系统性的分析视角。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2603.23562",
+      "title": "Synthetic Mixed Training: Scaling Parametric Knowledge Acquisition Beyond RAG",
+      "url": "https://arxiv.org/abs/2603.23562",
+      "authors": "Seungju Han, Konwoo Kim, Chanwoo Park, Benjamin Newman, Suhas Kotha, Jaehun Jung, James Zou, Yejin Choi",
+      "company": [
+        "Stanford"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.95,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文提出 Synthetic Mixed Training 方法，通过结合合成 QA 和合成文档两种互补训练信号，突破了 RAG 的性能上限。在 QuaLITY 长文档阅读理解基准上，该方法实现了相对 RAG 2.6% 的提升，并展示了对数线性 (log-linear) 的 scaling 特性——随着合成数据量和生成器质量的提升持续改进。论文还提出 Focal Rewriting 技术，通过条件化文档生成来提高合成文档的多样性，进一步优化 scaling 曲线。",
+      "key_insight": "该研究挑战了\"RAG 是知识注入最优解\"的假设，提出了一条通过合成数据训练来内化知识的可行路径。Focal Rewriting 的核心思想——以问题为条件反向生成训练文档——是一种巧妙的数据增强策略。对搜索系统实践者的启示是：对于领域知识密集的搜索场景，除了优化检索流程，还可以考虑通过合成数据微调来提升模型的内在知识，减少对检索的依赖，尤其适合对延迟敏感的场景。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2603.23508",
+      "title": "Fast and Faithful: Real-Time Verification for Long-Document Retrieval-Augmented Generation Systems",
+      "url": "https://arxiv.org/abs/2603.23508",
+      "authors": "Xunzhuo Liu, Bowei He, Xue Liu, Haichen Zhang, Huamin Chen",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.9,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文设计了一个集成在生产 RAG 流水线中的实时验证组件，能在延迟约束下实现对长文档（最长 32K tokens）的全文档 grounding 验证。系统采用自适应推理策略，在不同工作负载下平衡响应时间和验证覆盖度。论文详细描述了架构设计决策、运维权衡及评估方法论，是一篇面向企业级搜索与文档助手场景的系统工程论文。",
+      "key_insight": "该论文的核心贡献在于解决了 RAG 系统中\"快速响应\"与\"忠实验证\"之间的工程矛盾。自适应推理策略的设计思路——根据工作负载动态调整验证深度——对所有生产级搜索系统都有参考价值。在社区搜索场景中，类似的验证机制可用于确保 LLM 生成的摘要或回答忠实于原始 UGC 内容，减少幻觉带来的用户信任风险。32K tokens 的长文档处理能力也适用于长帖子和评论串的场景。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2603.23989",
+      "title": "CoCR-RAG: Enhancing Retrieval-Augmented Generation in Web Q&A via Concept-oriented Context Reconstruction",
+      "url": "https://arxiv.org/abs/2603.23989",
+      "authors": "Kaize Shi, Xueyao Sun, Qika Lin, Firoj Alam, Qing Li, Xiaohui Tao, Guandong Xu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出 CoCR-RAG 框架，通过基于语言学的概念级整合来解决 RAG 中多源文档融合的问题。针对来自异构 Web 来源（不同写作风格、格式、粒度）的检索文档，引入基于抽象意义表示 (AMR) 的概念蒸馏算法，提取核心概念并进行稳定语义表示级别的信息融合。该方法有效减少了无关和冗余信息对生成答案事实一致性的干扰。",
+      "key_insight": "CoCR-RAG 的创新在于将传统 NLP 的 AMR 语义解析引入 RAG 场景，在概念层面而非文本片段层面进行多源信息融合。这一思路对社区搜索高度相关——UGC 内容天然来自多个用户、多种风格、不同深度，传统的文本拼接方式会引入大量噪声。基于概念的去冗和融合策略，有望提升多篇 UGC 内容综合理解的准确性。实施时需要评估 AMR 解析的延迟开销。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2603.23518",
+      "title": "Cluster-R1: Large Reasoning Models Are Instruction-following Clustering Agents",
+      "url": "https://arxiv.org/abs/2603.23518",
+      "authors": "Peijun Qing, Puneet Mathur, Nedim Lipka, Varun Manjunatha, Ryan Rossi, Franck Dernoncourt, Saeed Hassanpour, Soroush Vosoughi",
+      "company": [
+        "Adobe"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文将指令跟随的文本聚类重构为生成式任务，训练大推理模型 (LRM) 作为自主聚类 agent。通用 embedding 模型擅长语义相似度但无法捕捉用户指令指定的文本特征，而指令微调 embedder 虽能对齐指令但无法自主推断语料库潜在结构。Cluster-R1 通过推理驱动的训练流程使 LRM 能解释高层聚类指令并推断对应的潜在分组。论文引入 ReasonCluster 基准（28 个多样化任务），实验表明该方法显著优于现有方法。",
+      "key_insight": "Cluster-R1 将聚类从传统的\"向量空间距离计算\"范式升级为\"推理+指令跟随\"范式，这对搜索场景有深远意义。在社区搜索中，相似帖子的聚类和话题发现是核心需求，传统 embedding 聚类往往只能捕捉表面语义相似性。基于 LRM 的聚类可以按照业务指令（如\"按用户意图分组\"或\"按问题类型分类\"）灵活调整，无需重新训练 embedding 模型。Adobe 的研究背景也表明了工业界对此方向的认可。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2603.23512",
+      "title": "S-Path-RAG: Semantic-Aware Shortest-Path Retrieval Augmented Generation for Multi-Hop Knowledge Graph Question Answering",
+      "url": "https://arxiv.org/abs/2603.23512",
+      "authors": "Rong Fu, Yemin Wang, Tianxiang Xu, Yongtai Liu, Weizhi Tang, Wangyu Wu, Xiaowen Ma, Simon Fong",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.6,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出 S-Path-RAG，一种面向知识图谱多跳问答的语义感知最短路径检索框架。核心创新包括：(1) 混合加权 k-最短路径+beam search+约束随机游走的路径枚举策略，(2) 可微分路径评分器（对比路径编码器+轻量验证器联合训练），(3) 通过 cross-attention 注入紧凑路径潜变量到语言模型。系统运行在一个迭代式 Neural-Socratic 图对话循环中，语言模型输出诊断信息触发图编辑或种子扩展，实现自适应检索。",
+      "key_insight": "S-Path-RAG 的设计理念——将检索从\"一次性文本匹配\"升级为\"迭代式图探索\"——对复杂查询的搜索场景很有启发。Neural-Socratic Dialogue 机制让模型在不确定时主动请求更多信息，这种\"自适应检索深度\"的思路可迁移到社区搜索中：对简单查询快速返回，对复杂查询进行多轮检索推理。可微分路径评分器的设计也展示了如何在结构化检索中引入端到端学习。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2603.23554",
+      "title": "Mixture of Demonstrations for Textual Graph Understanding and Question Answering",
+      "url": "https://arxiv.org/abs/2603.23554",
+      "authors": "Yukun Wu, Lihui Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出 MixDemo，一种基于混合专家 (MoE) 机制的 GraphRAG 框架。针对现有 GraphRAG 方法主要关注零样本设置、忽略高质量示例选择的问题，MixDemo 使用 MoE 机制在多样化问题上下文中选择最具信息量的示例。同时引入查询特定的图编码器，选择性地关注与查询最相关的信息，有效减少检索子图中的噪声。在多个文本图基准上显著优于现有方法。",
+      "key_insight": "MixDemo 的 MoE 示例选择机制揭示了一个重要洞察：不同类型的查询需要不同类型的示例来引导推理。这与搜索排序中的\"query-dependent ranking\"思想一致。查询特定的图编码器进行选择性信息关注也与搜索中的\"相关性聚焦\"理念相通。在实际搜索系统中，可以借鉴 MoE 的思路为不同查询类型路由到不同的检索/排序策略。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2603.23533",
+      "title": "MDKeyChunker: Single-Call LLM Enrichment with Rolling Keys and Key-Based Restructuring for High-Accuracy RAG",
+      "url": "https://arxiv.org/abs/2603.23533",
+      "authors": "Bhavik Mangla",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.5,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出 MDKeyChunker，一种面向 Markdown 文档的三阶段 RAG 流水线：(1) 结构感知分块，将标题、代码块、表格和列表视为原子单元；(2) 单次 LLM 调用提取标题、摘要、关键词、实体、假设问题和语义键，并维护滚动键字典以保持文档级上下文；(3) 基于语义键的分块重组，通过装箱算法将共享相同语义键的分块合并。单次调用设计消除了每字段独立提取的需求。",
+      "key_insight": "MDKeyChunker 的\"滚动键字典\"设计巧妙地解决了分块中上下文丢失的问题——每个分块都携带了文档级别的语义上下文。单次 LLM 调用同时提取 7 个元数据字段的设计大幅降低了预处理成本。对搜索系统的启示：在 UGC 长帖子或文档的分块索引中，可以采用类似的语义键传播机制，确保每个检索单元都保留了原始文档的全局语义上下文，从而提升召回的准确性。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2603.17872",
+      "title": "Mitigating LLM Hallucinations through Domain-Grounded Tiered Retrieval",
+      "url": "https://arxiv.org/abs/2603.17872",
+      "authors": "Md. Asraful Haque, Aasar Mehdi, Maaz Mahboob, Tamkeen Fatima",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-26",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "本文提出一种领域 grounded 的分层检索与验证架构，通过四阶段自调节流水线减少 LLM 幻觉：(I) 带早退逻辑的内在验证，优化计算资源；(II) 使用领域检测器的自适应搜索路由，定向到特定领域档案；(III) 精炼上下文过滤 (RCF)，消除非核心干扰信息；(IV) 外在再生成+原子级声明验证。基于 LangGraph 实现，在 650 个问题上进行评估。",
+      "key_insight": "分层检索架构的设计理念——先内部验证、再路由到特定领域源、再过滤噪声、最后验证——是一种可落地的系统化思路。领域检测器驱动的自适应搜索路由对多垂类搜索场景尤为适用：不同 query 自动路由到不同的检索源（如 UGC 帖子库、官方文档库、FAQ 库）。早退逻辑和 RCF 过滤也为搜索系统的效率优化提供了实用参考。"
+    }
+  ]
+}

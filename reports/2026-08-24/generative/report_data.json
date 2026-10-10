@@ -1,0 +1,234 @@
+{
+  "date": "2026-08-24",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "papers_scored": 21,
+    "papers_selected": 6,
+    "score_min": 2.75,
+    "score_max": 4.35
+  },
+  "coverage": {
+    "status": "gaps",
+    "core": "SSR-GRPO / SCoRD / SmartGR",
+    "industry": "未满足：可用的 Meta、Meituan 工程博客已被历史或同日去重阻断，剩余候选中没有既属于 generative track 又能作为主要科技公司工业实践的条目",
+    "recency": "满足：SCoRD、CoRRe、SSR-GRPO 于 2026-08-20 提交，均在 7 天内",
+    "source_diversity": "满足：web_search 4/6 (66.7%)，semantic_scholar 2/6 (33.3%)",
+    "chinese_sources": "未找到可纳入且未被去重的中文生成式推荐来源"
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2608.19665",
+      "title": "Training-Free LLM-Based Recommendation with Post-LLM Item Refinement Using Collaborative Signals",
+      "url": "https://arxiv.org/abs/2608.19665",
+      "authors": "Kyungho Kim, Sunwoo Kim, Geon Lee, Shinhwan Kang, Sojeong Kim, Liam Collins, Bhuvesh Kumar, Donald Loveland, Kijung Shin",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-08-20",
+      "discovered_at": "2026-08-24",
+      "total_score": 4.35,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.5,
+      "summary": "CoRRe 针对 LLM 生成的用户兴趣过于宽泛、难以细粒度召回的问题，提出“后置协同增强”框架：先由 LLM 生成用户与物品表示，再用物品共购图修正向量方向、用流行度修正向量幅度，最后进行匹配排序。论文在真实数据集上显示无需训练或任务微调即可稳定超过训练免调基线，并与训练式方法竞争；摘要未披露具体数据集指标，需复核全文。",
+      "key_insight": "这项工作把协同信号放在 LLM 表征之后注入，避免重新训练大模型，适合先做离线兴趣生成、再在候选阶段叠加行为图的低风险试点。对社区 UGC 搜索，可将共点击或共收藏图用于修正语义向量，但应把流行度单独校准，防止热门内容放大导致长尾损失。",
+      "deep_reading": {
+        "paper_id": "arxiv:2608.19665",
+        "title": "Training-Free LLM-Based Recommendation with Post-LLM Item Refinement Using Collaborative Signals",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nCoRRe 处理的是一个很具体的“语义理解强、物品辨别弱”问题。训练免费的 LLM 推荐器可以从用户历史购买序列概括出“喜欢足球球衣”这类高层兴趣，但这类兴趣往往覆盖许多只在颜色、款式或季节上有细微差异的商品，难以在物品级别选出真正的下一件商品。论文把现有工作分成两类：一类先用协同过滤缩小候选集，再让 LLM 重排；另一类把协同检索到的用户、物品或历史拼进 prompt 做 RAG。前者的上限被初始候选集锁住，后者只让 LLM 间接看到协同信号，论文观察到两者相对“没有协同信号的 LLM 推荐”收益都有限且不稳定。\n\n作者的核心判断是，协同信息不必在 LLM 推理之前注入，也可以在 LLM 已经完成高层意图推断后，直接改造用于匹配的物品表示。这样做把“理解用户想要什么”和“在相似物品中挑哪一个”拆开：LLM 负责语义意图，购买共现图负责局部行为关系，流行度负责向量分数的尺度校准。论文最后在 Amazon Reviews 的 Sports & Outdoors、Toys & Games、Beauty & Personal Care 三个领域各随机抽取 1,000 名用户，使用统一的 leave-one-out 评测，以验证这一后置协同信号是否能稳定改善细粒度召回。\n\n## 2. 方法详解\n\nCoRRe 只有三个在线逻辑组件：LLM 用户画像、物品向量修正、向量检索排序。首先，将用户按时间排列的购买序列交给 LLM，生成描述用户偏好与下一步可能购买类型的自然语言画像 P_u。画像不是最终推荐结果，而是一个比原始 ID 序列更容易被文本编码器理解的查询。随后使用同一个文本编码器 Enc 把画像编码成用户向量 e_u=Enc(P_u)。论文的实验使用 GPT-5.2 作为大语言模型，使用 text-embedding-3-large 作为文本编码器；它不做任务特定训练、反向传播或 LoRA 微调。\n\n物品侧先把商品标题编码成语义向量 e_i^SEM=Enc(title_i)。这一步保留了标题中的品牌、品类和属性语义，但还没有利用“哪些商品经常被同一用户共同购买”的行为信息。为此，作者从用户-物品二部矩阵 R 构造物品共购矩阵 A=R^T R，其中 A_ij 是同时与物品 i、j 发生交互的用户数。令 d_i 为物品 i 的图度，图传播向量写成 e_i^GP = Σ_j A_ij / sqrt(d_i d_j) · e_j^SEM。它是带对称归一化的邻居聚合，作用是把共购关系传播到文本表示空间，让行为上相近的物品方向更接近。\n\n图传播并不取代文本语义。CoRRe 用 λ 在原始语义向量和图传播向量之间插值：先计算 e_i^DR~ = λe_i^SEM+(1-λ)e_i^GP，再做 L2 归一化得到方向修正向量 e_i^DR。λ 越小，越依赖协同关系；λ 越大，越保留标题语义。作者还单独修正向量长度，因为点积检索不仅受方向影响，向量范数也会改变最终分数。以物品交互次数 p_i 作为流行度，最终向量为 e_i^DR+MR = p_i^α e_i^DR，α 控制流行度校准强度。α=0 时不注入流行度，α 增大时热门物品在点积排序中获得更高幅度。\n\n最后，对每个用户计算 e_u 与全体未历史交互物品 e_i 的点积，返回 Top-K。离线流程可以预先计算全部物品的语义向量、共购图传播和流行度幅度；请求侧只需生成或缓存用户画像、编码一次，再做近似近邻检索。因此它的“训练免费”并不等于“零成本”：仍需调用 LLM 生成画像，且全量物品向量要在交互图更新后刷新，但成本主要是批处理和索引维护，而不是重新训练推荐模型。\n\n论文的实验设置也比较明确。每个数据集随机取 1,000 名用户，倒数第二件购买物品用于验证，最后一件用于测试，并将历史购买物品从候选中排除；指标是 Hit Ratio@10、Hit Ratio@20、NDCG@10、NDCG@20。λ 在 {0.2, 0.4, 0.5, 0.6, 0.8} 中调节，α 在 {0.0, 0.05, 0.1, 0.15, 0.2} 中调节。所有结果取三次运行平均，比较对象包括 LightGCN、SASRec、RecFormer、RLMRec、AlphaRec、基于候选重排的方法，以及 title-only、LLM-generated query、Coral 和 ItemRAG 等训练免费方法。\n\n## 3. 核心技术贡献\n\n第一，论文提出“post-LLM”而不是“pre-LLM”的协同增强范式。传统做法把 CF 放在候选生成前或 prompt 前，导致 LLM 只能在一个已经被截断的集合或一段附加上下文里利用协同信息。CoRRe 让 LLM 先把用户历史翻译成意图向量，再改变物品向量本身，最终匹配空间同时包含语义和行为信号。这种位置上的调整很小，但让协同关系直接参与最终 item-level 选择。\n\n第二，方向和幅度被拆成两个可解释的机制。方向修正通过共购图传播补足“语义相似不等于会一起买”的差异；幅度修正利用流行度改变点积分数的尺度，弥补纯 cosine 风格表示对行为频率不敏感的问题。消融表明两部分都重要：去掉图传播或去掉原始语义都会下降，而去掉幅度修正的下降通常更大，说明流行度并不是一个可有可无的后处理特征。\n\n第三，CoRRe 将这个组合做成无需训练的框架。它没有为每个业务域微调 LLM，也没有新增用户或物品参数，核心新参数只有 λ 和 α。这样可把它看作现有语义召回系统上的离线表示增强层，便于快速验证；同时，论文提供代码、数据和补充材料，降低了复现门槛。\n\n## 4. 实验结果分析\n\n主表覆盖三类商品域、四个指标，且每个结果是三次运行平均。下面摘录 CoRRe 与几个关键训练免费基线的 H@10/N@10：\n\n| 数据集 | 方法 | H@10 | N@10 |\n|---|---|---:|---:|\n| Sports & Outdoors | Embed-Semantic | 0.0200 | 0.0111 |\n| Sports & Outdoors | Embed-LLM | 0.0203 | 0.0095 |\n| Sports & Outdoors | Embed-ItemRAG | 0.0163 | 0.0082 |\n| Sports & Outdoors | CoRRe | 0.0453 | 0.0258 |\n| Toys & Games | Embed-Semantic | 0.0360 | 0.0206 |\n| Toys & Games | Embed-LLM | 0.0387 | 0.0186 |\n| Toys & Games | Embed-ItemRAG | 0.0427 | 0.0215 |\n| Toys & Games | CoRRe | 0.0507 | 0.0264 |\n| Beauty & Personal Care | Embed-Semantic | 0.0180 | 0.0097 |\n| Beauty & Personal Care | Embed-LLM | 0.0103 | 0.0050 |\n| Beauty & Personal Care | Embed-ItemRAG | 0.0103 | 0.0058 |\n| Beauty & Personal Care | CoRRe | 0.0303 | 0.0147 |\n\n在作者的汇总口径下，CoRRe 在 12 个训练免费比较场景中全部胜出，并相对最强训练免费基线最高提升 132.43%；与训练式方法相比，它在 Sports 和 Toys 上达到最好，在 Beauty 上为第二。若只看表中 H@10，CoRRe 相对 Embed-Semantic 在 Sports、Toys、Beauty 的绝对提升分别为 0.0253、0.0147、0.0123；相对值分别约为 126.5%、40.8% 和 68.3%。这说明方法收益不是单纯来自让 LLM 生成更长的用户画像，而是来自对语义近邻的行为级重新排序。\n\n消融结果把收益来源拆得更清楚。在 Sports 上，完整 CoRRe 的 H@10/N@10 为 0.0453/0.0258；去掉图传播后变为 0.0343/0.0180，去掉原始语义后为 0.0403/0.0233，去掉幅度修正后为 0.0220/0.0104。Toys 上完整模型为 0.0507/0.0264，而去掉图传播是 0.0470/0.0244、去掉语义是 0.0233/0.0114、去掉幅度修正是 0.0433/0.0217。Beauty 上完整模型为 0.0303/0.0147；三个消融分别为 0.0167/0.0082、0.0250/0.0114 和 0.0097/0.0057。整体看，原始文本语义和图传播互补；幅度修正的影响最大，但也带来明显的数据集差异。\n\n案例分析显示，title-only 检索通常能找到一组文本上相似的商品，却不能稳定把真实下一件商品排到前面。加入方向修正后，共购关系把行为上更可能连续出现的物品推高；再加入幅度修正后，系统可以在语义和协同都相近的候选中利用流行度拉开分数。超参数实验也揭示了一个重要风险：Sports 更偏好较小 λ，说明协同传播更有价值；Toys 更偏好较大 λ，说明原标题语义更重要。Sports 需要中等强度的 α，而 Toys 与 Beauty 更适合较小 α，过度强调热门度会损伤排序。\n\n## 5. 局限与未来方向\n\n论文正文没有单列“Limitations”章节，结论也没有明确列出作者自述的失败案例或限制，因此不能把下面的判断冒充作者结论。根据实验设计可以确认的边界包括：每个域只随机采样 1,000 名用户；物品侧主要使用标题文本；评测是 leave-one-out 的离线下一件购买预测；在线阶段的 LLM 调用、缓存刷新、索引延迟和真实 A/B 收益没有被报告。实验还依赖 GPT-5.2 与 text-embedding-3-large，换成本地模型时画像质量和向量空间稳定性需要重新验证。\n\n从机制上看，p_i^α 是最需要谨慎的部分。它能改善热门商品的可辨别性，却也可能把历史曝光偏差转化成更强的推荐偏差；在社区 UGC 场景中，流行度可能与内容质量、作者集中度和刷量行为纠缠。共购图的长尾节点也可能因为度太低而传播不到可靠邻居。未来应增加跨时间切分、冷启动物品、长尾作者、不同 LLM/Embedding 模型，以及对 popularity bias、覆盖率和新颖性的评测，并补充真实线上延迟与 A/B 实验。\n\n## 6. 工业实践意义\n\nCoRRe 最适合被当作“语义召回后的协同校准层”，而不是替换现有推荐主模型。对社区 UGC 搜索，可以先用 LLM 把用户最近浏览、点击、收藏和查询历史压缩成结构化兴趣，再用共点击、共收藏、共关注或同会话图传播内容向量，最后把热度只作为可控的 norm 校准项。这样保留了语义匹配对新 query 和新内容的泛化，同时让行为图处理短文本中常见的同义词、隐含主题和局部兴趣。\n\n上线时应把用户画像生成与物品索引刷新拆成不同频率。物品标题向量和共现图传播可以日级或小时级批量计算；用户画像可按会话、query 主题漂移或低置信触发更新，并缓存到在线检索层。由于推理端只是向量匹配，延迟风险低于每请求调用 LLM 重排器，但首次画像生成仍需设超时和回退：LLM 失败时回到原有 dense/BM25 召回，图不可用时回到语义向量，绝不能因为协同图缺失而阻塞主链路。\n\n实验还给出三个直接的工程检查点。第一，必须同时监控 H@K/NDCG、召回覆盖、长尾曝光和热门度集中度；不能只看一个离线指标。第二，λ 和 α 不应全局固定，至少要按内容域、用户活跃度和新旧内容分桶调参，因为论文已经观察到 Sports、Toys、Beauty 的最优趋势不同。第三，应从小流量 shadow 评估开始，比较“语义向量→图传播→流行度校准”的每个阶段，验证收益究竟来自协同关系还是单纯的热门度推高。\n\n对于当前 UGC 搜索业务，建议先做一个不改动主排序的离线试验：以共点击/共收藏矩阵构建稀疏图，仅对高置信边传播，比较原始 embedding、方向修正和方向+幅度修正三组的 nDCG@10、CTR 代理、长尾覆盖与新内容召回率。若收益稳定，再将 CoRRe 表示接入候选召回或轻量精排；对于高风险的流行度增强，则增加作者公平性、内容质量和异常行为约束，避免把“被看得多”误当成“更适合当前用户”。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>CoRRe 处理的是一个很具体的“语义理解强、物品辨别弱”问题。训练免费的 LLM 推荐器可以从用户历史购买序列概括出“喜欢足球球衣”这类高层兴趣，但这类兴趣往往覆盖许多只在颜色、款式或季节上有细微差异的商品，难以在物品级别选出真正的下一件商品。论文把现有工作分成两类：一类先用协同过滤缩小候选集，再让 LLM 重排；另一类把协同检索到的用户、物品或历史拼进 prompt 做 RAG。前者的上限被初始候选集锁住，后者只让 LLM 间接看到协同信号，论文观察到两者相对“没有协同信号的 LLM 推荐”收益都有限且不稳定。</p>\n<p>作者的核心判断是，协同信息不必在 LLM 推理之前注入，也可以在 LLM 已经完成高层意图推断后，直接改造用于匹配的物品表示。这样做把“理解用户想要什么”和“在相似物品中挑哪一个”拆开：LLM 负责语义意图，购买共现图负责局部行为关系，流行度负责向量分数的尺度校准。论文最后在 Amazon Reviews 的 Sports &amp; Outdoors、Toys &amp; Games、Beauty &amp; Personal Care 三个领域各随机抽取 1,000 名用户，使用统一的 leave-one-out 评测，以验证这一后置协同信号是否能稳定改善细粒度召回。</p>\n<h2>2. 方法详解</h2>\n<p>CoRRe 只有三个在线逻辑组件：LLM 用户画像、物品向量修正、向量检索排序。首先，将用户按时间排列的购买序列交给 LLM，生成描述用户偏好与下一步可能购买类型的自然语言画像 P_u。画像不是最终推荐结果，而是一个比原始 ID 序列更容易被文本编码器理解的查询。随后使用同一个文本编码器 Enc 把画像编码成用户向量 e_u=Enc(P_u)。论文的实验使用 GPT-5.2 作为大语言模型，使用 text-embedding-3-large 作为文本编码器；它不做任务特定训练、反向传播或 LoRA 微调。</p>\n<p>物品侧先把商品标题编码成语义向量 e_i^SEM=Enc(title_i)。这一步保留了标题中的品牌、品类和属性语义，但还没有利用“哪些商品经常被同一用户共同购买”的行为信息。为此，作者从用户-物品二部矩阵 R 构造物品共购矩阵 A=R^T R，其中 A_ij 是同时与物品 i、j 发生交互的用户数。令 d_i 为物品 i 的图度，图传播向量写成 e_i^GP = Σ_j A_ij / sqrt(d_i d_j) · e_j^SEM。它是带对称归一化的邻居聚合，作用是把共购关系传播到文本表示空间，让行为上相近的物品方向更接近。</p>\n<p>图传播并不取代文本语义。CoRRe 用 λ 在原始语义向量和图传播向量之间插值：先计算 e_i^DR~ = λe_i^SEM+(1-λ)e_i^GP，再做 L2 归一化得到方向修正向量 e_i^DR。λ 越小，越依赖协同关系；λ 越大，越保留标题语义。作者还单独修正向量长度，因为点积检索不仅受方向影响，向量范数也会改变最终分数。以物品交互次数 p_i 作为流行度，最终向量为 e_i^DR+MR = p_i^α e_i^DR，α 控制流行度校准强度。α=0 时不注入流行度，α 增大时热门物品在点积排序中获得更高幅度。</p>\n<p>最后，对每个用户计算 e_u 与全体未历史交互物品 e_i 的点积，返回 Top-K。离线流程可以预先计算全部物品的语义向量、共购图传播和流行度幅度；请求侧只需生成或缓存用户画像、编码一次，再做近似近邻检索。因此它的“训练免费”并不等于“零成本”：仍需调用 LLM 生成画像，且全量物品向量要在交互图更新后刷新，但成本主要是批处理和索引维护，而不是重新训练推荐模型。</p>\n<p>论文的实验设置也比较明确。每个数据集随机取 1,000 名用户，倒数第二件购买物品用于验证，最后一件用于测试，并将历史购买物品从候选中排除；指标是 Hit Ratio@10、Hit Ratio@20、NDCG@10、NDCG@20。λ 在 {0.2, 0.4, 0.5, 0.6, 0.8} 中调节，α 在 {0.0, 0.05, 0.1, 0.15, 0.2} 中调节。所有结果取三次运行平均，比较对象包括 LightGCN、SASRec、RecFormer、RLMRec、AlphaRec、基于候选重排的方法，以及 title-only、LLM-generated query、Coral 和 ItemRAG 等训练免费方法。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文提出“post-LLM”而不是“pre-LLM”的协同增强范式。传统做法把 CF 放在候选生成前或 prompt 前，导致 LLM 只能在一个已经被截断的集合或一段附加上下文里利用协同信息。CoRRe 让 LLM 先把用户历史翻译成意图向量，再改变物品向量本身，最终匹配空间同时包含语义和行为信号。这种位置上的调整很小，但让协同关系直接参与最终 item-level 选择。</p>\n<p>第二，方向和幅度被拆成两个可解释的机制。方向修正通过共购图传播补足“语义相似不等于会一起买”的差异；幅度修正利用流行度改变点积分数的尺度，弥补纯 cosine 风格表示对行为频率不敏感的问题。消融表明两部分都重要：去掉图传播或去掉原始语义都会下降，而去掉幅度修正的下降通常更大，说明流行度并不是一个可有可无的后处理特征。</p>\n<p>第三，CoRRe 将这个组合做成无需训练的框架。它没有为每个业务域微调 LLM，也没有新增用户或物品参数，核心新参数只有 λ 和 α。这样可把它看作现有语义召回系统上的离线表示增强层，便于快速验证；同时，论文提供代码、数据和补充材料，降低了复现门槛。</p>\n<h2>4. 实验结果分析</h2>\n<p>主表覆盖三类商品域、四个指标，且每个结果是三次运行平均。下面摘录 CoRRe 与几个关键训练免费基线的 H@10/N@10：</p>\n<table><thead><tr><th>数据集</th><th>方法</th><th>H@10</th><th>N@10</th></tr></thead><tbody><tr><td>Sports &amp; Outdoors</td><td>Embed-Semantic</td><td>0.0200</td><td>0.0111</td></tr><tr><td>Sports &amp; Outdoors</td><td>Embed-LLM</td><td>0.0203</td><td>0.0095</td></tr><tr><td>Sports &amp; Outdoors</td><td>Embed-ItemRAG</td><td>0.0163</td><td>0.0082</td></tr><tr><td>Sports &amp; Outdoors</td><td>CoRRe</td><td>0.0453</td><td>0.0258</td></tr><tr><td>Toys &amp; Games</td><td>Embed-Semantic</td><td>0.0360</td><td>0.0206</td></tr><tr><td>Toys &amp; Games</td><td>Embed-LLM</td><td>0.0387</td><td>0.0186</td></tr><tr><td>Toys &amp; Games</td><td>Embed-ItemRAG</td><td>0.0427</td><td>0.0215</td></tr><tr><td>Toys &amp; Games</td><td>CoRRe</td><td>0.0507</td><td>0.0264</td></tr><tr><td>Beauty &amp; Personal Care</td><td>Embed-Semantic</td><td>0.0180</td><td>0.0097</td></tr><tr><td>Beauty &amp; Personal Care</td><td>Embed-LLM</td><td>0.0103</td><td>0.0050</td></tr><tr><td>Beauty &amp; Personal Care</td><td>Embed-ItemRAG</td><td>0.0103</td><td>0.0058</td></tr><tr><td>Beauty &amp; Personal Care</td><td>CoRRe</td><td>0.0303</td><td>0.0147</td></tr></tbody></table>\n<p>在作者的汇总口径下，CoRRe 在 12 个训练免费比较场景中全部胜出，并相对最强训练免费基线最高提升 132.43%；与训练式方法相比，它在 Sports 和 Toys 上达到最好，在 Beauty 上为第二。若只看表中 H@10，CoRRe 相对 Embed-Semantic 在 Sports、Toys、Beauty 的绝对提升分别为 0.0253、0.0147、0.0123；相对值分别约为 126.5%、40.8% 和 68.3%。这说明方法收益不是单纯来自让 LLM 生成更长的用户画像，而是来自对语义近邻的行为级重新排序。</p>\n<p>消融结果把收益来源拆得更清楚。在 Sports 上，完整 CoRRe 的 H@10/N@10 为 0.0453/0.0258；去掉图传播后变为 0.0343/0.0180，去掉原始语义后为 0.0403/0.0233，去掉幅度修正后为 0.0220/0.0104。Toys 上完整模型为 0.0507/0.0264，而去掉图传播是 0.0470/0.0244、去掉语义是 0.0233/0.0114、去掉幅度修正是 0.0433/0.0217。Beauty 上完整模型为 0.0303/0.0147；三个消融分别为 0.0167/0.0082、0.0250/0.0114 和 0.0097/0.0057。整体看，原始文本语义和图传播互补；幅度修正的影响最大，但也带来明显的数据集差异。</p>\n<p>案例分析显示，title-only 检索通常能找到一组文本上相似的商品，却不能稳定把真实下一件商品排到前面。加入方向修正后，共购关系把行为上更可能连续出现的物品推高；再加入幅度修正后，系统可以在语义和协同都相近的候选中利用流行度拉开分数。超参数实验也揭示了一个重要风险：Sports 更偏好较小 λ，说明协同传播更有价值；Toys 更偏好较大 λ，说明原标题语义更重要。Sports 需要中等强度的 α，而 Toys 与 Beauty 更适合较小 α，过度强调热门度会损伤排序。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文正文没有单列“Limitations”章节，结论也没有明确列出作者自述的失败案例或限制，因此不能把下面的判断冒充作者结论。根据实验设计可以确认的边界包括：每个域只随机采样 1,000 名用户；物品侧主要使用标题文本；评测是 leave-one-out 的离线下一件购买预测；在线阶段的 LLM 调用、缓存刷新、索引延迟和真实 A/B 收益没有被报告。实验还依赖 GPT-5.2 与 text-embedding-3-large，换成本地模型时画像质量和向量空间稳定性需要重新验证。</p>\n<p>从机制上看，p_i^α 是最需要谨慎的部分。它能改善热门商品的可辨别性，却也可能把历史曝光偏差转化成更强的推荐偏差；在社区 UGC 场景中，流行度可能与内容质量、作者集中度和刷量行为纠缠。共购图的长尾节点也可能因为度太低而传播不到可靠邻居。未来应增加跨时间切分、冷启动物品、长尾作者、不同 LLM/Embedding 模型，以及对 popularity bias、覆盖率和新颖性的评测，并补充真实线上延迟与 A/B 实验。</p>\n<h2>6. 工业实践意义</h2>\n<p>CoRRe 最适合被当作“语义召回后的协同校准层”，而不是替换现有推荐主模型。对社区 UGC 搜索，可以先用 LLM 把用户最近浏览、点击、收藏和查询历史压缩成结构化兴趣，再用共点击、共收藏、共关注或同会话图传播内容向量，最后把热度只作为可控的 norm 校准项。这样保留了语义匹配对新 query 和新内容的泛化，同时让行为图处理短文本中常见的同义词、隐含主题和局部兴趣。</p>\n<p>上线时应把用户画像生成与物品索引刷新拆成不同频率。物品标题向量和共现图传播可以日级或小时级批量计算；用户画像可按会话、query 主题漂移或低置信触发更新，并缓存到在线检索层。由于推理端只是向量匹配，延迟风险低于每请求调用 LLM 重排器，但首次画像生成仍需设超时和回退：LLM 失败时回到原有 dense/BM25 召回，图不可用时回到语义向量，绝不能因为协同图缺失而阻塞主链路。</p>\n<p>实验还给出三个直接的工程检查点。第一，必须同时监控 H@K/NDCG、召回覆盖、长尾曝光和热门度集中度；不能只看一个离线指标。第二，λ 和 α 不应全局固定，至少要按内容域、用户活跃度和新旧内容分桶调参，因为论文已经观察到 Sports、Toys、Beauty 的最优趋势不同。第三，应从小流量 shadow 评估开始，比较“语义向量→图传播→流行度校准”的每个阶段，验证收益究竟来自协同关系还是单纯的热门度推高。</p>\n<p>对于当前 UGC 搜索业务，建议先做一个不改动主排序的离线试验：以共点击/共收藏矩阵构建稀疏图，仅对高置信边传播，比较原始 embedding、方向修正和方向+幅度修正三组的 nDCG@10、CTR 代理、长尾覆盖与新内容召回率。若收益稳定，再将 CoRRe 表示接入候选召回或轻量精排；对于高风险的流行度增强，则增加作者公平性、内容质量和异常行为约束，避免把“被看得多”误当成“更适合当前用户”。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2608.19595",
+      "title": "SSR-GRPO: Integrating Supervision and Semantic IDs into Reinforcement Learning for Dense Retrieval in E-commerce",
+      "url": "https://arxiv.org/abs/2608.19595",
+      "authors": "Guangxin Song, Xing Fang, Mingmin Jin, Jing Wang, Bokang Wang, Zhentao Song, Junjie Bai, Jianbo Zhu",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-08-20",
+      "discovered_at": "2026-08-24",
+      "total_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.3,
+      "summary": "SSR-GRPO 面向电商稠密召回中的复杂语义和强化学习噪声，联合使用语义 ID 与向量表示进行双视角相关性评估。方法利用层级语义 ID 挖掘难负样本，一路通过掩码过滤同组噪声，一路构造 Retrieval-DPO 正负对，再与 GRPO 训练结合。论文报告了离线、在线实验，并称已部署于大规模电商平台。",
+      "key_insight": "对 UGC 短文本搜索，语义 ID 不只是物品编码，也可作为难负样本分组信号，帮助 RL 训练区分“主题相近但意图不同”的内容。落地时应先复现双视角相关性标注和噪声掩码，再评估 DPO 对 nDCG、CTR 与召回覆盖的共同影响，避免只优化离线 top-K。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2608.02048",
+      "title": "SmartGR: Hierarchy and Beam-Aware Knowledge Distillation for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2608.02048",
+      "authors": "Ziheng Zhang, Yu Cui, Bohao Wang, Yong He, Chao Yu, Chuan Yuan, Wujie Sun, Can Wang, Jiawei Chen",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-08-03",
+      "discovered_at": "2026-08-24",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.25,
+      "summary": "SmartGR 针对生成式推荐蒸馏中的两个特有问题设计轻量化方案：语义 ID 层级越深，蒸馏难度越不均衡；Beam Search 又可能因前缀分数偏低提前剪掉教师偏好的条目。它分别提出层级感知 SID 蒸馏与 Beam 感知排序蒸馏，在四个基准数据集上报告平均性能提升 8.6%，推理速度提升 2.39 倍。",
+      "key_insight": "生成式召回的压缩不能只蒸馏逐 token 概率，还要蒸馏层级编码难度和候选前缀的保留策略。对社区 UGC，适合用大模型教师生成高质量语义 ID，再训练小模型服务；上线前必须单独压测 beam 宽度、前缀剪枝率、长尾覆盖和端到端延迟。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2608.19998",
+      "title": "SCoRD: Semantic-Assisted Continual Retriever-Reranker Distillation for LLM-Based Recommendation",
+      "url": "https://arxiv.org/abs/2608.19998",
+      "authors": "Seunghyun Baek, Gyuseok Lee, Seunghan Lee, Wonbin Kweon, Dong Wang, SeongKu Kang",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-08-20",
+      "discovered_at": "2026-08-24",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.25,
+      "summary": "SCoRD 关注推荐兴趣随时间变化时，反复更新 LLM 重排器并蒸馏的成本过高、仅更新召回器又难以从稀疏数据适应的问题。它用语义推理助手抽取可复用的意图级指导，只在低置信序列上选择性蒸馏，并把意图漂移信号反馈给重排器，从而让召回器与重排器持续协同适应。论文在真实数据流上验证了效率与效果。",
+      "key_insight": "可以把 LLM 重排器定位为低频“教师”和意图漂移探针，而不是每次请求都调用的在线组件。社区搜索可按低置信 query、主题漂移和新实体触发蒸馏，日常流量只运行轻量召回；同时保留回灌接口，让新意图影响重排而不破坏既有 nDCG 与 CTR。"
+    },
+    {
+      "rank": 5,
+      "id": "s2:b627e00a2ae4476d5b76d38f06bc33a50e406b2a",
+      "title": "CD-LLMCARS: Cross Domain Fine-Tuned Large Language Model for Context-Aware Recommender Systems",
+      "url": "https://www.semanticscholar.org/paper/b627e00a2ae4476d5b76d38f06bc33a50e406b2a",
+      "authors": "A. Cheema, M. Sarfraz, Usman Habib, Q. Zaman, E. Boonchieng",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "",
+      "discovered_at": "2026-08-23",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 1
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.35,
+      "summary": "CD-LLMCARS 试图用跨域数据缓解上下文感知推荐的冷启动和信息稀疏问题，基于 Llama 2 做跨域微调，并采用 LoRA 与 FP16 降低训练资源。框架面向电影、音乐、书籍和 CD 等多类物品生成上下文相关推荐，候选摘要称其在冷启动场景进行了广泛测试，但没有公开具体数据集、指标或提升幅度，因此证据评分保守。",
+      "key_insight": "跨域迁移适合社区平台中新用户、新话题和新内容的冷启动，但不能把通用文本相似度直接当作相关性。工程上可先用 LoRA 将领域术语、内容类型和用户上下文对齐，再用点击、收藏等行为信号做后置校准，并把跨域收益拆解到新用户、新内容和长尾 query。"
+    },
+    {
+      "rank": 6,
+      "id": "s2:6257bc53075bce2f25fe72c1c64cbd7eb02e379b",
+      "title": "Recommender Systems Meet Large Language Model Agents: A Survey",
+      "url": "https://www.semanticscholar.org/paper/6257bc53075bce2f25fe72c1c64cbd7eb02e379b",
+      "authors": "Xi Zhu, Yu Wang, Hang Gao, Wujiang Xu, Chen Wang",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "",
+      "discovered_at": "2026-08-23",
+      "total_score": 2.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 1
+      },
+      "preference_bonus": 0.05,
+      "adjusted_score": 2.8,
+      "summary": "这篇综述系统讨论推荐系统与大语言模型 Agent 的结合，覆盖用户建模、候选生成、交互式推荐、工具调用和多步决策等方向。它适合作为生成式搜推的术语地图，帮助区分把 LLM 当特征抽取器、重排器、对话助手和端到端生成器的不同范式；由于候选元数据未提供完整摘要和实验数字，不能替代具体方法论文。",
+      "key_insight": "阅读综述时应把“Agent 化”拆成可验证的链路：意图理解、候选召回、偏好推理、排序决策和反馈学习。对于 UGC 搜索，优先选择能落到召回或重排指标的模块，给工具调用设置预算与可回退路径，并用离线 nDCG、CTR 代理指标和长期留存分别验证收益，避免只凭生成文本质量判断推荐效果。"
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:mochar/glmakie-el",
+      "title": "glmakie-el: render GLMakie plots in emacs canvas",
+      "url": "https://github.com/mochar/glmakie-el",
+      "source": "github",
+      "description": "render GLMakie plots in emacs canvas",
+      "language": "C++",
+      "stars": 11,
+      "created_at": "2026-08-17",
+      "rank": 1
+    },
+    {
+      "id": "github:tainguyen07/semantic-search-faiss",
+      "title": "semantic-search-faiss: Semantic search engine over documents: sentence-transformers embeddings, FAISS ANN index, hybrid BM25+dense retrieval, reranking and a query API.",
+      "url": "https://github.com/tainguyen07/semantic-search-faiss",
+      "source": "github",
+      "description": "Semantic search engine over documents: sentence-transformers embeddings, FAISS ANN index, hybrid BM25+dense retrieval, reranking and a query API.",
+      "language": "Python",
+      "stars": 6,
+      "created_at": "2026-08-20",
+      "rank": 2
+    },
+    {
+      "id": "github:maverickgao8848/bp-writer",
+      "title": "bp-writer: BP Writer — investor-minded business plan writing skill for Kimi Work: guided interview, Sequoia-style diagnosis, chapter drafting, fact-checking, styled PPTX output",
+      "url": "https://github.com/maverickgao8848/bp-writer",
+      "source": "github",
+      "description": "BP Writer — investor-minded business plan writing skill for Kimi Work: guided interview, Sequoia-style diagnosis, chapter drafting, fact-checking, styled PPTX output",
+      "language": "",
+      "stars": 6,
+      "created_at": "2026-08-18",
+      "rank": 3
+    },
+    {
+      "id": "hf_dataset:internlm/WildClawBench-Trajectories",
+      "title": "internlm/WildClawBench-Trajectories",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench-Trajectories",
+      "source": "huggingface",
+      "description": "WildClawBench Trajectories Complete OpenClaw agent trajectories from the WildClawBench evaluation — every message, reasoning block, tool call, and tool result from real long-horizon agent runs, released for independent verification, side-by-side comparison, and trace-level analys; tags: task_categories:text-generation, language:en, language:zh, license:mit, size_categories:n<1K, format:parquet, modality:image, modality:text",
+      "language": "dataset",
+      "stars": 6,
+      "created_at": "2026-07-30",
+      "rank": 4
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K3",
+      "title": "moonshotai/Kimi-K3",
+      "url": "https://huggingface.co/moonshotai/Kimi-K3",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k3, feature-extraction, compressed-tensors, conversational, image-text-to-text, custom_code",
+      "language": "model",
+      "stars": 10947,
+      "created_at": "2026-06-13",
+      "rank": 5
+    },
+    {
+      "id": "hf_dataset:zai-org/terminal-bench-2-verified",
+      "title": "zai-org/terminal-bench-2-verified",
+      "url": "https://huggingface.co/datasets/zai-org/terminal-bench-2-verified",
+      "source": "huggingface",
+      "description": "Terminal-Bench 2.0 Verified: Instruction & Environment Fix Version 中文版本 2026.08.18 Update: Following the release of Terminal-Bench 2.1, we conducted another round of review on several tasks' grading and instructions, validating each fix end-to-end inside the actual task images. T; tags: license:apache-2.0, arxiv:2601.11868, arxiv:2602.15763, region:us",
+      "language": "dataset",
+      "stars": 79,
+      "created_at": "2026-02-05",
+      "rank": 6
+    }
+  ]
+}

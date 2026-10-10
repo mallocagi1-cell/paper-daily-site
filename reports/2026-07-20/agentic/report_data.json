@@ -1,0 +1,216 @@
+{
+  "date": "2026-07-20",
+  "track": "agentic",
+  "scenario": "社区搜索（UGC 短文本搜索）：用户在社区平台搜索帖子、问答、评论等 UGC 内容，核心指标是搜索相关性（nDCG）和点击率（CTR），关注语义匹配、query 理解、短文本召回、排序模型及 LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 11,
+    "papers_selected": 4,
+    "score_min": 3.35,
+    "score_max": 4.4
+  },
+  "coverage": {
+    "status": "gaps",
+    "core_paper": "SmartSearch: Process Reward-Guided Query Refinement for Search Agents",
+    "industry_practice": "阿里云百炼知识库（Knowledge Studio）：迈入 Agentic RAG 4.0时代",
+    "recent_paper": "DeepResearch-9K: A Challenging Benchmark Dataset of Deep-Research Agent",
+    "source_diversity": "未满足：4 篇均由 web_search 补充发现；硬去重后的 conference_papers 候选均不属于 Agentic 核心方向，未用不相关条目凑数。",
+    "chinese_source": "已找到"
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "web:sigir-2026-smartsearch",
+      "title": "SmartSearch: Process Reward-Guided Query Refinement for Search Agents",
+      "url": "https://arxiv.org/abs/2601.04888",
+      "authors": "Tongyu Wen, Guanting Dong, Zhicheng Dou",
+      "company": [
+        "RUC"
+      ],
+      "source": "web_search",
+      "published": "2026-07-20",
+      "total_score": 4.4,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.6,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文针对搜索 Agent 多轮推理中间查询质量差、一次偏航拖垮整条轨迹的问题，提出双层信用评估、低质查询定点改写与 SFT→DPO→GRPO 三阶段训练。基于 Qwen2.5-3B，在四个知识密集型基准上平均 EM/F1 达 37.5/47.2，较次优方法分别提升 25%/19%。",
+      "key_insight": "搜索 Agent 的瓶颈不只在推理，更在每一步“搜什么”。可借鉴的工程设计是把文档重复度作为规则型新颖度信号，再用小模型判断查询必要性与召回有效性，只重写失败节点并续跑后续轨迹；这比只依赖最终答案奖励更适合优化社区搜索中的多跳意图澄清。",
+      "deep_reading": {
+        "paper_id": "web:sigir-2026-smartsearch",
+        "title": "SmartSearch: Process Reward-Guided Query Refinement for Search Agents",
+        "status": "completed",
+        "content": "# 1. 问题与动机\n\n搜索 Agent 通常在 Thought—Action—Observation 循环里反复调用检索工具。已有工作把主要精力放在最终答案奖励或推理链形式上，却很少单独训练“中间查询是否值得搜、是否搜到了预期信息”。论文展示的典型失败是查询 `birthdate of Kevin McCarthy`：检索器返回同名政治人物，Agent 接受错误证据后整条轨迹偏航；只看最终答案对错，无法指出错误究竟发生在哪一轮搜索。作者据此把问题从“如何利用检索结果”前移为“如何产生高质量查询”。\n\n现有 outcome-only RL 的奖励稀疏，正确答案可能来自含多个冗余或碰巧成功的查询，错误答案中也可能包含有价值步骤。已有过程奖励又多评价推理逻辑，没有同时检查查询新颖度、意图必要性与召回结果是否真的回答了本轮子问题。SmartSearch 的目标是给每轮查询细粒度信用，把失败节点改写后重放后续轨迹，再通过课程学习让 3B Agent 内化这种能力。四个知识密集型任务的结果支持这一动机：仅用结果奖励的 RL 方法平均 EM/F1 约 20.2–24.5/29.4–33.0，加入一般过程奖励的最强基线为 30.1/39.5，而 SmartSearch 达 37.5/47.2。\n\n# 2. 方法详解\n\n系统以 ReAct 为基本交互协议。第 t 轮策略模型根据完整历史生成 Thought 和查询 Action，检索器返回 Top-K 文档片段作为 Observation，直到模型输出最终答案。SmartSearch 在此之上增加“评估—改写—续跑”闭环。查询质量由三个原则组成：新颖度要求本轮结果不与历史轮次大量重复；意图必要性要求该查询确实推动原问题；召回相关性要求结果完整回答本轮查询意图，而不是只出现相关实体。\n\n双层信用评估把前述原则拆成规则和模型两部分。规则项统计当前 Top-K 结果与此前所有轮次文档的内容重叠数，超过阈值即把新颖度记为 0。模型项把原问题、golden answer 和当前轨迹交给评分器，只有“查询意图必要”且“检索结果包含该意图的答案”时记为 1，并输出文字解释。总分是两个二值分数的逻辑与；解释则拼接两部分反馈。作者用 Qwen3-32B 生成标签，再监督微调 Qwen2.5-3B-Instruct 作为轻量评分与改写模型。100 条随机轨迹上，教师与人工标注重合接近 90%，学生与教师超过 85%，学生与人工超过 80%。\n\n若某轮总分为 0，改写器读取原问题、该轮之前的轨迹和失败解释，重新生成本轮查询。冗余或无必要的查询会换成更可执行的子意图；召回没有目标信息时，可在完整语义问题与关键词查询之间切换，并增删限定词。随后 Agent 从改写点重新生成余下轨迹。论文案例把 `birthdate of Kevin McCarthy` 改成 `birthdate of Actor Kevin McCarthy`，检索结果由 1965 年出生的政治人物切换到 1914 年出生的演员，最终恢复正确答案。\n\n训练分三阶段。第一阶段 Query Quality Screened Imitation Learning：ARPO-14B 采样轨迹，只保留最终答案正确、格式正确且所有中间查询均为高质量的样本，以 SFT 训练 Qwen2.5-3B-Instruct。学习率 7e-6、3 epochs、最大输入 16384 tokens、总 batch 64，使用 BF16、DeepSpeed ZeRO-3 和 FlashAttention2。该筛选只保留约 60% 数据，却优于按最终正确性筛选的全量轨迹。\n\n第二阶段 Query Generation Alignment：从 SFT 模型轨迹中定位低质查询，逐点改写并重生成，形成只在查询质量上有针对性差异的偏好对。选择规则先看最终答案是否正确；同为正确时，低质查询更少者为正；同为错误时，高质查询更多者为正。随后用 DPO+LoRA 训练 3 epochs，学习率 7e-6、最大输入 10000、batch 32，并继续使用 ZeRO-3、FlashAttention2 和 BF16。\n\n第三阶段 Query Aware Policy Optimization：选取采样四次仍未解决的难题，以改写和续跑替代完全独立的 rollout。奖励可概括为 `最终答案奖励 + 过程项（奖励高质查询、惩罚低质查询） + 加权格式奖励`，并对过程项设上下界，避免它淹没任务目标。训练学习率 1e-6，每题 8 个 rollout，总 batch 64，PPO mini-batch 16；训练时最大输出 8192 tokens、每条轨迹最多 5 次工具调用，推理时放宽到 16384 tokens 和 10 次调用。实验以 Qwen2.5-3B-Instruct 为策略模型，Asearcher-Base 为训练集；本地检索使用 2018 Wikipedia、E5-base-v2 和 Top-5，联网评测用 Serper API Top-10。\n\n# 3. 核心技术贡献\n\n第一，SmartSearch 把过程监督的对象从泛化的“推理步骤”具体化为“搜索查询”。规则型重复检测成本低且确定，模型型有效性判断覆盖语义，两者相与可减少单一 LLM judge 的漂移；同时输出自然语言诊断，使信用信号直接驱动查询修复，而不是只给一个不可操作的标量。\n\n第二，论文不是把改写器作为线上外挂，而是用它构造 SFT 筛选数据、DPO 偏好对和 RL rollout，形成从模仿、对齐到泛化的统一课程。改写前后的轨迹共享同一前缀，差异集中在失败查询及其后续，因果归因比随机采样两条完整轨迹更清晰。\n\n第三，轻量学生模型实现了可用的效果—成本折中。把评分器和改写器从 3B 学生换成 32B 教师，平均 F1 增益不足 1%，单样本处理时间却接近 5 倍；学生与人工标注仍有 80% 以上重合。因此工业系统可把复杂教师留在离线标注，在线或大规模训练数据处理中使用小模型。\n\n第四，方法在纯 Wikipedia 本地检索上训练，却迁移到 GAIA 与 WebWalker 联网任务，平均 F1 为 23.9，对比 StepSearch 的 19.2 提升 4.7 个绝对点。这说明被内化的是查询形成与纠错模式，而非只记住固定语料。\n\n# 4. 实验结果分析\n\n主实验覆盖 2WikiMultihopQA、HotpotQA、Bamboogle、MuSiQue 四个知识密集型基准，以及 GAIA、WebWalker 两个开放网络探索任务。核心对比如下：\n\n| 方法 | 四基准平均 EM | 四基准平均 F1 | GAIA F1 | WebWalker F1 |\n|---|---:|---:|---:|---:|\n| Search-R1 | 24.5 | 33.0 | 9.8 | 21.6 |\n| PPR | 29.4 | 38.4 | — | — |\n| StepSearch | 30.1 | 39.5 | 12.5 | 25.8 |\n| SmartSearch | 37.5 | 47.2 | 16.7 | 31.0 |\n\nSmartSearch 相对四基准次优方法的平均 EM/F1 提升分别为 25%/19%。分数据集看，2WikiMQA 达 45.3/52.3，HotpotQA 40.7/52.4，Bamboogle 44.8/56.1，MuSiQue 19.1/27.8；最难的 MuSiQue 绝对值仍低，说明查询优化缓解但没有解决长链组合推理。联网场景平均 EM/F1 为 12.5/23.9，对 StepSearch 的 9.3/19.2 同样保持领先。\n\n消融能区分三个阶段的作用。Stage 1 加入查询质量筛选后，平均 EM/F1 从 28.7/38.2 升至 31.7/40.9，而且只使用 60% 训练数据，表明轨迹纯度比数量更重要。Stage 2 完整模型为 33.5/43.2；去掉过程奖励为 32.2/41.8，去掉查询改写为 31.4/41.3，改写贡献更大。Stage 3 完整模型 37.5/47.2，去过程奖励为 35.1/45.1，去改写为 35.8/45.9，标准 GRPO 仅 34.8/44.7；两种机制联合比任一单独使用更稳定。\n\n另一个值得注意的结果是准确率与效率同时改善。论文定义 Search Efficiency 为按搜索调用次数归一化的答案质量，SmartSearch 在该指标上优于全部基线；原因不是让模型多搜，而是减少无效和重复轮次。作者没有在正文表格给出平均调用次数与实际端到端延迟，因而只能确认相对效率趋势，不能据此估算生产 P95。\n\n# 5. 局限与未来方向\n\n论文没有独立 Limitation 章节，也没有在结论中系统列出未来工作。正文明确可确认的边界包括：训练检索环境是 2018 Wikipedia 与 E5-base-v2，开放网络只作为迁移评测；策略、评分与改写均围绕 Qwen 系列 3B/32B 验证；评分器训练输入包含 golden answer，这种监督在离线训练可用，但不能直接照搬到没有标准答案的线上流量；RL 训练每条轨迹最多 5 次工具调用，推理最多 10 次，超长研究任务尚未验证。\n\n作者还没有披露 Asearcher-Base 的样本规模、各阶段最终保留轨迹数、训练硬件数量和总 GPU 时长，也没有线上 A/B、搜索 API 费用、P95 延迟或失败回退指标。二值评分把“部分有用”的查询压成 0/1，学生与人工仍约有近 20% 不一致；文档重叠规则也可能把针对同一来源不同段落的必要复查误判为冗余。论文未讨论检索结果中的提示注入、恶意页面和时效性冲突，这些是公开 Web 部署时不能忽略的安全边界。\n\n后续最有价值的验证应包括：用无 golden answer 的自监督或弱监督查询价值估计替代离线 judge；在中文 UGC、实时索引和多检索器环境测试；把相关性、信息增益、来源可信度与成本做成多目标过程奖励；以及测试连续值信用是否优于当前二值逻辑与。\n\n# 6. 工业实践意义\n\n对社区搜索团队，最容易落地的不是完整复制三阶段训练，而是先做轨迹可观测。每轮记录原始 query、改写 query、Top-K 文档 ID、与历史结果重叠率、本轮意图、是否提供所需证据、耗时和最终任务成功。规则侧先上线重复检索检测与实体歧义检查；模型侧用小型 judge 对必要性和证据充分性评分。这样即使暂不做 RL，也能定位“推理正确但查询失败”和“查询正确但召回失败”两类问题。\n\n训练数据构造可复用论文的局部反事实思路：从失败轮次开始改写，只重放后续，不必为每题重新采样大量完整轨迹。对同名实体、简称、地域词和社区黑话，可把改写目标设为补充实体类型、时间、地点或话题限定；若召回重复，则强制切换子意图或检索器。SFT 先筛掉含低质查询的正确轨迹，DPO 比较改写前后，确认离线收益后再用受限 RL 优化，风险小于直接对线上 Agent 做开放式强化学习。\n\n服务时应保留成本护栏：简单 query 走单轮检索，只有证据不足或任务被识别为多跳时进入循环；配置最大工具调用数、总延迟预算、同域名/同文档重复上限和无进展停止条件。评分/改写学生模型可批处理或异步执行，32B 教师只做离线再标注。论文显示大模型带来的 F1 增益不足 1% 而耗时近 5 倍，这一结果支持优先把算力投入更好的召回与轨迹数据，而不是盲目扩大 judge。\n\n上线评估除答案正确率外，应至少监控查询成功率、重复搜索率、每题工具调用数、有效证据覆盖、nDCG、P95/P99 延迟、API 成本和停止原因。对于 UGC 场景还要加入内容时效、作者可信度、同义词与实体消歧切片。最应避免的是把过程奖励等同于“多写思维链”：SmartSearch 的收益来自可验证的查询行为与召回反馈，过程监督必须落到真实工具交互上。",
+        "content_html": "<h1>1. 问题与动机</h1>\n<p>搜索 Agent 通常在 Thought—Action—Observation 循环里反复调用检索工具。已有工作把主要精力放在最终答案奖励或推理链形式上，却很少单独训练“中间查询是否值得搜、是否搜到了预期信息”。论文展示的典型失败是查询 <code>birthdate of Kevin McCarthy</code>：检索器返回同名政治人物，Agent 接受错误证据后整条轨迹偏航；只看最终答案对错，无法指出错误究竟发生在哪一轮搜索。作者据此把问题从“如何利用检索结果”前移为“如何产生高质量查询”。</p>\n<p>现有 outcome-only RL 的奖励稀疏，正确答案可能来自含多个冗余或碰巧成功的查询，错误答案中也可能包含有价值步骤。已有过程奖励又多评价推理逻辑，没有同时检查查询新颖度、意图必要性与召回结果是否真的回答了本轮子问题。SmartSearch 的目标是给每轮查询细粒度信用，把失败节点改写后重放后续轨迹，再通过课程学习让 3B Agent 内化这种能力。四个知识密集型任务的结果支持这一动机：仅用结果奖励的 RL 方法平均 EM/F1 约 20.2–24.5/29.4–33.0，加入一般过程奖励的最强基线为 30.1/39.5，而 SmartSearch 达 37.5/47.2。</p>\n<h1>2. 方法详解</h1>\n<p>系统以 ReAct 为基本交互协议。第 t 轮策略模型根据完整历史生成 Thought 和查询 Action，检索器返回 Top-K 文档片段作为 Observation，直到模型输出最终答案。SmartSearch 在此之上增加“评估—改写—续跑”闭环。查询质量由三个原则组成：新颖度要求本轮结果不与历史轮次大量重复；意图必要性要求该查询确实推动原问题；召回相关性要求结果完整回答本轮查询意图，而不是只出现相关实体。</p>\n<p>双层信用评估把前述原则拆成规则和模型两部分。规则项统计当前 Top-K 结果与此前所有轮次文档的内容重叠数，超过阈值即把新颖度记为 0。模型项把原问题、golden answer 和当前轨迹交给评分器，只有“查询意图必要”且“检索结果包含该意图的答案”时记为 1，并输出文字解释。总分是两个二值分数的逻辑与；解释则拼接两部分反馈。作者用 Qwen3-32B 生成标签，再监督微调 Qwen2.5-3B-Instruct 作为轻量评分与改写模型。100 条随机轨迹上，教师与人工标注重合接近 90%，学生与教师超过 85%，学生与人工超过 80%。</p>\n<p>若某轮总分为 0，改写器读取原问题、该轮之前的轨迹和失败解释，重新生成本轮查询。冗余或无必要的查询会换成更可执行的子意图；召回没有目标信息时，可在完整语义问题与关键词查询之间切换，并增删限定词。随后 Agent 从改写点重新生成余下轨迹。论文案例把 <code>birthdate of Kevin McCarthy</code> 改成 <code>birthdate of Actor Kevin McCarthy</code>，检索结果由 1965 年出生的政治人物切换到 1914 年出生的演员，最终恢复正确答案。</p>\n<p>训练分三阶段。第一阶段 Query Quality Screened Imitation Learning：ARPO-14B 采样轨迹，只保留最终答案正确、格式正确且所有中间查询均为高质量的样本，以 SFT 训练 Qwen2.5-3B-Instruct。学习率 7e-6、3 epochs、最大输入 16384 tokens、总 batch 64，使用 BF16、DeepSpeed ZeRO-3 和 FlashAttention2。该筛选只保留约 60% 数据，却优于按最终正确性筛选的全量轨迹。</p>\n<p>第二阶段 Query Generation Alignment：从 SFT 模型轨迹中定位低质查询，逐点改写并重生成，形成只在查询质量上有针对性差异的偏好对。选择规则先看最终答案是否正确；同为正确时，低质查询更少者为正；同为错误时，高质查询更多者为正。随后用 DPO+LoRA 训练 3 epochs，学习率 7e-6、最大输入 10000、batch 32，并继续使用 ZeRO-3、FlashAttention2 和 BF16。</p>\n<p>第三阶段 Query Aware Policy Optimization：选取采样四次仍未解决的难题，以改写和续跑替代完全独立的 rollout。奖励可概括为 <code>最终答案奖励 + 过程项（奖励高质查询、惩罚低质查询） + 加权格式奖励</code>，并对过程项设上下界，避免它淹没任务目标。训练学习率 1e-6，每题 8 个 rollout，总 batch 64，PPO mini-batch 16；训练时最大输出 8192 tokens、每条轨迹最多 5 次工具调用，推理时放宽到 16384 tokens 和 10 次调用。实验以 Qwen2.5-3B-Instruct 为策略模型，Asearcher-Base 为训练集；本地检索使用 2018 Wikipedia、E5-base-v2 和 Top-5，联网评测用 Serper API Top-10。</p>\n<h1>3. 核心技术贡献</h1>\n<p>第一，SmartSearch 把过程监督的对象从泛化的“推理步骤”具体化为“搜索查询”。规则型重复检测成本低且确定，模型型有效性判断覆盖语义，两者相与可减少单一 LLM judge 的漂移；同时输出自然语言诊断，使信用信号直接驱动查询修复，而不是只给一个不可操作的标量。</p>\n<p>第二，论文不是把改写器作为线上外挂，而是用它构造 SFT 筛选数据、DPO 偏好对和 RL rollout，形成从模仿、对齐到泛化的统一课程。改写前后的轨迹共享同一前缀，差异集中在失败查询及其后续，因果归因比随机采样两条完整轨迹更清晰。</p>\n<p>第三，轻量学生模型实现了可用的效果—成本折中。把评分器和改写器从 3B 学生换成 32B 教师，平均 F1 增益不足 1%，单样本处理时间却接近 5 倍；学生与人工标注仍有 80% 以上重合。因此工业系统可把复杂教师留在离线标注，在线或大规模训练数据处理中使用小模型。</p>\n<p>第四，方法在纯 Wikipedia 本地检索上训练，却迁移到 GAIA 与 WebWalker 联网任务，平均 F1 为 23.9，对比 StepSearch 的 19.2 提升 4.7 个绝对点。这说明被内化的是查询形成与纠错模式，而非只记住固定语料。</p>\n<h1>4. 实验结果分析</h1>\n<p>主实验覆盖 2WikiMultihopQA、HotpotQA、Bamboogle、MuSiQue 四个知识密集型基准，以及 GAIA、WebWalker 两个开放网络探索任务。核心对比如下：</p>\n<table><thead><tr><th>方法</th><th>四基准平均 EM</th><th>四基准平均 F1</th><th>GAIA F1</th><th>WebWalker F1</th></tr></thead><tbody><tr><td>Search-R1</td><td>24.5</td><td>33.0</td><td>9.8</td><td>21.6</td></tr><tr><td>PPR</td><td>29.4</td><td>38.4</td><td>—</td><td>—</td></tr><tr><td>StepSearch</td><td>30.1</td><td>39.5</td><td>12.5</td><td>25.8</td></tr><tr><td>SmartSearch</td><td>37.5</td><td>47.2</td><td>16.7</td><td>31.0</td></tr></tbody></table>\n<p>SmartSearch 相对四基准次优方法的平均 EM/F1 提升分别为 25%/19%。分数据集看，2WikiMQA 达 45.3/52.3，HotpotQA 40.7/52.4，Bamboogle 44.8/56.1，MuSiQue 19.1/27.8；最难的 MuSiQue 绝对值仍低，说明查询优化缓解但没有解决长链组合推理。联网场景平均 EM/F1 为 12.5/23.9，对 StepSearch 的 9.3/19.2 同样保持领先。</p>\n<p>消融能区分三个阶段的作用。Stage 1 加入查询质量筛选后，平均 EM/F1 从 28.7/38.2 升至 31.7/40.9，而且只使用 60% 训练数据，表明轨迹纯度比数量更重要。Stage 2 完整模型为 33.5/43.2；去掉过程奖励为 32.2/41.8，去掉查询改写为 31.4/41.3，改写贡献更大。Stage 3 完整模型 37.5/47.2，去过程奖励为 35.1/45.1，去改写为 35.8/45.9，标准 GRPO 仅 34.8/44.7；两种机制联合比任一单独使用更稳定。</p>\n<p>另一个值得注意的结果是准确率与效率同时改善。论文定义 Search Efficiency 为按搜索调用次数归一化的答案质量，SmartSearch 在该指标上优于全部基线；原因不是让模型多搜，而是减少无效和重复轮次。作者没有在正文表格给出平均调用次数与实际端到端延迟，因而只能确认相对效率趋势，不能据此估算生产 P95。</p>\n<h1>5. 局限与未来方向</h1>\n<p>论文没有独立 Limitation 章节，也没有在结论中系统列出未来工作。正文明确可确认的边界包括：训练检索环境是 2018 Wikipedia 与 E5-base-v2，开放网络只作为迁移评测；策略、评分与改写均围绕 Qwen 系列 3B/32B 验证；评分器训练输入包含 golden answer，这种监督在离线训练可用，但不能直接照搬到没有标准答案的线上流量；RL 训练每条轨迹最多 5 次工具调用，推理最多 10 次，超长研究任务尚未验证。</p>\n<p>作者还没有披露 Asearcher-Base 的样本规模、各阶段最终保留轨迹数、训练硬件数量和总 GPU 时长，也没有线上 A/B、搜索 API 费用、P95 延迟或失败回退指标。二值评分把“部分有用”的查询压成 0/1，学生与人工仍约有近 20% 不一致；文档重叠规则也可能把针对同一来源不同段落的必要复查误判为冗余。论文未讨论检索结果中的提示注入、恶意页面和时效性冲突，这些是公开 Web 部署时不能忽略的安全边界。</p>\n<p>后续最有价值的验证应包括：用无 golden answer 的自监督或弱监督查询价值估计替代离线 judge；在中文 UGC、实时索引和多检索器环境测试；把相关性、信息增益、来源可信度与成本做成多目标过程奖励；以及测试连续值信用是否优于当前二值逻辑与。</p>\n<h1>6. 工业实践意义</h1>\n<p>对社区搜索团队，最容易落地的不是完整复制三阶段训练，而是先做轨迹可观测。每轮记录原始 query、改写 query、Top-K 文档 ID、与历史结果重叠率、本轮意图、是否提供所需证据、耗时和最终任务成功。规则侧先上线重复检索检测与实体歧义检查；模型侧用小型 judge 对必要性和证据充分性评分。这样即使暂不做 RL，也能定位“推理正确但查询失败”和“查询正确但召回失败”两类问题。</p>\n<p>训练数据构造可复用论文的局部反事实思路：从失败轮次开始改写，只重放后续，不必为每题重新采样大量完整轨迹。对同名实体、简称、地域词和社区黑话，可把改写目标设为补充实体类型、时间、地点或话题限定；若召回重复，则强制切换子意图或检索器。SFT 先筛掉含低质查询的正确轨迹，DPO 比较改写前后，确认离线收益后再用受限 RL 优化，风险小于直接对线上 Agent 做开放式强化学习。</p>\n<p>服务时应保留成本护栏：简单 query 走单轮检索，只有证据不足或任务被识别为多跳时进入循环；配置最大工具调用数、总延迟预算、同域名/同文档重复上限和无进展停止条件。评分/改写学生模型可批处理或异步执行，32B 教师只做离线再标注。论文显示大模型带来的 F1 增益不足 1% 而耗时近 5 倍，这一结果支持优先把算力投入更好的召回与轨迹数据，而不是盲目扩大 judge。</p>\n<p>上线评估除答案正确率外，应至少监控查询成功率、重复搜索率、每题工具调用数、有效证据覆盖、nDCG、P95/P99 延迟、API 成本和停止原因。对于 UGC 场景还要加入内容时效、作者可信度、同义词与实体消歧切片。最应避免的是把过程奖励等同于“多写思维链”：SmartSearch 的收益来自可验证的查询行为与召回反馈，过程监督必须落到真实工具交互上。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "web:sigir-2026-deepresearch-9k",
+      "title": "DeepResearch-9K: A Challenging Benchmark Dataset of Deep-Research Agent",
+      "url": "https://arxiv.org/abs/2603.01152",
+      "authors": "Tongzhou Wu, Yuhao Wang, Xinyu Ma, Xiuqiang He, Shuaiqiang Wang, Dawei Yin, Xiangyu Zhao",
+      "company": [
+        "Baidu",
+        "CityU",
+        "Shenzhen Technology University"
+      ],
+      "source": "web_search",
+      "published": "2026-07-20",
+      "total_score": 4.35,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.5,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文发布 DeepResearch-9K：包含 9000 个可验证问题、三级难度和 Tongyi-DeepResearch-30B-A3B 生成的完整检索轨迹，并开源支持多轮联网、GRPO/PPO 与多种奖励的 DeepResearch-R1。教师模型总准确率仅 55.84%，最高难度降至 23.73%，显示长链搜索仍有巨大缺口。",
+      "key_insight": "数据集把难度直接绑定到工具调用深度：最高级任务至少需要 15 次独立搜索，并通过实体遮蔽与跨文档约束阻断关键词捷径。搜索团队可用同样方法构造复杂 UGC 调研集，把最终正确率与搜索次数、轨迹质量同时纳入离线评估，再比较 Zero-RL 和 SFT+RL 的收益。"
+    },
+    {
+      "rank": 3,
+      "id": "web:aliyun-knowledge-studio-rag-4-2026-07-16",
+      "title": "阿里云百炼知识库（Knowledge Studio）：迈入 Agentic RAG 4.0时代",
+      "url": "https://developer.aliyun.com/article/1748103",
+      "authors": "阿里云开发者社区",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "web_search",
+      "published": "2026-07-16",
+      "total_score": 3.8,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 2,
+        "timeliness": 4
+      },
+      "summary": "Knowledge Studio 将意图理解、查询改写、知识库路由、多轮检索、结果验证和可溯源生成串成 Agentic RAG 闭环，提供语义搜索、章节浏览、精读、页面浏览、SQL 和文件获取 6 类工具。系统最多联合 15 个知识库，并以 qwen3-vl-rerank 统一图文跨库排序。",
+      "key_insight": "企业级 Agentic RAG 的关键不是无限增加检索轮次，而是给模型分层工具和明确停止条件：先路由知识库，再选择粗搜、章节浏览或精读，结构化问题切到 SQL。社区搜索可借鉴跨库权重与统一重排，把帖子、问答、评论等异构索引先校准再交给 Agent 验证，避免直接拼接不可比的分数。"
+    },
+    {
+      "rank": 4,
+      "id": "web:tencent-postgresql-agentic-rag-2026-06-08",
+      "title": "基于 PostgreSQL 构建 Agentic RAG 应用",
+      "url": "https://intl.cloud.tencent.com/zh/document/product/409/80410",
+      "authors": "腾讯云",
+      "company": [
+        "Tencent"
+      ],
+      "source": "web_search",
+      "published": "2026-06-08",
+      "total_score": 3.35,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 2
+      },
+      "summary": "腾讯云给出以 PostgreSQL 为数据底座的 Agentic RAG 架构，将关系数据、向量检索、查询优化、多步推理和工具调用放进统一链路。Agent 可根据问题主动规划检索策略并迭代补充证据，适合同时依赖文档片段与结构化业务字段的企业知识问答，但文档未披露量化基准。",
+      "key_insight": "对搜索系统最有价值的是“检索与计算共库”思路：语义召回负责找到 UGC 证据，SQL 负责精确过滤、聚合和权限约束，Agent 只做路由与循环控制。落地时应先限定最大反思轮数、工具白名单与召回范围，并分别记录向量检索、SQL 和生成阶段耗时，防止复杂问题拖垮尾延迟。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:justjavac/minecraft-web",
+      "title": "minecraft-web: Kimi k4 复刻网页版我的世界",
+      "url": "https://github.com/justjavac/minecraft-web",
+      "source": "github",
+      "description": "基于 Next.js、shadcn/ui 与 Three.js 的 Kimi k4 生成式网页项目，近期开源热度信号为 6 stars；与 Agentic 搜索关系较弱，作为趋势观察保留。",
+      "language": "TypeScript",
+      "stars": 6,
+      "created_at": "2026-07-17"
+    },
+    {
+      "rank": 2,
+      "id": "github:ZethetaIntern/Alpha-Foundry",
+      "title": "Alpha-Foundry: AI-powered stock ranking platform",
+      "url": "https://github.com/ZethetaIntern/Alpha-Foundry",
+      "source": "github",
+      "description": "结合机器学习、Learning-to-Rank 与可解释预测的股票排序平台，创建后获得 6 stars；可作为排序工作流工程参考。",
+      "language": "TypeScript",
+      "stars": 6,
+      "created_at": "2026-07-17"
+    },
+    {
+      "rank": 3,
+      "id": "github:shivaylamba/grok-build-nebius",
+      "title": "grok-build-nebius: BYOK CLI with Tavily web search",
+      "url": "https://github.com/shivaylamba/grok-build-nebius",
+      "source": "github",
+      "description": "为代码 Agent 配置 Kimi K2.7 Code 与 Tavily 联网搜索的 BYOK 项目，6 stars；与工具调用和搜索 Agent 工程直接相关。",
+      "language": "Shell",
+      "stars": 6,
+      "created_at": "2026-07-16"
+    },
+    {
+      "rank": 4,
+      "id": "hf_space:deepseek-ai/Janus-Pro-7B",
+      "title": "deepseek-ai/Janus-Pro-7B",
+      "url": "https://huggingface.co/spaces/deepseek-ai/Janus-Pro-7B",
+      "source": "huggingface",
+      "description": "DeepSeek 的 Janus-Pro-7B 在线 Space，累计 2015 likes，近期有更新；可用于多模态能力快速体验。",
+      "language": "space",
+      "stars": 2015,
+      "created_at": "2025-01-27"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "MIT 许可的图生视频角色动画模型，累计 305 likes、16359 downloads；属于生成模型趋势项目。",
+      "language": "model",
+      "stars": 305,
+      "created_at": "2026-06-09"
+    },
+    {
+      "rank": 6,
+      "id": "hf_space:moonshotai/Kimi-VL-A3B-Thinking",
+      "title": "moonshotai/Kimi-VL-A3B-Thinking",
+      "url": "https://huggingface.co/spaces/moonshotai/Kimi-VL-A3B-Thinking",
+      "source": "huggingface",
+      "description": "Moonshot 的多模态思考模型在线 Space，累计 200 likes，便于观察视觉推理与 Agent 交互能力。",
+      "language": "space",
+      "stars": 200,
+      "created_at": "2025-04-10"
+    },
+    {
+      "rank": 7,
+      "id": "hf_space:deepseek-ai/Janus-1.3B",
+      "title": "deepseek-ai/Janus-1.3B",
+      "url": "https://huggingface.co/spaces/deepseek-ai/Janus-1.3B",
+      "source": "huggingface",
+      "description": "轻量级 Janus 多模态 Space，累计 161 likes，适合低成本原型验证。",
+      "language": "space",
+      "stars": 161,
+      "created_at": "2024-10-20"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:internlm/Intern-S2-Preview-397B",
+      "title": "internlm/Intern-S2-Preview-397B",
+      "url": "https://huggingface.co/internlm/Intern-S2-Preview-397B",
+      "source": "huggingface",
+      "description": "Apache-2.0 许可的 397B 图文对话预览模型，创建两天内获得 42 likes；可关注其复杂视觉推理能力。",
+      "language": "model",
+      "stars": 42,
+      "created_at": "2026-07-16"
+    }
+  ]
+}

@@ -1,0 +1,220 @@
+{
+  "date": "2026-07-13",
+  "track": "agentic",
+  "scenario": "社区搜索（UGC 短文本搜索）：关注搜索相关性、点击率、query 理解、短文本召回、排序模型与 LLM 搜索应用。",
+  "stats": {
+    "papers_scored": 15,
+    "papers_selected": 6,
+    "score_min": 3.05,
+    "score_max": 4.35
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2607.07858",
+      "title": "Agentic AI and Retrieval-Augmented Models in Straight-Through Underwriting",
+      "url": "https://arxiv.org/abs/2607.07858",
+      "authors": "Robert Richardson, Josh Meyers, Brian Hartman, David Sandberg",
+      "company": [
+        "BYU"
+      ],
+      "source": "web_search",
+      "published": "2026-07-08",
+      "total_score": 4.35,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.45,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "论文在 635 个合成但经人工校验的承保案例上，对比单模型、朴素 RAG 与多智能体 Agentic RAG。后者把定向检索、第三方数据检查、多步规则计算和反思串成可审计流程，在 GPT-5.2 上总体准确率达 86.5%，高于单模型的 77.6% 和朴素 RAG 的 76.9%。",
+      "key_insight": "真正的增益来自“检索后如何行动”，而非单纯塞入更多上下文：不可恢复缺失信息场景准确率从 56.7% 提升到 84.3%。代价是平均延迟从 1.64 秒升至 4.72 秒，因此社区搜索可按查询难度路由，仅对多跳、证据不足或高风险请求启用完整反思循环。",
+      "deep_reading": {
+        "paper_id": "arxiv:2607.07858",
+        "title": "Agentic AI and Retrieval-Augmented Models in Straight-Through Underwriting",
+        "status": "completed",
+        "content": "# 深度解读：Agentic AI and Retrieval-Augmented Models in Straight-Through Underwriting\n\n## 1. 问题与动机\n\n论文关注一个比“让大模型读懂保险条款”更具体的问题：在小型商业综合险（Business Owner Policy, BOP）的直通式承保中，系统既要从申请表的非结构化业务描述中抽取事实，又要对照承保指南、调用第三方数据，并在证据不足时主动转人工。固定规则擅长执行明确阈值，却难以处理事实散落、字段缺失和自然语言歧义；单一 LLM 能理解文本，但无法保证事实有出处；朴素 RAG 虽能取回规则，却仍可能不知道应该计算哪个中间量、何时补查数据以及何时停止猜测。作者因此把真正的失效点定义为工作流组织，而非单纯的知识缺失。\n\n论文构造了 635 个合成但人工复核的申请案例，分为合规接受、单一违规、多步推理、可恢复信息缺失和不可恢复信息缺失五类。这个设计刻意测试最容易被自动化系统掩盖的边界：正确结果有时不是接受或拒绝，而是“转人工”。在受监管场景中，错误的直通决定不仅影响准确率，还涉及公平性、审计和责任归属，因此作者强调 Agent 不拥有独立决策权，而是把检索、规则执行和升级路径组织成可检查的流程。\n\n## 2. 方法详解\n\n实验比较三条管线。第一条是 Single-LLM：模型直接读取申请并给出 accept、reject 或 refer 及理由。第二条是 Naive RAG：先从向量化承保指南中检索相关段落，再把上下文交给同一模型，但没有后续规划。第三条 Agentic RAG 将任务拆成多个受控步骤：先解析申请与业务叙述，检索对应指南证据；随后进行完整性检查，识别决定性字段是否缺失；若缺失信息可从第三方来源获得，则调用模拟外部数据；再执行多步规则计算，把派生事实与阈值逐项核对；最后由复核环节检查决定、证据和理由是否一致，并将无法可靠决策的案例路由到人工。\n\n其核心循环可概括为“状态—动作—校验”：状态包含申请事实、已检索条款、缺失字段、外部数据和当前决定；动作是继续检索、调用外部数据、计算派生量、输出决定或升级；校验器检查决定是否被现有证据支持。终止条件不是模型主观认为答案流畅，而是已得到支持充分的 accept/reject，或确认信息不可恢复后 refer。作者使用 LangChain/LangGraph 一类编排思想实现结构化步骤，但价值不在框架品牌，而在每一步都有明确输入输出和审计记录。\n\n数据集在送入模型前移除场景标签、真实标签和生成理由，避免标签泄漏。两组基础模型分别是低成本的 GPT-4o-mini 和能力更强的 GPT-5.2。每个模型都运行三种架构，评价总体决策准确率、五类场景准确率、生成理由与人工理由的嵌入余弦相似度，以及端到端平均延迟。理由相似度对全部 635 个申请取均值，它只能表示语义接近，不能替代法律或精算正确性。论文没有给出常规训练过程，因为系统主要是推理时编排，而非训练新模型；固定检索配置和提示词也因此成为实验的关键控制变量。\n\n## 3. 核心技术贡献\n\n第一，论文把 Agentic RAG 的收益定位到“证据使用流程”。朴素 RAG 能提供规则文本，但多步场景准确率在 GPT-5.2 下只有 66.1%，甚至低于单模型的 70.1%；加入事实抽取、计算、完整性检查和反思后提升到 78.0%。这说明召回到正确文档只是必要条件，系统还必须明确中间状态与下一动作。\n\n第二，作者将 refer 设计为一等公民，而非生成失败后的兜底。不可恢复缺失信息场景中，Agentic RAG 达到 84.3%，显著高于单模型 56.7% 和朴素 RAG 53.5%。提升机制是先区分“缺失但可补查”与“缺失且无法取得”，再把后者显式送入人工路径，从架构层面抑制无证据的强制判断。\n\n第三，工作流同时优化结果与可审计解释。GPT-5.2 下，理由与人工理由的平均余弦相似度从单模型 0.709、朴素 RAG 0.741 提升到 0.779。每次检索、第三方检查和规则计算都能形成证据链，使复核者可以追踪决定来源，而不是只看到最终自然语言。\n\n第四，论文没有掩盖 Agent 成本，而是量化了质量—延迟交换：平均延迟从 1.64 秒和 2.14 秒升至 4.72 秒。作者由此提出自适应反思方向，即只在证据不足或错误成本高时启用完整循环。\n\n## 4. 实验结果分析\n\n总体准确率如下：\n\n| 管线 | GPT-4o-mini | GPT-5.2 |\n|---|---:|---:|\n| Single-LLM | 73.4% | 77.6% |\n| Naive RAG | 71.5% | 76.9% |\n| Agentic RAG | 85.1% | 86.5% |\n\nAgentic RAG 在两种基础模型上都最优，且小模型配合工作流的 85.1% 已超过强模型单调用的 77.6%，说明流程设计可以比单纯换大模型带来更大收益。朴素 RAG 两列都略低于单模型，提醒实践者：检索上下文如果没有配套的事实对齐和行动策略，可能增加干扰而非稳定提升。\n\nGPT-5.2 的分场景结果更能解释增益：合规接受为 100.0%，单一违规为 81.9%，多步推理为 78.0%，可恢复缺失为 88.2%，不可恢复缺失为 84.3%。Agentic 管线在五类中的四类最好，但单一违规反而低于单模型 84.3% 和朴素 RAG 83.5%。这表明简单、明确的违规不需要昂贵编排，额外步骤甚至可能引入轻微误差；收益集中在需要连接多个事实、补查信息或承认不确定性的案例。\n\n理由质量与延迟也呈清晰权衡：Single-LLM 为 0.709/1.64 秒，Naive RAG 为 0.741/2.14 秒，Agentic RAG 为 0.779/4.72 秒。Agentic 的理由相似度相对单模型提高 0.070，但延迟接近 2.9 倍。因此不能把完整循环设为所有请求的默认路径，应结合误判成本和服务时延预算做路由。\n\n## 5. 局限与未来方向\n\n作者明确指出，635 条数据、承保指南与第三方数据均为合成或模拟，虽然经过人工一致性检查，却无法覆盖生产申请中的 OCR 噪声、相互冲突的信号、经纪人语境、遗留系统字段和监管差异。实验采用固定检索设置与提示词，结论会随基础模型、索引和规则变化；它是受控的工作流比较，不是生产合规验证。余弦相似度也不等价于精算正确、法律充分或监管可接受。\n\n未来工作包括用真实保险数据校准、监控漂移、建立公平性与差异影响测试；研究带置信度和成本惩罚的自适应终止；用选择性检索减少 token；增强对脏数据的符号—神经混合预处理；以及比较微调与 RAG 的边界。作者倾向混合方案：稳定抽取和格式任务可用小模型微调，频繁变化且要求引用的规则继续用 RAG。\n\n## 6. 工业实践意义\n\n对搜索与推荐团队，最直接的启示是建立“简单查询快路径、复杂查询 Agent 路径”。明确意图和单跳事实可使用现有召回与生成；涉及多文档比较、条件计算、信息缺失或高风险决策时，再启动查询拆解、迭代检索、计算工具和反思。可把 UGC 搜索状态建模为原查询、改写列表、已读帖子、证据覆盖率、冲突事实和停止原因，并要求最终答案引用具体内容。\n\n第二，应把“无法回答/转人工”作为可优化的正式结果。社区搜索中，证据不足时继续生成会放大幻觉；系统应区分可通过补搜恢复的信息与平台内根本不存在的信息，后者触发澄清、拒答或运营复核。评估除 nDCG、CTR 外，还应增加证据覆盖、无依据回答率、升级准确率和每个成功任务的工具成本。\n\n第三，延迟数据给出了部署边界。完整 Agentic RAG 平均 4.72 秒，明显高于 1.64 秒单模型，因此应设置查询难度分类器、最大工具次数、超时和成本预算；对每一步记录 trace，分析增益究竟来自改写、补召回、计算还是复核。生产灰度可先覆盖内部运营检索或低流量深度搜索，验证可审计性后再扩大。最值得借鉴的设计不是“多 Agent”标签，而是显式状态、受限动作、证据门槛和可配置的人机边界。",
+        "content_html": "<h1>深度解读：Agentic AI and Retrieval-Augmented Models in Straight-Through Underwriting</h1>\n<h2>1. 问题与动机</h2>\n<p>论文关注一个比“让大模型读懂保险条款”更具体的问题：在小型商业综合险（Business Owner Policy, BOP）的直通式承保中，系统既要从申请表的非结构化业务描述中抽取事实，又要对照承保指南、调用第三方数据，并在证据不足时主动转人工。固定规则擅长执行明确阈值，却难以处理事实散落、字段缺失和自然语言歧义；单一 LLM 能理解文本，但无法保证事实有出处；朴素 RAG 虽能取回规则，却仍可能不知道应该计算哪个中间量、何时补查数据以及何时停止猜测。作者因此把真正的失效点定义为工作流组织，而非单纯的知识缺失。</p>\n<p>论文构造了 635 个合成但人工复核的申请案例，分为合规接受、单一违规、多步推理、可恢复信息缺失和不可恢复信息缺失五类。这个设计刻意测试最容易被自动化系统掩盖的边界：正确结果有时不是接受或拒绝，而是“转人工”。在受监管场景中，错误的直通决定不仅影响准确率，还涉及公平性、审计和责任归属，因此作者强调 Agent 不拥有独立决策权，而是把检索、规则执行和升级路径组织成可检查的流程。</p>\n<h2>2. 方法详解</h2>\n<p>实验比较三条管线。第一条是 Single-LLM：模型直接读取申请并给出 accept、reject 或 refer 及理由。第二条是 Naive RAG：先从向量化承保指南中检索相关段落，再把上下文交给同一模型，但没有后续规划。第三条 Agentic RAG 将任务拆成多个受控步骤：先解析申请与业务叙述，检索对应指南证据；随后进行完整性检查，识别决定性字段是否缺失；若缺失信息可从第三方来源获得，则调用模拟外部数据；再执行多步规则计算，把派生事实与阈值逐项核对；最后由复核环节检查决定、证据和理由是否一致，并将无法可靠决策的案例路由到人工。</p>\n<p>其核心循环可概括为“状态—动作—校验”：状态包含申请事实、已检索条款、缺失字段、外部数据和当前决定；动作是继续检索、调用外部数据、计算派生量、输出决定或升级；校验器检查决定是否被现有证据支持。终止条件不是模型主观认为答案流畅，而是已得到支持充分的 accept/reject，或确认信息不可恢复后 refer。作者使用 LangChain/LangGraph 一类编排思想实现结构化步骤，但价值不在框架品牌，而在每一步都有明确输入输出和审计记录。</p>\n<p>数据集在送入模型前移除场景标签、真实标签和生成理由，避免标签泄漏。两组基础模型分别是低成本的 GPT-4o-mini 和能力更强的 GPT-5.2。每个模型都运行三种架构，评价总体决策准确率、五类场景准确率、生成理由与人工理由的嵌入余弦相似度，以及端到端平均延迟。理由相似度对全部 635 个申请取均值，它只能表示语义接近，不能替代法律或精算正确性。论文没有给出常规训练过程，因为系统主要是推理时编排，而非训练新模型；固定检索配置和提示词也因此成为实验的关键控制变量。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文把 Agentic RAG 的收益定位到“证据使用流程”。朴素 RAG 能提供规则文本，但多步场景准确率在 GPT-5.2 下只有 66.1%，甚至低于单模型的 70.1%；加入事实抽取、计算、完整性检查和反思后提升到 78.0%。这说明召回到正确文档只是必要条件，系统还必须明确中间状态与下一动作。</p>\n<p>第二，作者将 refer 设计为一等公民，而非生成失败后的兜底。不可恢复缺失信息场景中，Agentic RAG 达到 84.3%，显著高于单模型 56.7% 和朴素 RAG 53.5%。提升机制是先区分“缺失但可补查”与“缺失且无法取得”，再把后者显式送入人工路径，从架构层面抑制无证据的强制判断。</p>\n<p>第三，工作流同时优化结果与可审计解释。GPT-5.2 下，理由与人工理由的平均余弦相似度从单模型 0.709、朴素 RAG 0.741 提升到 0.779。每次检索、第三方检查和规则计算都能形成证据链，使复核者可以追踪决定来源，而不是只看到最终自然语言。</p>\n<p>第四，论文没有掩盖 Agent 成本，而是量化了质量—延迟交换：平均延迟从 1.64 秒和 2.14 秒升至 4.72 秒。作者由此提出自适应反思方向，即只在证据不足或错误成本高时启用完整循环。</p>\n<h2>4. 实验结果分析</h2>\n<p>总体准确率如下：</p>\n<table><thead><tr><th>管线</th><th>GPT-4o-mini</th><th>GPT-5.2</th></tr></thead><tbody><tr><td>Single-LLM</td><td>73.4%</td><td>77.6%</td></tr><tr><td>Naive RAG</td><td>71.5%</td><td>76.9%</td></tr><tr><td>Agentic RAG</td><td>85.1%</td><td>86.5%</td></tr></tbody></table>\n<p>Agentic RAG 在两种基础模型上都最优，且小模型配合工作流的 85.1% 已超过强模型单调用的 77.6%，说明流程设计可以比单纯换大模型带来更大收益。朴素 RAG 两列都略低于单模型，提醒实践者：检索上下文如果没有配套的事实对齐和行动策略，可能增加干扰而非稳定提升。</p>\n<p>GPT-5.2 的分场景结果更能解释增益：合规接受为 100.0%，单一违规为 81.9%，多步推理为 78.0%，可恢复缺失为 88.2%，不可恢复缺失为 84.3%。Agentic 管线在五类中的四类最好，但单一违规反而低于单模型 84.3% 和朴素 RAG 83.5%。这表明简单、明确的违规不需要昂贵编排，额外步骤甚至可能引入轻微误差；收益集中在需要连接多个事实、补查信息或承认不确定性的案例。</p>\n<p>理由质量与延迟也呈清晰权衡：Single-LLM 为 0.709/1.64 秒，Naive RAG 为 0.741/2.14 秒，Agentic RAG 为 0.779/4.72 秒。Agentic 的理由相似度相对单模型提高 0.070，但延迟接近 2.9 倍。因此不能把完整循环设为所有请求的默认路径，应结合误判成本和服务时延预算做路由。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出，635 条数据、承保指南与第三方数据均为合成或模拟，虽然经过人工一致性检查，却无法覆盖生产申请中的 OCR 噪声、相互冲突的信号、经纪人语境、遗留系统字段和监管差异。实验采用固定检索设置与提示词，结论会随基础模型、索引和规则变化；它是受控的工作流比较，不是生产合规验证。余弦相似度也不等价于精算正确、法律充分或监管可接受。</p>\n<p>未来工作包括用真实保险数据校准、监控漂移、建立公平性与差异影响测试；研究带置信度和成本惩罚的自适应终止；用选择性检索减少 token；增强对脏数据的符号—神经混合预处理；以及比较微调与 RAG 的边界。作者倾向混合方案：稳定抽取和格式任务可用小模型微调，频繁变化且要求引用的规则继续用 RAG。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索与推荐团队，最直接的启示是建立“简单查询快路径、复杂查询 Agent 路径”。明确意图和单跳事实可使用现有召回与生成；涉及多文档比较、条件计算、信息缺失或高风险决策时，再启动查询拆解、迭代检索、计算工具和反思。可把 UGC 搜索状态建模为原查询、改写列表、已读帖子、证据覆盖率、冲突事实和停止原因，并要求最终答案引用具体内容。</p>\n<p>第二，应把“无法回答/转人工”作为可优化的正式结果。社区搜索中，证据不足时继续生成会放大幻觉；系统应区分可通过补搜恢复的信息与平台内根本不存在的信息，后者触发澄清、拒答或运营复核。评估除 nDCG、CTR 外，还应增加证据覆盖、无依据回答率、升级准确率和每个成功任务的工具成本。</p>\n<p>第三，延迟数据给出了部署边界。完整 Agentic RAG 平均 4.72 秒，明显高于 1.64 秒单模型，因此应设置查询难度分类器、最大工具次数、超时和成本预算；对每一步记录 trace，分析增益究竟来自改写、补召回、计算还是复核。生产灰度可先覆盖内部运营检索或低流量深度搜索，验证可审计性后再扩大。最值得借鉴的设计不是“多 Agent”标签，而是显式状态、受限动作、证据门槛和可配置的人机边界。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.06880",
+      "title": "Towards Retrieving Interaction Spaces for Agentic Search",
+      "url": "https://arxiv.org/abs/2606.06880",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-06-07",
+      "total_score": 4.15,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.35,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "论文指出搜索 Agent 的瓶颈不是只找到相关文档，而是把可探索的证据空间暴露给模型；RISE 将候选文档组织为受限工作区，让 Agent 用搜索、命令和分段读取逐步核验。BrowseComp-Plus 的 100 查询实验中，RISE 在 mimo-v2.5-pro 与 GPT-5.4-mini 上达到 78% 准确率，并只需 DCI 三分之一的调用预算。",
+      "key_insight": "Agentic Search 的检索接口应优化“可交互性”而不只是静态召回率：先用检索建立有边界的工作区，再允许模型局部扫描、交叉验证与读取全文。该设计在语料从 10 万扩到 100 万文档时未出现准确率退化，适合社区搜索把候选帖子簇包装成可探索证据空间，避免 Agent 在全库工具调用中耗尽预算。"
+    },
+    {
+      "rank": 3,
+      "id": "web:tencent-kb-agent-2026-06-15",
+      "title": "知识库检索 Agent",
+      "url": "https://cloud.tencent.com/document/product/1759/119195",
+      "authors": "腾讯云",
+      "company": [
+        "Tencent"
+      ],
+      "source": "web_search",
+      "published": "2026-06-15",
+      "total_score": 3.95,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "腾讯云把传统“一次检索、一次生成”改造成可自主拆解任务的知识库 Agent，面向多文档整合、复杂条件筛选与表格计算。系统可多次组合调用检索、Text2SQL、SQLExecutor 和 Code Interpreter，并能作为 Multi-Agent 子 Agent 参与协作，给出了从导入文档到配置应用的工程路径。",
+      "key_insight": "工业实现的关键是把检索、结构化查询与计算拆成显式工具，让规划器依据中间证据选择下一步，而不是让一个提示词同时承担所有职责。社区搜索可借鉴其分层路由：单跳事实走低延迟检索，多文档比较或带时间、地区、指标约束的请求再进入 Agent Loop，并保留每次工具调用轨迹。"
+    },
+    {
+      "rank": 4,
+      "id": "web:aliyun-agentrun-2026-06-25",
+      "title": "用两行代码将 AgentRun 集成到你的应用",
+      "url": "https://developer.aliyun.com/article/1743576",
+      "authors": "阿里云开发者社区",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "web_search",
+      "published": "2026-06-25",
+      "total_score": 3.8,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "文章展示 AgentRun 以兼容 OpenAI 的接口降低接入成本，应用只需替换 base_url 等两处配置即可连接完整 Agent 运行时。运行时统一管理 MCP Server、Function Call、Skill 三类工具，并整合 RAG 数据源、长短期记忆、安全护栏和基于 OpenTelemetry 的全链路可观测能力。",
+      "key_insight": "Agent 上线难点往往不在规划算法，而在协议适配、知识接入、权限与可观测性。对搜索业务而言，可保持现有模型调用接口稳定，把工具注册、检索数据源和追踪能力下沉到运行时；这样能小步灰度 Agentic Search，同时用统一 trace 定位查询改写、召回或工具失败发生在哪一环。"
+    },
+    {
+      "rank": 5,
+      "id": "blog_rss:nvidia_developer_blog:https://developer.nvidia.com/blog/accelerating-end-to-end-co-folding-performance-with-nvidia-bionemo-agent-toolkit",
+      "title": "Accelerating End-to-End Co-Folding Performance with NVIDIA BioNeMo Agent Toolkit",
+      "url": "https://developer.nvidia.com/blog/accelerating-end-to-end-co-folding-performance-with-nvidia-bionemo-agent-toolkit/",
+      "authors": "",
+      "company": [
+        "NVIDIA"
+      ],
+      "source": "blog_rss",
+      "published": "2026-07-10",
+      "total_score": 3.25,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.25,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "NVIDIA 以 BioNeMo Agent Toolkit 编排 OpenFold3 等生物分子共折叠工作负载，展示 Agent 如何连接专用模型、数据准备与端到端执行。内容虽非搜索领域，但提供了近期生产级工具编排案例：将长流程拆成可观测步骤，并围绕昂贵模型调用优化执行路径与资源使用。",
+      "key_insight": "对搜索团队可迁移的不是生物模型本身，而是“Agent 编排专用计算服务”的工程模式：规划层负责选择工具，领域模型保持独立部署，运行时记录每步输入输出与耗时。复杂搜索也可将召回、重排、事实核验和生成做成独立能力，便于按查询选择性执行并单独扩缩容。"
+    },
+    {
+      "rank": 6,
+      "id": "blog_rss:openai_research_blog:https://openai.com/index/deutsche-telekom",
+      "title": "How Deutsche Telekom is rewiring telecommunications with AI",
+      "url": "https://openai.com/index/deutsche-telekom",
+      "authors": "",
+      "company": [
+        "OpenAI",
+        "Deutsche Telekom"
+      ],
+      "source": "blog_rss",
+      "published": "2026-07-10",
+      "total_score": 3.05,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该案例介绍 Deutsche Telekom 将生成式 AI 扩展到客服、员工工作流、网络运营与语音交互，体现大型企业从单点助手转向跨系统任务执行的路线。文章重点是组织与平台落地，而非新算法实验，可作为 Agent 能力接入真实业务流程、权限边界和运营体系的近期行业样本。",
+      "key_insight": "社区搜索引入 Agent 时，价值不应只用回答质量衡量，还要看是否缩短客服或运营人员跨系统查找、核验和处置的链路。可先选择权限清晰、结果可复核的内部搜索场景，保留人工确认和审计日志，再逐步扩展到面向用户的自动执行，避免把开放式生成直接接入高影响操作。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:katipally/openlive",
+      "title": "openlive: Live voice + vision AI assistant",
+      "url": "https://github.com/katipally/openlive",
+      "source": "github",
+      "description": "端侧语音与视觉管线配合轻量 LLM 代理，近期获得 44 stars。",
+      "language": "TypeScript",
+      "stars": 44,
+      "created_at": "2026-07-09"
+    },
+    {
+      "rank": 2,
+      "id": "github:Hemanthk-source/llm-based-intelligent-chatbot",
+      "title": "llm-based-intelligent-chatbot",
+      "url": "https://github.com/Hemanthk-source/llm-based-intelligent-chatbot",
+      "source": "github",
+      "description": "近期创建的 LLM 聊天机器人项目，获得 27 stars。",
+      "language": "JavaScript",
+      "stars": 27,
+      "created_at": "2026-07-08"
+    },
+    {
+      "rank": 3,
+      "id": "github:suyiyun/llm-text2sql-taxonomy",
+      "title": "llm-text2sql-taxonomy: Agentic-SQL benchmark code",
+      "url": "https://github.com/suyiyun/llm-text2sql-taxonomy",
+      "source": "github",
+      "description": "Agentic-SQL 自主性分类与实证基准的官方代码，适合研究工具调用式结构化检索。",
+      "language": "Python",
+      "stars": 20,
+      "created_at": "2026-07-08"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:bytedance-research/GRN",
+      "title": "bytedance-research/GRN",
+      "url": "https://huggingface.co/bytedance-research/GRN",
+      "source": "huggingface",
+      "description": "字节跳动研究团队发布的 MIT 许可模型，关联 arXiv:2604.13030。",
+      "language": "model",
+      "stars": 25,
+      "created_at": "2026-04-16"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnWorld-4D",
+      "title": "Alibaba-DAMO-Academy/RynnWorld-4D",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-4D",
+      "source": "huggingface",
+      "description": "面向机器人与具身智能的 4D 世界模型，支持 RGB、深度与光流生成。",
+      "language": "model",
+      "stars": 8,
+      "created_at": "2026-07-03"
+    }
+  ]
+}

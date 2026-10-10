@@ -1,0 +1,312 @@
+{
+  "date": "2026-06-25",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 81,
+    "papers_selected": 9,
+    "score_min": 3.1,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "id": "arxiv:2606.23911",
+      "title": "Scaling Dense Retrieval with LLM-Annotated Training Data: Structured Mining and Progressive Curriculum for E-Commerce Sponsored Search",
+      "url": "https://arxiv.org/abs/2606.23911",
+      "authors": "Md Omar Faruk Rokon, Shasvat Desai, Jhalak Nilesh Acharya, et al. (Walmart Global Tech)",
+      "company": [
+        "Walmart"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 4.3,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.45,
+      "summary": "针对电商赞助搜索下稠密检索训练数据的难题——点击信号有位置偏置、长尾 query 稀疏，人工标注上亿 query-item 对成本不可行。核心观察是多个异构检索系统对大部分召回结果存在分歧，这种分歧天然提供结构化训练信号：所有系统一致的是 easy positive、只有词面系统能找到的是 hard positive、只骗过单一系统的是 hard negative。方法组合成端到端流水线：(a) 带排名元数据的多通道检索挖掘（取自三套生产系统），(b) 三模型级联的分级相关性标注，(c) 渐进式课程学习训练稠密检索模型。",
+      "key_insight": "用检索系统之间的分歧自动构造正负样本、绕开点击偏置与人工标注，社区搜索召回训练可直接借鉴——短文本 query 同样面临点击稀疏与长尾。三模型级联做分级标注（而非二元正负）给出 hard positive 与 hard negative 的细粒度区分，配合课程学习从易到难训练。落地需要多路召回与 LLM 标注算力，但不依赖线上点击日志即可冷启动稠密检索模型。",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:2606.23911",
+        "title": "Scaling Dense Retrieval with LLM-Annotated Training Data: Structured Mining and Progressive Curriculum for E-Commerce Sponsored Search",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n论文要解决电商赞助搜索（sponsored search）召回阶段稠密检索模型的训练数据问题：如何在不依赖点击信号、也不做人工标注的前提下规模化产出高质量训练数据。作者把现有做法的失败拆成三点并给出量化证据：(1) 点击有位置偏置，P(click|q,i,pos) ≠ P(rel|q,i)，用户无论相关与否都点高位结果，点击训练的模型只是复刻现有排序而非学真实相关性；(2) 点击稀疏，长尾 query 的期望点击趋近 0，新品和低频 query（占相当大流量）拿不到任何训练信号；(3) 人工标注不可扩展，单对成本 $0.10–0.50，而他们需要 4M query 上的 240M+ 样本，一次刷新要 $24M–$120M，对\"每周重训\"完全不可行。检索是赞助搜索管线第一环，决定用户能看到哪些广告，下游排序、出价、收入都依赖它，Walmart 这种体量上召回相关性的小幅提升都带来可观收益。这构成了\"既便宜又能每周刷新的训练数据\"的动机。\n\n## 2. 方法详解\n\n核心洞察：三套已在线运行的异构检索系统——基于词典的词面系统 R_D（BM25 变体，索引挂了历史相关 query）、标准 BM25 系统 R_B、当前 ANN embedding 模型 R_A（即 Embedding Model V2，两塔 BERT）——对召回 item 大量分歧。top-500 处 dictionary-ANN 重合度仅 13.4%、dictionary-BM25 仅 15.05%，这种低重合不是噪声而是结构化信号。\n\n流水线四阶段：采集（每 query 取三路各 top-K=500 及 channel 内 rank）→ 标注（校准级联给所有 query-item 对打 5 档相关性）→ 抽取（按一致/分歧分难度等级）→ 课程训练学生。五档相关性 0=Embarrassing、1=Bad、2=Okay、3=Good、4=Excellent，rel≥3 视为相关。五类样本：Easy Positive（三路都召回且 cascade 判 rel≥3）；Hard Positive（ANN 漏召但至少一路词面系统 rank≤50 召回且 rel≥3，正是稠密模型该补的失败样本）；Hard Negative（恰好一路 top-100 召回但 rel≤2，并用多 channel 一致性过滤剔除被多路召回的边界相关项）；Semi-Hard/Token-Similar Negative（catalog 中 TF-IDF 相似度 ∈[0.2,0.6] 但任何 channel 都没召回且 cascade 判不相关——词面像但语义不相关，逼模型超越关键词匹配）；Easy/Random Negative。经质量控制（删除无 rel≥3 的 query 约 8%、近重复去重、rank top-50 正/top-100 负、每 query 上限 50 正 50 负），理论上限约 400M 降到 240M+（158M+ 正、80M+ 负）。\n\n标注级联 f_T 串联三个递增规模的领域微调分类器：184M cross-encoder → LoRA 微调 2B LLM → LoRA 微调 8B LLM。每模型输出 5 类预测加校准置信度，超本模型阈值即接受、否则下传更大模型，三个都未定的用多数投票+max 预测打破平局。关键是每类单独做 isotonic 校准（per-class isotonic）而非全局校准——模型在极端类（0、4）过自信、中间类（1–3）欠自信。这是 distant supervision（远监督）而非知识蒸馏：cascade 离线跑一次产出硬标签（argmax 非软概率），学生用标准监督目标训练，无软标签、无 teacher 梯度、无 co-training，好处是标注可缓存复用、cascade 与学生可独立升级、在线零额外延迟。\n\n学生是两塔 sentence-transformers：6 层 22.7M 参数 encoder、384 维输出，query 与 item 双塔共享全部 transformer 层（Siamese）；query 塔吃原始 query 串，item 塔只吃商品标题。三阶段渐进课程，每阶段从上一阶段最优 checkpoint 初始化，损失与样本难度匹配：Stage1 BCE（Easy Pos + Random Neg，学粗粒度相关），温度 τ 初始化 20 且可学；Stage2 MNR（多负样本排序损失，用 Hard Pos/Neg、in-batch 负样本）；Stage3 Triplet（Token-Similar Neg，margin α=0.3，学细粒度语义区分）。训练 AdamW，lr 1e-5，5% warmup，单卡 batch 512、4 卡有效 2048，float16+torch.compile，导出 ONNX 用 GPU+ANN 在线服务。\n\n## 3. 核心技术贡献\n\n(1) 把多 channel 检索分歧转成五个难度等级的结构化训练数据挖掘管线——让标准两塔 BERT 不改架构就达生产级检索的关键上游创新；分歧区天然提供 hard positive（词面找到、ANN 漏）和 hard negative（单 channel 误召），比随机负样本信息量大得多。\n(2) 三模型校准级联 + per-class isotonic 校准：5 类分级任务对人工标注达 89.1% 一致，cross-encoder 独立处理 74.5% 的对、把大 LLM 留给疑难样本，相比所有对都过三个模型省约 50% 算力；对照零样本 GPT-4（68.2%）、Claude-3（70.1%）说明领域微调级联远优于通用零样本。\n(3) 三阶段渐进课程：相比同样 240M 数据单阶段训练，NDCG@10 从 0.843 提升到 0.923（+9.5%）。\n(4) 生产部署 + Walmart 规模在线 A/B 验证：证明离线相关性增益能传导到可量化业务指标。\n\n## 4. 实验结果分析\n\n离线评测用 30,303 条第三方人工标注 query（Head 1439 / Torso 21185 / Tail 7679），标注与训练用的 cascade 完全独立，10K 对审计 Cohen's κ=0.79。主结果（V3 vs 上代 V2，二者同架构同服务栈、只差训练监督）：NDCG@10 0.878→0.923（+5.1%，CI [+0.042,+0.051]）；Avg Relevance 2.413→2.687；Precision 0.526→0.624；Recall 0.676→0.801；MAP 0.722→0.820；MRR 0.901→0.945。预训练基座 NDCG@10 0.771，说明 V2 点击训练已贡献 +13.9%，V3 的 LLM 标注再叠加 +5.1%。相关性分布上，最有害的 Embarrassing（0 分）从 8.7% 降到 3.5%（-5.2pp），Good+Excellent 从 52.7% 升到 62.4%。\n\n分段看，尾部 query 增益最大：Tail 0.830→0.886（+6.8%），Head +5.1%、Torso +4.6%——印证 cascade 标注不依赖历史点击量，尾部与头部拿到同等标注质量，补上点击训练的数据稀疏短板。分品类六大品类全涨，Food 增益最大（0.837→0.897，+7.1%）但绝对值最低。在线 A/B（两周、每臂数千万广告请求）：Ad Spend +2.80%、Ad CTR +1.4%、eCPM +2.8%、ROAS +2.4%、点击转化 +2.9%、Rev/Click +3.9%，均 p<0.05 显著。\n\n消融（全量 V3=0.923）最有信息量：课程训练是最大贡献（+9.5%），且阶段顺序极关键——任何以 BCE 结尾的配置都塌回近单阶段水平（MNR→BCE 0.843、Triplet→BCE 0.844），因为粗粒度 BCE 放在排序损失之后会摧毁已学到的细粒度结构；MNR→Triplet（0.903）优于 Triplet→MNR（0.897），BCE 基座再叠加 +2.2%。数据侧多 channel 抽取贡献第二（单 ANN 通道 0.875，-5.2%），token-similar 负样本第三（-4.0%）；一致性过滤（-0.8%）和 hard positive（-0.9%）贡献小但稳定。标注侧校准方法比模型选择更重要：Platt 校准 0.904（-2.1%）明显差于 per-class isotonic；只用 cross-encoder -1.0%；只用 8B LLM（无路由、约 3× 成本）0.921（-0.2%），说明级联价值主要在经济性而非精度。\n\n## 5. 局限与未来方向\n\n作者明确列出的局限：(a) 数据专有，无法在其他语料复现，只能复现方法；(b) 训练标签约 11% 与人工判断不一致，误差集中在边界类 1–3；(c) 对比面窄，只比生产 V2，没和微调过的通用检索器比，难以完全归因增益来源；(d) 多 channel 依赖，管线需多套异构检索系统提供分歧，单通道平台得自造合成分歧；(e) 单次部署，只有一个两周 A/B，需更多市场和更长周期验证。作者还讨论硬标签 vs 软标签取舍——argmax 硬标签解耦了 cascade 与学生，但丢掉边界对（1–3 分）的不确定性，可能传播系统性偏差；并指出 Food 品类最弱是因为只用标题输入，缺品牌/类目/描述等结构化属性。一个未正式刻画的风险是每周重训的反馈回路：ANN 通道就是当前生产模型，hard positive 集合每周随 ANN 改进而漂移，实践中观察到回路稳定（每轮 hard-positive 集随 ANN 追平词面系统而收缩），但收敛性未形式化证明，存在病态漂移的理论风险。未来方向：用结构化商品属性和多模态信号丰富输入、用同一 cascade 做软标签蒸馏对比硬标签量化信息损失、扩展到跨市场和多语言。\n\n## 6. 工业实践意义\n\n对搜索/推荐工程师最直接的可借鉴点：(1) 当你已有多路异构召回（词典/BM25/向量）时，它们的分歧本身就是免费且结构化的训练信号——一致即 easy positive、词面命中而向量漏即 hard positive、单路误召即 hard negative，可绕开点击偏置和昂贵人工标注冷启稠密召回，对社区 UGC 短文本搜索（点击稀疏、长尾多）尤其契合。(2) LLM 标注用级联+per-class isotonic 校准而非单个大模型：cross-encoder 扛 74.5% 简单对、疑难才上 8B，省约 50% 算力且只比纯 8B 低 0.2% NDCG——标注成本敏感时这是关键取舍。(3) 课程训练顺序不能随意：BCE→MNR→Triplet（由粗到细）比同数据单阶段多 9.5% NDCG，且千万别把 BCE 放最后。(4) 这是离线 distant supervision（标注一次缓存复用）而非在线蒸馏，在线零额外延迟，学生与标注器可独立升级，便于维护。(5) 部署上学生是 22.7M 小模型、384 维、ONNX+GPU ANN，整条重训周期 24–48 小时支持每周刷新；输入只用标题，想进一步提升需补结构化属性。注意它需要多路召回才能造分歧，单一召回栈要先解决\"分歧从哪来\"。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>论文要解决电商赞助搜索（sponsored search）召回阶段稠密检索模型的训练数据问题：如何在不依赖点击信号、也不做人工标注的前提下规模化产出高质量训练数据。作者把现有做法的失败拆成三点并给出量化证据：(1) 点击有位置偏置，P(click|q,i,pos) ≠ P(rel|q,i)，用户无论相关与否都点高位结果，点击训练的模型只是复刻现有排序而非学真实相关性；(2) 点击稀疏，长尾 query 的期望点击趋近 0，新品和低频 query（占相当大流量）拿不到任何训练信号；(3) 人工标注不可扩展，单对成本 $0.10–0.50，而他们需要 4M query 上的 240M+ 样本，一次刷新要 $24M–$120M，对&quot;每周重训&quot;完全不可行。检索是赞助搜索管线第一环，决定用户能看到哪些广告，下游排序、出价、收入都依赖它，Walmart 这种体量上召回相关性的小幅提升都带来可观收益。这构成了&quot;既便宜又能每周刷新的训练数据&quot;的动机。</p>\n<h2>2. 方法详解</h2>\n<p>核心洞察：三套已在线运行的异构检索系统——基于词典的词面系统 R_D（BM25 变体，索引挂了历史相关 query）、标准 BM25 系统 R_B、当前 ANN embedding 模型 R_A（即 Embedding Model V2，两塔 BERT）——对召回 item 大量分歧。top-500 处 dictionary-ANN 重合度仅 13.4%、dictionary-BM25 仅 15.05%，这种低重合不是噪声而是结构化信号。</p>\n<p>流水线四阶段：采集（每 query 取三路各 top-K=500 及 channel 内 rank）→ 标注（校准级联给所有 query-item 对打 5 档相关性）→ 抽取（按一致/分歧分难度等级）→ 课程训练学生。五档相关性 0=Embarrassing、1=Bad、2=Okay、3=Good、4=Excellent，rel≥3 视为相关。五类样本：Easy Positive（三路都召回且 cascade 判 rel≥3）；Hard Positive（ANN 漏召但至少一路词面系统 rank≤50 召回且 rel≥3，正是稠密模型该补的失败样本）；Hard Negative（恰好一路 top-100 召回但 rel≤2，并用多 channel 一致性过滤剔除被多路召回的边界相关项）；Semi-Hard/Token-Similar Negative（catalog 中 TF-IDF 相似度 ∈[0.2,0.6] 但任何 channel 都没召回且 cascade 判不相关——词面像但语义不相关，逼模型超越关键词匹配）；Easy/Random Negative。经质量控制（删除无 rel≥3 的 query 约 8%、近重复去重、rank top-50 正/top-100 负、每 query 上限 50 正 50 负），理论上限约 400M 降到 240M+（158M+ 正、80M+ 负）。</p>\n<p>标注级联 f_T 串联三个递增规模的领域微调分类器：184M cross-encoder → LoRA 微调 2B LLM → LoRA 微调 8B LLM。每模型输出 5 类预测加校准置信度，超本模型阈值即接受、否则下传更大模型，三个都未定的用多数投票+max 预测打破平局。关键是每类单独做 isotonic 校准（per-class isotonic）而非全局校准——模型在极端类（0、4）过自信、中间类（1–3）欠自信。这是 distant supervision（远监督）而非知识蒸馏：cascade 离线跑一次产出硬标签（argmax 非软概率），学生用标准监督目标训练，无软标签、无 teacher 梯度、无 co-training，好处是标注可缓存复用、cascade 与学生可独立升级、在线零额外延迟。</p>\n<p>学生是两塔 sentence-transformers：6 层 22.7M 参数 encoder、384 维输出，query 与 item 双塔共享全部 transformer 层（Siamese）；query 塔吃原始 query 串，item 塔只吃商品标题。三阶段渐进课程，每阶段从上一阶段最优 checkpoint 初始化，损失与样本难度匹配：Stage1 BCE（Easy Pos + Random Neg，学粗粒度相关），温度 τ 初始化 20 且可学；Stage2 MNR（多负样本排序损失，用 Hard Pos/Neg、in-batch 负样本）；Stage3 Triplet（Token-Similar Neg，margin α=0.3，学细粒度语义区分）。训练 AdamW，lr 1e-5，5% warmup，单卡 batch 512、4 卡有效 2048，float16+torch.compile，导出 ONNX 用 GPU+ANN 在线服务。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 把多 channel 检索分歧转成五个难度等级的结构化训练数据挖掘管线——让标准两塔 BERT 不改架构就达生产级检索的关键上游创新；分歧区天然提供 hard positive（词面找到、ANN 漏）和 hard negative（单 channel 误召），比随机负样本信息量大得多。<br>(2) 三模型校准级联 + per-class isotonic 校准：5 类分级任务对人工标注达 89.1% 一致，cross-encoder 独立处理 74.5% 的对、把大 LLM 留给疑难样本，相比所有对都过三个模型省约 50% 算力；对照零样本 GPT-4（68.2%）、Claude-3（70.1%）说明领域微调级联远优于通用零样本。<br>(3) 三阶段渐进课程：相比同样 240M 数据单阶段训练，NDCG@10 从 0.843 提升到 0.923（+9.5%）。<br>(4) 生产部署 + Walmart 规模在线 A/B 验证：证明离线相关性增益能传导到可量化业务指标。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线评测用 30,303 条第三方人工标注 query（Head 1439 / Torso 21185 / Tail 7679），标注与训练用的 cascade 完全独立，10K 对审计 Cohen&#x27;s κ=0.79。主结果（V3 vs 上代 V2，二者同架构同服务栈、只差训练监督）：NDCG@10 0.878→0.923（+5.1%，CI [+0.042,+0.051]）；Avg Relevance 2.413→2.687；Precision 0.526→0.624；Recall 0.676→0.801；MAP 0.722→0.820；MRR 0.901→0.945。预训练基座 NDCG@10 0.771，说明 V2 点击训练已贡献 +13.9%，V3 的 LLM 标注再叠加 +5.1%。相关性分布上，最有害的 Embarrassing（0 分）从 8.7% 降到 3.5%（-5.2pp），Good+Excellent 从 52.7% 升到 62.4%。</p>\n<p>分段看，尾部 query 增益最大：Tail 0.830→0.886（+6.8%），Head +5.1%、Torso +4.6%——印证 cascade 标注不依赖历史点击量，尾部与头部拿到同等标注质量，补上点击训练的数据稀疏短板。分品类六大品类全涨，Food 增益最大（0.837→0.897，+7.1%）但绝对值最低。在线 A/B（两周、每臂数千万广告请求）：Ad Spend +2.80%、Ad CTR +1.4%、eCPM +2.8%、ROAS +2.4%、点击转化 +2.9%、Rev/Click +3.9%，均 p&lt;0.05 显著。</p>\n<p>消融（全量 V3=0.923）最有信息量：课程训练是最大贡献（+9.5%），且阶段顺序极关键——任何以 BCE 结尾的配置都塌回近单阶段水平（MNR→BCE 0.843、Triplet→BCE 0.844），因为粗粒度 BCE 放在排序损失之后会摧毁已学到的细粒度结构；MNR→Triplet（0.903）优于 Triplet→MNR（0.897），BCE 基座再叠加 +2.2%。数据侧多 channel 抽取贡献第二（单 ANN 通道 0.875，-5.2%），token-similar 负样本第三（-4.0%）；一致性过滤（-0.8%）和 hard positive（-0.9%）贡献小但稳定。标注侧校准方法比模型选择更重要：Platt 校准 0.904（-2.1%）明显差于 per-class isotonic；只用 cross-encoder -1.0%；只用 8B LLM（无路由、约 3× 成本）0.921（-0.2%），说明级联价值主要在经济性而非精度。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出的局限：(a) 数据专有，无法在其他语料复现，只能复现方法；(b) 训练标签约 11% 与人工判断不一致，误差集中在边界类 1–3；(c) 对比面窄，只比生产 V2，没和微调过的通用检索器比，难以完全归因增益来源；(d) 多 channel 依赖，管线需多套异构检索系统提供分歧，单通道平台得自造合成分歧；(e) 单次部署，只有一个两周 A/B，需更多市场和更长周期验证。作者还讨论硬标签 vs 软标签取舍——argmax 硬标签解耦了 cascade 与学生，但丢掉边界对（1–3 分）的不确定性，可能传播系统性偏差；并指出 Food 品类最弱是因为只用标题输入，缺品牌/类目/描述等结构化属性。一个未正式刻画的风险是每周重训的反馈回路：ANN 通道就是当前生产模型，hard positive 集合每周随 ANN 改进而漂移，实践中观察到回路稳定（每轮 hard-positive 集随 ANN 追平词面系统而收缩），但收敛性未形式化证明，存在病态漂移的理论风险。未来方向：用结构化商品属性和多模态信号丰富输入、用同一 cascade 做软标签蒸馏对比硬标签量化信息损失、扩展到跨市场和多语言。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐工程师最直接的可借鉴点：(1) 当你已有多路异构召回（词典/BM25/向量）时，它们的分歧本身就是免费且结构化的训练信号——一致即 easy positive、词面命中而向量漏即 hard positive、单路误召即 hard negative，可绕开点击偏置和昂贵人工标注冷启稠密召回，对社区 UGC 短文本搜索（点击稀疏、长尾多）尤其契合。(2) LLM 标注用级联+per-class isotonic 校准而非单个大模型：cross-encoder 扛 74.5% 简单对、疑难才上 8B，省约 50% 算力且只比纯 8B 低 0.2% NDCG——标注成本敏感时这是关键取舍。(3) 课程训练顺序不能随意：BCE→MNR→Triplet（由粗到细）比同数据单阶段多 9.5% NDCG，且千万别把 BCE 放最后。(4) 这是离线 distant supervision（标注一次缓存复用）而非在线蒸馏，在线零额外延迟，学生与标注器可独立升级，便于维护。(5) 部署上学生是 22.7M 小模型、384 维、ONNX+GPU ANN，整条重训周期 24–48 小时支持每周刷新；输入只用标题，想进一步提升需补结构化属性。注意它需要多路召回才能造分歧，单一召回栈要先解决&quot;分歧从哪来&quot;。</p>"
+      }
+    },
+    {
+      "id": "arxiv:2606.23695",
+      "title": "Quantifying Prior Dominance in RAG Systems",
+      "url": "https://arxiv.org/abs/2606.23695",
+      "authors": "Barak Or",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.7,
+      "summary": "RAG 评测普遍用离散启发式指标，无法区分模型是真用了检索上下文还是靠参数记忆答题（作者称 epistemic blindness）。论文提出 Normalized Context Utilization (NCU) 指标，利用零样本、oracle、对抗三种条件下的连续 token 对数概率，量化上下文带来的真实信息增益。在 1.5B–72B 多个模型加一个商用 API 上评测发现：严格事实抽取（不带思维链）时传统 scaling law 出现极强边际递减，高效小模型 (SLM) 能追平甚至超过大模型；先验主导 (Prior Dominance) 程度随模型规模和闭源对齐而增强。",
+      "key_insight": "对评估 LLM 在搜索/RAG 中是否真读了召回内容很有参考价值——NCU 用 log-prob 差值替代字符串匹配，能识别模型是否只靠参数记忆。结论提示在事实抽取类检索任务上盲目堆大模型收益有限，小模型加强检索可能更划算，对成本敏感的社区搜索 RAG 选型有直接启发。",
+      "rank": 2
+    },
+    {
+      "id": "blog:google-thinking-to-recall",
+      "title": "Thinking to recall: How reasoning unlocks parametric knowledge in LLMs",
+      "url": "https://research.google/blog/thinking-to-recall-how-reasoning-unlocks-parametric-knowledge-in-llms/",
+      "authors": "Google Research",
+      "company": [
+        "Google"
+      ],
+      "source": "blog_rss",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.5,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.65,
+      "summary": "Google 研究博客探讨一个反直觉现象：对只需单跳事实检索、无需复杂推理的简单问答，开启推理链仍能显著提升答对率。通过在 Gemini-2.5 Flash/Pro、Qwen3-32B 上对照开/关推理，并在 SimpleQA Verified、EntityQuestions 上用 Pass@k 度量，定位出两个机制：一是计算缓冲——额外 token 提供更多前向计算，用等长无意义占位文本 (Let me think) 能恢复大部分增益但无法完全追平；二是事实启动——推理中生成的相关事实为正确答案预热，仅抽取这些事实就能恢复大部分增益。",
+      "key_insight": "把推理对记忆召回的作用拆成计算缓冲与事实启动两条机制，提示在搜索问答中即便不做外部检索，让模型先生成相关事实也能提升参数知识的召回质量。另一发现是含哪怕单个错误事实的推理轨迹会明显拉低最终正确率，按无幻觉轨迹做 test-time 选择能提升准确率——对 LLM 搜索答案的可靠性筛选有借鉴意义。",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:2606.24204",
+      "title": "Unified Dominance Graph for Interval-Predicate Approximate Nearest Neighbor Search",
+      "url": "https://arxiv.org/abs/2606.24204",
+      "authors": "Kwun Hang Lau, Ruiyuan Zhang, Elton Chun-Chai Li, et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "summary": "近似最近邻检索 (ANNS) 是非结构化数据召回的核心，但现实查询常带连续区间属性约束（如时间跨度、价格区间）。论文研究 Interval-Predicate ANNS (IPANNS)：对象有效性由对象区间与查询区间之间的谓词（包含、重叠）决定。已有 range-filtering ANNS 只针对单维标量过滤，区间谓词涉及两个耦合端点约束，把端点当独立标量会带来大量求交开销，而专用包含方法缺乏通用索引抽象。论文提出 Unified Dominance Graph (UDG) 图索引框架统一处理闭区间谓词。",
+      "key_insight": "对需要语义向量加结构化区间过滤的混合检索场景有参考价值——社区搜索里时间、热度、价格区间过滤叠加向量召回是常见需求。UDG 把两个端点约束建模为支配关系并统一索引，避免拆成两个标量过滤再求交的开销，是向量检索基建可借鉴的索引设计。",
+      "rank": 4
+    },
+    {
+      "id": "arxiv:2606.23915",
+      "title": "Do LLM Attribution Metrics Transfer? Auditing Retrieval-Augmented Generation Evaluation Across Datasets and Constructs",
+      "url": "https://arxiv.org/abs/2606.23915",
+      "authors": "Tianyu Ding, Aditya Nannapaneni, Juan Pablo De la Cruz Weinstein",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.4,
+      "summary": "实践中常把 RAG 归因的各种自动指标当作可互换。论文审计了 8 个自动打分器（词面、embedding、BERTScore 基线，以及 entailment/grounding 训练的 clean NLI、FEVER NLI、MiniCheck），跨 provenance/topicality、生成答案归因、事实核查蕴含三类构念，检验是否有打分器能迁移（在多数据集构念的每个数据集上都落在最佳打分器 95% 置信区间内）。在覆盖最广的生成答案归因构念（AttributionBench 四源数据集 n=1610，独立 HAGRID n=2150）上无一能迁移：各数据集排名甚至反转（Kendall tau=-0.64, p=0.031），短声明上最佳的 NLI 打分器换数据集后崩塌。",
+      "key_insight": "提醒不要跨数据集复用同一套 RAG 归因/相关性自动指标——同一打分器换分布后排名可能反转。对社区搜索做 LLM 答案可信度/相关性自动评测时，应在目标分布上重新校准指标并保留人工标注锚点，而非直接套用论文报告的最佳打分器。",
+      "rank": 5
+    },
+    {
+      "id": "arxiv:2606.24200",
+      "title": "MMed-Bench-IR: A Heterogeneous Benchmark for Multilingual Medical Information Retrieval",
+      "url": "https://arxiv.org/abs/2606.24200",
+      "authors": "Junhyeok Lee, Han Jang, Hyeonjin Goh, Kyu Sung Choi",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.35,
+      "summary": "临床 RAG 越来越需要在以英文为主的证据库上做多语检索。多语医学检索需要跨语言对齐、概念区分、证据检索三种能力，但已有基准只孤立评测其一。论文提出 MMed-Bench-IR，跨 6 种语言、三个结构异构任务解耦这些维度：(1) 基于 UMLS 的跨语言医学 QA 检索 (6,127 条 query)，(2) 三难度档的概念区分 (4,975 个混淆集)，(3) 面向 RAG 的多语证据检索 (2,040 条质检 query)。三任务在概念和 query 上零重叠，确保聚合分数真实反映各维度能力。",
+      "key_insight": "任务解耦的评测设计值得借鉴——把跨语言对齐、概念区分、证据检索拆开评测，能定位多语检索弱在哪一环，而非只看一个聚合 nDCG。对做多语/方言社区搜索的相关性评测有方法论参考：用零重叠的子任务隔离能力维度，避免单一指标掩盖短板。",
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2606.23997",
+      "title": "ChartWalker: Benchmarking the Cross-Chart RAG Task",
+      "url": "https://arxiv.org/abs/2606.23997",
+      "authors": "Ning Tang, Chenghan Xie, Hanyang Yuan, et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "summary": "跨图表 RAG 对科学、商业、政治领域的复杂多模态分析很关键，但已有基准要么只针对结构化表格，要么靠简单抽取关键点生成跨图表问题，导致 query 与证据词面重叠、推理链逻辑不一致。论文提出 ChartWalker 框架构造高难度跨图表 RAG 任务：用面向图表的层次化知识图谱构建方法，按粒度组织实体与关系以保留分析结构；再用结构感知采样算法合成语义连贯的多跳推理路径，从而显式控制 query 难度与粒度来生成 QA。",
+      "key_insight": "用知识图谱加结构感知采样合成多跳、低词面重叠的评测 query，是缓解检索评测里 query-证据词面泄漏问题的通用思路。社区搜索构造相关性评测集时常因 query 和 doc 词面高度重叠而高估召回；按知识图谱采样多跳路径生成 query 能更真实地考验语义检索能力。",
+      "rank": 7
+    },
+    {
+      "id": "arxiv:2606.23959",
+      "title": "Does My Embedding Reflect That A = B? Evaluating Mathematical Equivalence in Embedding Models",
+      "url": "https://arxiv.org/abs/2606.23959",
+      "authors": "Jiaying Ye, Samarth Rao, Leo Carlin, et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.2,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.2,
+      "summary": "数学高度抽象，同一命题在不同子领域可有完全不同的表述。论文研究当前 embedding 模型是否能捕捉数学等价性，构造 MELD 数据集 (Mathematically Equivalent but Lexically Different Pairs)——一批数学等价但表述差异很大的语句对。实验显示当前 SOTA embedding 模型倾向按用词术语聚类语句，而非按底层数学含义，即把换了说法的同一含义判为不相似。",
+      "key_insight": "揭示 embedding 模型对语义等价但词面不同的判别能力有限——会被术语/表述差异带偏。对社区搜索语义召回是直接警示：同义改写、口语化表述的 query 与 doc 可能因词面差异被 embedding 判为不相似，需靠改写、同义扩展或难负样本训练补强语义匹配，而非完全信任通用 embedding。",
+      "rank": 8
+    },
+    {
+      "id": "arxiv:2601.18747",
+      "title": "The P-Completeness of Inverted Index Traversal: On the Complexity of Evaluating Boolean Query DAGs",
+      "url": "https://arxiv.org/abs/2601.18747",
+      "authors": "Amir Aavani",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-24",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.1,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.1,
+      "summary": "现代 AI agent 越来越依赖搜索基建执行复杂的神经符号推理，这些工作流常编译成深度嵌套、非单调的布尔查询。论文分析倒排索引上标准查询求值策略的理论极限：Document-at-a-Time 的有状态迭代器受 NC^1 公式求值约束，展开重收敛逻辑时最坏 O(2^|Q|) 指数爆炸；Term-at-a-Time 的递归物化在对全文档域求逻辑否定时有 Ω(|U|) 空间代价（全量扫描）。论文形式化基于有向无环图的检索语言 L_R，确立了在倒排索引上原生执行复杂逻辑的复杂度边界 (P-Complete)。",
+      "key_insight": "给在倒排索引上直接执行复杂布尔/否定查询划出了理论代价边界——嵌套否定和重收敛逻辑会导致指数膨胀或全量扫描。对支持 LLM agent 生成复杂布尔检索的社区搜索引擎是提醒：把任意嵌套布尔逻辑下推到倒排索引代价不可控，需限制查询 DAG 结构或改用其他求值策略。",
+      "rank": 9
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:modelscope/ms-swift",
+      "title": "ms-swift: Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "url": "https://github.com/modelscope/ms-swift",
+      "source": "github",
+      "description": "Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "language": "Python",
+      "stars": 14609,
+      "created_at": "2023-08-01"
+    },
+    {
+      "rank": 2,
+      "id": "github:huggingface/transformers",
+      "title": "transformers: 🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "url": "https://github.com/huggingface/transformers",
+      "source": "github",
+      "description": "🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "language": "Python",
+      "stars": 161874,
+      "created_at": "2018-10-29"
+    },
+    {
+      "rank": 3,
+      "id": "github:liyupi/ai-guide",
+      "title": "ai-guide: 程序员鱼皮的 AI 资源大全 + Vibe Coding 零基础教程，分享 OpenClaw 保姆级教程、大模型玩法（DeepSeek / GPT / Gemini / Claude / GLM）、最新 AI 资讯、Prompt 提示词大全、AI 知识百科（Agent Skills / RAG / MCP / A2A）、AI 编程教程（Harness Engineering）、AI 工具用法（Cursor / Claude Code / TRAE / Codex / Copilot）、AI 开发框架教程（Spring AI / LangChain）、AI 产品变现指南，帮你快速掌握 AI 技术，走在时代前沿。本项目为开源文档 aiguide，已升级为鱼皮 AI 导航网站",
+      "url": "https://github.com/liyupi/ai-guide",
+      "source": "github",
+      "description": "程序员鱼皮的 AI 资源大全 + Vibe Coding 零基础教程，分享 OpenClaw 保姆级教程、大模型玩法（DeepSeek / GPT / Gemini / Claude / GLM）、最新 AI 资讯、Prompt 提示词大全、AI 知识百科（Agent Skills / RAG / MCP / A2A）、AI 编程教程（Harness Engineering）、AI 工具用法（Cursor / Claude Code / TRAE / Codex / Copilot）、AI 开发框架教程（Spring AI / LangChain）、AI 产品变现指南，帮你快速掌握 AI 技术，走在时代前沿。本项目为开源文档 aiguide，已升级为鱼皮 AI 导航网站",
+      "language": "JavaScript",
+      "stars": 16287,
+      "created_at": "2025-02-13"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Qwen/Qwen-AgentWorld-35B-A3B",
+      "title": "Qwen/Qwen-AgentWorld-35B-A3B",
+      "url": "https://huggingface.co/Qwen/Qwen-AgentWorld-35B-A3B",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, qwen3_5_moe, image-text-to-text, qwen, world-model, agent, environment-simulation",
+      "language": "model",
+      "stars": 106,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:Qwen/AgentWorldBench",
+      "title": "Qwen/AgentWorldBench",
+      "url": "https://huggingface.co/datasets/Qwen/AgentWorldBench",
+      "source": "huggingface",
+      "description": "AgentWorldBench AgentWorldBench is a comprehensive evaluation benchmark for language world models, constructed from real-world observations of frontier model trajectories on established benchmarks such as Tool Decathlon, Terminal-Bench 1.0 & 2.0, and OSWorld-Verified. Every evalu; tags: task_categories:text-generation, language:en, license:apache-2.0, arxiv:2606.24597, region:us, world-model, agent, benchmark",
+      "language": "dataset",
+      "stars": 13,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 6,
+      "id": "hf_dataset:internlm/RNGBench-Game-Trajectories",
+      "title": "internlm/RNGBench-Game-Trajectories",
+      "url": "https://huggingface.co/datasets/internlm/RNGBench-Game-Trajectories",
+      "source": "huggingface",
+      "description": "RNGBench-Game-Trajectories SFT (supervised fine-tuning) trajectory data accompanying RNGBench · Reconstructive Non-Markov Games — an evaluation framework that tests whether multimodal language models can reconstruct hidden state from memory and act on it in closed-loop environmen; tags: task_categories:image-text-to-text, language:en, license:mit, arxiv:2606.19338, region:us, agent, trajectory, multimodal",
+      "language": "dataset",
+      "stars": 2,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, arxiv:2606.19348, license:mit, eval-results",
+      "language": "model",
+      "stars": 5043,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 2332,
+      "created_at": "2026-06-16"
+    }
+  ]
+}

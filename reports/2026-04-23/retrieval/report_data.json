@@ -1,0 +1,153 @@
+{
+  "date": "2026-04-23",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 77,
+    "papers_selected": 6,
+    "score_min": 3.15,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.18845",
+      "title": "Dual-View Training for Instruction-Following Information Retrieval",
+      "url": "https://arxiv.org/abs/2604.18845",
+      "authors": "Qingcheng Zeng, Puxuan Yu, Aman Mehta, Fuheng Zhao, Rajhans Samdani",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-20",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.1,
+      "summary": "针对指令遵循检索（IF-IR）场景中检索器只关注语义相关性、忽略用户显式约束（如属性要求、排除条件）的问题，提出基于极性反转的双视角数据合成策略。核心思路是对同一文档对生成互补指令使其相关性标签互换，迫使检索器通过指令视角重新评估候选文档而非依赖固定的主题信号。305M 参数编码器在 FollowIR 基准上取得 45% 的性能提升，超越同等或更大规模的通用嵌入模型。",
+      "key_insight": "极性反转数据合成是一种低成本但高效的检索训练增强方法：通过让同一文档对在互补指令下交换相关性标签，训练信号强制模型区分「主题匹配」和「指令满足」。这对 UGC 搜索中的 query 意图理解（如用户指定特定格式、排除条件等场景）有直接借鉴意义。实验还发现数据多样性与指令监督提供互补收益——多样性维持检索质量，指令监督增强约束敏感性。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.18845",
+        "title": "Dual-View Training for Instruction-Following Information Retrieval",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n指令遵循信息检索（IF-IR）要求检索系统不仅找到语义相关的文档，还必须满足用户的显式约束（如特定属性要求、排除条件、输出偏好等）。然而，现有检索模型的训练主要针对语义相关性优化，当文档在主题上与查询匹配但违反了用户指令时，模型往往无法区分两者。\n\n作者指出了一个关键矛盾：在混合训练数据（instruct + non-instruct）的常规做法下，非指令数据产生的梯度会奖励「仅基于查询相关性的检索」而忽略指令语义，这在 50/50 混合比例下会压倒指令信号。这一发现与 InF-IR 工作一致——仅需约 38k 高质量指令三元组就能达到有竞争力的表现，说明信号纯度比数据量更重要。\n\n这项工作建立在 Promptriever（2025b）的基础上。Promptriever 发现指令负样本优于通用硬负样本，但仅将其视为固定的失败样本。本文的核心洞察是将这些负样本重新解读为「条件相关文档」——在互补指令下它们的相关性标签会反转。\n\n## 2. 方法详解\n\n**核心算法：极性反转双视角数据合成**\n\n给定查询 q、原始指令 I_orig、正文档 D⁺ 和指令负样本 D⁻（主题匹配但违反指令），系统提示 Qwen3-Next-80B-A3B-Instruct 生成互补指令 I_new，使得在 I_new 下 D⁻ 变为相关文档、D⁺ 变为指令负样本。\n\n**训练机制**：在对比学习中，双视角样本被整合使得模型必须同时满足：(1) 在 (q⊕I_orig, D⁺) 和 (q⊕I_new, D⁻) 上赋予高相似度；(2) 将反转配对推开。由于没有单一的查询编码能同时满足两个约束（除非真正编码了指令语义），这一双重目标天然防止了指令无关的表征学习。\n\n**训练配置**：\n- 主干模型：gte-multilingual-mlm-base（305M 参数），基于 14.1 亿无监督 query-document 对预训练\n- 训练框架：Arctic-Embed\n- 每个查询 30 个负样本（含 1-3 个指令负样本）\n- 损失函数：InfoNCE，温度 τ=0.02\n- 最大序列长度：512 tokens\n- 数据合成质量：人工检查 100 个样本，>99% 可用\n\n**关键设计选择**：DV 样本是替代等量原始样本（而非追加），确保在相同数据预算下进行控制对比。这一设计使得 Ins-DV（240k 原始 + 240k 双视角）与 Ins-orig（480k 原始）在数据量完全相同的条件下比较，排除了数据规模的混淆因素。\n\n## 3. 核心技术贡献\n\n**贡献一：极性反转数据合成范式**。将指令负样本从「固定失败样本」重新定义为「条件相关文档」，通过 LLM 生成互补指令实现标签反转。这比传统的指令负采样提供了结构性更丰富的监督信号，因为它迫使模型学习指令间的区分（instructional distinctions）而非仅仅学习指令排除（instructional exclusions）。\n\n**贡献二：揭示数据混合灾难**。发现非指令数据与指令数据混合会灾难性地破坏指令遵循能力：All-orig 在 InfoSearch 上出现严重负分（长度 -23.22、关键词 -49.65 pp-MRR），而 All-DV 完全逆转这一退化（31.91 和 12.13）。这一发现改变了「更多数据=更好性能」的默认假设。\n\n**贡献三：数据多样性与指令监督的解耦**。证明在等量数据预算下，数据多样性维持通用检索质量、指令监督驱动 IF 能力，双视角合成能同时改善两个维度。All-DV 不含非指令数据却实现了最高的 FollowIR Score，说明数据量（volume）而非来源异质性（source heterogeneity）驱动通用质量。\n\n## 4. 实验结果分析\n\n**主要对比（gte-multilingual-mlm-base，305M）**：\n\n| 训练数据 | FollowIR pp-MRR | InfoSearch 长度 | InfoSearch 关键词 | MAIR IFEval |\n|---|---|---|---|---|\n| Ins-orig | 5.21 | 4.06 | 2.06 | 32.14 |\n| Ins-DV | 7.57 (+45%) | 9.02 (+122%) | 5.61 (+172%) | 36.13 |\n| All-orig | 5.27 | -23.22 | -49.65 | 24.33 |\n| All-DV | 8.30 (+57%) | 31.91 | 12.13 | 34.08 |\n\n关键发现：\n1. Ins-DV 仅用 305M 模型就超越了 EmbeddingGemma-300M（5.61）和 Qwen3-Embedding-0.6B（5.09）\n2. All-orig 的 InfoSearch 负分是最令人震惊的发现——非指令数据不仅未帮助，反而严重损害了指令能力\n3. All-DV 的 FollowIR pp-MRR（8.30）是所有配置中最高的\n\n**跨模型验证（bge-m3-retromae）**：\n- 所有模式在第二个主干上完美复现\n- Ins-DV 提升 22%（9.40→11.47），All-DV 达到 13.92\n- 更强的主干放大了关键词增益（4.18→48.42）\n\n**消融分析**：\n论文采用控制对比作为消融设计——在相同数据预算下对比 orig vs DV，以及 instruct-only vs mixed-data。但缺少对合成模板变体、负样本数量变化等维度的消融。\n\n## 5. 局限与未来方向\n\n作者明确提出三个局限：\n1. **极性反转假设的适用性**：极性反转假设每个数据点存在有意义的互补指令。当相关性标准非常狭窄时，反转可能产生不自然的指令。\n2. **架构局限**：仅在 encoder-based bi-encoder 上验证，未探索 decoder-based 或 cross-encoder 架构的适用性。\n3. **语言局限**：实验仅覆盖英文基准，多语言场景需要进一步验证。\n\n笔者补充：论文未讨论合成指令的质量控制机制（除了人工检查 100 个样本），在大规模应用中可能需要自动化的质量过滤步骤。此外，InfoNCE 损失中固定温度 τ=0.02 的选择未做消融。\n\n## 6. 工业实践意义\n\n**直接可借鉴的技术方案**：\n1. 数据合成流程无需修改现有训练管线即可集成——仅需在数据准备阶段增加极性反转合成步骤\n2. 使用 LLM 生成互补指令的成本可控（>99% 通过率意味着无需大量人工筛选）\n3. 305M 参数模型即可实现显著提升，部署成本友好\n\n**对 UGC 搜索的启示**：\n- 社区搜索中用户的隐式「指令」（如限定时间范围、要求特定类型的回答、排除某类内容）与 IF-IR 场景高度对应\n- 数据混合灾难的发现尤其重要：如果在 UGC 搜索训练中简单混合通用语料和指令数据，指令遵循能力会被严重稀释。应确保指令信号的纯度\n- 极性反转数据合成可用于增强 UGC 搜索中的 query 意图理解——例如对「推荐适合新手的教程」vs「推荐进阶教程」这类约束敏感的查询生成训练数据\n\n**部署考量**：\n- 推理延迟：305M bi-encoder 完全满足在线服务要求\n- 额外成本主要在训练数据合成阶段（需要一次 LLM 调用生成互补指令），但这是离线一次性成本\n- 建议先在指令负样本较丰富的查询类目上试点，再逐步推广",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>指令遵循信息检索（IF-IR）要求检索系统不仅找到语义相关的文档，还必须满足用户的显式约束（如特定属性要求、排除条件、输出偏好等）。然而，现有检索模型的训练主要针对语义相关性优化，当文档在主题上与查询匹配但违反了用户指令时，模型往往无法区分两者。</p>\n<p>作者指出了一个关键矛盾：在混合训练数据（instruct + non-instruct）的常规做法下，非指令数据产生的梯度会奖励「仅基于查询相关性的检索」而忽略指令语义，这在 50/50 混合比例下会压倒指令信号。这一发现与 InF-IR 工作一致——仅需约 38k 高质量指令三元组就能达到有竞争力的表现，说明信号纯度比数据量更重要。</p>\n<p>这项工作建立在 Promptriever（2025b）的基础上。Promptriever 发现指令负样本优于通用硬负样本，但仅将其视为固定的失败样本。本文的核心洞察是将这些负样本重新解读为「条件相关文档」——在互补指令下它们的相关性标签会反转。</p>\n<h2>2. 方法详解</h2>\n<p><strong>核心算法：极性反转双视角数据合成</strong></p>\n<p>给定查询 q、原始指令 I_orig、正文档 D⁺ 和指令负样本 D⁻（主题匹配但违反指令），系统提示 Qwen3-Next-80B-A3B-Instruct 生成互补指令 I_new，使得在 I_new 下 D⁻ 变为相关文档、D⁺ 变为指令负样本。</p>\n<p><strong>训练机制</strong>：在对比学习中，双视角样本被整合使得模型必须同时满足：(1) 在 (q⊕I_orig, D⁺) 和 (q⊕I_new, D⁻) 上赋予高相似度；(2) 将反转配对推开。由于没有单一的查询编码能同时满足两个约束（除非真正编码了指令语义），这一双重目标天然防止了指令无关的表征学习。</p>\n<p><strong>训练配置</strong>：</p>\n<ul>\n<li>主干模型：gte-multilingual-mlm-base（305M 参数），基于 14.1 亿无监督 query-document 对预训练</li>\n<li>训练框架：Arctic-Embed</li>\n<li>每个查询 30 个负样本（含 1-3 个指令负样本）</li>\n<li>损失函数：InfoNCE，温度 τ=0.02</li>\n<li>最大序列长度：512 tokens</li>\n<li>数据合成质量：人工检查 100 个样本，&gt;99% 可用</li>\n</ul>\n<p><strong>关键设计选择</strong>：DV 样本是替代等量原始样本（而非追加），确保在相同数据预算下进行控制对比。这一设计使得 Ins-DV（240k 原始 + 240k 双视角）与 Ins-orig（480k 原始）在数据量完全相同的条件下比较，排除了数据规模的混淆因素。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献一：极性反转数据合成范式</strong>。将指令负样本从「固定失败样本」重新定义为「条件相关文档」，通过 LLM 生成互补指令实现标签反转。这比传统的指令负采样提供了结构性更丰富的监督信号，因为它迫使模型学习指令间的区分（instructional distinctions）而非仅仅学习指令排除（instructional exclusions）。</p>\n<p><strong>贡献二：揭示数据混合灾难</strong>。发现非指令数据与指令数据混合会灾难性地破坏指令遵循能力：All-orig 在 InfoSearch 上出现严重负分（长度 -23.22、关键词 -49.65 pp-MRR），而 All-DV 完全逆转这一退化（31.91 和 12.13）。这一发现改变了「更多数据=更好性能」的默认假设。</p>\n<p><strong>贡献三：数据多样性与指令监督的解耦</strong>。证明在等量数据预算下，数据多样性维持通用检索质量、指令监督驱动 IF 能力，双视角合成能同时改善两个维度。All-DV 不含非指令数据却实现了最高的 FollowIR Score，说明数据量（volume）而非来源异质性（source heterogeneity）驱动通用质量。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>主要对比（gte-multilingual-mlm-base，305M）</strong>：</p>\n<table><thead><tr><th>训练数据</th><th>FollowIR pp-MRR</th><th>InfoSearch 长度</th><th>InfoSearch 关键词</th><th>MAIR IFEval</th></tr></thead><tbody><tr><td>Ins-orig</td><td>5.21</td><td>4.06</td><td>2.06</td><td>32.14</td></tr><tr><td>Ins-DV</td><td>7.57 (+45%)</td><td>9.02 (+122%)</td><td>5.61 (+172%)</td><td>36.13</td></tr><tr><td>All-orig</td><td>5.27</td><td>-23.22</td><td>-49.65</td><td>24.33</td></tr><tr><td>All-DV</td><td>8.30 (+57%)</td><td>31.91</td><td>12.13</td><td>34.08</td></tr></tbody></table>\n<p>关键发现：</p>\n<ol>\n<li>Ins-DV 仅用 305M 模型就超越了 EmbeddingGemma-300M（5.61）和 Qwen3-Embedding-0.6B（5.09）</li>\n<li>All-orig 的 InfoSearch 负分是最令人震惊的发现——非指令数据不仅未帮助，反而严重损害了指令能力</li>\n<li>All-DV 的 FollowIR pp-MRR（8.30）是所有配置中最高的</li>\n</ol>\n<p><strong>跨模型验证（bge-m3-retromae）</strong>：</p>\n<ul>\n<li>所有模式在第二个主干上完美复现</li>\n<li>Ins-DV 提升 22%（9.40→11.47），All-DV 达到 13.92</li>\n<li>更强的主干放大了关键词增益（4.18→48.42）</li>\n</ul>\n<p><strong>消融分析</strong>：<br>论文采用控制对比作为消融设计——在相同数据预算下对比 orig vs DV，以及 instruct-only vs mixed-data。但缺少对合成模板变体、负样本数量变化等维度的消融。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确提出三个局限：</p>\n<ol>\n<li><strong>极性反转假设的适用性</strong>：极性反转假设每个数据点存在有意义的互补指令。当相关性标准非常狭窄时，反转可能产生不自然的指令。</li>\n<li><strong>架构局限</strong>：仅在 encoder-based bi-encoder 上验证，未探索 decoder-based 或 cross-encoder 架构的适用性。</li>\n<li><strong>语言局限</strong>：实验仅覆盖英文基准，多语言场景需要进一步验证。</li>\n</ol>\n<p>笔者补充：论文未讨论合成指令的质量控制机制（除了人工检查 100 个样本），在大规模应用中可能需要自动化的质量过滤步骤。此外，InfoNCE 损失中固定温度 τ=0.02 的选择未做消融。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可借鉴的技术方案</strong>：</p>\n<ol>\n<li>数据合成流程无需修改现有训练管线即可集成——仅需在数据准备阶段增加极性反转合成步骤</li>\n<li>使用 LLM 生成互补指令的成本可控（&gt;99% 通过率意味着无需大量人工筛选）</li>\n<li>305M 参数模型即可实现显著提升，部署成本友好</li>\n</ol>\n<p><strong>对 UGC 搜索的启示</strong>：</p>\n<ul>\n<li>社区搜索中用户的隐式「指令」（如限定时间范围、要求特定类型的回答、排除某类内容）与 IF-IR 场景高度对应</li>\n<li>数据混合灾难的发现尤其重要：如果在 UGC 搜索训练中简单混合通用语料和指令数据，指令遵循能力会被严重稀释。应确保指令信号的纯度</li>\n<li>极性反转数据合成可用于增强 UGC 搜索中的 query 意图理解——例如对「推荐适合新手的教程」vs「推荐进阶教程」这类约束敏感的查询生成训练数据</li>\n</ul>\n<p><strong>部署考量</strong>：</p>\n<ul>\n<li>推理延迟：305M bi-encoder 完全满足在线服务要求</li>\n<li>额外成本主要在训练数据合成阶段（需要一次 LLM 调用生成互补指令），但这是离线一次性成本</li>\n<li>建议先在指令负样本较丰富的查询类目上试点，再逐步推广</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.19664",
+      "title": "ECLASS-Augmented Semantic Product Search for Electronic Components",
+      "url": "https://arxiv.org/abs/2604.19664",
+      "authors": "Nico Baumgart, Markus Lange-Hegermann, Jan Henze",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-21",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.1,
+      "summary": "针对工业电子元器件搜索中自然语言查询与属性密集型产品描述之间的词汇鸿沟问题，系统评估了 LLM 辅助稠密检索在语义产品搜索中的表现，并探索将 ECLASS 层次化语义标准集成到嵌入检索中。稠密检索+重排序方案在专家查询上实现 94.3% 的 Hit_Rate@5，远超 BM25 的 31.4%，同时超越基础模型网页搜索基线。",
+      "key_insight": "该工作验证了在结构化目录搜索中，稠密检索+重排序两阶段方案相比 BM25 带来质的飞跃（Hit_Rate@5 从 31.4% 到 94.3%）。关键启示在于层次化领域语义标准（如 ECLASS）作为「语义桥梁」能有效缩小用户意图与稀疏产品描述之间的鸿沟。对于 UGC 短文本搜索，类似的思路是引入领域分类体系或标签层次结构来增强嵌入表示，弥补短文本信息不足的问题。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.19047",
+      "title": "RARE: Redundancy-Aware Retrieval Evaluation Framework for High-Similarity Corpora",
+      "url": "https://arxiv.org/abs/2604.19047",
+      "authors": "Hanjun Cho, Jay-Yoon Lee",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-22",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.55,
+      "summary": "指出现有 QA 基准假设文档间低重叠，但真实 RAG 系统面对的语料（如金融报告、法律文本、专利）存在高度信息冗余和文档相似性。提出 RARE 框架，通过将文档分解为原子事实追踪冗余，并使用 CRRF 增强 LLM 数据生成。实验揭示：强检索器在 General-Wiki 上 4-hop PerfRecall@10 达 66.4%，但在金融/法律/专利等冗余语料上急剧下降至 5.0-27.9%。",
+      "key_insight": "该框架暴露了检索系统在高冗余语料上的严重盲区：即使检索器召回了包含正确信息的文档，传统评估指标也会因未考虑跨文档冗余而低估其表现。对于 UGC 搜索场景，社区内容天然存在大量重复/相似帖子，因此需要在评估和优化检索模型时充分考虑冗余性。原子事实分解的评估思路可用于构建更贴近真实场景的检索 benchmark。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.18835",
+      "title": "Semantic Needles in Document Haystacks: Sensitivity Testing of LLM-as-a-Judge Similarity Scoring",
+      "url": "https://arxiv.org/abs/2604.18835",
+      "authors": "Sinan G. Aksoy, Alexandra A. Sabrio, Erik VonKaenel, Lee Burke",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-22",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.3,
+      "summary": "提出一个可扩展的多因素实验框架，系统探测 LLM 对文档对比中细微语义变化的敏感性。将单个语义改动句（needle）嵌入上下文（hay）中，变化扰动类型（否定、连词交换、实体替换）、上下文类型、位置和文档长度，在 5 个 LLM 上测试数万个文档对。发现模型存在位置偏差（文档开头的改动被惩罚更重）、上下文效应（无关上下文导致分数两极化），且每个 LLM 有独特的稳定评分指纹。",
+      "key_insight": "该工作揭示了 LLM-as-a-Judge 用于文档相似度评分时的系统性偏差：位置偏差意味着检索系统若用 LLM 评估相关性，文档开头的信号会被过度加权；不同 LLM 的评分指纹差异意味着更换评估模型会导致排序结果不一致。对于使用 LLM 做搜索相关性标注或重排序的团队，这些发现提供了具体的校准方向。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.19566",
+      "title": "Diagnosable ColBERT: Debugging Late-Interaction Retrieval Models Using a Learned Latent Space as Reference",
+      "url": "https://arxiv.org/abs/2604.19566",
+      "authors": "François Remy",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-21",
+      "total_score": 3.15,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 1,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.15,
+      "summary": "指出 ColBERT 等 late-interaction 检索模型的 token 级交互分数虽然可解释单个文档-查询对的得分，但无法诊断模型是否稳定地学习了领域概念。提出 Diagnosable ColBERT 框架，将 ColBERT 的 token 嵌入对齐到临床知识参考空间，使得可以检查模型对生物医学概念的理解是否稳定、可复用且上下文敏感。这是一篇短论文（position paper），提出框架但未包含实验验证。",
+      "key_insight": "将检索模型嵌入空间与领域知识参考空间对齐的思路值得关注：它将检索模型调试从「逐对检查」提升到「概念级诊断」。对于搜索系统，当排序模型在特定类目或查询类型上系统性失败时，类似的知识空间对齐方法可以帮助定位模型未学到的语义概念，从而指导数据标注和模型迭代方向。不过该工作仅为概念提案，缺乏实验支撑。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.18913",
+      "title": "LogosKG: Hardware-Optimized Scalable and Interpretable Knowledge Graph Retrieval",
+      "url": "https://arxiv.org/abs/2604.18913",
+      "authors": "He Cheng, Yifu Wu, Saksham Khatwani, Maya Kruse, Dmitriy Dligach, Timothy A. Miller, Majid Afshar, Yanjun Gao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-22",
+      "total_score": 3.15,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.15,
+      "summary": "针对知识图谱（KG）与大语言模型集成中多跳检索的效率、可扩展性和可解释性瓶颈，提出 LogosKG 框架。采用硬件对齐的操作、度感知分区、跨图路由和按需缓存策略，实现在十亿边规模 KG 上的高效 k-hop 检索，且不损失检索保真度。发表于 ACL 2026 主会议，代码已开源。",
+      "key_insight": "LogosKG 展示了如何通过硬件感知设计（度感知分区、跨图路由）让 KG 检索在十亿边规模上保持可行。对于搜索系统中整合知识图谱的场景（如实体增强检索、结构化知识引入排序），该框架提供了可扩展的工程方案。不过其主要应用在生物医学领域，迁移到 UGC 搜索需要适配不同的图谱结构。"
+    }
+  ],
+  "code_projects": []
+}

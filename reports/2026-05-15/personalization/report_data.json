@@ -1,0 +1,268 @@
+{
+  "date": "2026-05-15",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 91,
+    "papers_selected": 8,
+    "score_min": 3.1,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.13052",
+      "title": "RAG-Enhanced Large Language Models for Dynamic Content Expiration Prediction in Web Search",
+      "url": "https://arxiv.org/abs/2605.13052",
+      "authors": "Tingting Wang et al.",
+      "company": [
+        "Baidu"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-14",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文针对商业搜索中“内容时效性与用户意图不一致”的问题，提出一种基于 RAG 增强的 LLM 动态内容过期预测框架，已部署在百度搜索线上。系统从文档中抽取细粒度时间上下文，并通过 LLM 推断 query 相关的“有效期边界”（validity horizon），即在该 query 意图下信息何时变得语义过期。框架引入了幻觉缓解策略以保证可靠性。离线评测与线上 A/B 实验均验证了显著的时效性收益。",
+      "key_insight": "传统时间窗口过滤是“一刀切”，而“语义过期”才是搜索时效性的本质：同一篇 2 年前的帖子对一个 query 仍然有效，对另一个 query 已经过期。论文用 LLM 把“过期”建模为 query 相关的语义判断而非时间硬阈值，对社区 UGC 搜索（帖子/问答的有效期长短差异巨大）非常有借鉴价值——可以把 freshness 信号从规则改造成可学习的 query-document 二元判断特征接入排序。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.13052",
+        "title": "RAG-Enhanced Large Language Models for Dynamic Content Expiration Prediction in Web Search",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n商业 Web 搜索的\"时效性 vs 相关性\"对齐长期是工业难题。传统方法依赖静态的时间窗口过滤（如\"过去 30 天\"），把时效性当作 metadata 属性而非语义关系，结果是\"一刀切\"——既会把语义已失效的近期内容硬推上来，也会无差别地压制权威但年代较老的内容。论文用两个对比例子刻画\"信息生命周期\"的极端差异：突发性的\"香港大火\"事件中，两天前的文档可能已经语义过期；而\"交通法规\"类政策文档则保持有效期长达数年。\n\n核心动机是 reformulate timeliness：不再把\"新鲜度\"看作时间戳属性，而是把它建模为 query 意图与文档时间线的**语义动态关系**。论文进一步指出，普适的\"过期阈值\"并不存在——expiration 必须 query-aware、context-aware。\n\n## 2. 方法详解\n\n整体框架由四个流水线模块组成：\n\n**时间信息抽取模块**：把原始文档转成\"以时间锚为中心的语义片段\"。具体两步：(a) anchor parsing 从文档中抽取查询关键词与时间实体，构建 Document Temporal Index 把时间表达式映射到句子位置；(b) time-anchored context refinement 用 5 句滑窗围绕时间锚做上下文聚合，结合 cosine 语义相似度 + 时间对齐分计算 relevance；对于无显式时间约束的查询，模块自动切换到 exponential recency decay 加权。最终通过 threshold 过滤得到\"focused semantic chunks\"喂给 LLM。\n\n**结构化时间推理 prompt**：不让 LLM 自由发挥，而是用严格模板锚定绝对时间。Prompt 同时输入 (用户 query, 抽取的时间上下文, 搜索时间戳)，配合 few-shot 周期性事件（如\"双十一\"）的领域适配示例，并加入负向约束防止 LLM 抽取无关日期。Prompt 引导逐步推理把 query 意图与时间证据综合成 query-specific validity horizon。\n\n**Temporal Consistency Verification（幻觉抑制）**：双重机制。第一重是 contrastive forward-backward CoT：LLM 先正向生成一个候选 expiration 时间，再反向 stress-test 验证逻辑自洽，用 consistency penalty 量化两个方向推理的吻合度；同时加 granularity penalty 防止\"年级别 vs 日级别\"的粒度错配。第二重是 authority-weighted evidence fusion：当多个文档源给出冲突时间证据时，系统按\"领域权威度 × 语义相关度\"加权融合，选择得到最强权威背书的时间锚。\n\n**线上特征落地**：把昂贵的 LLM 推理\"蒸馏\"成轻量级二元信号——文档要么通过 expiration 检验（flag=1）要么不通过（flag=0）。线上有三种执行路径：离线缓存（dictionary lookup of 高频 query 阈值）、distilled student LLM 调用、或直接 teacher LLM 调用。系统配备 circuit-breaking：若推理超时或检测到分布漂移，flag 默认为 0，gracefully 退回到 baseline 排序而非注入不可靠信号。最终该 binary 信号作为 learnable soft constraint 通过多阶特征交互融入 Baidu 的 freshness sub-network。\n\n训练侧的优化目标是三项 loss 之和：predicted timestamp 与 ground-truth 的归一化时间距离、temporal granularity penalty、logical consistency penalty。框架不微调 LLM 权重，全部依赖 prompt engineering，以最小化部署复杂度。\n\n## 3. 核心技术贡献\n\n(1) **可扩展的 query-aware dynamic expiration**：把\"时效性\"从硬阈值规则改造成 query-specific 语义推断，解决了 one-size-fits-all 的根本问题。\n\n(2) **专门面向时间推理的幻觉抑制**：contrastive forward-backward CoT + authority-weighted evidence fusion 这套组合明确为\"LLM 给出错误日期\"这种高代价错误兜底，比通用 self-consistency 多了 granularity 维度，是工业部署的关键。\n\n(3) **从昂贵推理到二元特征的产线化路径**：通过 offline cache + student LLM + teacher LLM 三级回退 + circuit breaker，把 LLM 推理变成一个可降级、可观测的 ranking 特征。这套架构是其他 LLM-as-feature 工作可直接借鉴的模板。\n\n## 4. 实验结果分析\n\n**离线评测**（1M queries × 10M docs，3 个月数据）：Aurora-Expiry vs Aurora-Baseline。\n- Satisfaction Score: +0.52%\n- Positive Navigation Rate (Tier-2 ≤1 月): **+5.21%**；Tier-3 (≤1 周): **+7.36%**\n- median time-away@4: -2.44%；@10: -3.19%（结果越新越好）\n- 关键：general relevance 指标保持稳定——证明 freshness 收益没有牺牲语义相关性。\n\n**线上 A/B**（14 天，5% 流量/组）：\n- Satisfactory Consumption: +0.78%, CTR: +0.41%, Search Activity: +0.12%, Search Retention: +0.06%\n- 整体 median day-away@4: **-6.87%**，@10: -6.24%\n- 高时效性 query 子集 day-away@4: **-12.81%**，@10: -11.46%\n\n**人工 GSB（Good/Same/Bad）评测**：\n- Long-Tail/Cold Demand: +5.00% advantage ratio, Good:Bad = 12:2\n- Time-Sensitive: +2.50%, Good:Bad = 6:1\n- Random Demand: +1.50%, Good:Bad = 5:2\n\n时效敏感与长尾冷需求增益最大，且通用 query 上没有伤害，证明系统精准地只在该作用的地方作用——典型的工业系统理想形态。\n\n## 5. 局限与未来方向\n\n论文未单列 limitations 章节，从方法本身看几个隐含约束：(a) 时间表达式的隐式/歧义引用（如\"前段时间\"\"上次\"）抽取仍困难；(b) few-shot prompt 的领域适配在新内容形态（如直播片段、AIGC 帖子）下需要重新调优；(c) 即便有双重验证，长尾 query 上的幻觉残余风险仍存在，circuit breaker 是兜底而非根治；(d) authority-weighted fusion 依赖 source credibility，对新涌现的发布者存在冷启动；(e) \"每个 query 一个 expiration 阈值\"对多意图复合 query 仍属粗粒度。\n\n## 6. 工业实践意义\n\n对社区 UGC 搜索（帖子、问答、评论）非常直接：\n- **可借鉴的工程模式**：把\"内容新鲜度\"从规则评分（\"7 日内 +0.3，30 日内 +0.1\"）改造成 query-aware 二元特征接入排序模型，是高 ROI 的方向。社区 UGC 中\"经验型帖子（如装修攻略）有效期长，事件型帖子（如演唱会抢票）有效期短\"的差异比通用网页更明显，收益空间应该比 Baidu 的 +0.41% CTR 还大。\n- **LLM as offline feature engineer 的范式**：论文的三级回退（cache/student/teacher）+ circuit breaker 是把 LLM 接入工业排序系统的标准化做法，可直接复用到其他特征（如 query 意图、内容质量分、用户满意度预测）。\n- **要避坑的点**：必须设 fallback 路径（不能让 LLM 失败把整体相关性拖下水）、必须做 grain-level 验证（避免\"年级别\"判断错配到\"日级别\" query）。\n- **部署成本估算**：offline cache 覆盖率是关键，论文未披露具体 cache hit rate，但从可行性看 long-tail query 必须有 student LLM 兜底——这是接入前要先准备好的 infra。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>商业 Web 搜索的&quot;时效性 vs 相关性&quot;对齐长期是工业难题。传统方法依赖静态的时间窗口过滤（如&quot;过去 30 天&quot;），把时效性当作 metadata 属性而非语义关系，结果是&quot;一刀切&quot;——既会把语义已失效的近期内容硬推上来，也会无差别地压制权威但年代较老的内容。论文用两个对比例子刻画&quot;信息生命周期&quot;的极端差异：突发性的&quot;香港大火&quot;事件中，两天前的文档可能已经语义过期；而&quot;交通法规&quot;类政策文档则保持有效期长达数年。</p>\n<p>核心动机是 reformulate timeliness：不再把&quot;新鲜度&quot;看作时间戳属性，而是把它建模为 query 意图与文档时间线的<strong>语义动态关系</strong>。论文进一步指出，普适的&quot;过期阈值&quot;并不存在——expiration 必须 query-aware、context-aware。</p>\n<h2>2. 方法详解</h2>\n<p>整体框架由四个流水线模块组成：</p>\n<p><strong>时间信息抽取模块</strong>：把原始文档转成&quot;以时间锚为中心的语义片段&quot;。具体两步：(a) anchor parsing 从文档中抽取查询关键词与时间实体，构建 Document Temporal Index 把时间表达式映射到句子位置；(b) time-anchored context refinement 用 5 句滑窗围绕时间锚做上下文聚合，结合 cosine 语义相似度 + 时间对齐分计算 relevance；对于无显式时间约束的查询，模块自动切换到 exponential recency decay 加权。最终通过 threshold 过滤得到&quot;focused semantic chunks&quot;喂给 LLM。</p>\n<p><strong>结构化时间推理 prompt</strong>：不让 LLM 自由发挥，而是用严格模板锚定绝对时间。Prompt 同时输入 (用户 query, 抽取的时间上下文, 搜索时间戳)，配合 few-shot 周期性事件（如&quot;双十一&quot;）的领域适配示例，并加入负向约束防止 LLM 抽取无关日期。Prompt 引导逐步推理把 query 意图与时间证据综合成 query-specific validity horizon。</p>\n<p><strong>Temporal Consistency Verification（幻觉抑制）</strong>：双重机制。第一重是 contrastive forward-backward CoT：LLM 先正向生成一个候选 expiration 时间，再反向 stress-test 验证逻辑自洽，用 consistency penalty 量化两个方向推理的吻合度；同时加 granularity penalty 防止&quot;年级别 vs 日级别&quot;的粒度错配。第二重是 authority-weighted evidence fusion：当多个文档源给出冲突时间证据时，系统按&quot;领域权威度 × 语义相关度&quot;加权融合，选择得到最强权威背书的时间锚。</p>\n<p><strong>线上特征落地</strong>：把昂贵的 LLM 推理&quot;蒸馏&quot;成轻量级二元信号——文档要么通过 expiration 检验（flag=1）要么不通过（flag=0）。线上有三种执行路径：离线缓存（dictionary lookup of 高频 query 阈值）、distilled student LLM 调用、或直接 teacher LLM 调用。系统配备 circuit-breaking：若推理超时或检测到分布漂移，flag 默认为 0，gracefully 退回到 baseline 排序而非注入不可靠信号。最终该 binary 信号作为 learnable soft constraint 通过多阶特征交互融入 Baidu 的 freshness sub-network。</p>\n<p>训练侧的优化目标是三项 loss 之和：predicted timestamp 与 ground-truth 的归一化时间距离、temporal granularity penalty、logical consistency penalty。框架不微调 LLM 权重，全部依赖 prompt engineering，以最小化部署复杂度。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>可扩展的 query-aware dynamic expiration</strong>：把&quot;时效性&quot;从硬阈值规则改造成 query-specific 语义推断，解决了 one-size-fits-all 的根本问题。</p>\n<p>(2) <strong>专门面向时间推理的幻觉抑制</strong>：contrastive forward-backward CoT + authority-weighted evidence fusion 这套组合明确为&quot;LLM 给出错误日期&quot;这种高代价错误兜底，比通用 self-consistency 多了 granularity 维度，是工业部署的关键。</p>\n<p>(3) <strong>从昂贵推理到二元特征的产线化路径</strong>：通过 offline cache + student LLM + teacher LLM 三级回退 + circuit breaker，把 LLM 推理变成一个可降级、可观测的 ranking 特征。这套架构是其他 LLM-as-feature 工作可直接借鉴的模板。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>离线评测</strong>（1M queries × 10M docs，3 个月数据）：Aurora-Expiry vs Aurora-Baseline。</p>\n<ul>\n<li>Satisfaction Score: +0.52%</li>\n<li>Positive Navigation Rate (Tier-2 ≤1 月): <strong>+5.21%</strong>；Tier-3 (≤1 周): <strong>+7.36%</strong></li>\n<li>median time-away@4: -2.44%；@10: -3.19%（结果越新越好）</li>\n<li>关键：general relevance 指标保持稳定——证明 freshness 收益没有牺牲语义相关性。</li>\n</ul>\n<p><strong>线上 A/B</strong>（14 天，5% 流量/组）：</p>\n<ul>\n<li>Satisfactory Consumption: +0.78%, CTR: +0.41%, Search Activity: +0.12%, Search Retention: +0.06%</li>\n<li>整体 median day-away@4: <strong>-6.87%</strong>，@10: -6.24%</li>\n<li>高时效性 query 子集 day-away@4: <strong>-12.81%</strong>，@10: -11.46%</li>\n</ul>\n<p><strong>人工 GSB（Good/Same/Bad）评测</strong>：</p>\n<ul>\n<li>Long-Tail/Cold Demand: +5.00% advantage ratio, Good:Bad = 12:2</li>\n<li>Time-Sensitive: +2.50%, Good:Bad = 6:1</li>\n<li>Random Demand: +1.50%, Good:Bad = 5:2</li>\n</ul>\n<p>时效敏感与长尾冷需求增益最大，且通用 query 上没有伤害，证明系统精准地只在该作用的地方作用——典型的工业系统理想形态。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文未单列 limitations 章节，从方法本身看几个隐含约束：(a) 时间表达式的隐式/歧义引用（如&quot;前段时间&quot;&quot;上次&quot;）抽取仍困难；(b) few-shot prompt 的领域适配在新内容形态（如直播片段、AIGC 帖子）下需要重新调优；(c) 即便有双重验证，长尾 query 上的幻觉残余风险仍存在，circuit breaker 是兜底而非根治；(d) authority-weighted fusion 依赖 source credibility，对新涌现的发布者存在冷启动；(e) &quot;每个 query 一个 expiration 阈值&quot;对多意图复合 query 仍属粗粒度。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索（帖子、问答、评论）非常直接：</p>\n<ul>\n<li><strong>可借鉴的工程模式</strong>：把&quot;内容新鲜度&quot;从规则评分（&quot;7 日内 +0.3，30 日内 +0.1&quot;）改造成 query-aware 二元特征接入排序模型，是高 ROI 的方向。社区 UGC 中&quot;经验型帖子（如装修攻略）有效期长，事件型帖子（如演唱会抢票）有效期短&quot;的差异比通用网页更明显，收益空间应该比 Baidu 的 +0.41% CTR 还大。</li>\n<li><strong>LLM as offline feature engineer 的范式</strong>：论文的三级回退（cache/student/teacher）+ circuit breaker 是把 LLM 接入工业排序系统的标准化做法，可直接复用到其他特征（如 query 意图、内容质量分、用户满意度预测）。</li>\n<li><strong>要避坑的点</strong>：必须设 fallback 路径（不能让 LLM 失败把整体相关性拖下水）、必须做 grain-level 验证（避免&quot;年级别&quot;判断错配到&quot;日级别&quot; query）。</li>\n<li><strong>部署成本估算</strong>：offline cache 覆盖率是关键，论文未披露具体 cache hit rate，但从可行性看 long-tail query 必须有 student LLM 兜底——这是接入前要先准备好的 infra。</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.12617",
+      "title": "MLPs are Efficient Distilled Generative Recommenders",
+      "url": "https://arxiv.org/abs/2605.12617",
+      "authors": "Zitao Liu et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-14",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对基于 Semantic ID（SID）的生成式推荐模型在线推理延迟过高、beam-expanded autoregressive 解码代价昂贵的问题，提出 SID-MLP：一种以 MLP 为核心的轻量蒸馏框架。作者发现 SID 的层次结构使第一个 token 之后的预测难度急剧下降，重型 Transformer 解码器属于“结构性 over-kill”。SID-MLP 用一次性全局用户上下文编码替代逐 token attention，再将自回归 teacher 蒸馏到 position-specific MLP head 中，去除了密集 attention 开销。",
+      "key_insight": "本文对生成式推荐落地的关键瓶颈（推理延迟）给出了简单且工程友好的解法。核心洞察是：SID 的层次性意味着大部分注意力计算冗余，可以用 position-specific MLP head + 知识蒸馏来取代。对正在尝试落地 HSTU/TIGER 类生成式推荐的团队是直接可借鉴的“轻量化”方案——可以保持生成式范式的召回质量，同时把 latency 拉回到 DLRM 量级。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.12617",
+        "title": "MLPs are Efficient Distilled Generative Recommenders",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n生成式推荐（Generative Recommendation, GR）把 item 表示为 Semantic ID（SID）——一个由共享词表 token 组成的有序序列——通过自回归预测下一个 item。但工业部署有一个致命瓶颈：autoregressive 解码的延迟。论文用具体数字说明：典型配置下 beam size B=50、SID 长度 4 token，每次用户请求需要约 200 次模型 forward pass，相比 conventional ranker 单次 forward 出 top-K，代价惊人。\n\n作者通过实证给出三个关键观察作为方法 motivation：\n\n**(i) 难度集中在第一个 token**：在 Amazon Instruments 数据集上，有效的下一 token 候选数从 256 → ~38 → 2.2 → ~1.2 跨四个位置依次坍缩——第一个 SID digit 之后预测难度急剧下降，意味着\"在每个位置都用同一套重型 Transformer decoder\"是结构性 over-kill。\n\n**(ii) decoder 深度多数冗余**：把 frozen 4-layer TIGER teacher 蒸馏到 1-layer student，只预测最后一位（m=3 模式）NDCG@10 几乎不变（±0.0%），从头预测 4 位（m=0 模式）也只损失 1.5%。这强烈暗示一旦有 teacher 的 encoder 表示和蒸馏信号，decoder 多数 attention 层就是冗余的。\n\n**(iii) 但 user-history context 不能丢**：Table 2 ablation 显示如果完全去掉 cross-attention，NDCG@10 直接掉 60%——\"context-free MLP decoder is insufficient\"。结论：context 是必须的，但每个 digit 都重复算一次 cross-attention 是浪费，因为 encoded user history 在整个 beam expansion 期间是静态的。\n\n## 2. 方法详解\n\nSID-MLP 围绕三个核心 idea：(1) encoder-conditioned context 算一次缓存复用；(2) 用 position-specific MLP 串行预测 digit；(3) beam search 内消除重复 attention。\n\n**架构总体**：frozen teacher encoder 负责处理用户行为序列；一个可训练的 one-shot multi-head attention 模块把 encoder states 聚合成 reusable context vector；级联的 1-hidden-layer MLP head 顺序生成各位 digit，同时 conditioned 在缓存的 context 与已生成 prefix token embedding 上。\n\n**Global Context Encoding**：不在每个 digit step 做 cross-attention，而是 mean-pool encoder states → project to query → multi-head attention → FFN，得到 context vector z 缓存在 beam search 外。复杂度从 standard decoder 的 O(LBNS_u) 降到 O(S_u)——直接把 cross-attention 从 beam search 循环中拿掉。\n\n**Per-Digit MLP Head**：每个位置 t ∈ {1,...,L} 维持独立的 MLP head f_t。第 t 步的输入是 [z; e(c_1); ...; e(c_{t-1})] 即缓存 context 与已 frozen 的 prefix token embedding 拼接。设计动机：SID 在不同位置的输出分布差异很大（残差量化的层次性使然），位置专属 head 比共享 head 更合适。每个 MLP 输出 C=256 logit（codebook 大小）。\n\n复杂度对比：标准 decoder 的 self-attention 即便用 KV-cache 仍需 O(BNL²)；SID-MLP 用 batched dense MLP 对所有 active beam 一次性打分，消除 KV-cache 管理和 sequential attention 开销。\n\n**知识蒸馏训练**：从 frozen teacher 离线蒸馏。teacher-forcing 训练时 ground-truth prefix 已知，可以并行训练所有位置。Loss 形式：\n\nL_t = α·τ²·KL(σ(ℓ̃_t/τ) ∥ σ(ℓ_t/τ)) + (1-α)·CE(ℓ_t, c_t*)\n\nα 平衡 teacher mimicry 与 task grounding，τ 是蒸馏温度。论文指出：\"架构越轻，越要依赖 teacher 的 soft label\"——这是 distillation-only 训练好于 from-scratch 的关键证据。\n\n**Inference**：context 算一次缓存，对每个 digit 位置用对应 MLP head batch 打分所有 active beam；用 valid-prefix mask（item→SID 映射构造）过滤无效续段后做 beam expansion。\n\n**SID-MLP++（encoder 端蒸馏扩展）**：两阶段。Stage 1 预训练 student encoder——每个 token 与 mean-pool 后的状态拼接、过 role-specific MLP，用 MSE 匹配 teacher encoder states。Stage 2 freeze student encoder，再训 decoder 部分。换来更高加速比但有 0.5-1% 精度损失。\n\n## 3. 核心技术贡献\n\n(1) **结构性洞察**：定量证明 decoder 深度与重复 cross-attention 对层次化 SID 生成是冗余的（仅训练时需要、推理时可压缩），这套实证分析比单纯\"换 MLP\"的方法论价值更大。\n\n(2) **蒸馏框架**：MLP-based decoder 替换 + KD 维持精度，最关键是用 soft label 弥补 MLP 的容量不足，证明 sparse valid-SID 空间下 KD 信号特别有效（消融 KL 损失精度掉 2.7-6.6%）。\n\n(3) **Plug-and-play**：与 speculative decoding 不同，不需要修改 target model 或 tokenizer，对已部署的 TIGER/HSTU 类系统是 drop-in 加速器。\n\n(4) **Encoder 蒸馏扩展**：两阶段方案保证训练稳定，给出延迟-精度可调的工程旋钮。\n\n## 4. 实验结果分析\n\n**数据集 & baseline**：3 个 Amazon Reviews 2023 类目（Musical Instruments, Industrial & Scientific, Video Games），24K-26K items 量级。Teacher 为 TIGER（T5-based 4-layer encoder + 4-layer decoder）。\n\n**Baseline 三类**：\n- Speculative：AtSpeed（紧凑 draft + teacher 验证）\n- 高效架构：EARN（压 encoder states）、NEZHA（self-drafting heads）\n- State-space：Mamba2、GatedDeltaNet\n\n**主结果**：SID-MLP 相对 TIGER-kv 取得 **8.74× 吞吐加速**，同时精度匹配或超过 teacher。Instruments 数据集 NDCG@10 = **0.0332 vs teacher 0.0323**（+2.8%），Recall@10 = 0.0620 vs 0.0606。**GPU peak memory 减少 95.7%**——几乎全部存储压力被去掉。\n\n**对手对比**：\n- AtSpeed-Strict 0.68×、AtSpeed-Relaxed 0.22×（在 TIGER 这种小模型上反而拖慢，因 draft 与 verify mismatch）\n- EARN 1.94×（仍是 autoregressive decoding，吞吐被锁死）\n- NEZHA 7.27× 但 NDCG@10 掉 15%（精度换吞吐）\n- Mamba2 1.22×、GatedDeltaNet 1.20×（state movement 主导成本，beam 间状态 fork/gather 开销可与 attention 等价）\n\nSID-MLP 是 Pareto 改进：唯一同时实现高加速与无精度损失的方法。\n\n**消融（Group 分类）**：\n- Group 1 head 结构：去 prefix 条件掉 64-72% NDCG@10（致命）；sum 替代 concat 掉 1.8-2.8%；共享 head 跨位置掉 6-10%（验证 position-specific head 的必要性）\n- Group 2 context 模块：去 multi-head attention 掉 3-6%（token 级历史对齐重要）；per-digit context readout vs one-shot 几乎相同（±0.7%，支持 one-shot 设计）\n- Group 3 蒸馏：去 KL 掉 2.7-6.6%（soft label 补偿 MLP 容量）；teacher embedding frozen vs trainable 只差 0.8%\n\n**鲁棒性**：Tokenizer 敏感性——在 RQ-KMeans、RQ-VAE、PSID 三种 tokenizer 上 NDCG@10 维持 teacher 的 99.6-102.9%。Batch size 扩展性：batch 256 内 SID-MLP 吞吐近恒定，达到 **16.6× 加速**，而 TIGER-kv 早早饱和。Beam size 扩展性：beam 10→50 时 TIGER 吞吐掉 37%，SID-MLP 保持稳定（更大 beam 只是 MLP projection 拓宽，没有额外 sequential step）。\n\n## 5. 局限与未来方向\n\n论文明确承认的限制：(a) 评估只覆盖 TIGER 与 4-token SID，对变长 SID 或差异较大的 tokenizer 未验证；(b) SID-MLP++ 取得 10.25× 加速但有 0.5-1% 精度损失，对延迟敏感场景需权衡；(c) 框架要求 teacher encoder frozen——只能 plug-in 替换已部署模型，没法 online 适应分布漂移。\n\n作者明确点出未来方向：\"plan to apply Sid-Mlp to industrial-scale systems with millions of items\"——目前 24K item 量级的实验离工业 100M item 还有距离，搜索空间在大 item set 下的行为是开放问题。\n\n## 6. 工业实践意义\n\n对正在评估或落地 generative recommendation 的团队（HSTU、TIGER、KUNLUN 类）这是非常实用的\"轻量化\"答案。\n\n**可直接采纳**：\n- 已部署 TIGER 类系统的团队：SID-MLP 是 plug-in 加速器，不动 tokenizer、不动 teacher 训练管线，离线蒸馏 ~1 小时即可上线 8.74× 加速 + 95.7% 显存节省。这意味着同样的 serving 资源可以承载 8-9 倍的 QPS，或者把生成式召回从离线触发改造为在线触发。\n- KV-cache 管理是 LLM serving 的工程负担，SID-MLP 直接把这块代码删掉——运维复杂度也降。\n\n**值得尝试**：\n- 用 SID-MLP 的 architecture 思路改造非 SID 的生成式 ranker。论文的核心机制（\"context 算一次、per-position 浅层 head、KD 蒸馏\"）并不绑定 SID，可扩展到任意 hierarchical generation。\n- 把 SID-MLP++ 当作\"工程上限\"做 A/B：0.5-1% 精度损失换 10.25× 吞吐，业务上接不接受需要看 NDCG sensitivity。\n\n**应避免**：\n- 不要试图 from-scratch 训 MLP——论文消融明确显示 KD 不可或缺。MLP 容量本身偏弱，需要 soft label 补偿。\n- 不要共享跨位置的 MLP head——会丢 6-10% 精度。SID 不同位置分布差异大，head 必须分开。\n\n**部署考虑**：\n- 离线蒸馏 ~1 小时/数据集（实验级）；工业级 100M item 估计要几小时到一天，仍属\"上线前一次性成本\"。\n- 单请求 latency = 1× encoder forward + L 次 MLP projection；MLP 的 GEMM 是 GPU 高度优化原语，应可压到 ms 级。\n- 多租户 serving：95.7% 显存节省允许同 GPU 跑更多并发 model instance，特别适合中小规模业务用大模型 teacher 蒸馏出多个领域专属轻量模型。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>生成式推荐（Generative Recommendation, GR）把 item 表示为 Semantic ID（SID）——一个由共享词表 token 组成的有序序列——通过自回归预测下一个 item。但工业部署有一个致命瓶颈：autoregressive 解码的延迟。论文用具体数字说明：典型配置下 beam size B=50、SID 长度 4 token，每次用户请求需要约 200 次模型 forward pass，相比 conventional ranker 单次 forward 出 top-K，代价惊人。</p>\n<p>作者通过实证给出三个关键观察作为方法 motivation：</p>\n<p><strong>(i) 难度集中在第一个 token</strong>：在 Amazon Instruments 数据集上，有效的下一 token 候选数从 256 → ~38 → 2.2 → ~1.2 跨四个位置依次坍缩——第一个 SID digit 之后预测难度急剧下降，意味着&quot;在每个位置都用同一套重型 Transformer decoder&quot;是结构性 over-kill。</p>\n<p><strong>(ii) decoder 深度多数冗余</strong>：把 frozen 4-layer TIGER teacher 蒸馏到 1-layer student，只预测最后一位（m=3 模式）NDCG@10 几乎不变（±0.0%），从头预测 4 位（m=0 模式）也只损失 1.5%。这强烈暗示一旦有 teacher 的 encoder 表示和蒸馏信号，decoder 多数 attention 层就是冗余的。</p>\n<p><strong>(iii) 但 user-history context 不能丢</strong>：Table 2 ablation 显示如果完全去掉 cross-attention，NDCG@10 直接掉 60%——&quot;context-free MLP decoder is insufficient&quot;。结论：context 是必须的，但每个 digit 都重复算一次 cross-attention 是浪费，因为 encoded user history 在整个 beam expansion 期间是静态的。</p>\n<h2>2. 方法详解</h2>\n<p>SID-MLP 围绕三个核心 idea：(1) encoder-conditioned context 算一次缓存复用；(2) 用 position-specific MLP 串行预测 digit；(3) beam search 内消除重复 attention。</p>\n<p><strong>架构总体</strong>：frozen teacher encoder 负责处理用户行为序列；一个可训练的 one-shot multi-head attention 模块把 encoder states 聚合成 reusable context vector；级联的 1-hidden-layer MLP head 顺序生成各位 digit，同时 conditioned 在缓存的 context 与已生成 prefix token embedding 上。</p>\n<p><strong>Global Context Encoding</strong>：不在每个 digit step 做 cross-attention，而是 mean-pool encoder states → project to query → multi-head attention → FFN，得到 context vector z 缓存在 beam search 外。复杂度从 standard decoder 的 O(LBNS_u) 降到 O(S_u)——直接把 cross-attention 从 beam search 循环中拿掉。</p>\n<p><strong>Per-Digit MLP Head</strong>：每个位置 t ∈ {1,...,L} 维持独立的 MLP head f_t。第 t 步的输入是 [z; e(c_1); ...; e(c_{t-1})] 即缓存 context 与已 frozen 的 prefix token embedding 拼接。设计动机：SID 在不同位置的输出分布差异很大（残差量化的层次性使然），位置专属 head 比共享 head 更合适。每个 MLP 输出 C=256 logit（codebook 大小）。</p>\n<p>复杂度对比：标准 decoder 的 self-attention 即便用 KV-cache 仍需 O(BNL²)；SID-MLP 用 batched dense MLP 对所有 active beam 一次性打分，消除 KV-cache 管理和 sequential attention 开销。</p>\n<p><strong>知识蒸馏训练</strong>：从 frozen teacher 离线蒸馏。teacher-forcing 训练时 ground-truth prefix 已知，可以并行训练所有位置。Loss 形式：</p>\n<p>L_t = α·τ²·KL(σ(ℓ̃_t/τ) ∥ σ(ℓ_t/τ)) + (1-α)·CE(ℓ_t, c_t*)</p>\n<p>α 平衡 teacher mimicry 与 task grounding，τ 是蒸馏温度。论文指出：&quot;架构越轻，越要依赖 teacher 的 soft label&quot;——这是 distillation-only 训练好于 from-scratch 的关键证据。</p>\n<p><strong>Inference</strong>：context 算一次缓存，对每个 digit 位置用对应 MLP head batch 打分所有 active beam；用 valid-prefix mask（item→SID 映射构造）过滤无效续段后做 beam expansion。</p>\n<p><strong>SID-MLP++（encoder 端蒸馏扩展）</strong>：两阶段。Stage 1 预训练 student encoder——每个 token 与 mean-pool 后的状态拼接、过 role-specific MLP，用 MSE 匹配 teacher encoder states。Stage 2 freeze student encoder，再训 decoder 部分。换来更高加速比但有 0.5-1% 精度损失。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>结构性洞察</strong>：定量证明 decoder 深度与重复 cross-attention 对层次化 SID 生成是冗余的（仅训练时需要、推理时可压缩），这套实证分析比单纯&quot;换 MLP&quot;的方法论价值更大。</p>\n<p>(2) <strong>蒸馏框架</strong>：MLP-based decoder 替换 + KD 维持精度，最关键是用 soft label 弥补 MLP 的容量不足，证明 sparse valid-SID 空间下 KD 信号特别有效（消融 KL 损失精度掉 2.7-6.6%）。</p>\n<p>(3) <strong>Plug-and-play</strong>：与 speculative decoding 不同，不需要修改 target model 或 tokenizer，对已部署的 TIGER/HSTU 类系统是 drop-in 加速器。</p>\n<p>(4) <strong>Encoder 蒸馏扩展</strong>：两阶段方案保证训练稳定，给出延迟-精度可调的工程旋钮。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>数据集 &amp; baseline</strong>：3 个 Amazon Reviews 2023 类目（Musical Instruments, Industrial &amp; Scientific, Video Games），24K-26K items 量级。Teacher 为 TIGER（T5-based 4-layer encoder + 4-layer decoder）。</p>\n<p><strong>Baseline 三类</strong>：</p>\n<ul>\n<li>Speculative：AtSpeed（紧凑 draft + teacher 验证）</li>\n<li>高效架构：EARN（压 encoder states）、NEZHA（self-drafting heads）</li>\n<li>State-space：Mamba2、GatedDeltaNet</li>\n</ul>\n<p><strong>主结果</strong>：SID-MLP 相对 TIGER-kv 取得 <strong>8.74× 吞吐加速</strong>，同时精度匹配或超过 teacher。Instruments 数据集 NDCG@10 = <strong>0.0332 vs teacher 0.0323</strong>（+2.8%），Recall@10 = 0.0620 vs 0.0606。<strong>GPU peak memory 减少 95.7%</strong>——几乎全部存储压力被去掉。</p>\n<p><strong>对手对比</strong>：</p>\n<ul>\n<li>AtSpeed-Strict 0.68×、AtSpeed-Relaxed 0.22×（在 TIGER 这种小模型上反而拖慢，因 draft 与 verify mismatch）</li>\n<li>EARN 1.94×（仍是 autoregressive decoding，吞吐被锁死）</li>\n<li>NEZHA 7.27× 但 NDCG@10 掉 15%（精度换吞吐）</li>\n<li>Mamba2 1.22×、GatedDeltaNet 1.20×（state movement 主导成本，beam 间状态 fork/gather 开销可与 attention 等价）</li>\n</ul>\n<p>SID-MLP 是 Pareto 改进：唯一同时实现高加速与无精度损失的方法。</p>\n<p><strong>消融（Group 分类）</strong>：</p>\n<ul>\n<li>Group 1 head 结构：去 prefix 条件掉 64-72% NDCG@10（致命）；sum 替代 concat 掉 1.8-2.8%；共享 head 跨位置掉 6-10%（验证 position-specific head 的必要性）</li>\n<li>Group 2 context 模块：去 multi-head attention 掉 3-6%（token 级历史对齐重要）；per-digit context readout vs one-shot 几乎相同（±0.7%，支持 one-shot 设计）</li>\n<li>Group 3 蒸馏：去 KL 掉 2.7-6.6%（soft label 补偿 MLP 容量）；teacher embedding frozen vs trainable 只差 0.8%</li>\n</ul>\n<p><strong>鲁棒性</strong>：Tokenizer 敏感性——在 RQ-KMeans、RQ-VAE、PSID 三种 tokenizer 上 NDCG@10 维持 teacher 的 99.6-102.9%。Batch size 扩展性：batch 256 内 SID-MLP 吞吐近恒定，达到 <strong>16.6× 加速</strong>，而 TIGER-kv 早早饱和。Beam size 扩展性：beam 10→50 时 TIGER 吞吐掉 37%，SID-MLP 保持稳定（更大 beam 只是 MLP projection 拓宽，没有额外 sequential step）。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文明确承认的限制：(a) 评估只覆盖 TIGER 与 4-token SID，对变长 SID 或差异较大的 tokenizer 未验证；(b) SID-MLP++ 取得 10.25× 加速但有 0.5-1% 精度损失，对延迟敏感场景需权衡；(c) 框架要求 teacher encoder frozen——只能 plug-in 替换已部署模型，没法 online 适应分布漂移。</p>\n<p>作者明确点出未来方向：&quot;plan to apply Sid-Mlp to industrial-scale systems with millions of items&quot;——目前 24K item 量级的实验离工业 100M item 还有距离，搜索空间在大 item set 下的行为是开放问题。</p>\n<h2>6. 工业实践意义</h2>\n<p>对正在评估或落地 generative recommendation 的团队（HSTU、TIGER、KUNLUN 类）这是非常实用的&quot;轻量化&quot;答案。</p>\n<p><strong>可直接采纳</strong>：</p>\n<ul>\n<li>已部署 TIGER 类系统的团队：SID-MLP 是 plug-in 加速器，不动 tokenizer、不动 teacher 训练管线，离线蒸馏 ~1 小时即可上线 8.74× 加速 + 95.7% 显存节省。这意味着同样的 serving 资源可以承载 8-9 倍的 QPS，或者把生成式召回从离线触发改造为在线触发。</li>\n<li>KV-cache 管理是 LLM serving 的工程负担，SID-MLP 直接把这块代码删掉——运维复杂度也降。</li>\n</ul>\n<p><strong>值得尝试</strong>：</p>\n<ul>\n<li>用 SID-MLP 的 architecture 思路改造非 SID 的生成式 ranker。论文的核心机制（&quot;context 算一次、per-position 浅层 head、KD 蒸馏&quot;）并不绑定 SID，可扩展到任意 hierarchical generation。</li>\n<li>把 SID-MLP++ 当作&quot;工程上限&quot;做 A/B：0.5-1% 精度损失换 10.25× 吞吐，业务上接不接受需要看 NDCG sensitivity。</li>\n</ul>\n<p><strong>应避免</strong>：</p>\n<ul>\n<li>不要试图 from-scratch 训 MLP——论文消融明确显示 KD 不可或缺。MLP 容量本身偏弱，需要 soft label 补偿。</li>\n<li>不要共享跨位置的 MLP head——会丢 6-10% 精度。SID 不同位置分布差异大，head 必须分开。</li>\n</ul>\n<p><strong>部署考虑</strong>：</p>\n<ul>\n<li>离线蒸馏 ~1 小时/数据集（实验级）；工业级 100M item 估计要几小时到一天，仍属&quot;上线前一次性成本&quot;。</li>\n<li>单请求 latency = 1× encoder forward + L 次 MLP projection；MLP 的 GEMM 是 GPU 高度优化原语，应可压到 ms 级。</li>\n<li>多租户 serving：95.7% 显存节省允许同 GPU 跑更多并发 model instance，特别适合中小规模业务用大模型 teacher 蒸馏出多个领域专属轻量模型。</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "hf:2605.12995",
+      "title": "F-GRPO: Factorized Group-Relative Policy Optimization for Unified Candidate Generation and Ranking",
+      "url": "https://huggingface.co/papers/2605.12995",
+      "authors": "Rohit Kumar et al.",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-05-12",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文研究 LLM 在“统一候选生成 + 排序”任务中的端到端 RL 优化问题。当 LLM 在一次自回归 pass 中同时生成候选子集并排序时，奖励只在整条序列完成后给出，无法区分错误来自“没生成相关候选”还是“排序错误”，导致 credit assignment 困难、训练不稳定。F-GRPO 提出因子化的 group-relative policy optimization，把候选生成与排序两个子动作的优势函数解耦，再用组内相对优势抑制方差，使统一模型的训练更稳定、样本效率更高。",
+      "key_insight": "对未来“用一个 LLM 同时做召回+精排”的统一生成式排序范式，这是关键的训练算法基础。论文揭示了 reward 信号只能落在序列末端时 RL 极易塌缩到只学排序、不学召回（或反之），并用因子化优势函数解决——可以借鉴到任何“先生成集合再排序”的 list-wise 生成场景，例如 LLM-as-ranker 的 listwise 微调。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.13497",
+      "title": "Task-Aware Automated User Profile Generation for Recommendation Simulation Using Large Language Models",
+      "url": "https://arxiv.org/abs/2605.13497",
+      "authors": "Xin Zhang et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-14",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM-based agent simulation 是评估推荐系统的新兴方向，但已有工作主要优化 memory/action 模块，profile 模块（决定 agent 行为是否真实）长期被手工模板拖累，难以跨数据集扩展。本文提出 task-aware 自动化用户 profile 生成框架，根据下游评估任务从用户交互序列中自动抽取多粒度画像（兴趣、行为风格、决策偏好），并通过 LLM 合成成自然语言 profile，显著缩小模拟用户与真实用户的行为分布差距。",
+      "key_insight": "对推荐系统的“线下评估”长期受真实用户日志稀缺与隐私约束困扰，LLM agent simulation 是绕过限制的有效路径。本文指出 profile 模块决定了模拟的上限，并把它从手工模板升级为可自动生成。对社区推荐/搜索同样适用——可以用同一框架为新业务、新国家、新场景快速搭建模拟评估管道，把 A/B 之前的离线评估从 offline metric 升级为 agent-level 行为评估。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.13053",
+      "title": "A Standardized Re-evaluation of Conversational Recommender Systems on the ReDial Dataset",
+      "url": "https://arxiv.org/abs/2605.13053",
+      "authors": "Ivica Kostric et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-14",
+      "total_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "ReDial 是会话推荐系统（CRS）最常用的 benchmark，但实验设置（预处理、ground-truth item 定义、外部 LLM、外部数据源）差异巨大，论文间结果难以比较。本文在统一条件下对来自 3 个架构家族的 7 个主流 CRS 方法做了标准化复评，发现 Recall@1 等细粒度排序指标对实现细节高度敏感，并且约 50% 报告精度其实来自数据中的“重复 shortcut”——即模型学到的是“用户已经提到过的 item 倾向于成为 ground-truth”。",
+      "key_insight": "本研究对推荐评测方法学是一记重击：很多看似 SOTA 的 CRS 收益其实来自“信息泄露”型 shortcut。对生产实践直接的启示是：构建任何“对话/Query → 推荐”的离线指标时，必须显式排除候选集中已经被用户提及/看过的 item，否则线下增益完全无法迁移到线上。复评方法也可推广到自家 CRS / 多轮搜索系统。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.12527",
+      "title": "Beyond Centralization: User-Controlled Federated Recommendations in Practice",
+      "url": "https://arxiv.org/abs/2605.12527",
+      "authors": "Manel Slokom et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-14",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "传统推荐系统依赖集中化的用户数据，存在隐私与用户控制权问题。本文部署了一个允许用户切换“个性化”与“多样性增强”排序目标的联邦推荐系统，开展为期 53 天、22 个真实用户、8807 个 item 目录的活体实验。结果显示：用户在拥有显式选择权时仍偏好个性化（CTR 65.37% vs 62.07%）；用户对控制机制满意度 3.93/5，期间累计调整设置 248 次；用户通过即时反馈逐渐理解控制旋钮与推荐结果的因果关系。",
+      "key_insight": "在隐私监管趋严背景下，“用户可控的推荐”是一条值得探索的产品方向。论文的实证发现可以直接用于产品策略：用户即便有“多样性”开关，多数时间仍倾向选择个性化——意味着我们不必担心放开开关会显著伤 CTR；但用户活跃调整设置（平均 11 次/人）说明这种“可见的控制感”本身就是用户体验红利，对社区类产品的留存可能有正向价值。"
+    },
+    {
+      "rank": 7,
+      "id": "hf:2605.13481",
+      "title": "PersonalAI 2.0: Enhancing Knowledge Graph Traversal/Retrieval with Planning Mechanism for Personalized LLM Agents",
+      "url": "https://huggingface.co/papers/2605.13481",
+      "authors": "Mikhail Petrov et al.",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-05-12",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "PAI-2 针对 GraphRAG 在个性化 LLM agent 场景下的局限，提出一种基于规划机制的多阶段动态查询处理管线，能根据抽取实体、命中图节点和生成的 clue-query 自适应迭代检索。在 NaturalQuestions / TriviaQA / HotpotQA / 2WikiMultihopQA / MuSiQue / DiaASQ 等 6 个 benchmark 上对比 LightRAG、RAPTOR、HippoRAG 2，LLM-as-a-Judge 平均提升 ~4%，显著降低幻觉率。",
+      "key_insight": "对长期记忆型个性化 agent 而言，“如何检索”比“存什么”更关键。本文的贡献是把“图遍历 + 规划”做成可迭代的多阶段过程，而非单次 retrieval。可借鉴的工程模式：把用户兴趣图谱当作可被 LLM 推理调度的工具，通过 clue-query 把检索拆成“先找入口实体—再扩散—再聚合”，比单次 dense retrieval 更适合社区 UGC 这种关系密集型语料。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2603.27910",
+      "title": "GAAMA: Graph Augmented Associative Memory for Agents",
+      "url": "https://arxiv.org/abs/2603.27910",
+      "authors": "Swapnil Bhattacharya et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-30",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "面向多会话个性化 agent 的持久记忆问题：flat RAG 丢失结构关系；entity-centric KG 在会话数据中产生 mega-hub 问题（高频实体节点稀释了相关性传播）。GAAMA 构建概念中介的知识图谱：通过 (1) 原始 episode 保留、(2) LLM 抽取原子事实与 topic 级 concept 节点、(3) 高阶反思合成的三步管线，使用 episode/fact/reflection/concept 四类节点和五类结构边，由 concept 节点提供跨切横向遍历路径，缓解 mega-hub 问题。",
+      "key_insight": "对长期记忆个性化（用户跨多日多 session 的兴趣演化）有直接借鉴价值。核心洞察是：以“实体”为中心的图无法承担会话级语义结构，会被高频实体（如“看电影”“喜欢”）拖垮；引入“概念”层节点作为跨切轴，能在不损失实体关系的同时绕开 mega-hub。对长尾用户兴趣建模、跨会话 query 改写都是可借鉴模式。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:MarcellM01/TinySearch",
+      "title": "TinySearch: Shrink the web for your local LLMs!",
+      "url": "https://github.com/MarcellM01/TinySearch",
+      "source": "github",
+      "description": "Shrink the web for your local LLMs!",
+      "language": "Python",
+      "stars": 14,
+      "created_at": "2026-05-13"
+    },
+    {
+      "rank": 2,
+      "id": "github:qelos-io/testai",
+      "title": "testai: The testing framework for skills, MCPs, commands, subagents, and LLM models!    Docs at https://testingai.ai",
+      "url": "https://github.com/qelos-io/testai",
+      "source": "github",
+      "description": "The testing framework for skills, MCPs, commands, subagents, and LLM models!    Docs at https://testingai.ai",
+      "language": "TypeScript",
+      "stars": 14,
+      "created_at": "2026-05-12"
+    },
+    {
+      "rank": 3,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "Hard, practical, end-to-end evaluation for AI agents — in the wild. 📌 Overview WildClawBench is an agent benchmark that tests what actually matters: can an AI agent do real work, end-to-end, without hand-holding? We drop agents into a live OpenClaw environment — the same open-sou; tags: task_categories:visual-question-answering, task_categories:image-text-to-text, task_categories:question-answering, language:en, language:zh, license:mit, size_categories:n<1K, region:us",
+      "language": "",
+      "stars": 59,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:Qwen/WebWorldData",
+      "title": "Qwen/WebWorldData",
+      "url": "https://huggingface.co/datasets/Qwen/WebWorldData",
+      "source": "huggingface",
+      "description": "WebWorldData 🌐 Overview WebWorldData is a large-scale dataset of 1.06M web interaction trajectories collected from the open web, designed for training browser world models. It is the training data behind the WebWorld model series. Each trajectory consists of sequences of (state, ; tags: task_categories:text-generation, language:en, language:zh, license:apache-2.0, size_categories:100K<n<1M, format:json, modality:text, library:datasets",
+      "language": "",
+      "stars": 22,
+      "created_at": "2026-02-13"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5.1",
+      "title": "zai-org/GLM-5.1",
+      "url": "https://huggingface.co/zai-org/GLM-5.1",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "",
+      "stars": 1643,
+      "created_at": "2026-04-03"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "",
+      "stars": 1279,
+      "created_at": "2026-04-14"
+    },
+    {
+      "rank": 7,
+      "id": "hf_space:TencentARC/Pixal3D",
+      "title": "TencentARC/Pixal3D",
+      "url": "https://huggingface.co/spaces/TencentARC/Pixal3D",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "",
+      "stars": 90,
+      "created_at": "2026-04-30"
+    }
+  ]
+}

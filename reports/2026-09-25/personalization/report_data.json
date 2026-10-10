@@ -1,0 +1,434 @@
+{
+  "date": "2026-09-25",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "candidates_evaluated": 85,
+    "papers_scored": 5,
+    "papers_selected": 5,
+    "score_min": 3.65,
+    "score_max": 4.5
+  },
+  "papers": [
+    {
+      "id": "blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/09/22/meituan-foundation-model-for-recommendation.html",
+      "title": "MTFM：美团统一推荐基座大模型在外卖多业务场景的落地实践",
+      "authors": "",
+      "abstract": "美团在 MTGR 基础上提出统一推荐基座大模型 MTFM，首次实现外卖多个主要业务的统一精排模型。",
+      "url": "https://tech.meituan.com/2026/09/22/Meituan-Foundation-Model-for-Recommendation.html",
+      "source": "blog_rss",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-24",
+      "source_type": "blog",
+      "source_detail": "meituan_tech_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "total_score": 4.5,
+      "company": [
+        "Meituan"
+      ],
+      "summary": "美团面向外卖多业务精排，提出统一推荐基座 MTFM，以异构 Tokenizer、动态掩码和混合注意力共享用户行为建模，保留业务独立任务塔。官方实践报告显示，多业务订单量提升 2.06%–6.68%，推理成本下降 24%；Target 与 Full Attention 按 3:1 堆叠时，样本吞吐达到全注意力架构的 2.9 倍。",
+      "key_insight": "社区帖子、问答和评论可共用用户长短期行为编码，同时保留各场景 CTR 任务塔和独立特征入口。最值得借鉴的是用户粒度训练与曝光时间掩码：前者复用长序列计算，后者防止未来点击泄漏；上线前需单独验证社区搜索 nDCG，不能把外卖订单增幅直接外推。",
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.6,
+      "preference_reason": "商业相关评分不低于4，符合用户偏好的业务相关维度；主题奖励为0。",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/09/22/meituan-foundation-model-for-recommendation.html",
+        "title": "MTFM：美团统一推荐基座大模型在外卖多业务场景的落地实践",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n美团这项工作的直接问题是外卖多个业务各自维护精排模型：用户相同，行为却被分散存储和训练；业务特征结构不同，强行套一张统一特征表又容易损失信息。官方文章明确把挑战分为模型规模扩展、场景接入和计算效率三个方面。其任务仍是 CTR、CTCVR 等目标预测，因此本日报归入个性化排序。判断依据是最终任务与模型接口，而不是文中使用了“生成式”或“基座模型”的名称。\n\n此前 MTGR 已在单场景验证大模型的收益，但多个业务独立扩容会重复消耗长序列计算。MTFM 的目标是让用户行为形成公共表示，再由各业务保留目标特征与预测头。它继承 HSTU 类骨干、MTGR 的交叉特征和掩码设计，也吸收多域推荐中共享参数与业务参数分离的思想。相较只把知识蒸馏给不同专家模型，该方案把多业务学习放进一张训练图，直接检验统一模型是否能够服务不同流量规模的业务。\n\n这里也存在可量化的工程动机：模型单样本计算达到 192 GFLOPs，传统逐曝光计算很难承受；而多业务训练初期的随机实验 AUC 波动超过 0.4 个百分点，足以掩盖不少常规排序优化。文章的价值在于同时交代模型表示、样本组织和训练稳定性，便于判断线上收益来自哪些配套条件。\n\n## 2. 方法详解\n\n输入按三类 token 组织。H 表示全业务共享的历史商家、商品行为；R 表示按时间排列的近实时点击和加购等行为；T 表示待预估目标，包含用户上下文、物品和交叉特征。H、R 由相应序列的独立 tokenizer 编码；T 使用业务独立 tokenizer。编码后维度统一，送入共享骨干，因此业务不需要在原始特征字段上逐项对齐。这不代表上游数据不需要治理：共享行为的实体、时间戳和语义仍必须可靠。\n\n动态掩码约束可见关系。历史 token 作为公共上下文，实时序列内部遵守因果次序，每个曝光目标只能读取曝光发生之前的实时行为；目标之间不能互相感知。用户级样本把一天多个曝光合在一起后，这个约束尤其关键，否则后一次点击会泄漏给前一次曝光标签。落地时应把掩码视为样本协议的一部分，与离线特征回放一起检查。\n\nV1 用 16 层混合注意力，分成 4 个 block，每块包括 1 层 Full Attention 与 3 层 Target Attention。前者更新全局依赖，后者主要让目标从用户序列读取信息，并结合 GQA 控制开销。V2 进一步缓解目标特征压缩：经 AutoSplit 把一个目标映射成 4 个 token，各自使用独立 Q 投影和 SwiGLU FFN；目标侧与自注意力侧参数分开。目标 token 再通过 RankMixer 式混合交换信息，以免面对同一组用户 KV 时学成相似向量。最终的业务目标表示经过 MMoE 和独立任务塔完成预测。\n\n训练以用户为单位合并当天跨业务曝光，多目标共享长序列计算；推理则以当前业务请求聚合候选，只导出共享基座和当前业务所需塔。损失从“每个业务先平均，再相加”改成全 batch 的有效曝光统一归一化，避免极少样本业务的梯度被过度放大。没有对应业务样本时，对相关参数跳过零梯度下的权重衰减，并采用 2 步梯度累积。部分 HSTU 投影矩阵改用 Muon，其他参数不能据此推断全部切换；文章强调只覆盖 UQKV 与输出投影的组合更合适。\n\n初始化按网络深度缩放残差输出投影的标准差，以限制残差逐层累积。公开文章给出了结构层数、token 数、相对吞吐与若干优化器细节，但没有完整公开训练样本总量、GPU 型号数量、学习率、绝对 batch size 或训练步数；因此这些参数不能从行业惯例补写成作者配置。\n\n## 3. 核心技术贡献\n\n第一，异构输入与共享计算分开设计。业务特征可以保持独立编码，而跨业务行为进入统一序列；这把“特征模板相同”从多场景联合训练的前提中移除。较小业务能够获得其他业务的行为信号，文中报告小流量业务离线指标提高 0.60–0.93 个百分点，中流量业务提高 0.25 个百分点，大流量业务基本持平且略有正向变化。该分层结果比单一平均增益更能说明共享信息的价值。\n\n第二，把计算预算偏向目标相关交互。Full Attention 负责必要的全序列整合，Target Attention 承担大部分层数；V2 又增加目标表示容量。这不是只增加模型参数，而是在特征密度不对称时重新分配 token 和计算。3:1 配比相对全注意力结构达到 2.9 倍样本吞吐，batch size 可提高 1.7 倍，但两项数字不能脱离共同的显存节省条件独立相乘。\n\n第三，联合训练对小业务的影响被纳入优化器实现。统一损失归一化降低稀疏业务噪声；没有有效梯度时停止对应参数衰减，防止业务专属参数在缺席 batch 中持续退化。这些改动可迁移到社区搜索的帖子、问答、评论多任务，即使不采用完整 Transformer 骨干也值得单独验证。\n\n第四，算子优化围绕真实矩阵形状。作者发现针对大矩阵的 Muon 优化在这里反而被启动成本抵消，改用同形状小矩阵批处理后，NS 阶段加速 241%，端到端训练吞吐增加 19%。这说明系统收益需要用业务模型中的形状分布验证，不能直接复制其他大模型的加速结论。\n\n## 4. 实验结果分析\n\n以下整理的是官方技术文章给出的比较口径，不把不同优化阶段叠加成一个新的总收益。\n\n| 比较对象或阶段 | 指标 | 原文报告 |\n|---|---|---|\n| MTFM 对原有业务基线 | 多业务订单量 | 相对提升 2.06%–6.68% |\n| 整体部署 | 推理成本 | 降低 24% |\n| 3:1 混合注意力对全注意力 | 样本吞吐 | 2.9 倍 |\n| 初始化与优化器改进 | 随机实验 train AUC 波动 | 0.4pp 降至 0.1pp |\n| 动态掩码构造 | 耗时 | 22ms 降至 1ms |\n| 推理查表合并 | 显存占用 | 22GB 降至 5.9GB |\n| 特征精简 | 训练吞吐 | 提升 6%，GAUC 无损 |\n\n随机稳定性结果来自 5–10 组重复实验。波动变小使后续模型对比更可信，但它不是平均 AUC 提高 0.3 个百分点。类似地，掩码生成的 22ms 到 1ms 只属于该算子阶段，不能当作整个在线请求的时延变化。\n\n跨业务迁移对小流量业务更明显，符合共享数据补足稀疏信号的机制；大业务接近持平也提醒读者统一架构的收益可能主要来自整体成本和小业务增长。作者还在 token 维度 192–768、序列长度 400–2000 的范围观察到扩展趋势。这支持在已测范围内增加容量，但文章没有给出可直接外推到任意参数规模的普适指数。\n\nTarget Scale-Up 与混合注意力的讨论分别对应模型能力和效率，不应把 V2 的离线结论全部写成已经全量的线上收益。文章明确描述全量落地的是 V1。线上订单提升也包含样本、特征、训练和系统协同的综合效果，无法据此计算单独替换某个 tokenizer 对社区 CTR 的因果贡献。\n\n有意义的负面经验是 flash-muon 风格优化对偏小矩阵可能变慢，以及深层联合训练可能产生局部梯度衰减。二者都说明“规模更大”本身不能保证收益，必须同时监控随机种子方差、梯度动态和设备利用率。\n\n## 5. 局限与未来方向\n\n文章是工业技术总结，没有单独的学术局限章节。作者明确提出的后续方向包括算法与基础设施协同扩大参数规模、继续验证参数和序列长度的扩展规律，以及通过联合训练、蒸馏构建 MTFM-Lite，向更多场景推广。这些属于计划，不能写成已完成的实验。\n\n公开证据的边界包括未披露完整数据集、端到端复现配置及 A/B 样本量和置信区间；部分分业务结果以图展示，本解读没有猜测图中未读取的具体数值。订单是外卖业务指标，其变化不等于社区搜索相关性提升。以上是本次阅读对披露范围的判断，区别于作者正式声称的局限。\n\n## 6. 工业实践意义\n\n对社区 UGC 搜索，较可行的迁移起点是共享用户近期点击和长期阅读序列，帖子、问答、评论各自保留目标编码器与预测头。先验证联合建模是否改善小场景 CTR 和分场景 nDCG，再决定是否扩大共享骨干，避免把特征统一工程一次性扩展到全业务。\n\n实验需要按曝光时间构造因果掩码，并按用户分组核查同一天多个样本之间的信息可见性。线上预算评估同时记录候选数、历史长度、特征处理耗时、显存和请求分位延迟；作者的相对吞吐数字不能代替本地服务容量测算。复用用户侧计算对一个请求包含较多候选时尤其有价值，但如果请求候选很少，共享计算的摊销收益也会改变。\n\n可以分三步验证：先改样本组织与时间掩码，保持现有评分头；再测试混合注意力和目标侧多 token；最后针对已确认的瓶颈开发定制算子。多业务低流量任务应额外监控空梯度、权重衰减和损失归一化。成功标准同时包含业务增益、训练方差和成本，而不只是更大的模型参数量。\n\n来源：[美团官方技术文章](https://tech.meituan.com/2026/09/22/Meituan-Foundation-Model-for-Recommendation.html)。全文已保存于本次 evidence 目录；本解读基于官方文章正文，未把关联 KDD 论文未读取的内容作为证据。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>美团这项工作的直接问题是外卖多个业务各自维护精排模型：用户相同，行为却被分散存储和训练；业务特征结构不同，强行套一张统一特征表又容易损失信息。官方文章明确把挑战分为模型规模扩展、场景接入和计算效率三个方面。其任务仍是 CTR、CTCVR 等目标预测，因此本日报归入个性化排序。判断依据是最终任务与模型接口，而不是文中使用了“生成式”或“基座模型”的名称。</p>\n<p>此前 MTGR 已在单场景验证大模型的收益，但多个业务独立扩容会重复消耗长序列计算。MTFM 的目标是让用户行为形成公共表示，再由各业务保留目标特征与预测头。它继承 HSTU 类骨干、MTGR 的交叉特征和掩码设计，也吸收多域推荐中共享参数与业务参数分离的思想。相较只把知识蒸馏给不同专家模型，该方案把多业务学习放进一张训练图，直接检验统一模型是否能够服务不同流量规模的业务。</p>\n<p>这里也存在可量化的工程动机：模型单样本计算达到 192 GFLOPs，传统逐曝光计算很难承受；而多业务训练初期的随机实验 AUC 波动超过 0.4 个百分点，足以掩盖不少常规排序优化。文章的价值在于同时交代模型表示、样本组织和训练稳定性，便于判断线上收益来自哪些配套条件。</p>\n<h2>2. 方法详解</h2>\n<p>输入按三类 token 组织。H 表示全业务共享的历史商家、商品行为；R 表示按时间排列的近实时点击和加购等行为；T 表示待预估目标，包含用户上下文、物品和交叉特征。H、R 由相应序列的独立 tokenizer 编码；T 使用业务独立 tokenizer。编码后维度统一，送入共享骨干，因此业务不需要在原始特征字段上逐项对齐。这不代表上游数据不需要治理：共享行为的实体、时间戳和语义仍必须可靠。</p>\n<p>动态掩码约束可见关系。历史 token 作为公共上下文，实时序列内部遵守因果次序，每个曝光目标只能读取曝光发生之前的实时行为；目标之间不能互相感知。用户级样本把一天多个曝光合在一起后，这个约束尤其关键，否则后一次点击会泄漏给前一次曝光标签。落地时应把掩码视为样本协议的一部分，与离线特征回放一起检查。</p>\n<p>V1 用 16 层混合注意力，分成 4 个 block，每块包括 1 层 Full Attention 与 3 层 Target Attention。前者更新全局依赖，后者主要让目标从用户序列读取信息，并结合 GQA 控制开销。V2 进一步缓解目标特征压缩：经 AutoSplit 把一个目标映射成 4 个 token，各自使用独立 Q 投影和 SwiGLU FFN；目标侧与自注意力侧参数分开。目标 token 再通过 RankMixer 式混合交换信息，以免面对同一组用户 KV 时学成相似向量。最终的业务目标表示经过 MMoE 和独立任务塔完成预测。</p>\n<p>训练以用户为单位合并当天跨业务曝光，多目标共享长序列计算；推理则以当前业务请求聚合候选，只导出共享基座和当前业务所需塔。损失从“每个业务先平均，再相加”改成全 batch 的有效曝光统一归一化，避免极少样本业务的梯度被过度放大。没有对应业务样本时，对相关参数跳过零梯度下的权重衰减，并采用 2 步梯度累积。部分 HSTU 投影矩阵改用 Muon，其他参数不能据此推断全部切换；文章强调只覆盖 UQKV 与输出投影的组合更合适。</p>\n<p>初始化按网络深度缩放残差输出投影的标准差，以限制残差逐层累积。公开文章给出了结构层数、token 数、相对吞吐与若干优化器细节，但没有完整公开训练样本总量、GPU 型号数量、学习率、绝对 batch size 或训练步数；因此这些参数不能从行业惯例补写成作者配置。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，异构输入与共享计算分开设计。业务特征可以保持独立编码，而跨业务行为进入统一序列；这把“特征模板相同”从多场景联合训练的前提中移除。较小业务能够获得其他业务的行为信号，文中报告小流量业务离线指标提高 0.60–0.93 个百分点，中流量业务提高 0.25 个百分点，大流量业务基本持平且略有正向变化。该分层结果比单一平均增益更能说明共享信息的价值。</p>\n<p>第二，把计算预算偏向目标相关交互。Full Attention 负责必要的全序列整合，Target Attention 承担大部分层数；V2 又增加目标表示容量。这不是只增加模型参数，而是在特征密度不对称时重新分配 token 和计算。3:1 配比相对全注意力结构达到 2.9 倍样本吞吐，batch size 可提高 1.7 倍，但两项数字不能脱离共同的显存节省条件独立相乘。</p>\n<p>第三，联合训练对小业务的影响被纳入优化器实现。统一损失归一化降低稀疏业务噪声；没有有效梯度时停止对应参数衰减，防止业务专属参数在缺席 batch 中持续退化。这些改动可迁移到社区搜索的帖子、问答、评论多任务，即使不采用完整 Transformer 骨干也值得单独验证。</p>\n<p>第四，算子优化围绕真实矩阵形状。作者发现针对大矩阵的 Muon 优化在这里反而被启动成本抵消，改用同形状小矩阵批处理后，NS 阶段加速 241%，端到端训练吞吐增加 19%。这说明系统收益需要用业务模型中的形状分布验证，不能直接复制其他大模型的加速结论。</p>\n<h2>4. 实验结果分析</h2>\n<p>以下整理的是官方技术文章给出的比较口径，不把不同优化阶段叠加成一个新的总收益。</p>\n<table><thead><tr><th>比较对象或阶段</th><th>指标</th><th>原文报告</th></tr></thead><tbody><tr><td>MTFM 对原有业务基线</td><td>多业务订单量</td><td>相对提升 2.06%–6.68%</td></tr><tr><td>整体部署</td><td>推理成本</td><td>降低 24%</td></tr><tr><td>3:1 混合注意力对全注意力</td><td>样本吞吐</td><td>2.9 倍</td></tr><tr><td>初始化与优化器改进</td><td>随机实验 train AUC 波动</td><td>0.4pp 降至 0.1pp</td></tr><tr><td>动态掩码构造</td><td>耗时</td><td>22ms 降至 1ms</td></tr><tr><td>推理查表合并</td><td>显存占用</td><td>22GB 降至 5.9GB</td></tr><tr><td>特征精简</td><td>训练吞吐</td><td>提升 6%，GAUC 无损</td></tr></tbody></table>\n<p>随机稳定性结果来自 5–10 组重复实验。波动变小使后续模型对比更可信，但它不是平均 AUC 提高 0.3 个百分点。类似地，掩码生成的 22ms 到 1ms 只属于该算子阶段，不能当作整个在线请求的时延变化。</p>\n<p>跨业务迁移对小流量业务更明显，符合共享数据补足稀疏信号的机制；大业务接近持平也提醒读者统一架构的收益可能主要来自整体成本和小业务增长。作者还在 token 维度 192–768、序列长度 400–2000 的范围观察到扩展趋势。这支持在已测范围内增加容量，但文章没有给出可直接外推到任意参数规模的普适指数。</p>\n<p>Target Scale-Up 与混合注意力的讨论分别对应模型能力和效率，不应把 V2 的离线结论全部写成已经全量的线上收益。文章明确描述全量落地的是 V1。线上订单提升也包含样本、特征、训练和系统协同的综合效果，无法据此计算单独替换某个 tokenizer 对社区 CTR 的因果贡献。</p>\n<p>有意义的负面经验是 flash-muon 风格优化对偏小矩阵可能变慢，以及深层联合训练可能产生局部梯度衰减。二者都说明“规模更大”本身不能保证收益，必须同时监控随机种子方差、梯度动态和设备利用率。</p>\n<h2>5. 局限与未来方向</h2>\n<p>文章是工业技术总结，没有单独的学术局限章节。作者明确提出的后续方向包括算法与基础设施协同扩大参数规模、继续验证参数和序列长度的扩展规律，以及通过联合训练、蒸馏构建 MTFM-Lite，向更多场景推广。这些属于计划，不能写成已完成的实验。</p>\n<p>公开证据的边界包括未披露完整数据集、端到端复现配置及 A/B 样本量和置信区间；部分分业务结果以图展示，本解读没有猜测图中未读取的具体数值。订单是外卖业务指标，其变化不等于社区搜索相关性提升。以上是本次阅读对披露范围的判断，区别于作者正式声称的局限。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索，较可行的迁移起点是共享用户近期点击和长期阅读序列，帖子、问答、评论各自保留目标编码器与预测头。先验证联合建模是否改善小场景 CTR 和分场景 nDCG，再决定是否扩大共享骨干，避免把特征统一工程一次性扩展到全业务。</p>\n<p>实验需要按曝光时间构造因果掩码，并按用户分组核查同一天多个样本之间的信息可见性。线上预算评估同时记录候选数、历史长度、特征处理耗时、显存和请求分位延迟；作者的相对吞吐数字不能代替本地服务容量测算。复用用户侧计算对一个请求包含较多候选时尤其有价值，但如果请求候选很少，共享计算的摊销收益也会改变。</p>\n<p>可以分三步验证：先改样本组织与时间掩码，保持现有评分头；再测试混合注意力和目标侧多 token；最后针对已确认的瓶颈开发定制算子。多业务低流量任务应额外监控空梯度、权重衰减和损失归一化。成功标准同时包含业务增益、训练方差和成本，而不只是更大的模型参数量。</p>\n<p>来源：<a href=\"https://tech.meituan.com/2026/09/22/Meituan-Foundation-Model-for-Recommendation.html\" target=\"_blank\" rel=\"noopener\">美团官方技术文章</a>。全文已保存于本次 evidence 目录；本解读基于官方文章正文，未把关联 KDD 论文未读取的内容作为证据。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.27183",
+      "title": "When LLM-Based User Profiling Adds Value in Production Streaming Recommendation",
+      "authors": "Milad Sabouri, Neeraj Sharma, Sardar Hamidian, Shaghayegh Agah",
+      "abstract": "arXiv:2609.27183v1 Announce Type: new \nAbstract: Personalized recommendation depends critically on how user representations are constructed from historical behavior. Two paradigms have emerged for constructing semantic user profiles in content-based recommendation. First, aggregate methods derive user representations as numerical aggregates of semantic item embeddings. Second, LLM-based methods generate natural-language summaries of user preferences and encode them through a text encoder. Each paradigm can be combined with temporal disentanglement of recent versus historical behavior. LLM-based profile generation is significantly more expensive than aggregate approaches, raising the question of when this additional cost is justified. We present a systematic comparison of four semantic user-profiling strategies, factorially crossed across representation type and temporal handling, evaluated on a real-world production dataset. The comparison reveals how these strategies differ across use",
+      "url": "https://arxiv.org/abs/2609.27183",
+      "source": "arxiv",
+      "published": "2026-09-23",
+      "discovered_at": "2026-09-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.15,
+      "company": [
+        "Comcast",
+        "DePaul University"
+      ],
+      "summary": "论文在真实流媒体数据上比较聚合向量与 LLM 画像，并交叉测试长短期兴趣拆分，共评估 4 种策略、1 万名用户和约 24 万个内容。全体用户中，长短期聚合向量使 NDCG@10 相对提升 4.7%；LLM 整体画像在探索型用户中提升 31.5%，但在总体上下降 26.9%，收益明显依赖人群。",
+      "key_insight": "社区搜索可先用历史点击内容的语义均值作用户特征，再检验 LLM 画像是否只对兴趣变化人群有效。论文中的探索型标签利用未来测试行为，不能直接作为线上路由；还需评估目录覆盖与新颖性，避免个体列表更丰富、全站内容曝光却更集中的现象。",
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.25,
+      "preference_reason": "商业相关评分不低于4，符合用户偏好的业务相关维度；主题奖励为0。",
+      "rank": 2,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2609.27183",
+        "title": "When LLM-Based User Profiling Adds Value in Production Streaming Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n这篇 Comcast 与 DePaul 的工作研究一个具体决策：内容推荐的用户画像是否值得从物品向量平均升级为 LLM 生成的自然语言画像。LLM 可以从历史中提炼主题，但多一次生成带来计算、刷新和运维成本，离线学术数据上的优势也未必能迁移到真实平台。作者使用实际流媒体数据，覆盖电影、电视剧和体育内容，比较在相同候选编码与评分头下，画像构造本身带来的差异。\n\n问题的关键是用户行为不均匀。一些用户持续消费类似内容，此时保留物品级语义可能已经足够；另一些用户未来消费偏离既有历史，主题级抽象可能更有用。论文同时关注准确率与内容生态：单个推荐列表语义更分散，不代表整个系统覆盖了更多内容。这使研究对社区搜索个性化有直接参考价值，因为点击偏好、新内容发现和长尾曝光往往需要共同考虑。\n\n作者没有声称提出全新的推荐骨干，而是把两类画像表示与两种时间处理方式交叉成四组，用真实平台全库排序隔离变量。其主要贡献是说明收益发生在哪些用户上，以及准确率以外的代价；不能把论文标题中的“production”误读为已完成线上 A/B 实验。\n\n## 2. 方法详解\n\n全部方法共用冻结的 SBERT 物品编码器，将标题与描述编码成向量并预计算缓存。用户画像向量与候选物品向量拼接，送入同一结构的两层 ReLU MLP，输出相关性分数。训练采用二元交叉熵，每条正交互配均匀采样的负物品，优化器是 Adam。这样评分头、物品编码和训练协议保持一致，主要变量是如何从历史生成用户向量。\n\nCentroid 把完整历史物品向量做算术平均，是成本较低的基线。TemporalCentroid 另取最近一定比例历史，分别计算近期均值与完整历史均值，再由可学习的单层注意力给两者分配权重。需要特别注意，长期集合是完整历史，并不是去掉近期行为之后的剩余部分；近期交互会同时出现在两个分支。这种定义保持长期画像包含所有持续兴趣，复现时不能自行改成互斥切分。\n\nNarrative 将完整观看历史交给 LLM，要求总结稳定主题与反复出现的兴趣，再用同一个 SBERT 把生成文本编码成用户向量。TemporalNarrative 对近期与完整历史各生成一次总结，分别强调近期变化和长期主题，然后使用与 TemporalCentroid 一致的注意力融合。简化公式可以写为：用户向量等于近期画像乘以权重，加上完整历史画像乘以剩余权重；两个分支的区别在于输入是物品向量均值，还是总结文本向量。\n\n数据随机抽取 10,000 名用户，筛选有足够英文标题描述的内容后，候选库约为 240,000 个物品。每名用户按时间顺序划分 80% 训练、10% 验证、10% 测试，评价时对完整过滤后目录排序。作者有意不加入 SASRec、BERT4Rec 等协同序列方法，目的是固定内容信号来源，避免把协同信息增益混入画像比较。因此结论只涉及这组内容画像策略的相对效果。\n\n近期窗口扫描历史的 15%、20%、25%、30%，主结果使用 25%。论文披露 Adam、BCE、冻结编码和共享 MLP，但不足以从正文恢复完整训练配置：未在读取正文中给出可直接照抄的 LLM 具体型号、硬件、绝对 batch size、学习率和训练总步数。本解读保留这些缺口，不根据常见设置补全。实践复现可以先落实这套控制变量结构，再独立调参并记录所用模型版本。\n\n## 3. 核心技术贡献\n\n第一，二维实验设计把“使用 LLM”与“区分长短期兴趣”分开。很多方案同时改变表示、时间建模和评分网络，无法解释收益来源；这里四组方法只在画像构造不同。总体人群中，TemporalCentroid 的 NDCG@10 比 Centroid 高 4.7%，而 Narrative 低 26.9%，说明更复杂的自然语言画像并非全体用户的可靠替换。\n\n第二，作者用事后行为划分解释结果反转。若测试历史中没有物品出现在训练历史里，就标为 Explorer；本样本有 1,761 人，其余为 Non-Explorer。这是物品是否重合的操作性定义，不是严格的语义新颖度，也不是人格分类。Narrative 对 Explorer 的 NDCG@10 相对增加 31.5%，对 Non-Explorer 则减少 27.8%。同一平均指标背后存在方向相反的效应，分层分析改变了工程决策。\n\n第三，把列表内多样性、全库覆盖率与新颖性分开。多样性用列表物品向量的平均余弦差异，覆盖率统计全体用户推荐内容占目录的比例，新颖性使用训练用户中的物品流行度负对数。LLM 画像可以增加列表内多样性，却使推荐集中到更少、更热门的内容。这三类指标不能互相替代，尤其在社区搜索中，优质长尾帖是否被曝光与单张结果页是否看起来多样是两个问题。\n\n第四，论文给出路由方向的初步可行性检查，但明确没有完成生产路由器。历史长度与 Explorer 标签的点二列相关为 -0.30，历史语义多样性为 +0.11，两者 p 值小于 0.001。它们说明训练期特征可能携带信号，但相关性不等于预测准确率，更不等于最终线上收益。\n\n## 4. 实验结果分析\n\n表中数字均是相对同一分组 Centroid 的百分比变化，不是绝对 NDCG，也不能跨人群直接相加。主窗口为历史的 25%。\n\n| 人群与方法 | NDCG@10 相对变化 | NDCG@100 相对变化 |\n|---|---:|---:|\n| 全体 TemporalCentroid | +4.7% | +2.9% |\n| 全体 Narrative | -26.9% | -11.4% |\n| 全体 TemporalNarrative | -15.2% | -11.5% |\n| Non-Explorer TemporalCentroid | +4.8% | +3.0% |\n| Non-Explorer Narrative | -27.8% | -11.9% |\n| Explorer TemporalCentroid | -6.0% | -0.2% |\n| Explorer Narrative | +31.5% | +12.8% |\n| Explorer TemporalNarrative | +21.8% | +10.2% |\n\n这些结果首先说明时间分解不是统一有效的增强。对习惯型用户，长短期均值融合改善排序；对探索型用户，TemporalCentroid 在两个截断位置没有优势。Narrative 在 Explorer 上比 TemporalNarrative 的 NDCG@10 更好，说明额外拆成两段自然语言总结也未必提高效能。作者讨论认为，探索行为本身可能不适合被强制组织为稳定的长短期差异，这属于机制解释，不能当作已被独立因果实验验证。\n\n统计检验采用每用户指标的 Wilcoxon 符号秩检验，显著性阈值为 0.05。论文提示 Explorer 样本较少，K=10 的证据并不是每项指标都显著；Narrative 的 NDCG@10 有显著标记，但 Recall@10 的 +18.7% 没有。K=100 上分人群模式更稳定。Coverage 是系统级指标，不适合套用每用户检验，因此作者没有给出同样的逐用户显著性判断。\n\n全体 TemporalCentroid 的 Coverage@10 相对下降 5.8%，即便它在 NDCG 上胜出，也没有做到所有指标共同改善。对 LLM 画像，论文报告更明显的热门集中现象。解释可能来自生成模型与编码器都更熟悉热门内容：总结向量向语义空间中热门区域移动，使同一个人的列表看起来更丰富，但不同人的列表更相似。作者没有分别隔离生成步骤和编码步骤，不能确定二者各占多少贡献。\n\n窗口分析扫描四档比例，用每个模型在 25% 窗口下的自身结果归一化，和主表相对于 Centroid 的归一化口径不同。阅读图表时必须区分这两个分母，不能把窗口曲线上的相对变化误当成对基线模型的增益。文章为保密只给相对准确率，也意味着无法从表格恢复绝对命中数量或真实业务价值。\n\n## 5. 局限与未来方向\n\n作者明确提出两项边界：研究来自单一流媒体平台、特定内容领域，是否适用于其他平台、用户分布或 LLM 与编码器组合仍需复现；实验是离线分析，线上反馈和系统动态可能改变结论。LLM 成本部分也仅给出定性判断，没有披露完整价格、算力摊销或延迟测试，不能据此承诺节省某个固定比例的总成本。\n\n作者承认用户路由只是部署方向：Explorer 标签依赖未来测试行为，不能在线直接获得。训练期相关性分析是前期观察，还需要特征工程、阈值校准和线上验证。若信号不足，默认采用聚合画像是论文建议的保守选择。额外的阅读判断是，内容基线内部的优势不足以证明它优于成熟协同排序系统；论文主动限制了比较范围，应保留这个范围。\n\n## 6. 工业实践意义\n\n社区短文本搜索可先把用户历史点击的帖子、问答与评论编码成语义向量，用全历史均值及近期均值作为轻量个性化特征。再在固定 query、候选集和排序网络的条件下，比较 LLM 主题画像是否为兴趣迁移较快的用户提供增益。不能直接用未来行为形成线上路由标签，否则实验会偷看答案。\n\n一个可执行的验证方案是按时间切分训练路由器，仅使用当时可见的历史长度、主题跨度和近期行为变化；在之后的时间窗评价推荐结果，并保留无法确定的人群走普通向量画像。路由器本身也要与全体统一策略比较，避免离线分组收益在真实分类误差下消失。作者样本探索型约占 18%，这一比例只能描述该数据，不能直接用于估计社区算力预算。\n\n指标同时记录 nDCG、CTR、目录覆盖、长尾曝光和画像刷新成本。点击率上升而覆盖显著下降时，需要判断是否牺牲了社区内容发现。在线请求可以消费离线生成的画像向量，因此不必假设每次搜索都调用 LLM，但画像生成频率、用户删除历史后的刷新和编码版本一致性仍会增加工程复杂度。这些是迁移建议，不是论文已经测出的在线结果。\n\n来源：[论文正文](https://arxiv.org/html/2609.27183)，重点依据第 3–5 节与表 2、表 3；正文快照保存在本次 evidence 目录。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>这篇 Comcast 与 DePaul 的工作研究一个具体决策：内容推荐的用户画像是否值得从物品向量平均升级为 LLM 生成的自然语言画像。LLM 可以从历史中提炼主题，但多一次生成带来计算、刷新和运维成本，离线学术数据上的优势也未必能迁移到真实平台。作者使用实际流媒体数据，覆盖电影、电视剧和体育内容，比较在相同候选编码与评分头下，画像构造本身带来的差异。</p>\n<p>问题的关键是用户行为不均匀。一些用户持续消费类似内容，此时保留物品级语义可能已经足够；另一些用户未来消费偏离既有历史，主题级抽象可能更有用。论文同时关注准确率与内容生态：单个推荐列表语义更分散，不代表整个系统覆盖了更多内容。这使研究对社区搜索个性化有直接参考价值，因为点击偏好、新内容发现和长尾曝光往往需要共同考虑。</p>\n<p>作者没有声称提出全新的推荐骨干，而是把两类画像表示与两种时间处理方式交叉成四组，用真实平台全库排序隔离变量。其主要贡献是说明收益发生在哪些用户上，以及准确率以外的代价；不能把论文标题中的“production”误读为已完成线上 A/B 实验。</p>\n<h2>2. 方法详解</h2>\n<p>全部方法共用冻结的 SBERT 物品编码器，将标题与描述编码成向量并预计算缓存。用户画像向量与候选物品向量拼接，送入同一结构的两层 ReLU MLP，输出相关性分数。训练采用二元交叉熵，每条正交互配均匀采样的负物品，优化器是 Adam。这样评分头、物品编码和训练协议保持一致，主要变量是如何从历史生成用户向量。</p>\n<p>Centroid 把完整历史物品向量做算术平均，是成本较低的基线。TemporalCentroid 另取最近一定比例历史，分别计算近期均值与完整历史均值，再由可学习的单层注意力给两者分配权重。需要特别注意，长期集合是完整历史，并不是去掉近期行为之后的剩余部分；近期交互会同时出现在两个分支。这种定义保持长期画像包含所有持续兴趣，复现时不能自行改成互斥切分。</p>\n<p>Narrative 将完整观看历史交给 LLM，要求总结稳定主题与反复出现的兴趣，再用同一个 SBERT 把生成文本编码成用户向量。TemporalNarrative 对近期与完整历史各生成一次总结，分别强调近期变化和长期主题，然后使用与 TemporalCentroid 一致的注意力融合。简化公式可以写为：用户向量等于近期画像乘以权重，加上完整历史画像乘以剩余权重；两个分支的区别在于输入是物品向量均值，还是总结文本向量。</p>\n<p>数据随机抽取 10,000 名用户，筛选有足够英文标题描述的内容后，候选库约为 240,000 个物品。每名用户按时间顺序划分 80% 训练、10% 验证、10% 测试，评价时对完整过滤后目录排序。作者有意不加入 SASRec、BERT4Rec 等协同序列方法，目的是固定内容信号来源，避免把协同信息增益混入画像比较。因此结论只涉及这组内容画像策略的相对效果。</p>\n<p>近期窗口扫描历史的 15%、20%、25%、30%，主结果使用 25%。论文披露 Adam、BCE、冻结编码和共享 MLP，但不足以从正文恢复完整训练配置：未在读取正文中给出可直接照抄的 LLM 具体型号、硬件、绝对 batch size、学习率和训练总步数。本解读保留这些缺口，不根据常见设置补全。实践复现可以先落实这套控制变量结构，再独立调参并记录所用模型版本。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，二维实验设计把“使用 LLM”与“区分长短期兴趣”分开。很多方案同时改变表示、时间建模和评分网络，无法解释收益来源；这里四组方法只在画像构造不同。总体人群中，TemporalCentroid 的 NDCG@10 比 Centroid 高 4.7%，而 Narrative 低 26.9%，说明更复杂的自然语言画像并非全体用户的可靠替换。</p>\n<p>第二，作者用事后行为划分解释结果反转。若测试历史中没有物品出现在训练历史里，就标为 Explorer；本样本有 1,761 人，其余为 Non-Explorer。这是物品是否重合的操作性定义，不是严格的语义新颖度，也不是人格分类。Narrative 对 Explorer 的 NDCG@10 相对增加 31.5%，对 Non-Explorer 则减少 27.8%。同一平均指标背后存在方向相反的效应，分层分析改变了工程决策。</p>\n<p>第三，把列表内多样性、全库覆盖率与新颖性分开。多样性用列表物品向量的平均余弦差异，覆盖率统计全体用户推荐内容占目录的比例，新颖性使用训练用户中的物品流行度负对数。LLM 画像可以增加列表内多样性，却使推荐集中到更少、更热门的内容。这三类指标不能互相替代，尤其在社区搜索中，优质长尾帖是否被曝光与单张结果页是否看起来多样是两个问题。</p>\n<p>第四，论文给出路由方向的初步可行性检查，但明确没有完成生产路由器。历史长度与 Explorer 标签的点二列相关为 -0.30，历史语义多样性为 +0.11，两者 p 值小于 0.001。它们说明训练期特征可能携带信号，但相关性不等于预测准确率，更不等于最终线上收益。</p>\n<h2>4. 实验结果分析</h2>\n<p>表中数字均是相对同一分组 Centroid 的百分比变化，不是绝对 NDCG，也不能跨人群直接相加。主窗口为历史的 25%。</p>\n<table><thead><tr><th>人群与方法</th><th>NDCG@10 相对变化</th><th>NDCG@100 相对变化</th></tr></thead><tbody><tr><td>全体 TemporalCentroid</td><td>+4.7%</td><td>+2.9%</td></tr><tr><td>全体 Narrative</td><td>-26.9%</td><td>-11.4%</td></tr><tr><td>全体 TemporalNarrative</td><td>-15.2%</td><td>-11.5%</td></tr><tr><td>Non-Explorer TemporalCentroid</td><td>+4.8%</td><td>+3.0%</td></tr><tr><td>Non-Explorer Narrative</td><td>-27.8%</td><td>-11.9%</td></tr><tr><td>Explorer TemporalCentroid</td><td>-6.0%</td><td>-0.2%</td></tr><tr><td>Explorer Narrative</td><td>+31.5%</td><td>+12.8%</td></tr><tr><td>Explorer TemporalNarrative</td><td>+21.8%</td><td>+10.2%</td></tr></tbody></table>\n<p>这些结果首先说明时间分解不是统一有效的增强。对习惯型用户，长短期均值融合改善排序；对探索型用户，TemporalCentroid 在两个截断位置没有优势。Narrative 在 Explorer 上比 TemporalNarrative 的 NDCG@10 更好，说明额外拆成两段自然语言总结也未必提高效能。作者讨论认为，探索行为本身可能不适合被强制组织为稳定的长短期差异，这属于机制解释，不能当作已被独立因果实验验证。</p>\n<p>统计检验采用每用户指标的 Wilcoxon 符号秩检验，显著性阈值为 0.05。论文提示 Explorer 样本较少，K=10 的证据并不是每项指标都显著；Narrative 的 NDCG@10 有显著标记，但 Recall@10 的 +18.7% 没有。K=100 上分人群模式更稳定。Coverage 是系统级指标，不适合套用每用户检验，因此作者没有给出同样的逐用户显著性判断。</p>\n<p>全体 TemporalCentroid 的 Coverage@10 相对下降 5.8%，即便它在 NDCG 上胜出，也没有做到所有指标共同改善。对 LLM 画像，论文报告更明显的热门集中现象。解释可能来自生成模型与编码器都更熟悉热门内容：总结向量向语义空间中热门区域移动，使同一个人的列表看起来更丰富，但不同人的列表更相似。作者没有分别隔离生成步骤和编码步骤，不能确定二者各占多少贡献。</p>\n<p>窗口分析扫描四档比例，用每个模型在 25% 窗口下的自身结果归一化，和主表相对于 Centroid 的归一化口径不同。阅读图表时必须区分这两个分母，不能把窗口曲线上的相对变化误当成对基线模型的增益。文章为保密只给相对准确率，也意味着无法从表格恢复绝对命中数量或真实业务价值。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确提出两项边界：研究来自单一流媒体平台、特定内容领域，是否适用于其他平台、用户分布或 LLM 与编码器组合仍需复现；实验是离线分析，线上反馈和系统动态可能改变结论。LLM 成本部分也仅给出定性判断，没有披露完整价格、算力摊销或延迟测试，不能据此承诺节省某个固定比例的总成本。</p>\n<p>作者承认用户路由只是部署方向：Explorer 标签依赖未来测试行为，不能在线直接获得。训练期相关性分析是前期观察，还需要特征工程、阈值校准和线上验证。若信号不足，默认采用聚合画像是论文建议的保守选择。额外的阅读判断是，内容基线内部的优势不足以证明它优于成熟协同排序系统；论文主动限制了比较范围，应保留这个范围。</p>\n<h2>6. 工业实践意义</h2>\n<p>社区短文本搜索可先把用户历史点击的帖子、问答与评论编码成语义向量，用全历史均值及近期均值作为轻量个性化特征。再在固定 query、候选集和排序网络的条件下，比较 LLM 主题画像是否为兴趣迁移较快的用户提供增益。不能直接用未来行为形成线上路由标签，否则实验会偷看答案。</p>\n<p>一个可执行的验证方案是按时间切分训练路由器，仅使用当时可见的历史长度、主题跨度和近期行为变化；在之后的时间窗评价推荐结果，并保留无法确定的人群走普通向量画像。路由器本身也要与全体统一策略比较，避免离线分组收益在真实分类误差下消失。作者样本探索型约占 18%，这一比例只能描述该数据，不能直接用于估计社区算力预算。</p>\n<p>指标同时记录 nDCG、CTR、目录覆盖、长尾曝光和画像刷新成本。点击率上升而覆盖显著下降时，需要判断是否牺牲了社区内容发现。在线请求可以消费离线生成的画像向量，因此不必假设每次搜索都调用 LLM，但画像生成频率、用户删除历史后的刷新和编码版本一致性仍会增加工程复杂度。这些是迁移建议，不是论文已经测出的在线结果。</p>\n<p>来源：<a href=\"https://arxiv.org/html/2609.27183\" target=\"_blank\" rel=\"noopener\">论文正文</a>，重点依据第 3–5 节与表 2、表 3；正文快照保存在本次 evidence 目录。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.26977",
+      "title": "Tie Handling Is Part of the Evaluation Protocol: An Order-Invariance Audit for Tie-Heavy Recommender Scores",
+      "authors": "Chengkun Guo, Han Chen, Yilin Zhu, Yingrui Li",
+      "abstract": "arXiv:2609.26977v1 Announce Type: new \nAbstract: Offline top-k evaluation often ranks one held-out relevant item together with sampled negatives. When several candidates receive exactly the same score, the tie-breaking rule becomes part of the ranking. A common implementation stores the relevant item first and then applies a stable sort, which preserves input order among equal scores; the relevant item therefore wins every tie. We call an evaluator row-order invariant when permuting the input candidates without changing their identities, labels, or scores leaves the final ranking unchanged. We audit this property by holding candidates and scores fixed and changing only the tie-breaking rule. On 30,000 Amazon Beauty & Personal Care rows, NDCG@10 for a rating-weighted attribute-overlap score is 0.85 under input-order tie-breaking. A deterministic hash tie-break based on user and item IDs lowers it to 0.17. The exact expectation under uniform random tie-breaking closely matches the mean o",
+      "url": "https://arxiv.org/abs/2609.26977",
+      "source": "arxiv",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.15,
+      "company": [],
+      "summary": "论文审计推荐评测中的同分排序：正样本若固定排在首位，稳定排序会让其赢得全部平局。在 3 万条 Amazon Beauty 评测记录上，仅把输入顺序打破平局改为用户与物品 ID 哈希排序，NDCG@10 就从 0.85 降至 0.17；均匀随机平局的精确期望与 100 个哈希种子的均值吻合。",
+      "key_insight": "社区搜索的 nDCG 验证应加入候选行随机置换检查，尤其关注量化分数、规则召回及稀疏交互模型中的大量同分。固定用户与内容 ID 的哈希次序可提高重复性，但还应报告平局比例和随机平局期望，区分真实模型改进与排序实现造成的指标虚高。",
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.25,
+      "preference_reason": "商业相关评分不低于4，符合用户偏好的业务相关维度；主题奖励为0。",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.28383",
+      "title": "Beyond a Scalar: Distributional Serving Interfaces for Watch-Time Prediction",
+      "authors": "Xuan Liu, Jingbin Qian, Zhanyu Liu, Hefeng Zhou",
+      "abstract": "arXiv:2609.28383v1 Announce Type: new \nAbstract: Watch time is the primary engagement signal in short video feeds, and its prediction directly affects ranking and exposure. Existing methods improve watch time prediction by correcting duration bias or modeling richer distributions, but most expose only an expected or debiased watch time at serving time. Even when video duration is available to later models, the interface gives only one estimate of watch time and no probabilities for completion, overplay, or other regions relevant to downstream tasks. To address this limitation, we propose the Distributional Serving Interface (DSI), which has a distribution provider, a compact, low-dimensional summary, and lightweight readouts tailored to each task. The provider learns a joint distribution over four watch states derived from watch ratio and their event times; rules based on video duration remove incompatible combinations, while a restoration loss preserves accuracy in seconds. The summar",
+      "url": "https://arxiv.org/abs/2609.28383",
+      "source": "arxiv",
+      "published": "2026-09-23",
+      "discovered_at": "2026-09-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.1,
+      "company": [
+        "Shanghai Jiao Tong University",
+        "Rice University"
+      ],
+      "summary": "DSI 针对观看时长单一预测值丢失行为分布的问题，输出观看状态概率、相对时长和不确定性摘要，再接轻量任务读出层。在 KuaiRec 上，MAE 从最强基线的 3.8327 秒降至 3.5059 秒；三个公开数据集相对降幅为 1.9%–8.5%。固定读出层后增益缩小，说明完整系统优势不能全部归因于分布接口。",
+      "key_insight": "社区搜索若兼顾 CTR、阅读完成和停留时长，可以保留分布摘要供各任务使用，减少新增目标时反复重训主模型。实验表明 27 维摘要能保留均值之外的信息，但不同分布参数化效果相近；应先固定读出层做对照，再判断复杂状态设计是否值得部署。",
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "preference_reason": "商业相关评分不低于4，符合用户偏好的业务相关维度；主题奖励为0。",
+      "rank": 4
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.26975",
+      "title": "Calibrating Reproduced Claims in Recommender Systems",
+      "authors": "Alan Said",
+      "abstract": "arXiv:2609.26975v1 Announce Type: new \nAbstract: Reproduction studies can produce mixed outcomes. Reported values may differ while the ordering of the compared methods remains the same, a result may hold only under some experimental conditions, or a released implementation may fail to reproduce a result that the model can still reach. The terms repeatability, reproducibility, and replicability describe how a follow-up study relates to the original experiment, but not which parts of the original claim are supported by the new results. We introduce \\emph{claim calibration} as a way of stating the strongest claim supported by a follow-up study, together with the conditions under which it holds and the parts that remain untested. We apply this perspective to five original--follow-up paper pairs from recommender-systems research. The cases show that agreement in numerical values, method rankings, statistical results, and overall conclusions does not always coincide, and that follow-up studi",
+      "url": "https://arxiv.org/abs/2609.26975",
+      "source": "arxiv",
+      "published": "2026-09-22",
+      "discovered_at": "2026-09-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "total_score": 3.65,
+      "company": [
+        "University of Gothenburg"
+      ],
+      "summary": "论文通过 5 对推荐系统原始研究与复现研究，分析数值一致、方法排序一致和结论成立之间的区别，提出 Claim Evidence Profile 记录主张及适用条件。例如一个复现案例增加 15 项指标，另一个增加 4 个数据集，比较范围因此发生变化。研究未重新运行实验，证据来自论文与公开材料的结构化分析。",
+      "key_insight": "社区搜索评审可同时记录原始收益、复现设置、可支持的结论和未验证部分，防止把一个数据切分上的 nDCG 改进写成普适收益。该工作适合改进排序模型评测报告和实验交接；它提供证据记录方法，不提供可直接承诺的 CTR 或线上业务增幅。",
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.75,
+      "preference_reason": "商业相关评分不低于4，符合用户偏好的业务相关维度；主题奖励为0。",
+      "rank": 5
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:Belluxx/Aleph",
+      "title": "Aleph: Give satellite imagery, terrain data, buildings, streetview photos to your LLM",
+      "authors": "Belluxx",
+      "abstract": "Give satellite imagery, terrain data, buildings, streetview photos to your LLM",
+      "url": "https://github.com/Belluxx/Aleph",
+      "source": "github",
+      "published": "2026-09-19",
+      "discovered_at": "2026-09-24",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "Belluxx/Aleph",
+        "owner": "Belluxx",
+        "description": "Give satellite imagery, terrain data, buildings, streetview photos to your LLM",
+        "created_at": "2026-09-19T19:32:01Z",
+        "updated_at": "2026-09-24",
+        "pushed_at": "2026-09-24",
+        "stargazers_count": 21,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "Give satellite imagery, terrain data, buildings, streetview photos to your LLM",
+      "language": "Python",
+      "stars": 21,
+      "created_at": "2026-09-19",
+      "rank": 1
+    },
+    {
+      "id": "hf_dataset:Qwen/RecreationBench",
+      "title": "Qwen/RecreationBench",
+      "authors": "Qwen",
+      "description": "RecreationBench GitHub · Website · Leaderboard · Report ↗ RecreationBench is a benchmark of 250 application-recreation tasks across Ubuntu, macOS, Windows, Android, and Web. It is the held-out evaluation suite of RecreationWorld, a framework for scalable and verifiable environmen; tags: task_categories:text-generation, language:en, license:other, size_categories:n<1K, modality:image, modality:text, arxiv:2609.22000, region:us",
+      "abstract": "RecreationBench GitHub · Website · Leaderboard · Report ↗ RecreationBench is a benchmark of 250 application-recreation tasks across Ubuntu, macOS, Windows, Android, and Web. It is the held-out evaluation suite of RecreationWorld, a framework for scalable and verifiable environmen; tags: task_categories:text-generation, language:en, license:other, size_categories:n<1K, modality:image, modality:text, arxiv:2609.22000, region:us",
+      "url": "https://huggingface.co/datasets/Qwen/RecreationBench",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_dataset",
+      "stars": 12,
+      "language": "dataset",
+      "created_at": "2026-09-18",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-18",
+      "discovered_at": "2026-09-24",
+      "retrieval_meta": {
+        "repo_type": "dataset",
+        "repo_id": "Qwen/RecreationBench",
+        "likes": 12,
+        "downloads": 4233,
+        "pipeline_tag": "",
+        "tags": [
+          "task_categories:text-generation",
+          "language:en",
+          "license:other",
+          "size_categories:n<1K",
+          "modality:image",
+          "modality:text",
+          "arxiv:2609.22000",
+          "region:us",
+          "agent",
+          "benchmark",
+          "evaluation",
+          "computer-use",
+          "software-recreation",
+          "multimodal",
+          "qwen"
+        ],
+        "created_at": "2026-09-18T11:19:15.000Z",
+        "last_modified": "2026-09-21T05:03:16.000Z"
+      },
+      "rank": 2
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2177,
+      "language": "model",
+      "created_at": "2026-09-14",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-14",
+      "discovered_at": "2026-09-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 2177,
+        "downloads": 37618,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "rgba",
+          "text-to-image",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-09-14T03:47:26.000Z",
+        "last_modified": "2026-09-21T04:50:49.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_space:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 190,
+      "language": "space",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-24",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 190,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T10:15:59.000Z",
+        "last_modified": "2026-09-21T04:36:41.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1-PE-T2I",
+      "title": "Qwen/Qwen-Image-2.1-PE-T2I",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: safetensors, qwen3_5, qwen, prompt-rewriting, text-to-image, license:other, region:us",
+      "abstract": "pipeline: text-to-image; tags: safetensors, qwen3_5, qwen, prompt-rewriting, text-to-image, license:other, region:us",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1-PE-T2I",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 49,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-20",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1-PE-T2I",
+        "likes": 49,
+        "downloads": 3208,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "safetensors",
+          "qwen3_5",
+          "qwen",
+          "prompt-rewriting",
+          "text-to-image",
+          "license:other",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T08:45:29.000Z",
+        "last_modified": "2026-09-20T11:59:46.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1-PE-I2I",
+      "title": "Qwen/Qwen-Image-2.1-PE-I2I",
+      "authors": "Qwen",
+      "description": "tags: safetensors, qwen3_5, qwen, prompt-rewriting, image-editing, license:other, region:us",
+      "abstract": "tags: safetensors, qwen3_5, qwen, prompt-rewriting, image-editing, license:other, region:us",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1-PE-I2I",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 47,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-20",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1-PE-I2I",
+        "likes": 47,
+        "downloads": 6779,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "qwen3_5",
+          "qwen",
+          "prompt-rewriting",
+          "image-editing",
+          "license:other",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T08:46:47.000Z",
+        "last_modified": "2026-09-20T11:59:48.000Z"
+      },
+      "rank": 6
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recency": true,
+    "source_diversity": false,
+    "chinese_source": true,
+    "status": "gaps",
+    "warnings": [
+      "符合赛道且证据可核实的条目不足10篇，实际精选5篇。",
+      "来源多样性不足：arxiv 80%，blog_rss 20%，无法从去重候选中补齐。",
+      "Semantic Scholar及会议源不可用，候选覆盖受到影响。",
+      "复现主张论文是5对研究的文献分析，没有新跑模型实验。"
+    ]
+  },
+  "warnings": [
+    "符合赛道且证据可核实的条目不足10篇，实际精选5篇。",
+    "来源多样性不足：arxiv 80%，blog_rss 20%，无法从去重候选中补齐。",
+    "Semantic Scholar及会议源不可用，候选覆盖受到影响。",
+    "复现主张论文是5对研究的文献分析，没有新跑模型实验。"
+  ],
+  "parameters": {
+    "top": 10,
+    "days": 3,
+    "min_score": 3.0
+  },
+  "scoring_note": "85篇经赛道与证据初筛；5篇进入五维评分，其余排除原因见scoring_audit.json。"
+}

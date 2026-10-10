@@ -1,0 +1,248 @@
+{
+  "date": "2026-05-29",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 10,
+    "papers_selected": 8,
+    "score_min": 3.15,
+    "score_max": 4.35
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.27450",
+      "title": "Context Features Are Cheap: Rank-Aware Decomposition for Efficient Feature Interaction in Recommender Systems",
+      "url": "https://arxiv.org/abs/2605.27450",
+      "authors": "—",
+      "company": [
+        "Taboola"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.35,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "工业排序模型对同一用户/上下文特征重复打分 N 个候选，标准实现把上下文特征在前向早期广播，导致 context-only 计算每请求重复 N 次。论文提出 rank-aware 分解：对 FM 两两内积、DCNv2 cross 层、self-attention、FC 投影这些主流交互算子，基于“秩划分输入上的线性/双线性运算可做精确块分解”这一代数原理，把 context-only 计算从 per-candidate 降到 per-request，且与原模型输出逐位等价。在生产 DLRM 排序器上零改结构即让单 pod 吞吐 +87.5%、峰值 pod 数减少 47%；进一步提出 rDCN 变体跨层保持秩纪律，在训练噪声内匹配 DCNv2 精度且总 FLOPs 减少 67%。",
+      "key_insight": "核心是“恒等等价”——分解不改变任何一条预测，因此无需重训、没有离线指标回退风险，可直接替换上线，对推荐/搜索精排服务很有吸引力。节省量随上下文特征数量平方增长，上下文特征越多收益越大。恒等分解只在 cross network 与 self-attention 的首层成立（每层会混合 rank），要跨深度获益须改用 rDCN 这类保持秩纪律的结构。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.27450",
+        "title": "Context Features Are Cheap: Rank-Aware Decomposition for Efficient Feature Interaction in Recommender Systems",
+        "status": "completed",
+        "content": "# Context Features Are Cheap: Rank-Aware Decomposition for Efficient Feature Interaction 深度解读\n\n## 1. 问题与动机\n现代工业推荐排序对同一次请求里的 N 个候选，复用同一份用户/上下文特征逐一打分。主流实现（DLRM、DeepFM、DCNv2）在前向早期就把上下文特征广播开来，使 context-only 运算每请求重复 N 次。作者给出量化浪费：对 K 个上下文字段、M 个目标字段、嵌入维 D，仅 context-context 的 FM 交互每请求就白白消耗 (N−1)·C(K,2)·D FLOPs，且随上下文特征数 K 平方增长。随着系统引入更长用户历史、会话、页面特征，K 越来越大，这笔浪费随之扩大。对每天服务数十亿请求的生产系统（Taboola 的 CPU 推理基建），这直接换算成机器规模与成本。\n\n## 2. 方法详解\n核心是一条代数原理：任何作用在\"按 rank 划分输入\"上的线性/双线性运算，都存在精确块分解，可把 context-only 计算从 per-candidate（rank 3，[B,N,D]）下放到 per-request（rank 2，[B,D]），且与原模型输出逐位等价。\n- 线性层（FC、attention 投影）：Wx = W_c·x_c + W_t·x_t，上下文项 W_c·x_c 算一次再广播，目标项按候选算。RankSplitDense 把首个 FC 层这样拆，节省 ΔFC=(N−1)·|x_c|·U；当上游 FM_ctx 输出（大小 C(K,2)）喂进来时，节省进一步变成 (N−1)·C(K,2)·U，对 K 平方、跨阶段叠加。\n- 双线性（FM 内积、attention 打分）：x^T·W·y 拆成 cc/ct/tc/tt 四块，只有 context-context 块算一次；FM 拆成 FM_ctx（一次）与 FM_tgt（按候选）。\n- DCNv2 cross 层：x_{l+1}=x_0⊙(W_l·x_l+b_l)+x_l，第 0 层的 W_cc·x_0^c、W_tc·x_0^c 是 rank 2 可预计算，节省比例 d_c²/(d_c+d_t)²。\n- self-attention：Q/K/V 投影按线性拆；注意力矩阵 Q_c·K_c^T 块是 rank 2，softmax 的混合用 block-wise log-sum-exp 把预计算的上下文部分与按候选的目标部分以 O(1) 合并。\n为何只在首层成立：cross network 与 attention 每层输出都会\"混 rank\"（如 cross 的上下文输出行含 W_ct·x_l^t，把目标耦合进本该是上下文的维度），经非线性后上下文与目标在每个神经元混合，后续层在纯目标依赖张量 [N,U] 上运算，秩分离被破坏。\n\n## 3. 核心技术贡献\n(1) 把\"上下文特征冗余计算\"形式化为 rank-partitioned 输入上的精确块分解，统一覆盖 FM/DCNv2/self-attention/FC 四类主流交互算子，且数学上恒等等价——不改预测、不需重训。\n(2) 闭式分析证明节省随上下文特征数平方增长，并用受控实验验证。\n(3) 提出 rDCN 架构变体：把 context×target 交互只加载到 target 流，context 流仅靠 context×context 演化（结构性删去 W_ct 块），从而跨深度保持秩纪律。target 流 T_{l+1}=T_0⊙(W_l^ct·c_l + W_l^t·T_l + b_l^t)+T_l 把一次性的上下文交叉项广播给按候选的目标项；rDCN 消去 baseline 中的 N·D_c² 项，使上下文驱动的扩展从平方降为线性（N·D_c·D_t），每层省 D_c·D_t 参数。\n\n## 4. 实验结果分析\n生产部署（DLRM 排序器，Table 4）：仅 FM rank-aware 即 +25% RPS/pod、p50 −17%、p99 −26%；FM+FC 组合达 +87.5% RPS/pod、p50 −30%、p99 −33%，峰值 pod 数减少 47%，且预测逐位不变。FM 与 FC 收益相互叠加，说明 FC 拆解并非可有可无。\n合成 DLRM 吞吐刻画：固定 M=4 变 K，vanilla RPS 从 K=8 的 1.00 退化到 K=24 的 0.34，rank-aware 从 1.13 退到 0.69，优势从 +13%(K=8) 扩大到 +105%(K=24)，印证平方级 scaling；固定 K=8 变 M，两条曲线同步退化，rank-aware 优势稳定在 +7~+21%，说明节省以上下文为中心、对目标数不敏感。\n精度（Table 3）：DLRM(K=27,M=4) vanilla LogLoss 0.3875，FM 与 FM+FC rank-aware 均 0.3875（恒等等价，±0.0001 内），FM+FC 省 73% 总 FLOPs；DCN(K=26,M=16) DCNv2 0.3876，rDCN 0.3877（+0.05%）省 67% 总 FLOPs（交互层省 72%）。消融：rDCN 去掉并行 context 流后 LogLoss 退化约 0.001（到 0.3886），比恒等分解的扰动大一个量级，证明并行 context 流对捕捉高阶 ctx×ctx 动态必要。\n\n## 5. 局限与未来方向\n作者明确：(1) 恒等分解在 cross network 与 attention 只在首层成立，跨深度不叠加，须靠 rDCN 这类架构改动；(2) target-attention 模型（DIN、ETA、TWIN）用户表征按设计依赖目标，没有 context-only 路径，无法套用；TransAct 的 target-token 注入在第 0 层即破坏秩纪律；(3) 如何扩展到通过共享 self-attention 把目标早融到用户侧表征的架构，列为开放问题；(4) rDCN 牺牲严格恒等等价换取跨深度叠加节省，离线精度损失在训练噪声内；(5) rDCN 仅离线验证、尚未上线，因生产中 DLRM 的 FM+FC 变体已能以更低算力达到同等离线精度。\n\n## 6. 工业实践意义\n最直接的价值：这是\"零精度损失、零重训、可直接替换\"的推理优化，对推荐/搜索精排服务（一次请求打分成百上千候选）几乎是免费的吞吐红利。落地建议：(1) 先在 FM 与首个 FC 层套恒等分解，按 Taboola 经验单 pod 吞吐可近翻倍、峰值机器数砍掉约一半；(2) 上下文特征越多（长历史、会话、页面特征）收益越大，正契合特征不断膨胀的趋势；(3) 若用 DCNv2 且想跨深度获益，可评估 rDCN，但它非恒等等价、需离线验证精度；(4) 注意适用边界——DIN/TWIN 这类 target-attention 模型、以及把目标早融到用户侧的架构无法直接套用。部署上 Taboola 在 CPU(Intel Xeon Sapphire Rapids)+K8s 自动扩缩+TF Serving oneDNN 环境验证，说明对 CPU 推理同样有效。",
+        "content_html": "<h1>Context Features Are Cheap: Rank-Aware Decomposition for Efficient Feature Interaction 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>现代工业推荐排序对同一次请求里的 N 个候选，复用同一份用户/上下文特征逐一打分。主流实现（DLRM、DeepFM、DCNv2）在前向早期就把上下文特征广播开来，使 context-only 运算每请求重复 N 次。作者给出量化浪费：对 K 个上下文字段、M 个目标字段、嵌入维 D，仅 context-context 的 FM 交互每请求就白白消耗 (N−1)·C(K,2)·D FLOPs，且随上下文特征数 K 平方增长。随着系统引入更长用户历史、会话、页面特征，K 越来越大，这笔浪费随之扩大。对每天服务数十亿请求的生产系统（Taboola 的 CPU 推理基建），这直接换算成机器规模与成本。</p>\n<h2>2. 方法详解</h2>\n<p>核心是一条代数原理：任何作用在&quot;按 rank 划分输入&quot;上的线性/双线性运算，都存在精确块分解，可把 context-only 计算从 per-candidate（rank 3，[B,N,D]）下放到 per-request（rank 2，[B,D]），且与原模型输出逐位等价。</p>\n<ul>\n<li>线性层（FC、attention 投影）：Wx = W_c·x_c + W_t·x_t，上下文项 W_c·x_c 算一次再广播，目标项按候选算。RankSplitDense 把首个 FC 层这样拆，节省 ΔFC=(N−1)·|x_c|·U；当上游 FM_ctx 输出（大小 C(K,2)）喂进来时，节省进一步变成 (N−1)·C(K,2)·U，对 K 平方、跨阶段叠加。</li>\n<li>双线性（FM 内积、attention 打分）：x^T·W·y 拆成 cc/ct/tc/tt 四块，只有 context-context 块算一次；FM 拆成 FM_ctx（一次）与 FM_tgt（按候选）。</li>\n<li>DCNv2 cross 层：x_{l+1}=x_0⊙(W_l·x_l+b_l)+x_l，第 0 层的 W_cc·x_0^c、W_tc·x_0^c 是 rank 2 可预计算，节省比例 d_c²/(d_c+d_t)²。</li>\n<li>self-attention：Q/K/V 投影按线性拆；注意力矩阵 Q_c·K_c^T 块是 rank 2，softmax 的混合用 block-wise log-sum-exp 把预计算的上下文部分与按候选的目标部分以 O(1) 合并。</li>\n</ul>\n<p>为何只在首层成立：cross network 与 attention 每层输出都会&quot;混 rank&quot;（如 cross 的上下文输出行含 W_ct·x_l^t，把目标耦合进本该是上下文的维度），经非线性后上下文与目标在每个神经元混合，后续层在纯目标依赖张量 [N,U] 上运算，秩分离被破坏。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 把&quot;上下文特征冗余计算&quot;形式化为 rank-partitioned 输入上的精确块分解，统一覆盖 FM/DCNv2/self-attention/FC 四类主流交互算子，且数学上恒等等价——不改预测、不需重训。<br>(2) 闭式分析证明节省随上下文特征数平方增长，并用受控实验验证。<br>(3) 提出 rDCN 架构变体：把 context×target 交互只加载到 target 流，context 流仅靠 context×context 演化（结构性删去 W_ct 块），从而跨深度保持秩纪律。target 流 T_{l+1}=T_0⊙(W_l^ct·c_l + W_l^t·T_l + b_l^t)+T_l 把一次性的上下文交叉项广播给按候选的目标项；rDCN 消去 baseline 中的 N·D_c² 项，使上下文驱动的扩展从平方降为线性（N·D_c·D_t），每层省 D_c·D_t 参数。</p>\n<h2>4. 实验结果分析</h2>\n<p>生产部署（DLRM 排序器，Table 4）：仅 FM rank-aware 即 +25% RPS/pod、p50 −17%、p99 −26%；FM+FC 组合达 +87.5% RPS/pod、p50 −30%、p99 −33%，峰值 pod 数减少 47%，且预测逐位不变。FM 与 FC 收益相互叠加，说明 FC 拆解并非可有可无。<br>合成 DLRM 吞吐刻画：固定 M=4 变 K，vanilla RPS 从 K=8 的 1.00 退化到 K=24 的 0.34，rank-aware 从 1.13 退到 0.69，优势从 +13%(K=8) 扩大到 +105%(K=24)，印证平方级 scaling；固定 K=8 变 M，两条曲线同步退化，rank-aware 优势稳定在 +7~+21%，说明节省以上下文为中心、对目标数不敏感。<br>精度（Table 3）：DLRM(K=27,M=4) vanilla LogLoss 0.3875，FM 与 FM+FC rank-aware 均 0.3875（恒等等价，±0.0001 内），FM+FC 省 73% 总 FLOPs；DCN(K=26,M=16) DCNv2 0.3876，rDCN 0.3877（+0.05%）省 67% 总 FLOPs（交互层省 72%）。消融：rDCN 去掉并行 context 流后 LogLoss 退化约 0.001（到 0.3886），比恒等分解的扰动大一个量级，证明并行 context 流对捕捉高阶 ctx×ctx 动态必要。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确：(1) 恒等分解在 cross network 与 attention 只在首层成立，跨深度不叠加，须靠 rDCN 这类架构改动；(2) target-attention 模型（DIN、ETA、TWIN）用户表征按设计依赖目标，没有 context-only 路径，无法套用；TransAct 的 target-token 注入在第 0 层即破坏秩纪律；(3) 如何扩展到通过共享 self-attention 把目标早融到用户侧表征的架构，列为开放问题；(4) rDCN 牺牲严格恒等等价换取跨深度叠加节省，离线精度损失在训练噪声内；(5) rDCN 仅离线验证、尚未上线，因生产中 DLRM 的 FM+FC 变体已能以更低算力达到同等离线精度。</p>\n<h2>6. 工业实践意义</h2>\n<p>最直接的价值：这是&quot;零精度损失、零重训、可直接替换&quot;的推理优化，对推荐/搜索精排服务（一次请求打分成百上千候选）几乎是免费的吞吐红利。落地建议：(1) 先在 FM 与首个 FC 层套恒等分解，按 Taboola 经验单 pod 吞吐可近翻倍、峰值机器数砍掉约一半；(2) 上下文特征越多（长历史、会话、页面特征）收益越大，正契合特征不断膨胀的趋势；(3) 若用 DCNv2 且想跨深度获益，可评估 rDCN，但它非恒等等价、需离线验证精度；(4) 注意适用边界——DIN/TWIN 这类 target-attention 模型、以及把目标早融到用户侧的架构无法直接套用。部署上 Taboola 在 CPU(Intel Xeon Sapphire Rapids)+K8s 自动扩缩+TF Serving oneDNN 环境验证，说明对 CPU 推理同样有效。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.27704",
+      "title": "Joint Optimization of Relevance and Engagement in Multi-Task Ranking for E-Commerce with Efficient LLM Supervision",
+      "url": "https://arxiv.org/abs/2605.27704",
+      "authors": "Luming Chen, Sudeep Das, 等",
+      "company": [
+        "DoorDash"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.3,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.45,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "工业搜索排序只用参与度信号优化会引入系统性偏差，偏向热门或价格锚定商品而不满足语义意图。论文提出生产级多任务排序系统，把语义相关性作为首要优化目标：用 ordinal relevance head 预测跨相关性阈值的累积概率以保留标签序关系，再与 engagement head 通过统一 value model 融合，实现可控的相关性-参与度权衡。用微调的轻量 LLM 在 1 亿+ query-item 对上批量生成三级序数相关性标签。离线 NDCG@10 与在线 A/B 均报告提升（摘要未给具体数值）。",
+      "key_insight": "对“相关性(nDCG)+CTR 双目标”的社区搜索场景高度对口。ordinal head 用累积概率建模有序标签，比多分类更契合相关性等级语义；用轻量 LLM 产 1 亿级相关性标签解决了相关性标注稀缺，是把 LLM 当离线标注器而非在线打分器的实用路线，在线无额外推理成本。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.27704",
+        "title": "Joint Optimization of Relevance and Engagement in Multi-Task Ranking for E-Commerce with Efficient LLM Supervision",
+        "status": "completed",
+        "content": "# Joint Optimization of Relevance and Engagement in Multi-Task Ranking 深度解读\n\n## 1. 问题与动机\n工业搜索排序若只用参与度信号（CTR / ATCR 加购率 / CVR）优化，会引入系统性偏差：因热门、价格锚定或词面重叠而获得点击的商品会被上排，即便语义上并不满足用户意图。难点在于高质量语义相关性监督在生产规模下稀缺——人工标注昂贵、缓慢，且对含数百万商品与长尾 query 的动态目录难以维护。于是形成根本张力：行为信号丰富但有偏，人工相关性判断可靠但稀疏。DoorDash 的目标是把语义相关性提升为首要优化目标，同时可控地平衡参与度。\n\n## 2. 方法详解\n三大件：序数相关性头 + 统一 value model + LLM 大规模产标。\n- Ordinal relevance head：不做二分类或 softmax，而是预测两个累积概率 p(r≥1)、p(r≥2)（相关性分级 0 不相关 / 1 中等 / 2 高度相关），标量相关性分 ŝ_rel = p̂(r≥1)+p̂(r≥2) 即期望相关性等级（式 3），天然保序。\n- 统一 value model 打分（式 1）：S(q,i)=α·ŷ_CTR+β·ŷ_ATCR+γ·ŷ_CVR+(1−α−β−γ)·ŝ_rel，α/β/γ∈[0,1] 可调，显式控制相关性-参与度权衡。\n- LLM 大规模产标流水线：①收集约 60 万人工标注作基线；②审计步骤——对\"人工标 irrelevant 但参与度排进前 50%\"的样本，用 GPT-4o 或 o3 配更细粒度 prompt 复评；③用 Query-to-Taxonomy(Q2T) transformer 预测相关类目做\"标签调和\"：类目命中则取人工/审计 LLM 的较高分，否则取较低分；④在审计后标签上微调 gpt-4o-mini，再推到 1 亿+ query-item 对。微调 LLM 在 10.5 万 hold-out 上三分类准确率 89%、within-1 准确率（|人工−LLM|≤1）98%。\n- 多任务架构：共享底层处理 query / item / consumer / interaction（BM25、历史率、字符串相似度）/ user-item / user-taxonomy 等特征，任务塔分别预测 CTR/ATCR/CVR 与序数相关性头；因共享底层与特征复用，加相关性头几乎不增计算成本。\n\n## 3. 核心技术贡献\n(1) 把 LLM 从\"外部裁判\"升级为\"一等训练信号\"：用多阶段审计 + Q2T 调和 + 微调小模型，把可靠相关性标签从 60 万人工扩到 1 亿级，解决相关性监督稀缺的根因，且 within-1 98% 的标注质量足以支撑训练。\n(2) 序数累积概率头：相比 softmax 多分类或 MSE 回归，更契合相关性\"有序等级\"语义，并可直接转成能加进 value model 的标量分。\n(3) 统一 value model 用可调权重显式建模相关性-参与度权衡，给出可操作的 trade-off 前沿，而非隐式融合。\n\n## 4. 实验结果分析\n离线（Table 1，200 万 query-item 对）：参与度-only 基线用 CTR 当相关性代理，Relevance NDCG@10 仅 0.812；本文序数法把 Relevance NDCG@10 提到 0.962（+0.150），同时 Click/ATCR/CVR 的 AUC（0.838/0.851/0.855）与基线持平。softmax(0.961)、regression(0.959) 也能拉高相关性 NDCG，但 trade-off 前沿（图 2）显示序数法在相同转化 NDCG 下相关性 NDCG 更高，且\"适度的相关性权重即可大幅提升相关性、几乎不损参与度\"。\n在线 A/B（Table 2，三周）：ATCR +1.16%(p=0.01)、CVR +1.10%(p=0.01)、GOV 总订单额 +0.50%(p=0.03)，均显著。关键发现：提升语义相关性不仅没牺牲参与度，反而拉高了参与度与成交。\n消融：仅把序数头当辅助任务、不把相关性并入最终打分（Auxiliary Only），相关性 NDCG 仅比基线微升——证明把相关性整合进统一 value model（式 1）才是收益关键，而非单纯多一个监督任务。\n\n## 5. 局限与未来方向\n作者未单列局限，但指向：探索更丰富语义信号（query 意图分解、属性级相关性）；用 query 自适应权重替代全局 value model 权重；纳入长期用户满意度指标。隐含局限：序数仅取 0/1/2 三级以平衡，未试更细粒度；微调 gpt-4o-mini 受标签分布敏感性约束，且未量化推理成本/延迟；在线实验仅三周，对低方差指标统计功效有限。\n\n## 6. 工业实践意义\n这篇与\"社区搜索（相关性 nDCG + CTR 双目标）\"场景几乎逐项对口，落地启示：(1) 别让 LLM 在线打分，而把它当离线/近线的相关性标注器，用\"人工种子→审计可疑样本→类目调和→微调小模型批量推全量\"的流水线，把相关性监督扩到亿级，within-1 98% 质量即可用；(2) 相关性头用序数累积概率而非多分类，保序且能转标量；(3) 用统一 value model 的可调权重显式做相关性-参与度权衡，并据 trade-off 前沿选\"适度相关性权重\"——可能同时涨相关性和 CTR/转化；(4) 关键是把相关性分真正并入线上排序打分，仅当辅助任务收益甚微。DoorDash 三周 A/B 的 ATCR/CVR/GOV 同向正收益，是双目标可兼得的有力证据。",
+        "content_html": "<h1>Joint Optimization of Relevance and Engagement in Multi-Task Ranking 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>工业搜索排序若只用参与度信号（CTR / ATCR 加购率 / CVR）优化，会引入系统性偏差：因热门、价格锚定或词面重叠而获得点击的商品会被上排，即便语义上并不满足用户意图。难点在于高质量语义相关性监督在生产规模下稀缺——人工标注昂贵、缓慢，且对含数百万商品与长尾 query 的动态目录难以维护。于是形成根本张力：行为信号丰富但有偏，人工相关性判断可靠但稀疏。DoorDash 的目标是把语义相关性提升为首要优化目标，同时可控地平衡参与度。</p>\n<h2>2. 方法详解</h2>\n<p>三大件：序数相关性头 + 统一 value model + LLM 大规模产标。</p>\n<ul>\n<li>Ordinal relevance head：不做二分类或 softmax，而是预测两个累积概率 p(r≥1)、p(r≥2)（相关性分级 0 不相关 / 1 中等 / 2 高度相关），标量相关性分 ŝ_rel = p̂(r≥1)+p̂(r≥2) 即期望相关性等级（式 3），天然保序。</li>\n<li>统一 value model 打分（式 1）：S(q,i)=α·ŷ_CTR+β·ŷ_ATCR+γ·ŷ_CVR+(1−α−β−γ)·ŝ_rel，α/β/γ∈[0,1] 可调，显式控制相关性-参与度权衡。</li>\n<li>LLM 大规模产标流水线：①收集约 60 万人工标注作基线；②审计步骤——对&quot;人工标 irrelevant 但参与度排进前 50%&quot;的样本，用 GPT-4o 或 o3 配更细粒度 prompt 复评；③用 Query-to-Taxonomy(Q2T) transformer 预测相关类目做&quot;标签调和&quot;：类目命中则取人工/审计 LLM 的较高分，否则取较低分；④在审计后标签上微调 gpt-4o-mini，再推到 1 亿+ query-item 对。微调 LLM 在 10.5 万 hold-out 上三分类准确率 89%、within-1 准确率（|人工−LLM|≤1）98%。</li>\n<li>多任务架构：共享底层处理 query / item / consumer / interaction（BM25、历史率、字符串相似度）/ user-item / user-taxonomy 等特征，任务塔分别预测 CTR/ATCR/CVR 与序数相关性头；因共享底层与特征复用，加相关性头几乎不增计算成本。</li>\n</ul>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 把 LLM 从&quot;外部裁判&quot;升级为&quot;一等训练信号&quot;：用多阶段审计 + Q2T 调和 + 微调小模型，把可靠相关性标签从 60 万人工扩到 1 亿级，解决相关性监督稀缺的根因，且 within-1 98% 的标注质量足以支撑训练。<br>(2) 序数累积概率头：相比 softmax 多分类或 MSE 回归，更契合相关性&quot;有序等级&quot;语义，并可直接转成能加进 value model 的标量分。<br>(3) 统一 value model 用可调权重显式建模相关性-参与度权衡，给出可操作的 trade-off 前沿，而非隐式融合。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线（Table 1，200 万 query-item 对）：参与度-only 基线用 CTR 当相关性代理，Relevance NDCG@10 仅 0.812；本文序数法把 Relevance NDCG@10 提到 0.962（+0.150），同时 Click/ATCR/CVR 的 AUC（0.838/0.851/0.855）与基线持平。softmax(0.961)、regression(0.959) 也能拉高相关性 NDCG，但 trade-off 前沿（图 2）显示序数法在相同转化 NDCG 下相关性 NDCG 更高，且&quot;适度的相关性权重即可大幅提升相关性、几乎不损参与度&quot;。<br>在线 A/B（Table 2，三周）：ATCR +1.16%(p=0.01)、CVR +1.10%(p=0.01)、GOV 总订单额 +0.50%(p=0.03)，均显著。关键发现：提升语义相关性不仅没牺牲参与度，反而拉高了参与度与成交。<br>消融：仅把序数头当辅助任务、不把相关性并入最终打分（Auxiliary Only），相关性 NDCG 仅比基线微升——证明把相关性整合进统一 value model（式 1）才是收益关键，而非单纯多一个监督任务。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者未单列局限，但指向：探索更丰富语义信号（query 意图分解、属性级相关性）；用 query 自适应权重替代全局 value model 权重；纳入长期用户满意度指标。隐含局限：序数仅取 0/1/2 三级以平衡，未试更细粒度；微调 gpt-4o-mini 受标签分布敏感性约束，且未量化推理成本/延迟；在线实验仅三周，对低方差指标统计功效有限。</p>\n<h2>6. 工业实践意义</h2>\n<p>这篇与&quot;社区搜索（相关性 nDCG + CTR 双目标）&quot;场景几乎逐项对口，落地启示：(1) 别让 LLM 在线打分，而把它当离线/近线的相关性标注器，用&quot;人工种子→审计可疑样本→类目调和→微调小模型批量推全量&quot;的流水线，把相关性监督扩到亿级，within-1 98% 质量即可用；(2) 相关性头用序数累积概率而非多分类，保序且能转标量；(3) 用统一 value model 的可调权重显式做相关性-参与度权衡，并据 trade-off 前沿选&quot;适度相关性权重&quot;——可能同时涨相关性和 CTR/转化；(4) 关键是把相关性分真正并入线上排序打分，仅当辅助任务收益甚微。DoorDash 三周 A/B 的 ATCR/CVR/GOV 同向正收益，是双目标可兼得的有力证据。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.27856",
+      "title": "Fine-Tuned LLM as a Complementary Predictor Improving Ads System",
+      "url": "https://arxiv.org/abs/2605.27856",
+      "authors": "Hui Yang, 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.0,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM 在广告/生产级推荐的落地仍稀少。已有 LLM-in-RecSys 成功多落在三类：(a) 生成式召回直接预测下一个候选，(b) 后期重排，(c) 辅助信号增强。论文为广告提出第四类互补范式：把微调过的开源 LLM 用作“广告主预测器(advertiser predictor)”而非排序器，为候选生成提供补充并给下游排序提供先验。在生产广告系统报告了显著离线提升与可度量的在线业务收益（摘要未给具体数值），23 位作者、production setup。",
+      "key_insight": "跳出“LLM 直接当 ranker”的惯性，把 LLM 定位成产出 advertiser 维度先验的互补预测器，与既有排序链路解耦，降低在线推理压力。对广告/推荐团队提供了一条 LLM 增量接入路径：不替换主排序模型，只补充难以由 ID 特征学到的语义先验。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.27810",
+      "title": "LRanker: LLM Ranker for Massive Candidates",
+      "url": "https://arxiv.org/abs/2605.27810",
+      "authors": "—",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LLM 排序受上下文长度与算力限制，难以应对百万级候选池。LRanker 面向大候选排序：candidate aggregation encoder 用 K-means 聚类显式建模全局候选信息；graph-based test-time scaling 把候选切分为子集、生成多个 query embedding 并通过集成融合。RBench 7 任务/3 场景评测：RBench-Small >30% 提升，RBench-Large MRR +3~9%，RBench-Ultra（>680 万候选）仍保持 20~30% 提升，消融验证各组件有效。",
+      "key_insight": "关键是“聚合多个 query embedding 而非依赖单一表征”以提升鲁棒性与表达力，并用 K-means 全局建模+图划分把 LLM 排序扩展到百万级。test-time scaling 走推理期增算力换效果，落地需权衡延迟成本，更适合离线或对延迟不敏感的粗排环节。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.27429",
+      "title": "Ocean4Rec: Offline LLM-Derived OCEAN Profiles for Request-Time VOD Reranking",
+      "url": "https://arxiv.org/abs/2605.27429",
+      "authors": "—",
+      "company": [
+        "Samsung"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "工业 VOD 推荐需要更丰富的内容理解，但 LLM-as-reranker 每请求都要重复 prompt 构造、token 生成、模型调用、解析与兜底，在高并发低延迟服务里难做吞吐规划与尾延迟控制。Ocean4Rec 只在离线用 LLM 把物品内容元数据物化成 OCEAN（开放/尽责/外向/宜人/神经质）五维画像；用户画像由近期点击/深度访问物品在同一五维空间做时间衰减聚合。请求时只 join 预计算画像+基础打分+目录新鲜度做数值重排，不调 LLM。Samsung Smart TV VOD 日志上，相对更强的 Base+Recency 基线，NDCG@20 在 NCF 生成器 +7.6%、LightGCN +61.5%；HR@20 在 NCF 不确定、LightGCN +67.3%。",
+      "key_insight": "“LLM 只在离线物化画像、在线零 LLM 调用”是规避 LLM-as-reranker 延迟与容量隔离难题的实用模式，把语义理解成本前置到离线。用 OCEAN 五维做统一的物品/用户表征空间值得借鉴；但单数据集、HR@20 对 NCF 不确定，说明收益对弱基线/稀疏精确回放标签更明显。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.28493",
+      "title": "Looking Farther with Confidence: Uncertainty-Guided Future Learning for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2605.28493",
+      "authors": "Ziqiang Cui, Xing Tang, Xiuqiang He, Chen Ma, 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "序列推荐建模动态兴趣但受数据稀疏困扰。多数方法训练只做即时 next-item 预测，忽略更长期未来交互的信息；少数用未来数据的工作对所有样本施加均匀强度的未来监督，易得次优解。UFRec 提出自适应未来学习：Uncertainty-Guided Future Supervision 按模型对当前状态的置信度调节多步未来监督权重（置信则看更远、不确定则聚焦即时任务）；Future-Aware Contrastive Learning 把未来轨迹整体对待。两模块仅训练期生效、无推理开销，四个基准上显著超过 SOTA（摘要未给具体数值）。",
+      "key_insight": "把“未来监督强度”做成随模型置信度自适应而非固定，是对已有 future-data 方法的针对性改进；训练期增强、推理零开销对线上序列模型友好。思路可迁移到任何带长期未来反馈的推荐序列建模。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.28810",
+      "title": "Affective Music Recommendation: A Rollout-Based World Model for Offline Preference Optimization",
+      "url": "https://arxiv.org/abs/2605.28810",
+      "authors": "—",
+      "company": [
+        "LUCID"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 3.45,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "功能性音乐（专注/助眠/临床干预）的推荐目标是听者的情感状态，但对情感做在线实验在伦理上受限（尤其无法可靠跳歌或报告不适的临床人群）。AMRS 部署在 LUCID 健康平台，核心是 rollout-based world model：因果 transformer 在日志收听数据上联合预测参与度、二元评分与自报 valence/arousal，既当离线策略训练的 in-silico 模拟器，也作上线前压测工具。推荐策略由行为克隆初始化，再用 DPO 针对可配置多目标效用函数离线微调。严格冷启动协议下 world model 对行为与情感信号都有可用保真度；DPO 在保持多样性、避免贪心优化的分布坍缩的同时提升预测 valence/arousal。",
+      "key_insight": "当在线实验不可行时，用因果 world model 当模拟器 + 离线 DPO 做策略优化，是一条“离线对齐多目标效用”的可复制方法论。对在线实验昂贵或受限的推荐场景（医疗、敏感人群）有参考价值；DPO 相比贪心优化能避免分布坍缩这点值得注意。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2505.09861",
+      "title": "LiDDA: Data Driven Attribution at LinkedIn",
+      "url": "https://arxiv.org/abs/2505.09861",
+      "authors": "—",
+      "company": [
+        "LinkedIn"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 3.15,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.15,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "数据驱动归因(DDA)按从数据中学到的因果模式给营销触点分配转化信用，是现代营销智能与广告平台的基础。LiDDA 提出统一的 transformer 归因方法，可同时处理 member 级数据、聚合级数据以及外部宏观因子的整合，并详述了在 LinkedIn 的大规模落地与显著业务影响，分享了对营销与广告技术广泛适用的经验。（v3 replace-cross，原始 2025-05 提交。）",
+      "key_insight": "用单一 transformer 统一 member 级/聚合级/宏观因子三类异构数据做归因，避免多套归因模型并存。对广告/增长团队的多触点转化归因有直接借鉴；注意这是 2025 年提交、近期更新的工作，非全新成果。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:modelscope/ms-swift",
+      "title": "ms-swift: Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni,",
+      "url": "https://github.com/modelscope/ms-swift",
+      "source": "github",
+      "description": "Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "language": "Python",
+      "stars": 14309,
+      "created_at": "2023-08-01"
+    },
+    {
+      "rank": 2,
+      "id": "github:huggingface/transformers",
+      "title": "transformers: 🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for bot",
+      "url": "https://github.com/huggingface/transformers",
+      "source": "github",
+      "description": "🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "language": "Python",
+      "stars": 161024,
+      "created_at": "2018-10-29"
+    },
+    {
+      "rank": 3,
+      "id": "github:linuxhsj/openclaw-zero-token",
+      "title": "openclaw-zero-token: OpenClaw: Use All Major AI Models NO API Token! Claude/ChatGPT/Gemini/DeepSeek/Doubao/Grok/Qwen/Manus/Kimi",
+      "url": "https://github.com/linuxhsj/openclaw-zero-token",
+      "source": "github",
+      "description": "OpenClaw: Use All Major AI Models NO API Token! Claude/ChatGPT/Gemini/DeepSeek/Doubao/Grok/Qwen/Manus/Kimi",
+      "language": "TypeScript",
+      "stars": 4903,
+      "created_at": "2026-02-23"
+    }
+  ]
+}

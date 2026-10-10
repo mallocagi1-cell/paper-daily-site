@@ -1,0 +1,227 @@
+{
+  "date": "2026-07-06",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 5,
+    "papers_selected": 5,
+    "score_min": 2.9,
+    "score_max": 4.4,
+    "coverage": "pass_with_warning",
+    "coverage_notes": "赛道核心、近7天和来源多样性满足；行业实践由美团 WBench 工程博客兜底，但其与 personalization 相关性较弱。"
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.29946",
+      "title": "POEM: Partial-Order Enhanced Real-Time Sequential Modeling for Recommendation",
+      "url": "https://arxiv.org/abs/2606.29946",
+      "authors": "Linxiao Che, Yijia Sun, Siyuan Lou, Shanshan Huang, Qiang Luo, Ruiming Tang, Han Li, Kun Gai",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-06-30",
+      "total_score": 4.4,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "POEM 针对实时推荐中用户兴趣漂移和上下文变化的问题，把多阶段排序链路里的预测 CTR、预测观看时长等上游分数转成动态偏序序列。方法包含按实时排序分动态分组采样、多目标分数融合、层次化样本学习、图挖掘 hard negative 与 margin pairwise loss，使序列模型不只依赖静态点击历史。论文直接面向工业推荐级联链路，适合短视频、信息流和社区内容推荐中的实时重排场景。",
+      "key_insight": "对个性化系统的启示是：用户序列不必只按时间排序，线上排序系统已经产生了高价值的偏序监督信号。把 pCTR、观看时长等多目标分数压缩成统一表示，再用用户真实正反馈和系统偏好高排样本共同训练，可以减少训练目标与线上排序目标的错位。社区 UGC 场景可借鉴其“请求级重构用户兴趣”的做法，用实时候选分和近期行为共同驱动精排。",
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.5,
+      "deep_reading": {
+        "paper_id": "arxiv:2606.29946",
+        "title": "POEM: Partial-Order Enhanced Real-Time Sequential Modeling for Recommendation",
+        "status": "completed",
+        "content": "# POEM: Partial-Order Enhanced Real-Time Sequential Modeling for Recommendation 深度解读\n\n## 1. 问题与动机\nPOEM 解决的是工业推荐中一个很具体的错位：序列推荐模型通常只看用户已经点击或观看过的静态时间序列，而真实的线上推荐系统每次请求都会由召回、粗排、精排产生大量实时排序信号，例如 pCTR、pCVR、观看时长预估和其他业务目标分。这些信号本质上表达了系统对用户当前偏好的“偏序判断”，但传统 SASRec、BERT4Rec、DIN/DIEN/MIMN 等模型只把新点击当作更新触发器。论文指出这会带来两个问题：第一，系统内部的多目标排序知识没有被召回模型使用；第二，用户兴趣在没有新点击时也会因候选池、上下文和排序策略变化而漂移，静态序列会滞后。作者把核心命题改成：用上一刷请求中 top-ranked candidate 的多目标分数来构造当前请求的输入序列，使用户向量每次请求都被重新评估。这个问题在短视频流和 UGC 信息流里尤其重要，因为内容池变化快、隐式反馈延迟明显，单靠历史点击序列会错过当前候选环境中的细粒度偏好。\n\n## 2. 方法详解\nPOEM 的系统由双序列编码、动态偏序序列构造、多目标分数融合、层次化学习目标和实时 serving 闭环组成。训练和 serving 都使用两条序列：一条是用户最近行为构成的 historical interaction sequence，另一条是由上一刷请求的 top-ranked items 及其排序分构成的 dynamic partial-order sequence。对上一刷候选集合中的每个 item，系统拿到多个实时排序分，例如 CTR、CVR、watch time 等。由于不同目标量纲不同，作者没有直接平均，而是先对每个目标内部按分数排序，把名次转换成 inverse-rank utility，再按目标权重融合得到 fused score。候选按 fused score 排序后，被切成若干连续 group，并从每个 group 内随机采样，形成长度为 64 的偏序序列。这样既保留全局偏序，又避免完全确定排序导致的多样性不足。\n\n序列表示上，每个偏序 item 被编码成 quintuple，其中包含 item id 与多目标相关连续特征；连续特征经线性投影，item id 查 embedding 表，然后送入 Transformer encoder。历史行为序列也由独立 Transformer encoder 编码，两边都追加 special token 聚合序列级信息。两个 encoder 不共享参数，最终把两个 special token 输出 concat 后过两层 MLP，得到最终用户向量，用于 ANN 召回。训练目标是 hierarchical objective：正样本既包括真实用户反馈正样本，例如长播视频，也包括系统偏好的 top-ranked item；负样本除 in-batch negatives 外，还从离线 Swing item-item 图中围绕正样本动态挖 hard negatives。损失由带采样偏差校正的 cross-entropy 和 margin-based pairwise loss 组成，让模型同时对齐真实满意度和下游排序器偏好。\n\nServing 设计强调因果性和低延迟。当前请求只读取用户历史序列和“上一刷”的 top-ranked item 及分数，这些信息存 Redis 等低延迟缓存；模型生成实时用户向量后做 ANN retrieval；当前请求经过下游排序后，再把结果和分数写回缓存，供下一刷使用。这个一请求周期的反馈闭环避免了使用未来信息，同时让用户向量在没有新点击时也会随候选池和排序信号变化而变化。\n\n## 3. 核心技术贡献\n第一，POEM 把排序信号从“监督目标”提升为“输入构造的结构先验”。以往使用 ranker 信号常见于蒸馏、listwise loss 或采样偏差校正，仍然是在训练目标层面对齐；POEM 直接用 ranker 产生的偏序来重写召回阶段的用户序列，使召回向量具有 cascade awareness。\n\n第二，多目标融合采用 rank-weight 而非 raw score average，解决 CTR、CVR、watch time 等分数尺度不一致的问题。消融显示 Multi-Avg 的 HR@50 只有 0.5224，甚至低于 Single-WT 的 0.5820；Multi-Rank 达到 0.6661，说明排序名次归一化比简单均值更适合多目标系统信号。\n\n第三，层次化正样本同时纳入 user-feedback positive 和 system-preferred positive。只用用户反馈会受曝光和延迟影响，只用系统偏好又可能只模仿 ranker；Dual-Pos 在 HR@50、NDCG@50、online gain 和 delivery rate 上都优于单一路径。第四，图挖 hard negative 让模型在相似 item 间学习细粒度边界，而不是只靠容易的随机负样本。\n\n## 4. 实验结果分析\n论文使用快手大规模工业数据，覆盖 1.08 亿用户、4200 万 item、27 亿训练样本、1300 万 1-hour test 样本和 4.57 亿 1-day test 样本。所有模型用 TensorFlow，在相同软硬件环境训练；AdamW 初始学习率 0.001，cosine annealing，batch size 1024；POEM Transformer 为 4 层、hidden dimension 128、1 个 attention head，偏序序列长度 64。\n\n主表中，1-hour test 上 DSSM 的 HR@50/NDCG@50 为 0.4703/0.1778，SASRec 为 0.5267/0.2092，CAIN variant 为 0.5749/0.2371，POEM 达到 0.6661/0.3080；相对第二强 CAIN，HR@50 提升 15.9%，NDCG@50 提升 29.9%。在 1-day test 上，POEM HR@50/NDCG@50 为 0.4879/0.2100，相对 CAIN 的 0.4700/0.1923 提升 3.81% 和 9.19%。时间间隔分析显示，POEM 对实时性最敏感：[1h,2h) 的 HR@50 是 0.6661，对 CAIN 0.5749 提升 15.9%；到 [12h,24h) 时 POEM 0.4801、CAIN 0.4694，提升缩小到 2.29%。这证明上一刷偏序信号越新，价值越高。\n\n线上 A/B 是 7 天实验，实验组和对照组各 5% 流量，对照为生产模型 Kuaiformer。KS Single Page 上 Total App Usage Time +0.254%、Usage Time per User +0.249%、Video Watch Time +0.237%；KS Lite Page 上分别为 +0.158%、+0.213%、+0.335%，且论文称均有统计显著性。消融方面，Hist-Only HR@50/NDCG@50 为 0.5808/0.2531，RankSig-Only 为 0.6511/0.3238，完整 POEM 为 0.6661/0.3079。RankSig-Only 的 NDCG 更高，说明它更像下游 ranker；完整 POEM 的 HR 更高，说明融合历史行为能扩大召回覆盖。正样本消融中，Only-FB HR@50 0.5661、online gain +0.161%、delivery rate 1.052%；Only-Sys HR@50 0.5966、online gain +0.132%、delivery rate 1.472%；Dual-Pos HR@50 0.6661、online gain +0.254%、delivery rate 1.845%。案例分析中，即便连续两刷之间没有新点击，偏序输入序列 diff ratio 达 96.8%，最终召回结果差异 86.2%，显示模型确实能随系统当前理解变化。\n\n## 5. 局限与未来方向\n论文没有单独的 limitations section，但从正文可以归纳出几类明确限制。第一，POEM 强依赖上一刷排序结果和多目标分数缓存，如果用户请求间隔过长或排序策略快速变化，偏序信号会过时；时间间隔实验中增益从 15.9% 降到 2.29% 已经说明这种衰减。第二，方法依赖完整的工业级排序级联与 Redis 类低延迟缓存，对只有简单召回/排序链路的小团队部署成本较高。第三，论文公开了大量指标，但没有开放数据和实现，外部复现难度大。第四，偏序序列来自已有 ranker，可能继承 ranker 的偏差；虽然历史序列能缓和纯模仿问题，但如何避免把旧 ranker 的流量分配偏差固化到召回阶段，仍需要额外探索。\n\n## 6. 工业实践意义\n对搜索/推荐从业者，POEM 最直接的启发是：召回模型可以消费排序链路已经产生的实时知识，而不必等用户产生下一次点击。UGC 社区搜索/推荐中，每次请求的候选集、query/session 上下文和内容新鲜度都在变，上一刷的 pCTR、完播、互动、质量分可以构造偏序序列，辅助生成更贴近当前会话的用户向量。落地时不必一次复刻 POEM 全部组件，可以先做三个小试验：一是缓存上一刷 top candidates 及多目标 rank；二是用 rank-normalized fusion 替代 raw score average；三是在召回训练中加入 system-preferred positive，看 delivery rate 和 downstream ranker 接受率是否提升。\n\n部署上需要关注延迟、缓存一致性和目标漂移。POEM 的 serving 只用上一刷结果，工程上合理，但要求每次请求都能稳定写入和读取上一刷候选及分数；如果用户跨设备、跨场景行为混杂，还要设计场景隔离和过期策略。对业务指标而言，论文的线上增益看似小于 0.3%，但在 4 亿 DAU 级平台上已经很有价值；对中小规模系统，应该同时观察 CTR/nDCG、时长、内容多样性和长尾曝光，避免只优化 ranker 一致性而牺牲探索。",
+        "content_html": "<h1>POEM: Partial-Order Enhanced Real-Time Sequential Modeling for Recommendation 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>POEM 解决的是工业推荐中一个很具体的错位：序列推荐模型通常只看用户已经点击或观看过的静态时间序列，而真实的线上推荐系统每次请求都会由召回、粗排、精排产生大量实时排序信号，例如 pCTR、pCVR、观看时长预估和其他业务目标分。这些信号本质上表达了系统对用户当前偏好的“偏序判断”，但传统 SASRec、BERT4Rec、DIN/DIEN/MIMN 等模型只把新点击当作更新触发器。论文指出这会带来两个问题：第一，系统内部的多目标排序知识没有被召回模型使用；第二，用户兴趣在没有新点击时也会因候选池、上下文和排序策略变化而漂移，静态序列会滞后。作者把核心命题改成：用上一刷请求中 top-ranked candidate 的多目标分数来构造当前请求的输入序列，使用户向量每次请求都被重新评估。这个问题在短视频流和 UGC 信息流里尤其重要，因为内容池变化快、隐式反馈延迟明显，单靠历史点击序列会错过当前候选环境中的细粒度偏好。</p>\n<h2>2. 方法详解</h2>\n<p>POEM 的系统由双序列编码、动态偏序序列构造、多目标分数融合、层次化学习目标和实时 serving 闭环组成。训练和 serving 都使用两条序列：一条是用户最近行为构成的 historical interaction sequence，另一条是由上一刷请求的 top-ranked items 及其排序分构成的 dynamic partial-order sequence。对上一刷候选集合中的每个 item，系统拿到多个实时排序分，例如 CTR、CVR、watch time 等。由于不同目标量纲不同，作者没有直接平均，而是先对每个目标内部按分数排序，把名次转换成 inverse-rank utility，再按目标权重融合得到 fused score。候选按 fused score 排序后，被切成若干连续 group，并从每个 group 内随机采样，形成长度为 64 的偏序序列。这样既保留全局偏序，又避免完全确定排序导致的多样性不足。</p>\n<p>序列表示上，每个偏序 item 被编码成 quintuple，其中包含 item id 与多目标相关连续特征；连续特征经线性投影，item id 查 embedding 表，然后送入 Transformer encoder。历史行为序列也由独立 Transformer encoder 编码，两边都追加 special token 聚合序列级信息。两个 encoder 不共享参数，最终把两个 special token 输出 concat 后过两层 MLP，得到最终用户向量，用于 ANN 召回。训练目标是 hierarchical objective：正样本既包括真实用户反馈正样本，例如长播视频，也包括系统偏好的 top-ranked item；负样本除 in-batch negatives 外，还从离线 Swing item-item 图中围绕正样本动态挖 hard negatives。损失由带采样偏差校正的 cross-entropy 和 margin-based pairwise loss 组成，让模型同时对齐真实满意度和下游排序器偏好。</p>\n<p>Serving 设计强调因果性和低延迟。当前请求只读取用户历史序列和“上一刷”的 top-ranked item 及分数，这些信息存 Redis 等低延迟缓存；模型生成实时用户向量后做 ANN retrieval；当前请求经过下游排序后，再把结果和分数写回缓存，供下一刷使用。这个一请求周期的反馈闭环避免了使用未来信息，同时让用户向量在没有新点击时也会随候选池和排序信号变化而变化。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，POEM 把排序信号从“监督目标”提升为“输入构造的结构先验”。以往使用 ranker 信号常见于蒸馏、listwise loss 或采样偏差校正，仍然是在训练目标层面对齐；POEM 直接用 ranker 产生的偏序来重写召回阶段的用户序列，使召回向量具有 cascade awareness。</p>\n<p>第二，多目标融合采用 rank-weight 而非 raw score average，解决 CTR、CVR、watch time 等分数尺度不一致的问题。消融显示 Multi-Avg 的 HR@50 只有 0.5224，甚至低于 Single-WT 的 0.5820；Multi-Rank 达到 0.6661，说明排序名次归一化比简单均值更适合多目标系统信号。</p>\n<p>第三，层次化正样本同时纳入 user-feedback positive 和 system-preferred positive。只用用户反馈会受曝光和延迟影响，只用系统偏好又可能只模仿 ranker；Dual-Pos 在 HR@50、NDCG@50、online gain 和 delivery rate 上都优于单一路径。第四，图挖 hard negative 让模型在相似 item 间学习细粒度边界，而不是只靠容易的随机负样本。</p>\n<h2>4. 实验结果分析</h2>\n<p>论文使用快手大规模工业数据，覆盖 1.08 亿用户、4200 万 item、27 亿训练样本、1300 万 1-hour test 样本和 4.57 亿 1-day test 样本。所有模型用 TensorFlow，在相同软硬件环境训练；AdamW 初始学习率 0.001，cosine annealing，batch size 1024；POEM Transformer 为 4 层、hidden dimension 128、1 个 attention head，偏序序列长度 64。</p>\n<p>主表中，1-hour test 上 DSSM 的 HR@50/NDCG@50 为 0.4703/0.1778，SASRec 为 0.5267/0.2092，CAIN variant 为 0.5749/0.2371，POEM 达到 0.6661/0.3080；相对第二强 CAIN，HR@50 提升 15.9%，NDCG@50 提升 29.9%。在 1-day test 上，POEM HR@50/NDCG@50 为 0.4879/0.2100，相对 CAIN 的 0.4700/0.1923 提升 3.81% 和 9.19%。时间间隔分析显示，POEM 对实时性最敏感：[1h,2h) 的 HR@50 是 0.6661，对 CAIN 0.5749 提升 15.9%；到 [12h,24h) 时 POEM 0.4801、CAIN 0.4694，提升缩小到 2.29%。这证明上一刷偏序信号越新，价值越高。</p>\n<p>线上 A/B 是 7 天实验，实验组和对照组各 5% 流量，对照为生产模型 Kuaiformer。KS Single Page 上 Total App Usage Time +0.254%、Usage Time per User +0.249%、Video Watch Time +0.237%；KS Lite Page 上分别为 +0.158%、+0.213%、+0.335%，且论文称均有统计显著性。消融方面，Hist-Only HR@50/NDCG@50 为 0.5808/0.2531，RankSig-Only 为 0.6511/0.3238，完整 POEM 为 0.6661/0.3079。RankSig-Only 的 NDCG 更高，说明它更像下游 ranker；完整 POEM 的 HR 更高，说明融合历史行为能扩大召回覆盖。正样本消融中，Only-FB HR@50 0.5661、online gain +0.161%、delivery rate 1.052%；Only-Sys HR@50 0.5966、online gain +0.132%、delivery rate 1.472%；Dual-Pos HR@50 0.6661、online gain +0.254%、delivery rate 1.845%。案例分析中，即便连续两刷之间没有新点击，偏序输入序列 diff ratio 达 96.8%，最终召回结果差异 86.2%，显示模型确实能随系统当前理解变化。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有单独的 limitations section，但从正文可以归纳出几类明确限制。第一，POEM 强依赖上一刷排序结果和多目标分数缓存，如果用户请求间隔过长或排序策略快速变化，偏序信号会过时；时间间隔实验中增益从 15.9% 降到 2.29% 已经说明这种衰减。第二，方法依赖完整的工业级排序级联与 Redis 类低延迟缓存，对只有简单召回/排序链路的小团队部署成本较高。第三，论文公开了大量指标，但没有开放数据和实现，外部复现难度大。第四，偏序序列来自已有 ranker，可能继承 ranker 的偏差；虽然历史序列能缓和纯模仿问题，但如何避免把旧 ranker 的流量分配偏差固化到召回阶段，仍需要额外探索。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者，POEM 最直接的启发是：召回模型可以消费排序链路已经产生的实时知识，而不必等用户产生下一次点击。UGC 社区搜索/推荐中，每次请求的候选集、query/session 上下文和内容新鲜度都在变，上一刷的 pCTR、完播、互动、质量分可以构造偏序序列，辅助生成更贴近当前会话的用户向量。落地时不必一次复刻 POEM 全部组件，可以先做三个小试验：一是缓存上一刷 top candidates 及多目标 rank；二是用 rank-normalized fusion 替代 raw score average；三是在召回训练中加入 system-preferred positive，看 delivery rate 和 downstream ranker 接受率是否提升。</p>\n<p>部署上需要关注延迟、缓存一致性和目标漂移。POEM 的 serving 只用上一刷结果，工程上合理，但要求每次请求都能稳定写入和读取上一刷候选及分数；如果用户跨设备、跨场景行为混杂，还要设计场景隔离和过期策略。对业务指标而言，论文的线上增益看似小于 0.3%，但在 4 亿 DAU 级平台上已经很有价值；对中小规模系统，应该同时观察 CTR/nDCG、时长、内容多样性和长尾曝光，避免只优化 ranker 一致性而牺牲探索。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2607.00448",
+      "title": "Real-Time Hard Negative Sampling via LLM-based Clustering for Large-Scale Two-Tower Retrieval",
+      "url": "https://arxiv.org/abs/2607.00448",
+      "authors": "Ivan Ji, Liuyi Hu, Harrison Zhao, Lei Huang, Qunshu Zhang, Max Fan, Aameek Singh",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-07-01",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "这篇论文改进大规模推荐双塔召回训练中的负采样问题：常见 in-batch 或 out-of-batch 负样本过易，模型很快学会，难以提升区分能力。作者用 LLM 学到的媒体表征做聚类，在训练时从同簇生成实时 hard negatives，框架面向数十亿训练样本并控制额外计算复杂度。论文报告在公开数据集和大规模线上系统中均优于行业常用负采样方案。",
+      "key_insight": "核心价值在于把 LLM 语义能力放在训练数据构造层，而不是直接放到线上召回路径，因此更容易控制延迟和成本。对于社区 UGC 推荐/搜索，很多相似帖子、视频或问答只在细粒度意图上不同，同簇 hard negative 能逼迫双塔模型学习更细的用户偏好边界。实践上可先离线构建语义簇，再逐步替换部分随机负样本或 in-batch 负样本做 A/B 验证。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "deep_reading": {
+        "paper_id": "arxiv:2607.00448",
+        "title": "Real-Time Hard Negative Sampling via LLM-based Clustering for Large-Scale Two-Tower Retrieval",
+        "status": "completed",
+        "content": "# Real-Time Hard Negative Sampling via LLM-based Clustering for Large-Scale Two-Tower Retrieval 深度解读\n\n## 1. 问题与动机\n这篇 Meta 论文处理的是大规模推荐召回训练里的负采样瓶颈。双塔模型把用户塔和 item 塔分别编码，再用向量相似度做近邻检索，优点是 item embedding 可预计算和索引，线上检索效率高；难点是训练时 item 类别规模至少百万级，无法对全库做完整 softmax，因此必须采样负样本。工业上常用 in-batch negatives、LogQ correction、out-of-batch sampling 或 mixed negative sampling，但它们有明显局限：in-batch 受 batch size 限制，负样本覆盖不够；随机 OOB 扩大了候选池但通常太容易；DNS、ANCE 等 hard negative 方法效果好但需要模型打分或全局 ANN 索引刷新，计算成本阻碍大规模上线。论文还把负采样问题和 popularity bias 关联起来：真实系统中热门内容获得更多曝光，进一步强化反馈回路，长尾 item 缺少探索和 embedding 学习机会。工业数据里约 1800 万 item 可曝光，但 top 100 item 占了 50% impression，这说明现有系统存在非常强的头部集中。\n\n## 2. 方法详解\n论文提出 Cluster GOOBS，即 Cluster-based Global Out-of-Batch Sampling。基础 GOOBS 是一个实时 OOB item pool：训练 batch 中的 item 通过 update engine 写入池子，sampling engine 再从池子取出 OOB negatives 与 in-batch negatives 共同训练。每个 item 被分配到一个 slot，slot 存储该 item 的特征 tensor；update 时用 item id 和 cluster id 经过定制 hash 找到对应 cluster segment 中的位置；sampling 时根据当前 batch item 的 cluster id 找到目标 segment，并随机抽取该 segment 中已有 item 作为负样本。为了冷启动时有较高命中率，OOB 池会先用历史训练数据预加载，后续由最新 batch 持续更新，保证新鲜度。\n\nCluster GOOBS 的关键变化是负样本不是从全局 item pool 随机抽，而是从正样本同一个语义 cluster 中抽。论文从 contrastive learning 和 gradient variance 解释这个设计：随机负样本通常离用户 anchor 很远，相似度低，softmax/InfoNCE 下梯度接近 0；同簇负样本与正样本共享潜在语义，更接近决策边界，能提供更大的梯度和更细粒度的区分信号。这类似 ANCE 的“局部邻域负样本”思想，但不需要维护和刷新全局 ANN 索引。\n\ncluster 的生成在公开数据和工业数据中不同。公开 MovieLens/Amazon 实验直接用 genre/category 等已有 cluster id；工业应用中，作者使用基于 LLM 的 multimodal content understanding 模型来生成 item cluster。这个模型以预训练 LLM 为基础，叠加文本、图像、视频等多模态 encoder，输出固定长度媒体表示，再经过任务微调，使 cluster 能表达比传统类目更细的媒体语义。论文强调 cluster 不能过细，否则会增加 false negative 风险；工业线上使用 300 个 cluster，其中 98% cluster 有 item。\n\n## 3. 核心技术贡献\n第一，论文把 hard negative sampling 做成了能在线接入大规模训练的系统，而不只是离线采样策略。GOOBS 的 item pool、hash slot、cluster segment、update engine 和 sampling engine 让同簇 OOB negatives 可以随训练数据实时刷新，避免 ANCE 式全局索引刷新成本。\n\n第二，LLM 的作用被放在 item cluster 生成上，而不是线上召回推理路径上。这样保留了双塔召回的线上效率，同时用 LLM/多模态模型提供更语义化的训练信号。对文本、图像、视频混合内容的社区平台，这种设计比只用人工类目或 item tag 更能捕捉细粒度内容差异。\n\n第三，论文把负采样与流量反馈回路、头部偏置联系起来。Cluster GOOBS 不只是提高 HR@K，还在线上显著降低 top 100 item impression contribution，说明更难、更语义化的负样本会改变召回模型对长尾内容的学习方式。\n\n## 4. 实验结果分析\n公开实验使用 MovieLens-1M 和 Amazon Reviews 的 Grocery、Electronics、Home 子集，按时间戳前 80% 训练、后 20% 测试，评分 1–2 为负、3–5 为正。作者刻意不做 5-core/10-core 过滤，也不使用 100 个随机负样本的 sampled evaluation，而是在完整全局语料上评估 HR@50 和 HR@100，这更接近冷启动和稀疏工业场景。模型 backbone 是标准双塔，对比六种负采样：in-batch + LogQ baseline、DNS、CBNS、ANCE、随机 OOB 的 GOOBS、同簇 OOB 的 Cluster GOOBS。\n\n结果显示 Cluster GOOBS 在所有数据集和指标上最优。MovieLens-1M 上，baseline HR@50 为 0.2253，Cluster GOOBS 为 0.2415，提升 7.2%；HR@100 从 0.3588 到 0.3682，提升 2.7%。Amazon-Grocery 上 HR@50 从 0.0254 到 0.0301，提升 18.5%；HR@100 从 0.0406 到 0.0470，提升 15.7%。Amazon-Electronics 上 HR@50 从 0.0084 到 0.0131，提升 55.6%；HR@100 从 0.0154 到 0.0201，提升 30.2%。Amazon-Home 上 HR@50 从 0.0050 到 0.0074，提升 47.3%；HR@100 从 0.0082 到 0.0118，提升 42.3%。这些提升在稀疏 Amazon 数据上更大，说明同簇 hard negative 对冷门/稀疏 item 的区分学习更有帮助。\n\n工业实验中，系统有约 1800 万可曝光 item，top 100 item 占 50% impressions。对照组和实验组各随机 3% 用户；对照使用 GOOBS，实验使用相同双塔架构加 Cluster GOOBS。线上指标以 CTR 衡量，Cluster GOOBS 使 CTR 相对提升 53%，且论文称只带来轻微 training QPS regression、inference QPS 无退化。长尾方面，过去一天 impression 为 K 的 item cohort 占比提高约 50%，top 100 item impression contribution 从 50% 降到 32%。这组结果非常强，表明同簇负样本不仅改善离线 HR，也能打破部分热门反馈回路。\n\n## 5. 局限与未来方向\n论文结论中明确提到未来工作包括 weighted cluster-based negative sampling 和 user-query based negative sampling，这也暴露了当前方法的两个限制。第一，当前同簇抽样基本是 segment 内随机抽，没有按 item 难度、热度、质量或用户上下文加权；如果 cluster 内存在大量伪负样本，随机抽样会引入噪声。第二，cluster 主要是 item-side 语义，尚未充分结合 user query/session 意图；同一个 item cluster 对不同用户可能难度不同。第三，线上 CTR +53% 的相对提升非常大，但论文没有披露绝对 CTR、训练 QPS 退化幅度和业务场景细节，外部读者难以评估可迁移性。第四，LLM-based multimodal cluster 依赖内部内容理解模型和多模态特征工程，不是所有团队都有同等基础设施。最后，cluster 粒度是敏感超参，论文提示过细会提高 false negative 风险，但没有给出系统化的粒度选择方法。\n\n## 6. 工业实践意义\n对搜索/推荐团队，这篇论文的落地价值很高，因为它没有要求改变线上双塔 serving 架构。实践路线可以分三步：先用已有类目、topic、embedding 聚类构建 cluster id，在离线双塔训练中把部分随机 OOB negatives 换成同簇 OOB negatives；再引入 GOOBS 类 item pool，保证负样本来自最近训练流而不是静态快照；最后用 LLM/多模态内容模型重建 cluster，提高同簇负样本的语义难度。社区 UGC 场景尤其适合，因为帖子、短视频、问答常有多模态内容和细粒度主题，同簇 hard negative 能让模型区分“表面相似但用户不喜欢”的内容。\n\n部署时要重点监控四类指标：召回 HR/nDCG 或线上 CTR，训练吞吐/QPS，false negative 比例，以及长尾曝光分布。论文的线上结果显示 top 100 impression contribution 从 50% 降到 32%，这对内容生态很有吸引力，但推荐团队需要确认这种长尾探索没有牺牲用户满意度、低质内容过滤或安全策略。与 POEM 相比，Cluster GOOBS 更靠近召回训练数据层，工程侵入性较小；它适合作为个性化召回模型的第一批实验项，尤其在现有 in-batch negatives 已经出现“样本太容易、线上头部过强”问题时。",
+        "content_html": "<h1>Real-Time Hard Negative Sampling via LLM-based Clustering for Large-Scale Two-Tower Retrieval 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>这篇 Meta 论文处理的是大规模推荐召回训练里的负采样瓶颈。双塔模型把用户塔和 item 塔分别编码，再用向量相似度做近邻检索，优点是 item embedding 可预计算和索引，线上检索效率高；难点是训练时 item 类别规模至少百万级，无法对全库做完整 softmax，因此必须采样负样本。工业上常用 in-batch negatives、LogQ correction、out-of-batch sampling 或 mixed negative sampling，但它们有明显局限：in-batch 受 batch size 限制，负样本覆盖不够；随机 OOB 扩大了候选池但通常太容易；DNS、ANCE 等 hard negative 方法效果好但需要模型打分或全局 ANN 索引刷新，计算成本阻碍大规模上线。论文还把负采样问题和 popularity bias 关联起来：真实系统中热门内容获得更多曝光，进一步强化反馈回路，长尾 item 缺少探索和 embedding 学习机会。工业数据里约 1800 万 item 可曝光，但 top 100 item 占了 50% impression，这说明现有系统存在非常强的头部集中。</p>\n<h2>2. 方法详解</h2>\n<p>论文提出 Cluster GOOBS，即 Cluster-based Global Out-of-Batch Sampling。基础 GOOBS 是一个实时 OOB item pool：训练 batch 中的 item 通过 update engine 写入池子，sampling engine 再从池子取出 OOB negatives 与 in-batch negatives 共同训练。每个 item 被分配到一个 slot，slot 存储该 item 的特征 tensor；update 时用 item id 和 cluster id 经过定制 hash 找到对应 cluster segment 中的位置；sampling 时根据当前 batch item 的 cluster id 找到目标 segment，并随机抽取该 segment 中已有 item 作为负样本。为了冷启动时有较高命中率，OOB 池会先用历史训练数据预加载，后续由最新 batch 持续更新，保证新鲜度。</p>\n<p>Cluster GOOBS 的关键变化是负样本不是从全局 item pool 随机抽，而是从正样本同一个语义 cluster 中抽。论文从 contrastive learning 和 gradient variance 解释这个设计：随机负样本通常离用户 anchor 很远，相似度低，softmax/InfoNCE 下梯度接近 0；同簇负样本与正样本共享潜在语义，更接近决策边界，能提供更大的梯度和更细粒度的区分信号。这类似 ANCE 的“局部邻域负样本”思想，但不需要维护和刷新全局 ANN 索引。</p>\n<p>cluster 的生成在公开数据和工业数据中不同。公开 MovieLens/Amazon 实验直接用 genre/category 等已有 cluster id；工业应用中，作者使用基于 LLM 的 multimodal content understanding 模型来生成 item cluster。这个模型以预训练 LLM 为基础，叠加文本、图像、视频等多模态 encoder，输出固定长度媒体表示，再经过任务微调，使 cluster 能表达比传统类目更细的媒体语义。论文强调 cluster 不能过细，否则会增加 false negative 风险；工业线上使用 300 个 cluster，其中 98% cluster 有 item。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文把 hard negative sampling 做成了能在线接入大规模训练的系统，而不只是离线采样策略。GOOBS 的 item pool、hash slot、cluster segment、update engine 和 sampling engine 让同簇 OOB negatives 可以随训练数据实时刷新，避免 ANCE 式全局索引刷新成本。</p>\n<p>第二，LLM 的作用被放在 item cluster 生成上，而不是线上召回推理路径上。这样保留了双塔召回的线上效率，同时用 LLM/多模态模型提供更语义化的训练信号。对文本、图像、视频混合内容的社区平台，这种设计比只用人工类目或 item tag 更能捕捉细粒度内容差异。</p>\n<p>第三，论文把负采样与流量反馈回路、头部偏置联系起来。Cluster GOOBS 不只是提高 HR@K，还在线上显著降低 top 100 item impression contribution，说明更难、更语义化的负样本会改变召回模型对长尾内容的学习方式。</p>\n<h2>4. 实验结果分析</h2>\n<p>公开实验使用 MovieLens-1M 和 Amazon Reviews 的 Grocery、Electronics、Home 子集，按时间戳前 80% 训练、后 20% 测试，评分 1–2 为负、3–5 为正。作者刻意不做 5-core/10-core 过滤，也不使用 100 个随机负样本的 sampled evaluation，而是在完整全局语料上评估 HR@50 和 HR@100，这更接近冷启动和稀疏工业场景。模型 backbone 是标准双塔，对比六种负采样：in-batch + LogQ baseline、DNS、CBNS、ANCE、随机 OOB 的 GOOBS、同簇 OOB 的 Cluster GOOBS。</p>\n<p>结果显示 Cluster GOOBS 在所有数据集和指标上最优。MovieLens-1M 上，baseline HR@50 为 0.2253，Cluster GOOBS 为 0.2415，提升 7.2%；HR@100 从 0.3588 到 0.3682，提升 2.7%。Amazon-Grocery 上 HR@50 从 0.0254 到 0.0301，提升 18.5%；HR@100 从 0.0406 到 0.0470，提升 15.7%。Amazon-Electronics 上 HR@50 从 0.0084 到 0.0131，提升 55.6%；HR@100 从 0.0154 到 0.0201，提升 30.2%。Amazon-Home 上 HR@50 从 0.0050 到 0.0074，提升 47.3%；HR@100 从 0.0082 到 0.0118，提升 42.3%。这些提升在稀疏 Amazon 数据上更大，说明同簇 hard negative 对冷门/稀疏 item 的区分学习更有帮助。</p>\n<p>工业实验中，系统有约 1800 万可曝光 item，top 100 item 占 50% impressions。对照组和实验组各随机 3% 用户；对照使用 GOOBS，实验使用相同双塔架构加 Cluster GOOBS。线上指标以 CTR 衡量，Cluster GOOBS 使 CTR 相对提升 53%，且论文称只带来轻微 training QPS regression、inference QPS 无退化。长尾方面，过去一天 impression 为 K 的 item cohort 占比提高约 50%，top 100 item impression contribution 从 50% 降到 32%。这组结果非常强，表明同簇负样本不仅改善离线 HR，也能打破部分热门反馈回路。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文结论中明确提到未来工作包括 weighted cluster-based negative sampling 和 user-query based negative sampling，这也暴露了当前方法的两个限制。第一，当前同簇抽样基本是 segment 内随机抽，没有按 item 难度、热度、质量或用户上下文加权；如果 cluster 内存在大量伪负样本，随机抽样会引入噪声。第二，cluster 主要是 item-side 语义，尚未充分结合 user query/session 意图；同一个 item cluster 对不同用户可能难度不同。第三，线上 CTR +53% 的相对提升非常大，但论文没有披露绝对 CTR、训练 QPS 退化幅度和业务场景细节，外部读者难以评估可迁移性。第四，LLM-based multimodal cluster 依赖内部内容理解模型和多模态特征工程，不是所有团队都有同等基础设施。最后，cluster 粒度是敏感超参，论文提示过细会提高 false negative 风险，但没有给出系统化的粒度选择方法。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队，这篇论文的落地价值很高，因为它没有要求改变线上双塔 serving 架构。实践路线可以分三步：先用已有类目、topic、embedding 聚类构建 cluster id，在离线双塔训练中把部分随机 OOB negatives 换成同簇 OOB negatives；再引入 GOOBS 类 item pool，保证负样本来自最近训练流而不是静态快照；最后用 LLM/多模态内容模型重建 cluster，提高同簇负样本的语义难度。社区 UGC 场景尤其适合，因为帖子、短视频、问答常有多模态内容和细粒度主题，同簇 hard negative 能让模型区分“表面相似但用户不喜欢”的内容。</p>\n<p>部署时要重点监控四类指标：召回 HR/nDCG 或线上 CTR，训练吞吐/QPS，false negative 比例，以及长尾曝光分布。论文的线上结果显示 top 100 impression contribution 从 50% 降到 32%，这对内容生态很有吸引力，但推荐团队需要确认这种长尾探索没有牺牲用户满意度、低质内容过滤或安全策略。与 POEM 相比，Cluster GOOBS 更靠近召回训练数据层，工程侵入性较小；它适合作为个性化召回模型的第一批实验项，尤其在现有 in-batch negatives 已经出现“样本太容易、线上头部过强”问题时。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.21101",
+      "title": "DPIFrame: A Dual-Level Parallelism Acceleration Framework for CTR Model Inference",
+      "url": "https://arxiv.org/abs/2606.21101",
+      "authors": "Dezhi Yi, Huifeng Guo, Kunpeng Xie, Zhaolong Jian, Haochi Yu, Wenxuan He, Zhenhua Dong, Ruiming Tang, Ye Lu",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-06-19",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "DPIFrame 面向 CTR 模型线上推理效率，指出深度 CTR 模型的串行计算模式与 GPU 并行结构之间存在错配。系统提出模块内和模块间双层并行、面向 embedding 操作的多表 lookup 算法，以及广度优先的 GPU stream 调度。两组真实数据集实验显示，embedding 延迟相比 PyTorch 降低 23.0 倍，整体 GPU 推理相对 PyTorch、TorchRec、HugeCTR、OneFlow 分别加速 5.83 倍、4.29 倍、2.15 倍和 2.0 倍。",
+      "key_insight": "虽然这是偏工程系统的论文，但对个性化精排很关键：CTR/CVR 模型的特征交互越复杂，线上瓶颈越常落在 embedding lookup 和细粒度算子调度上。DPIFrame 的可借鉴点是先重排执行图与 embedding 访问模式，再谈模型结构升级，这能为更复杂的多目标排序模型释放推理预算。对高 QPS UGC 排序链路，可优先评估多表 lookup 合并、stream 调度和模块级并行是否能降低尾延迟。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.24042",
+      "title": "Breaking the Filter Bubble: A Semantic Pareto-DQN Framework for Multi-Objective Recommendation",
+      "url": "https://arxiv.org/abs/2606.24042",
+      "authors": "Claudio Lucio Do Val Lopes, Lucca Machado da Silva, Andre de Oliveira Brandao",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-06-23",
+      "total_score": 3.65,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "本文关注推荐系统因单一即时互动目标导致的过滤气泡和语义同质化问题，将推荐建模为语义多目标 MDP。方法用高保真语义 embedding 与 Pareto-DQN，把 engagement、diversity、provider fairness 作为不可简单合并的独立奖励，并用 hypervolume action selection 维持 Pareto 前沿。MovieLens small 实验显示，该策略能提升多样性和公平性等辅助目标，同时只牺牲少量 engagement。",
+      "key_insight": "这篇论文适合提醒个性化团队：多目标排序不应只停留在线性加权，尤其当目标之间存在价值冲突时，Pareto 前沿比固定权重更可解释。它的工业落地仍需更大规模数据和线上校验，但语义状态轨迹方差可作为监控过滤气泡的一个实用信号。社区内容推荐可以先在重排层试验多目标候选集约束，而不是直接替换主排序模型。"
+    },
+    {
+      "rank": 5,
+      "id": "blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/06/12/longcat-wbench.html",
+      "title": "从月球漫步到赛博都市，WBench 测出了世界模型的边界",
+      "url": "https://tech.meituan.com/2026/06/12/LongCat-WBench.html",
+      "authors": "",
+      "company": [
+        "Meituan"
+      ],
+      "source": "blog_rss",
+      "published": "2026-07-05",
+      "total_score": 2.9,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "这是美团技术博客的 WBench/世界模型工程实践文章，来自 crawler 的 blog_rss 结果，并非个性化推荐核心论文。它主要讨论世界模型能力边界和动态评测，对推荐排序、CTR/CVR 或用户建模没有直接方法贡献；本次保留它是因为硬去重后只剩这一条大厂工程博客可用于行业实践覆盖。其价值更多在评测方法和复杂动态环境基准，而不是可直接迁移到推荐精排。",
+      "key_insight": "对个性化推荐的可借鉴点较间接：如果团队正在探索基于生成模型或世界模型的用户模拟，可以参考这类动态基准的任务设计和评测思路。但它不应被当作推荐系统模型更新的主依据，也不适合作为短期 CTR/nDCG 优化方案。实际排序团队应把注意力放在本期更相关的 POEM、hard negative sampling 和 CTR 推理加速论文上。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:modelscope/ms-swift",
+      "title": "ms-swift: Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "url": "https://github.com/modelscope/ms-swift",
+      "source": "github",
+      "description": "Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "language": "Python",
+      "stars": 14705,
+      "created_at": "2023-08-01"
+    },
+    {
+      "rank": 2,
+      "id": "github:huggingface/transformers",
+      "title": "transformers: 🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "url": "https://github.com/huggingface/transformers",
+      "source": "github",
+      "description": "🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "language": "Python",
+      "stars": 162277,
+      "created_at": "2018-10-29"
+    },
+    {
+      "rank": 3,
+      "id": "github:liyupi/ai-guide",
+      "title": "ai-guide: 程序员鱼皮的 AI 资源大全 + Vibe Coding 零基础教程，分享 OpenClaw 保姆级教程、大模型玩法（DeepSeek / GPT / Gemini / Claude / GLM）、最新 AI 资讯、Prompt 提示词大全、AI 知识百科（Agent Skills / RAG / MCP / A2A）、AI 编程教程（Harness Engineering）、AI 工具用法（Cursor / Claude Code / TRAE / Codex / Copilot）、AI 开发框架教程（Spring AI / LangChain）、AI 产品变现指南，帮你快速掌握 AI 技术，走在时代前沿。本项目为开源文档 aiguide，已升级为鱼皮 AI 导航网站",
+      "url": "https://github.com/liyupi/ai-guide",
+      "source": "github",
+      "description": "程序员鱼皮的 AI 资源大全 + Vibe Coding 零基础教程，分享 OpenClaw 保姆级教程、大模型玩法（DeepSeek / GPT / Gemini / Claude / GLM）、最新 AI 资讯、Prompt 提示词大全、AI 知识百科（Agent Skills / RAG / MCP / A2A）、AI 编程教程（Harness Engineering）、AI 工具用法（Cursor / Claude Code / TRAE / Codex / Copilot）、AI 开发框架教程（Spring AI / LangChain）、AI 产品变现指南，帮你快速掌握 AI 技术，走在时代前沿。本项目为开源文档 aiguide，已升级为鱼皮 AI 导航网站",
+      "language": "JavaScript",
+      "stars": 16869,
+      "created_at": "2025-02-13"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:Qwen/AgentWorldBench",
+      "title": "Qwen/AgentWorldBench",
+      "url": "https://huggingface.co/datasets/Qwen/AgentWorldBench",
+      "source": "huggingface",
+      "description": "AgentWorldBench AgentWorldBench is a comprehensive evaluation benchmark for language world models, constructed from real-world observations of frontier model trajectories on established benchmarks such as Tool Decathlon, Terminal-Bench 1.0 & 2.0, and OSWorld-Verified. Every evalu; tags: task_categories:text-generation, language:en, license:apache-2.0, size_categories:1K<n<10K, format:json, modality:tabular, modality:text, library:datasets",
+      "language": "dataset",
+      "stars": 64,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 3454,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit",
+      "language": "model",
+      "stars": 381,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:zai-org/GLM-5.2-FP8",
+      "title": "zai-org/GLM-5.2-FP8",
+      "url": "https://huggingface.co/zai-org/GLM-5.2-FP8",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 188,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit",
+      "language": "model",
+      "stars": 158,
+      "created_at": "2026-06-27"
+    }
+  ]
+}

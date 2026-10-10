@@ -1,0 +1,300 @@
+{
+  "date": "2026-07-10",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 45,
+    "papers_selected": 10,
+    "score_min": 2.9,
+    "score_max": 4.52
+  },
+  "coverage": "覆盖度检查:\n  ✓ 赛道核心论文: Healthier LLMs: Retrieval-Augmented Generation for Public Health Question Answering\n  ⚠ 工业实践: The power of collaboration: How we can reduce traffic congestion (Google Research，非检索专项，因去重后无检索行业实践候选)\n  ✓ 时效性 (<=7天): Healthier LLMs: Retrieval-Augmented Generation for Public Health Question Answering\n  ✓ 来源多样性: arXiv 70%, Web 20%, Blog 10%\n  ⚠ 中文来源: 未找到可保留的中文来源；中文搜索命中要么过旧，要么不在硬去重后的候选池中",
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2607.06641",
+      "title": "Healthier LLMs: Retrieval-Augmented Generation for Public Health Question Answering",
+      "url": "https://arxiv.org/abs/2607.06641",
+      "authors": "Felix Feldman, Joshua Harris, Timothy Laurence, Leo Loman, Ollie Higgins, Fan Grayson, Poonam Soma, Bethany Pace-Bonello, Michael Borowitz, Toby Nonnenmacher",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 4.52,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.12,
+      "adjusted_score": 4.52,
+      "summary": "论文把 PubHealthBench 扩展成检索增强问答评测，共包含 7,929 个来自英国政府公共卫生指南的问题，用来分析 RAG 中检索配置对最终答案的影响。作者比较 dense、sparse、hybrid retrieval、多种 embedding model、语料切分和主题差异，结论是 hybrid retrieval 在召回与排序质量上更稳定，chunk length 与主题会显著影响 ranking performance。对 UGC 短文本搜索来说，它提供了一个可复用的离线实验框架：不要只看生成答案，也要拆开评估召回、排序和上下文质量。",
+      "key_insight": "核心价值在于把 RAG 质量问题还原到检索系统工程：索引粒度、dense/sparse 融合、embedding 选择和主题分布都会改变 nDCG/recall 结果。社区搜索可以借鉴这种评测方式，把帖子、问答、评论拆成不同 corpus variant，分别验证 BM25、向量召回和 hybrid fusion 的边界，再用真实点击或人工相关性标签校准最终排序。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2607.06641",
+        "title": "Healthier LLMs: Retrieval-Augmented Generation for Public Health Question Answering",
+        "status": "completed",
+        "content": "# Healthier LLMs: Retrieval-Augmented Generation for Public Health Question Answering 深度解读\n\n## 1. 问题与动机\n这篇论文的问题不是“RAG 是否有用”这个宽泛命题，而是更具体地问：在公共卫生问答这种高风险、政策经常更新、错误建议可能带来群体性影响的场景中，检索层到底怎样影响最终问答质量。作者指出，传统医学 QA benchmark 多偏向临床或生物医学知识，且大量采用 multiple-choice QA；这类设置会掩盖真实开放问答中的错误，因为模型可以利用选项线索做排除，而不一定真正找到了官方指南中的证据。论文引用既有结果说明，从 MCQA 转到 free-form answer 时，LLM 平均准确率下降 39.4%，人类下降 22.3%，并且即使遮住题干，MCQA 仍能比随机高 6.7%，这说明选择题成绩会高估系统能力。\n\n作者基于 PubHealthBench 做 follow-up，把同一批英国政府公共卫生指南作为可检索知识库，让模型从 687 份官方 guidance 文档中检索证据，再回答 7,929 个问题。其动机对搜索/推荐从业者很熟悉：生成模型是否可靠，主要取决于前面的召回、排序、切分和上下文选择。如果检索把正确 chunk 放得太靠后，或者长 chunk 混入多个主题，模型即使很大也会把不必要的上下文写进答案。对社区搜索而言，这对应“用户问一个短 query，系统从帖子、问答、评论里找证据再组织答案”的真实链路。\n\n## 2. 方法详解\n数据层面，论文使用 PubHealthBench QA benchmark：PubHealthBench-Full 含 7,929 个由单个 guidance chunk 自动生成的多选问题，PubHealthBench-FreeForm 含 760 个经专家人工审查的问题，用于更接近真实开放问答的评估。原始语料来自 687 份英国政府公共卫生 guidance 文档，作者把文档转换为 markdown，并按 markdown header 层级切分，同时把完整 header hierarchy 附加到 chunk 中作为结构上下文。这个设计很关键，因为公共卫生指南大量依赖章节标题来限定语义，类似 UGC 搜索中帖子标题、话题、楼层和评论上下文会影响片段含义。\n\n检索部分比较了五类设置。第一类是 dense embedding retrieval：query 和 chunk 用同一个 text embedding model 编码，按 cosine similarity 排名。评测模型包括 NV-Embed-v2、SFR-Embedding-Mistral、OpenAI text-embedding-3-large、Multilingual-E5-large、Multilingual-E5-large-instruct、EmbeddingGemma、ModernBERT-base、MedCPT-Query-Encoder 等，覆盖 0.1B 到 8B、768 到 4096 维、512 到 32768 上下文长度。第二类是 sparse retrieval，用 TF-IDF 和 BM25 建索引。第三类是 hybrid retrieval，把 dense 和 sparse 两个 ranked list 用 weighted Reciprocal Rank Fusion 合并，融合权重按模型搜索最优值。第四类是 summary-based hybrid retrieval：先用 GPT-4o-mini 为每个 chunk 生成 summary，在 summary corpus 上检索，但下游生成仍传入对应 full chunk。第五类是 reduced-corpus hybrid retrieval：对超过 512 tokens 的 chunk 用 summary 替代，512 的阈值与 Multilingual-E5 tokenizer capacity 对齐。\n\n生成部分，作者把检索到的 top-k chunk 带 chunk identifier 和分隔符拼成 context block，再插入 question 和简短指令，要求模型使用上下文回答。生成模型覆盖 Llama 3.3、Phi-4、Gemma-3、MedGemma、Command-R 等 11 个模型。MCQA 设置从三个代表性检索配置抽取 top-k，其中 k 取 1、3、5、10；free-form 设置使用相同三组检索配置，但为了接近真实长上下文场景，k 设为 50，并限制 context block 到 32,000 tokens。\n\n评估层面，检索指标包括 Precision@1、Recall@5、Recall@10、MRR、nDCG@10。因为每个 query 在标注中只有一个 target chunk，Recall 衡量是否找回，MRR 和 nDCG 衡量正确 chunk 是否排在前面。free-form 回答用 rubric-based LLM-as-a-judge，评估 faithfulness、completeness、factual consistency、clarity 四项，并让两位人工专家独立标注 100 个响应，计算 Cohen's kappa 和 macro-F1 的 95% bootstrap confidence interval，用来验证自动 judge 是否可信。\n\n## 3. 核心技术贡献\n第一，论文把 PubHealthBench 从“只测模型答题”扩展为“同时测检索层和生成层”的 RAG benchmark。它不是只报告最终 QA accuracy，而是把 retrieval Precision@1、Recall@5/10、MRR、nDCG@10 与 MCQA、free-form faithfulness/completeness 连接起来，能够看到问题出在召回、排序、上下文长度还是生成。\n\n第二，论文系统比较 dense、sparse、hybrid 和 summary/reduced corpus 的影响，给出一个很实用的结论：hybrid retrieval 在所有 embedding model 上都提升检索指标，但最优 RRF 权重依赖模型；summary-only corpus 没有成为最佳设置，说明“先摘要再检索”不能简单替代结构化 chunking。这个结果对工业检索尤其重要，因为它反驳了“只换更大 embedding 就能解决”的直觉。\n\n第三，论文把 free-form 评估中的 LLM judge 做了人工验证，并指出 faithfulness 和 completeness 相对可靠，factual consistency 和 clarity 则较难复现人工判断。这个贡献避免了把自动评估当成真值；对搜索产品来说，相关性和答案可信度评测也需要区分哪些维度可以自动扩展、哪些仍要人工抽检。\n\n第四，论文展示了小模型加优质检索可以接近或超过大模型闭卷回答。作者在讨论中强调，检索质量可以补偿参数规模，在预算、延迟和部署约束下，比单纯换大模型更现实。这为企业内部知识问答、社区搜索助手和垂直内容 QA 提供了清晰工程路线。\n\n## 4. 实验结果分析\n检索表格显示，dense-only 设置下 NV-Embed-v2 最强：Precision@1 = 0.76，Recall@5 = 0.96，Recall@10 = 0.98，MRR = 0.85，nDCG@10 = 0.88。SFR-Embedding-Mistral 紧随其后，Precision@1 = 0.71，Recall@10 = 0.97，nDCG@10 = 0.85。OpenAI text-embedding-3-large 和 Multilingual-E5-large 的 Recall@10 都达到 0.96，nDCG@10 为 0.83。值得注意的是，BM25 的 Precision@1 = 0.65、nDCG@10 = 0.79，超过 EmbeddingGemma 和 MedCPT-Query-Encoder，说明公共卫生指南这类规范文本中，术语匹配仍然很强。\n\n| 设置 | Precision@1 | Recall@5 | Recall@10 | MRR | nDCG@10 |\n|---|---:|---:|---:|---:|---:|\n| NV-Embed-v2 dense-only | 0.76 | 0.96 | 0.98 | 0.85 | 0.88 |\n| SFR-Embedding-Mistral dense-only | 0.71 | 0.94 | 0.97 | 0.81 | 0.85 |\n| text-embedding-3-large dense-only | 0.68 | 0.92 | 0.96 | 0.78 | 0.83 |\n| Multilingual-E5-large dense-only | 0.68 | 0.91 | 0.96 | 0.78 | 0.83 |\n| BM25 sparse-only | 0.65 | 0.87 | 0.91 | 0.75 | 0.79 |\n| EmbeddingGemma dense-only | 0.27 | 0.55 | 0.69 | 0.41 | 0.47 |\n\nHybrid retrieval 的收益很稳定。例如 NV-Embed-v2 hybrid 后 Precision@1 = 0.80、Recall@10 = 0.99、nDCG@10 = 0.91；SFR-Embedding-Mistral hybrid 后 Precision@1 = 0.76、Recall@10 = 0.99、nDCG@10 = 0.88；Multilingual-E5-large hybrid 后 Precision@1 = 0.76、Recall@10 = 0.98、nDCG@10 = 0.87。小模型也明显受益，EmbeddingGemma hybrid 后 Precision@1 从 0.27 升到 0.63，Recall@10 从 0.69 升到 0.93，nDCG@10 从 0.47 升到 0.78。这说明 RRF 不是锦上添花，而是能把弱 dense model 拉到可用区间。\n\nChunk 长度实验也很有实践意义。作者发现 target chunk 变长时，Recall 只小幅下降，但 Precision@1、MRR、nDCG@10 这类 rank-sensitive metric 会明显下降。直观原因是长 chunk 混合多个概念，embedding 的区分度下降；summary 或 reduced corpus 能缓解但不能完全解决。主题分析中，guidance topic 对 nDCG@10 的总体方差解释不到 1%，但不同主题的平均排序质量仍有系统差异，低表现主题如 Blood Safety、Hepatitis、STIs/HIV 与高表现主题如 Tuberculosis、Travel、Zoonotic and Emerging Infections 之间存在可见差距。\n\nMCQA 结果显示，加入检索上下文后，除 Gemma-3-1B 外所有模型都超过带粗略搜索的人类 baseline，多个模型也达到或超过 GPT-4.5 无检索的表现。表中 Llama-3.3-70B 总准确率 0.995，MedGemma-27B 0.992，Gemma-3-27B 与 Phi-4-14B 均为 0.989，Llama-3.1-8B 也有 0.979。作者还发现多数模型在少量 context chunks 时达到最高 MCQA accuracy；增加到更多 chunk 会带入噪声，只有 Llama-3.3-70B 在更大上下文下仍有小幅收益。目标 chunk 是否被检索到是最大收益来源，而目标 chunk 的排名是稳定的次级收益，长上下文噪声越多，排名越重要。\n\nLLM judge 验证揭示了自动评估的边界。Completeness 的人类一致性较高，inter-reviewer macro-F1 = 0.88，judge 对两位 reviewer 的 macro-F1 分别约 0.79 和 0.78；Faithfulness 也相对可用，judge macro-F1 约 0.82/0.85。但 factual consistency 很弱，judge-human macro-F1 只有约 0.53/0.59，kappa 接近 0 或很低。free-form 结果中，中大型模型 completeness 和 clarity 通常在 0.88 到 0.97，但 faithfulness 是主要失败点；即便大模型也只有大约一半到三分之二回答通过 faithfulness，且目标 chunk 排名越靠后，faithfulness 下降越明显。\n\n## 5. 局限与未来方向\n作者明确列出几个限制。第一，检索评估把 relevance 当成 binary，而且每个 query 只有一个 target chunk；现实中许多公共卫生问题可能由多个 passage 支撑，所以单目标指标只能部分反映检索质量，也可能低估替代相关 chunk 的价值。第二，chunk length 分析依赖已有 chunk 结构，而不是在同一文本上系统改变 chunk size，因此只能说明相关性，不能完全证明因果。第三，主题级 ranking variability 的底层原因没有被隔离，可能来自主题语言、格式、文档结构或 query 表述差异。\n\n第四，MCQA 仍然会允许排除法等 partial-credit 行为，因此检索带来的 MCQA 提升可能高估真实开放问答能力；尤其是即使 top-ranked chunk 不是标注 target，模型仍可能取得高准确率。第五，free-form judge 按单个 reference chunk 评估 faithfulness，无法区分“确实无依据的扩展”和“由语料库其他地方支持但不在当前证据块中的陈述”。第六，factual consistency 的 judge-human agreement 太弱，不能把全量自动分数当成最终结论。最后，因为 PubHealthBench 问题来自 guidance 本身，天然可由 corpus 回答，尚未测试多 chunk 推理和 out-of-corpus query 中的安全拒答。\n\n未来方向也比较清楚：检索标注要从单 target chunk 扩展到多相关证据；chunking 需要更系统的结构化/主题化实验；free-form 评估要加强 factual consistency；benchmark 需要加入多证据推理、不可回答 query 和知识库外问题。对搜索团队来说，这些都是从离线 benchmark 走向线上真实 query 必须补齐的部分。\n\n## 6. 工业实践意义\n对社区搜索和 UGC 短文本检索，最直接的结论是：不要把 RAG 搜索质量简化为“选哪个 embedding model”。论文显示，BM25 在规范文本上仍强于部分 dense model，而 hybrid retrieval 可以显著改善弱模型表现；因此生产系统应默认保留 sparse signal，并用 RRF 或学习融合做第一版，而不是纯向量替换关键词检索。对于短 query、口语化 query、实体名和缩写密集的社区内容，这一点更重要，因为 dense model 容易漏掉精确实体，BM25 又容易漏掉语义改写。\n\n第二，chunk 设计应进入检索指标面板。论文发现长 chunk 会显著损害 rank-sensitive metrics，这对应社区帖子中“长帖、楼中楼、多话题评论”导致 embedding 语义被稀释的问题。工程上可以把帖子正文、标题、标签、评论、问答采纳答案拆成不同字段索引，并比较 full chunk、summary chunk、reduced chunk、结构化 chunk 的 nDCG@10 和 Precision@1，而不是只优化 recall。\n\n第三，最终答案或搜索助手的质量高度依赖目标证据的排名，而不只是是否在 top-k 内。论文中 free-form faithfulness 随目标 chunk 排名下降而明显变差，这对产品有直接含义：如果答案生成只读取 top 10 或 top 50，排在后面的正确证据很可能被模型忽略，甚至被无关上下文污染。实际部署时，应把 cross-encoder rerank、LLM rerank 或规则约束放在生成前，并限制传入上下文的主题混杂度。\n\n第四，小模型加好检索是可行的成本路线。论文显示多个开源中小模型在高质量检索上下文下可以超过无检索大模型，这对需要私有化、低成本或低延迟部署的社区搜索尤其重要。可以先把预算投到语料清洗、索引切分、hybrid fusion、rerank 和评测集建设，再决定是否升级生成模型。\n\n第五，评估体系要拆成可操作的层次：检索层看 Precision@1、Recall@5/10、MRR、nDCG@10；生成层至少区分 completeness 和 faithfulness；factual consistency 不能完全交给 LLM judge，需要人工抽检或更强验证。对搜索/推荐团队，这意味着离线日报里应同时保留“召回是否命中”“相关证据排第几”“答案是否只使用证据”“是否遗漏关键点”四类指标，才能定位问题到底在召回、排序、上下文组织还是生成。",
+        "content_html": "<h1>Healthier LLMs: Retrieval-Augmented Generation for Public Health Question Answering 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>这篇论文的问题不是“RAG 是否有用”这个宽泛命题，而是更具体地问：在公共卫生问答这种高风险、政策经常更新、错误建议可能带来群体性影响的场景中，检索层到底怎样影响最终问答质量。作者指出，传统医学 QA benchmark 多偏向临床或生物医学知识，且大量采用 multiple-choice QA；这类设置会掩盖真实开放问答中的错误，因为模型可以利用选项线索做排除，而不一定真正找到了官方指南中的证据。论文引用既有结果说明，从 MCQA 转到 free-form answer 时，LLM 平均准确率下降 39.4%，人类下降 22.3%，并且即使遮住题干，MCQA 仍能比随机高 6.7%，这说明选择题成绩会高估系统能力。</p>\n<p>作者基于 PubHealthBench 做 follow-up，把同一批英国政府公共卫生指南作为可检索知识库，让模型从 687 份官方 guidance 文档中检索证据，再回答 7,929 个问题。其动机对搜索/推荐从业者很熟悉：生成模型是否可靠，主要取决于前面的召回、排序、切分和上下文选择。如果检索把正确 chunk 放得太靠后，或者长 chunk 混入多个主题，模型即使很大也会把不必要的上下文写进答案。对社区搜索而言，这对应“用户问一个短 query，系统从帖子、问答、评论里找证据再组织答案”的真实链路。</p>\n<h2>2. 方法详解</h2>\n<p>数据层面，论文使用 PubHealthBench QA benchmark：PubHealthBench-Full 含 7,929 个由单个 guidance chunk 自动生成的多选问题，PubHealthBench-FreeForm 含 760 个经专家人工审查的问题，用于更接近真实开放问答的评估。原始语料来自 687 份英国政府公共卫生 guidance 文档，作者把文档转换为 markdown，并按 markdown header 层级切分，同时把完整 header hierarchy 附加到 chunk 中作为结构上下文。这个设计很关键，因为公共卫生指南大量依赖章节标题来限定语义，类似 UGC 搜索中帖子标题、话题、楼层和评论上下文会影响片段含义。</p>\n<p>检索部分比较了五类设置。第一类是 dense embedding retrieval：query 和 chunk 用同一个 text embedding model 编码，按 cosine similarity 排名。评测模型包括 NV-Embed-v2、SFR-Embedding-Mistral、OpenAI text-embedding-3-large、Multilingual-E5-large、Multilingual-E5-large-instruct、EmbeddingGemma、ModernBERT-base、MedCPT-Query-Encoder 等，覆盖 0.1B 到 8B、768 到 4096 维、512 到 32768 上下文长度。第二类是 sparse retrieval，用 TF-IDF 和 BM25 建索引。第三类是 hybrid retrieval，把 dense 和 sparse 两个 ranked list 用 weighted Reciprocal Rank Fusion 合并，融合权重按模型搜索最优值。第四类是 summary-based hybrid retrieval：先用 GPT-4o-mini 为每个 chunk 生成 summary，在 summary corpus 上检索，但下游生成仍传入对应 full chunk。第五类是 reduced-corpus hybrid retrieval：对超过 512 tokens 的 chunk 用 summary 替代，512 的阈值与 Multilingual-E5 tokenizer capacity 对齐。</p>\n<p>生成部分，作者把检索到的 top-k chunk 带 chunk identifier 和分隔符拼成 context block，再插入 question 和简短指令，要求模型使用上下文回答。生成模型覆盖 Llama 3.3、Phi-4、Gemma-3、MedGemma、Command-R 等 11 个模型。MCQA 设置从三个代表性检索配置抽取 top-k，其中 k 取 1、3、5、10；free-form 设置使用相同三组检索配置，但为了接近真实长上下文场景，k 设为 50，并限制 context block 到 32,000 tokens。</p>\n<p>评估层面，检索指标包括 Precision@1、Recall@5、Recall@10、MRR、nDCG@10。因为每个 query 在标注中只有一个 target chunk，Recall 衡量是否找回，MRR 和 nDCG 衡量正确 chunk 是否排在前面。free-form 回答用 rubric-based LLM-as-a-judge，评估 faithfulness、completeness、factual consistency、clarity 四项，并让两位人工专家独立标注 100 个响应，计算 Cohen&#x27;s kappa 和 macro-F1 的 95% bootstrap confidence interval，用来验证自动 judge 是否可信。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文把 PubHealthBench 从“只测模型答题”扩展为“同时测检索层和生成层”的 RAG benchmark。它不是只报告最终 QA accuracy，而是把 retrieval Precision@1、Recall@5/10、MRR、nDCG@10 与 MCQA、free-form faithfulness/completeness 连接起来，能够看到问题出在召回、排序、上下文长度还是生成。</p>\n<p>第二，论文系统比较 dense、sparse、hybrid 和 summary/reduced corpus 的影响，给出一个很实用的结论：hybrid retrieval 在所有 embedding model 上都提升检索指标，但最优 RRF 权重依赖模型；summary-only corpus 没有成为最佳设置，说明“先摘要再检索”不能简单替代结构化 chunking。这个结果对工业检索尤其重要，因为它反驳了“只换更大 embedding 就能解决”的直觉。</p>\n<p>第三，论文把 free-form 评估中的 LLM judge 做了人工验证，并指出 faithfulness 和 completeness 相对可靠，factual consistency 和 clarity 则较难复现人工判断。这个贡献避免了把自动评估当成真值；对搜索产品来说，相关性和答案可信度评测也需要区分哪些维度可以自动扩展、哪些仍要人工抽检。</p>\n<p>第四，论文展示了小模型加优质检索可以接近或超过大模型闭卷回答。作者在讨论中强调，检索质量可以补偿参数规模，在预算、延迟和部署约束下，比单纯换大模型更现实。这为企业内部知识问答、社区搜索助手和垂直内容 QA 提供了清晰工程路线。</p>\n<h2>4. 实验结果分析</h2>\n<p>检索表格显示，dense-only 设置下 NV-Embed-v2 最强：Precision@1 = 0.76，Recall@5 = 0.96，Recall@10 = 0.98，MRR = 0.85，nDCG@10 = 0.88。SFR-Embedding-Mistral 紧随其后，Precision@1 = 0.71，Recall@10 = 0.97，nDCG@10 = 0.85。OpenAI text-embedding-3-large 和 Multilingual-E5-large 的 Recall@10 都达到 0.96，nDCG@10 为 0.83。值得注意的是，BM25 的 Precision@1 = 0.65、nDCG@10 = 0.79，超过 EmbeddingGemma 和 MedCPT-Query-Encoder，说明公共卫生指南这类规范文本中，术语匹配仍然很强。</p>\n<table><thead><tr><th>设置</th><th>Precision@1</th><th>Recall@5</th><th>Recall@10</th><th>MRR</th><th>nDCG@10</th></tr></thead><tbody><tr><td>NV-Embed-v2 dense-only</td><td>0.76</td><td>0.96</td><td>0.98</td><td>0.85</td><td>0.88</td></tr><tr><td>SFR-Embedding-Mistral dense-only</td><td>0.71</td><td>0.94</td><td>0.97</td><td>0.81</td><td>0.85</td></tr><tr><td>text-embedding-3-large dense-only</td><td>0.68</td><td>0.92</td><td>0.96</td><td>0.78</td><td>0.83</td></tr><tr><td>Multilingual-E5-large dense-only</td><td>0.68</td><td>0.91</td><td>0.96</td><td>0.78</td><td>0.83</td></tr><tr><td>BM25 sparse-only</td><td>0.65</td><td>0.87</td><td>0.91</td><td>0.75</td><td>0.79</td></tr><tr><td>EmbeddingGemma dense-only</td><td>0.27</td><td>0.55</td><td>0.69</td><td>0.41</td><td>0.47</td></tr></tbody></table>\n<p>Hybrid retrieval 的收益很稳定。例如 NV-Embed-v2 hybrid 后 Precision@1 = 0.80、Recall@10 = 0.99、nDCG@10 = 0.91；SFR-Embedding-Mistral hybrid 后 Precision@1 = 0.76、Recall@10 = 0.99、nDCG@10 = 0.88；Multilingual-E5-large hybrid 后 Precision@1 = 0.76、Recall@10 = 0.98、nDCG@10 = 0.87。小模型也明显受益，EmbeddingGemma hybrid 后 Precision@1 从 0.27 升到 0.63，Recall@10 从 0.69 升到 0.93，nDCG@10 从 0.47 升到 0.78。这说明 RRF 不是锦上添花，而是能把弱 dense model 拉到可用区间。</p>\n<p>Chunk 长度实验也很有实践意义。作者发现 target chunk 变长时，Recall 只小幅下降，但 Precision@1、MRR、nDCG@10 这类 rank-sensitive metric 会明显下降。直观原因是长 chunk 混合多个概念，embedding 的区分度下降；summary 或 reduced corpus 能缓解但不能完全解决。主题分析中，guidance topic 对 nDCG@10 的总体方差解释不到 1%，但不同主题的平均排序质量仍有系统差异，低表现主题如 Blood Safety、Hepatitis、STIs/HIV 与高表现主题如 Tuberculosis、Travel、Zoonotic and Emerging Infections 之间存在可见差距。</p>\n<p>MCQA 结果显示，加入检索上下文后，除 Gemma-3-1B 外所有模型都超过带粗略搜索的人类 baseline，多个模型也达到或超过 GPT-4.5 无检索的表现。表中 Llama-3.3-70B 总准确率 0.995，MedGemma-27B 0.992，Gemma-3-27B 与 Phi-4-14B 均为 0.989，Llama-3.1-8B 也有 0.979。作者还发现多数模型在少量 context chunks 时达到最高 MCQA accuracy；增加到更多 chunk 会带入噪声，只有 Llama-3.3-70B 在更大上下文下仍有小幅收益。目标 chunk 是否被检索到是最大收益来源，而目标 chunk 的排名是稳定的次级收益，长上下文噪声越多，排名越重要。</p>\n<p>LLM judge 验证揭示了自动评估的边界。Completeness 的人类一致性较高，inter-reviewer macro-F1 = 0.88，judge 对两位 reviewer 的 macro-F1 分别约 0.79 和 0.78；Faithfulness 也相对可用，judge macro-F1 约 0.82/0.85。但 factual consistency 很弱，judge-human macro-F1 只有约 0.53/0.59，kappa 接近 0 或很低。free-form 结果中，中大型模型 completeness 和 clarity 通常在 0.88 到 0.97，但 faithfulness 是主要失败点；即便大模型也只有大约一半到三分之二回答通过 faithfulness，且目标 chunk 排名越靠后，faithfulness 下降越明显。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出几个限制。第一，检索评估把 relevance 当成 binary，而且每个 query 只有一个 target chunk；现实中许多公共卫生问题可能由多个 passage 支撑，所以单目标指标只能部分反映检索质量，也可能低估替代相关 chunk 的价值。第二，chunk length 分析依赖已有 chunk 结构，而不是在同一文本上系统改变 chunk size，因此只能说明相关性，不能完全证明因果。第三，主题级 ranking variability 的底层原因没有被隔离，可能来自主题语言、格式、文档结构或 query 表述差异。</p>\n<p>第四，MCQA 仍然会允许排除法等 partial-credit 行为，因此检索带来的 MCQA 提升可能高估真实开放问答能力；尤其是即使 top-ranked chunk 不是标注 target，模型仍可能取得高准确率。第五，free-form judge 按单个 reference chunk 评估 faithfulness，无法区分“确实无依据的扩展”和“由语料库其他地方支持但不在当前证据块中的陈述”。第六，factual consistency 的 judge-human agreement 太弱，不能把全量自动分数当成最终结论。最后，因为 PubHealthBench 问题来自 guidance 本身，天然可由 corpus 回答，尚未测试多 chunk 推理和 out-of-corpus query 中的安全拒答。</p>\n<p>未来方向也比较清楚：检索标注要从单 target chunk 扩展到多相关证据；chunking 需要更系统的结构化/主题化实验；free-form 评估要加强 factual consistency；benchmark 需要加入多证据推理、不可回答 query 和知识库外问题。对搜索团队来说，这些都是从离线 benchmark 走向线上真实 query 必须补齐的部分。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索和 UGC 短文本检索，最直接的结论是：不要把 RAG 搜索质量简化为“选哪个 embedding model”。论文显示，BM25 在规范文本上仍强于部分 dense model，而 hybrid retrieval 可以显著改善弱模型表现；因此生产系统应默认保留 sparse signal，并用 RRF 或学习融合做第一版，而不是纯向量替换关键词检索。对于短 query、口语化 query、实体名和缩写密集的社区内容，这一点更重要，因为 dense model 容易漏掉精确实体，BM25 又容易漏掉语义改写。</p>\n<p>第二，chunk 设计应进入检索指标面板。论文发现长 chunk 会显著损害 rank-sensitive metrics，这对应社区帖子中“长帖、楼中楼、多话题评论”导致 embedding 语义被稀释的问题。工程上可以把帖子正文、标题、标签、评论、问答采纳答案拆成不同字段索引，并比较 full chunk、summary chunk、reduced chunk、结构化 chunk 的 nDCG@10 和 Precision@1，而不是只优化 recall。</p>\n<p>第三，最终答案或搜索助手的质量高度依赖目标证据的排名，而不只是是否在 top-k 内。论文中 free-form faithfulness 随目标 chunk 排名下降而明显变差，这对产品有直接含义：如果答案生成只读取 top 10 或 top 50，排在后面的正确证据很可能被模型忽略，甚至被无关上下文污染。实际部署时，应把 cross-encoder rerank、LLM rerank 或规则约束放在生成前，并限制传入上下文的主题混杂度。</p>\n<p>第四，小模型加好检索是可行的成本路线。论文显示多个开源中小模型在高质量检索上下文下可以超过无检索大模型，这对需要私有化、低成本或低延迟部署的社区搜索尤其重要。可以先把预算投到语料清洗、索引切分、hybrid fusion、rerank 和评测集建设，再决定是否升级生成模型。</p>\n<p>第五，评估体系要拆成可操作的层次：检索层看 Precision@1、Recall@5/10、MRR、nDCG@10；生成层至少区分 completeness 和 faithfulness；factual consistency 不能完全交给 LLM judge，需要人工抽检或更强验证。对搜索/推荐团队，这意味着离线日报里应同时保留“召回是否命中”“相关证据排第几”“答案是否只使用证据”“是否遗漏关键点”四类指标，才能定位问题到底在召回、排序、上下文组织还是生成。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "web_search:arxiv:2606.28737",
+      "title": "5ting at SemEval-2026 Task 8: Strong End-to-End Multi-Turn RAG via LLM-Based Reranking and Faithfulness Control",
+      "url": "https://arxiv.org/abs/2606.28737",
+      "authors": "Thien-Qua-T-Nguyen, Chi Hoang, Nguyen Tran, Tri Le, Khanh Truong, Chinh Trong Nguyen",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-06-27",
+      "total_score": 4.4,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.4,
+      "summary": "这篇 SemEval-2026 Task 8 系统报告聚焦多轮 RAG 检索，组合 BGE-M3 dense retrieval、FAISS 索引、双查询合并召回、LLM reranking 和受证据约束的角色分离生成。论文报告检索子任务 nDCG@5 = 0.4719，端到端任务 harmonic score = 0.5597，RL_F = 0.7692，说明简单但完整的“召回-重排-可信生成”链路仍然有竞争力。它与社区搜索中的多轮查询、上下文漂移和证据约束高度相关。",
+      "key_insight": "可借鉴点不是单个模型，而是工程化链路：用双查询扩大召回，用 LLM reranker 处理上下文相关性，再把生成阶段约束在检索证据内。对于短文本 UGC 搜索，这意味着可以把原 query、改写 query 和用户上下文 query 并行召回，再用重排模型做统一排序，同时把无证据答案或低置信结果降权。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2607.04581",
+      "title": "MTEB-BR: A Text Embedding Benchmark for Brazilian Portuguese",
+      "url": "https://arxiv.org/abs/2607.04581",
+      "authors": "Tardelli Ronan Coelho Stekel",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 4.28,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.28,
+      "summary": "MTEB-BR 针对巴西葡萄牙语缺少原生 embedding benchmark 的问题，构建了 22 个本地任务，覆盖分类、多标签、语义相似、聚类、retrieval 和 reranking，并排除翻译数据。作者评测 93 个模型，其中 73 个 open-weight、20 个闭源商业 API，参数规模从 23M 到 27B，还为 headline comparison 加入 bootstrap confidence interval、paired-bootstrap significance 和任务区分度分析。虽然语言是葡语，但方法直接对应多语言/方言 UGC 搜索评测。",
+      "key_insight": "这篇论文提醒搜索团队：embedding leaderboard 如果依赖翻译语料，很可能高估真实社区内容上的表现。对于中文社区搜索，可以按它的做法建设原生短文本、评论、问答和帖子检索任务，并用置信区间和任务区分度过滤“看似领先但不可复现”的模型差异，减少盲目替换 embedding 模型的风险。"
+    },
+    {
+      "rank": 4,
+      "id": "web_search:arxiv:2607.02509",
+      "title": "ReContext: Recursive Evidence Replay as LLM Harness for Long-Context Reasoning",
+      "url": "https://arxiv.org/abs/2607.02509",
+      "authors": "Unknown",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-07-02",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.1,
+      "summary": "RECONTEXT 提出 Recursive Evidence Replay，把长上下文中的证据组织与最终生成分离：系统先利用模型内部相关性信号构造 query-conditioned evidence pool，再在回答前递归回放关键证据，同时保留完整原始上下文。方法不需要训练、外部 memory 或 context pruning，适合在检索召回后做轻量证据重排和上下文增强。对搜索场景，它更接近一种“生成前证据排序/压缩”策略。",
+      "key_insight": "如果 UGC 搜索结果要进入 LLM 摘要或搜索助手，瓶颈常常不是召回不到，而是证据顺序和局部上下文组织不稳定。RECONTEXT 的启发是把 top-k 结果二次组织成面向 query 的 evidence pool，让模型先看到最相关片段再生成；这可以作为 cross-encoder rerank 之外的轻量后处理方案。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2606.29033",
+      "title": "Human-in-the-Loop Nugget Annotation for Accountable LLM-as-a-Judge Evaluations",
+      "url": "https://arxiv.org/abs/2606.29033",
+      "authors": "Laura Dietz",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 3.83,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.08,
+      "adjusted_score": 3.83,
+      "summary": "论文讨论 LLM-as-a-Judge 评估中人类监督容易失真的问题：一种做法会让专家被模型输出锚定，另一种则让专家承担过重标注负担。作者提出 human-in-the-loop nugget annotation 工具，让人类先识别“哪些信息点重要”，LLM 再负责大规模匹配输出是否覆盖这些 nuggets，并用 nugget banks 支撑自动评测。它对搜索相关性评测、答案覆盖率评测和人工质检流程都有迁移价值。",
+      "key_insight": "社区搜索的相关性评估可以借鉴 nugget 思路：让标注者定义 query 下必须满足的信息点，再让模型批量判断候选帖子是否覆盖，而不是直接要求模型给整体相关性分。这样既能保留人工对意图的控制，又能把 LLM 用在高吞吐匹配环节，降低长尾 query 和多答案 query 的评测成本。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2607.07047",
+      "title": "Riemannian Geometry for Pre-trained Language Model Embeddings",
+      "url": "https://arxiv.org/abs/2607.07047",
+      "authors": "Szczepan Konior, Alexandre Quemy, Przemys{\\l}aw Klocek, Gr\\'egoire Cattan, Bart{\\l}omiej Sobieski",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 3.59,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.04,
+      "adjusted_score": 3.59,
+      "summary": "论文研究预训练语言模型 embedding 的黎曼几何结构，提出 Riemannian Mean Pooling：从编码器解析 Jacobian 提取 token 级 pullback metrics，再在 SPD 流形上用 Fréchet mean 聚合。实验显示，在 CoLA、CREAK、RTE 三个含语言结构信号的数据集上，RMP 优于欧式 mean pooling；在去除词汇伪相关的 FEVER-Symmetric 上保持 chance，说明方法对真实结构信号更敏感。它不是检索论文，但对 embedding pooling 有参考意义。",
+      "key_insight": "短文本检索常把句向量池化当成固定组件，这篇论文提示 pooling 方式本身可能决定语义信号是否被保留。实际系统不一定要直接实现 RMP，但可以把“不同 pooling 对 query/document 表征的影响”纳入 embedding 评测，尤其是在口语、方言、反事实和低资源文本上检查模型是否只学到词面捷径。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2607.06974",
+      "title": "MILES: Modular Instruction Memory with Learnable Selection for Self-Improving LLM Reasoning",
+      "url": "https://arxiv.org/abs/2607.06974",
+      "authors": "Ruilin Tong, Dong Gong",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 3.49,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.04,
+      "adjusted_score": 3.49,
+      "summary": "MILES 关注 LLM 在连续任务中的自我改进：它动态扩展 step-wise memory，并在测试时用 correctness-optimized memory composition 选择可复用指令片段，避免存储整段 solution template 泛化差、启发式选择不优化最终正确率的问题。方法针对 memory 增量扩张和监督有限的现实约束设计。它不是传统 IR，但涉及 query-conditioned memory selection，可迁移到搜索助手和复杂问答。",
+      "key_insight": "如果搜索助手要长期服务同一用户或同一业务域，记忆检索不能只按相似度取“完整历史答案”。MILES 的启发是把可复用经验拆成模块化步骤，再学习组合策略；社区搜索可以把成功 query 改写、过滤条件、排序偏好拆成可检索 memory unit，用于后续会话的 query understanding。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2607.07626",
+      "title": "Future Confidence Distillation in Large Language Models",
+      "url": "https://arxiv.org/abs/2607.07626",
+      "authors": "Sahil Kale",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 3.47,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.02,
+      "adjusted_score": 3.47,
+      "summary": "论文研究 LLM 置信度如何随解题过程演化，比较回答前 Feeling-of-Knowing 与回答后 Judgement-of-Learning，并指出后验置信度通常校准更好、更有区分度；隐藏表征中的线性 probe 能恢复比显式口头置信度更丰富的信息。作者提出 Future Confidence Distillation，用未来时刻的置信信号指导当前模型。它与检索触发、工具调用和自适应计算有关。",
+      "key_insight": "搜索系统中是否触发二次召回、重排或人工兜底，本质上依赖置信度判断。该文的启发是不要只信模型在回答前说“我知道”，而要用检索后、重排后或生成后的校准信号训练 gating；对社区搜索助手而言，可用这类信号决定是否扩大召回、展示更多证据或拒答。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2604.07392",
+      "title": "Event-Centric World Modeling with Memory-Augmented Retrieval for Embodied Decision-Making",
+      "url": "https://arxiv.org/abs/2604.07392",
+      "authors": "Zhaowen Fan, Rongchao Zhang, Yunxiang Han",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 09 Jul 2026 00:00:00 -0400",
+      "total_score": 3.37,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.02,
+      "adjusted_score": 3.37,
+      "summary": "ERA 框架面向 embodied decision-making，把环境表示成结构化 semantic events，并编码为可解释 latent representation；决策时从 event-action 知识库检索相似经验，再通过加权聚合生成最终动作。论文在 UAV navigation 场景展示实时性能和动态环境下的自适应行为。虽然应用不是文本搜索，但“事件表征-经验检索-聚合决策”的结构与会话记忆检索、用户行为检索有相似性。",
+      "key_insight": "对搜索/推荐从业者有价值的是其可解释检索式决策框架：把历史交互拆成事件，再用检索出的相似事件解释当前动作。社区搜索可以把用户 query reformulation、点击、停留和反馈组织成事件库，用于 query session 级别的个性化排序或失败 query 诊断，而不是只依赖黑盒序列模型。"
+    },
+    {
+      "rank": 10,
+      "id": "blog_rss:google_research_blog:https://research.google/blog/the-power-of-collaboration-how-we-can-reduce-traffic-congestion",
+      "title": "The power of collaboration: How we can reduce traffic congestion",
+      "url": "https://research.google/blog/the-power-of-collaboration-how-we-can-reduce-traffic-congestion/",
+      "authors": "",
+      "company": [
+        "Google"
+      ],
+      "source": "blog_rss",
+      "published": "2026-07-07",
+      "total_score": 2.9,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 2.9,
+      "summary": "Google Research 这篇工程博客讨论如何通过协作机制降低交通拥堵，属于算法与系统实践而非搜索相关性论文。它被纳入是因为硬去重后缺少检索方向的行业实践候选，同时覆盖规则要求至少保留一个主要科技公司的工程实践条目。对搜索团队而言，直接方法迁移有限，但其中关于多主体协作、约束优化和现实系统落地的思路可作为排序目标设计的旁路参考。",
+      "key_insight": "该条目的实践启示主要在工程组织层面：真实系统优化往往不是单模型指标最大化，而是在多方约束和局部反馈之间求稳定改进。UGC 搜索排序也类似，需要同时平衡相关性、点击率、内容质量和供给多样性；不过它不是搜索/推荐专项内容，应在报告中视为行业覆盖补位项。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_dataset:Qwen/AgentWorldBench",
+      "title": "Qwen/AgentWorldBench",
+      "url": "https://huggingface.co/datasets/Qwen/AgentWorldBench",
+      "source": "huggingface",
+      "description": "AgentWorldBench AgentWorldBench is a comprehensive evaluation benchmark for language world models, constructed from real-world observations of frontier model trajectories on established benchmarks such as Tool Decathlon, Terminal-Bench 1.0 & 2.0, and OSWorld-Verified. Every evalu; tags: task_categories:text-generation, language:en, license:apache-2.0, size_categories:1K<n<10K, format:json, modality:tabular, modality:text, library:datasets",
+      "language": "dataset",
+      "stars": 72,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 2,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-DSpark",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit",
+      "language": "model",
+      "stars": 457,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "title": "deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-DSpark",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, arxiv:2606.19348, license:mit, endpoints_compatible, 8-bit",
+      "language": "model",
+      "stars": 181,
+      "created_at": "2026-06-27"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnWorld-Teleop",
+      "title": "Alibaba-DAMO-Academy/RynnWorld-Teleop",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: diffusers, world-model, robotics, teleoperation, video-generation, image-to-video, egocentric, diffusion",
+      "language": "model",
+      "stars": 6,
+      "created_at": "2026-07-03"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnWorld-4D",
+      "title": "Alibaba-DAMO-Academy/RynnWorld-4D",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-4D",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: diffusers, world-model, robotics, video-generation, diffusion, 4d, rgb-depth-flow, embodied-ai",
+      "language": "model",
+      "stars": 6,
+      "created_at": "2026-07-03"
+    }
+  ]
+}

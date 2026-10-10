@@ -1,0 +1,419 @@
+{
+  "date": "2026-05-25",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 11,
+    "papers_selected": 10,
+    "score_min": 3.25,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.16598",
+      "title": "GRASP: Graph Agentic Search over Propositions for Multi-hop Question Answering",
+      "url": "https://arxiv.org/abs/2605.16598",
+      "authors": "Stockton Jenkins, Ramya Korlakai Vinayak, Junjie Hu",
+      "company": [
+        "UW–Madison"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-15",
+      "total_score": 4.4,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "GRASP 面向多跳问答，把复杂问题拆解成带依赖关系的子问题计划，并按问题复杂度动态扩展子 agent，每个子 agent 在「实体—命题(proposition)—段落」三层图上解析单跳查询，命题层通过 reciprocal-rank voting 召回段落。在 MuSiQue、2WikiMultihopQA 的 open retrieval 设定下取得最高准确率，token 消耗比 IRCoT+HippoRAG2 少 40–50%；在 LongBench 上 EM/F1 领先，且比次优方法少用 30% token。作者提出 success economy 作为 agentic QA 的效率度量。",
+      "key_insight": "三层命题图把检索单元从段落下沉到 proposition，降低无关上下文噪声，是 GraphRAG 提升精度同时省 token 的关键。按问题复杂度动态分配子 agent 数量，避免简单 query 也走多跳流程，对社区搜索中长尾复杂 query 的成本控制有借鉴价值。命题级召回 + rank voting 的设计可迁移到短文本检索的证据聚合环节。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.16598",
+        "title": "GRASP: Graph Agentic Search over Propositions for Multi-hop Question Answering",
+        "status": "completed",
+        "content": "# GRASP: Graph Agentic Search over Propositions for Multi-hop QA 深度解读\n\n## 1. 问题与动机\n\n多跳问答的 agentic 检索存在一个核心张力：问题越复杂，反复 LLM 调用与不断膨胀的上下文会让 token 消耗爆炸。HippoRAG、GraphReader 这类图增强系统精度高，但索引和推理两端都很贵。作者用三组量化证据指出现有路线的问题：(1) 基于三元组(triple)的知识图谱(HippoRAG2)索引成本高、推理 token 复合增长，且三元组抽取是有损的——关系依赖上下文、难压成原子三元组；在检索可区分性测试中，HippoRAG 三元组在三个 benchmark 上比 proposition 低 8.1–10.0 个 NDCG@5 点。(2) GraphReader 的多 agent 并行比实际所需多耗 60–70% token，还在重复劳动。(3) 多数系统只在 retrieval 或 long-context 单一设定下评测，缺乏统一的 token 口径。GRASP 的出发点是：把检索单元从段落/三元组换成 proposition(原子自包含语句)，并用「规划 + 隔离子 agent」把上下文增长约束住，从而在多跳精度提升的同时把 token 砍下来。\n\n## 2. 方法详解\n\nGRASP 构建三层图 G=(V_E, V_P, V_D, E)：实体节点(按名称 + 语义相似度 τ=0.7 去重)、proposition 节点(原子语句)、段落/文档节点；边包括实体—proposition(抽取时直接产生)与 proposition—段落(溯源)。索引阶段每个段落只用一次 LLM 调用，联合抽取 proposition、带类型的命名实体，以及把实体连到 proposition 的 index 引用；proposition 用 gemini-embedding-001 编码以支持混合检索。\n\n推理分三步。规划器一次 LLM 调用(temperature=0.2)生成 1–3 句自然语言计划 + 带依赖序号(#1、#2…)的子问题，few-shot 覆盖线性链、并行分支、对比结构三种依赖形态。每个子问题 q_i 派生一个独立子 agent α_i，条件是原问题 Q、子问题 q_i 与此前问答历史 H；子 agent 数量随计划复杂度自动伸缩，没有固定并行度。\n\n检索用混合打分：σ(s_i,K,p_j)=cos(e_si·e_pj)+λ·log(1+BM25(K,p_j))，λ=0.2，取 top m=50 proposition。再把分数聚合到实体：score(e_i)=Σσ/√(1+d(e_i))，用度数 d(e_i) 抑制 hub 实体。子 agent 从 top k=5 候选实体中筛出子集 ε 做遍历。最后用 reciprocal-rank voting 给段落打分：score(D)=Σ 1/(1+R(p_j))，R 为 proposition 排名，取 top d=2 段落。每个子 agent 维护紧凑的 observation 状态 O_i(而非全量历史)，过滤已访问实体/proposition，最多 ii=2 轮迭代；全部子 agent 完成后由合成模块汇总 H 出答案。索引与推理均用 Gemini-3-flash-preview，图存在 Neo4j(仅为实现便利)。\n\n## 3. 核心技术贡献\n\n(1) **proposition 作为检索单元**：在 MuSiQue 上以 5.4M 索引 token 取得 0.904 召回，而 HippoRAG2 三元组用 17.6M token 仅 0.818 召回——召回更高且索引 token 少 69%。proposition 比句子单元在 SQuAD/NQ/PubMedQA 上高 3.6–8.4 个 NDCG@5。(2) **规划式推理 + 上下文隔离**：依赖感知分解 + 子 agent 隔离，把跨跳和执行内的上下文增长都约束住。(3) **success economy 指标 C_w**：用 Shannon surprisal 把 token 成本按难度加权的正确答案数摊销，C_w=ΣT_i / Σ(w_i·1[EM_i=1])，w_i=-log2(r_i)，r_i 由 n=10 次零温采样估计，倡导效率感知的评测。(4) 首个在 retrieval 与 extended-context 两种设定下用统一 token 口径竞争性评测的系统。\n\n## 4. 实验结果分析\n\nretrieval 设定(开放语料，每数据集 1000 题)：MuSiQue 上 GRASP EM 0.505 / F1 0.651 / Judge 0.765，15.89M token、C_w=12616；IRCoT+HippoRAG2 为 0.478/0.604/0.673，31.49M token、C_w=26655——精度全面领先且 token 约少 50%、C_w 改善 52%。2Wiki 上 GRASP 0.737/0.825/0.943(10.9M token) 同样领先。HotpotQA 上 GRASP EM 0.627 略低于 IRCoT+HippoRAG2 的 0.678，但 token 仅 12.68M vs 26.82M——作者归因于 HotpotQA 存在推理捷径与参数泄漏，弱化了真多跳。\n\nextended-context(LongBench)：三数据集 EM/F1 全部领先，token 比次优方法少约 30%。如 MuSiQue GRASP EM 0.510(8.87M token) vs GraphReader 0.480(14.07M)；HotpotQA GRASP 0.540(5.43M) vs GraphReader 0.515(12.23M)。\n\n关键消融：RankVoting 比 uniform 加权召回高 5.8–11 点；去掉实体筛选层 EM 从 0.505 降到 0.483；只用 DPR(无 proposition) 降到 0.490；把 proposition 图换成 HippoRAG 三元组(同 GRASP agent) EM 0.496 但 token 涨到 29.12M。规划质量是瓶颈：plan hop 准确率从 2-hop 的 89.4% 跌到 4-hop 的 66.9%，整体 82.2%；分解正确时 EM 比分解错误高 8.8 个百分点。错误分析(50 例)显示 72% 是推理侧错误(规划错 13、子 agent 判断错 23)，检索侧仅 16%。\n\n## 5. 局限与未来方向\n\n作者明确指出：(1) **规划准确率天花板**——分解一旦错误，误差会沿子 agent 链传播，与图质量无关，这是限制检索增益转化为答案增益的主要瓶颈；建议用 SFT 或带可验证奖励的 RL 改进高 hop 规划。(2) 当前规划靠 few-shot in-context，未训练。(3) 承认 HotpotQA 有普遍的推理捷径与参数泄漏，模型可绕过真多跳。(4) λ=0.2 是启发式选取，按数据集调 λ 可能更好。(5) success economy 需 n=10 次前向估计难度权重，带来未充分讨论的额外推理开销。\n\n## 6. 工业实践意义\n\n对社区搜索/RAG 团队，最值得借鉴的是**把检索单元下沉到 proposition**：用一次 LLM 调用联合抽取 proposition+实体+引用，索引 token 比三元组方案省约 69%，召回反而更高(0.904 vs 0.818)，这对 UGC 长文本建索引的成本与质量是直接收益。**RankVoting**(1/(1+rank) 聚合)实现简单却比均匀加权召回高 5.8–11 点，可低成本嵌入现有重排/证据聚合环节。**度数归一化抑制 hub 实体**对社区里高频泛实体(如「手机」「美食」)的噪声召回有现实意义。**紧凑 observation 状态 + 过滤已访问节点**把多轮 agentic 检索的上下文增长约束住，配合子 agent 数量随复杂度自适应，对线上延迟与算力可控很关键——简单 query 不会被强行拉入多跳流程。需要注意两点部署细节：LongBench 下需把批大小降到每批 1 段(噪声敏感)，以及规划器在 4-hop 上准确率仅 66.9%，复杂 query 仍需 SFT/RL 强化规划。success economy(按难度加权摊销 token)也提示团队在评测 agentic 搜索时，应把成本与难度一并纳入，而非只看准确率。",
+        "content_html": "<h1>GRASP: Graph Agentic Search over Propositions for Multi-hop QA 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>多跳问答的 agentic 检索存在一个核心张力：问题越复杂，反复 LLM 调用与不断膨胀的上下文会让 token 消耗爆炸。HippoRAG、GraphReader 这类图增强系统精度高，但索引和推理两端都很贵。作者用三组量化证据指出现有路线的问题：(1) 基于三元组(triple)的知识图谱(HippoRAG2)索引成本高、推理 token 复合增长，且三元组抽取是有损的——关系依赖上下文、难压成原子三元组；在检索可区分性测试中，HippoRAG 三元组在三个 benchmark 上比 proposition 低 8.1–10.0 个 NDCG@5 点。(2) GraphReader 的多 agent 并行比实际所需多耗 60–70% token，还在重复劳动。(3) 多数系统只在 retrieval 或 long-context 单一设定下评测，缺乏统一的 token 口径。GRASP 的出发点是：把检索单元从段落/三元组换成 proposition(原子自包含语句)，并用「规划 + 隔离子 agent」把上下文增长约束住，从而在多跳精度提升的同时把 token 砍下来。</p>\n<h2>2. 方法详解</h2>\n<p>GRASP 构建三层图 G=(V_E, V_P, V_D, E)：实体节点(按名称 + 语义相似度 τ=0.7 去重)、proposition 节点(原子语句)、段落/文档节点；边包括实体—proposition(抽取时直接产生)与 proposition—段落(溯源)。索引阶段每个段落只用一次 LLM 调用，联合抽取 proposition、带类型的命名实体，以及把实体连到 proposition 的 index 引用；proposition 用 gemini-embedding-001 编码以支持混合检索。</p>\n<p>推理分三步。规划器一次 LLM 调用(temperature=0.2)生成 1–3 句自然语言计划 + 带依赖序号(#1、#2…)的子问题，few-shot 覆盖线性链、并行分支、对比结构三种依赖形态。每个子问题 q_i 派生一个独立子 agent α_i，条件是原问题 Q、子问题 q_i 与此前问答历史 H；子 agent 数量随计划复杂度自动伸缩，没有固定并行度。</p>\n<p>检索用混合打分：σ(s_i,K,p_j)=cos(e_si·e_pj)+λ·log(1+BM25(K,p_j))，λ=0.2，取 top m=50 proposition。再把分数聚合到实体：score(e_i)=Σσ/√(1+d(e_i))，用度数 d(e_i) 抑制 hub 实体。子 agent 从 top k=5 候选实体中筛出子集 ε 做遍历。最后用 reciprocal-rank voting 给段落打分：score(D)=Σ 1/(1+R(p_j))，R 为 proposition 排名，取 top d=2 段落。每个子 agent 维护紧凑的 observation 状态 O_i(而非全量历史)，过滤已访问实体/proposition，最多 ii=2 轮迭代；全部子 agent 完成后由合成模块汇总 H 出答案。索引与推理均用 Gemini-3-flash-preview，图存在 Neo4j(仅为实现便利)。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>proposition 作为检索单元</strong>：在 MuSiQue 上以 5.4M 索引 token 取得 0.904 召回，而 HippoRAG2 三元组用 17.6M token 仅 0.818 召回——召回更高且索引 token 少 69%。proposition 比句子单元在 SQuAD/NQ/PubMedQA 上高 3.6–8.4 个 NDCG@5。(2) <strong>规划式推理 + 上下文隔离</strong>：依赖感知分解 + 子 agent 隔离，把跨跳和执行内的上下文增长都约束住。(3) <strong>success economy 指标 C_w</strong>：用 Shannon surprisal 把 token 成本按难度加权的正确答案数摊销，C_w=ΣT_i / Σ(w_i·1[EM_i=1])，w_i=-log2(r_i)，r_i 由 n=10 次零温采样估计，倡导效率感知的评测。(4) 首个在 retrieval 与 extended-context 两种设定下用统一 token 口径竞争性评测的系统。</p>\n<h2>4. 实验结果分析</h2>\n<p>retrieval 设定(开放语料，每数据集 1000 题)：MuSiQue 上 GRASP EM 0.505 / F1 0.651 / Judge 0.765，15.89M token、C_w=12616；IRCoT+HippoRAG2 为 0.478/0.604/0.673，31.49M token、C_w=26655——精度全面领先且 token 约少 50%、C_w 改善 52%。2Wiki 上 GRASP 0.737/0.825/0.943(10.9M token) 同样领先。HotpotQA 上 GRASP EM 0.627 略低于 IRCoT+HippoRAG2 的 0.678，但 token 仅 12.68M vs 26.82M——作者归因于 HotpotQA 存在推理捷径与参数泄漏，弱化了真多跳。</p>\n<p>extended-context(LongBench)：三数据集 EM/F1 全部领先，token 比次优方法少约 30%。如 MuSiQue GRASP EM 0.510(8.87M token) vs GraphReader 0.480(14.07M)；HotpotQA GRASP 0.540(5.43M) vs GraphReader 0.515(12.23M)。</p>\n<p>关键消融：RankVoting 比 uniform 加权召回高 5.8–11 点；去掉实体筛选层 EM 从 0.505 降到 0.483；只用 DPR(无 proposition) 降到 0.490；把 proposition 图换成 HippoRAG 三元组(同 GRASP agent) EM 0.496 但 token 涨到 29.12M。规划质量是瓶颈：plan hop 准确率从 2-hop 的 89.4% 跌到 4-hop 的 66.9%，整体 82.2%；分解正确时 EM 比分解错误高 8.8 个百分点。错误分析(50 例)显示 72% 是推理侧错误(规划错 13、子 agent 判断错 23)，检索侧仅 16%。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出：(1) <strong>规划准确率天花板</strong>——分解一旦错误，误差会沿子 agent 链传播，与图质量无关，这是限制检索增益转化为答案增益的主要瓶颈；建议用 SFT 或带可验证奖励的 RL 改进高 hop 规划。(2) 当前规划靠 few-shot in-context，未训练。(3) 承认 HotpotQA 有普遍的推理捷径与参数泄漏，模型可绕过真多跳。(4) λ=0.2 是启发式选取，按数据集调 λ 可能更好。(5) success economy 需 n=10 次前向估计难度权重，带来未充分讨论的额外推理开销。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/RAG 团队，最值得借鉴的是<strong>把检索单元下沉到 proposition</strong>：用一次 LLM 调用联合抽取 proposition+实体+引用，索引 token 比三元组方案省约 69%，召回反而更高(0.904 vs 0.818)，这对 UGC 长文本建索引的成本与质量是直接收益。<strong>RankVoting</strong>(1/(1+rank) 聚合)实现简单却比均匀加权召回高 5.8–11 点，可低成本嵌入现有重排/证据聚合环节。<strong>度数归一化抑制 hub 实体</strong>对社区里高频泛实体(如「手机」「美食」)的噪声召回有现实意义。<strong>紧凑 observation 状态 + 过滤已访问节点</strong>把多轮 agentic 检索的上下文增长约束住，配合子 agent 数量随复杂度自适应，对线上延迟与算力可控很关键——简单 query 不会被强行拉入多跳流程。需要注意两点部署细节：LongBench 下需把批大小降到每批 1 段(噪声敏感)，以及规划器在 4-hop 上准确率仅 66.9%，复杂 query 仍需 SFT/RL 强化规划。success economy(按难度加权摊销 token)也提示团队在评测 agentic 搜索时，应把成本与难度一并纳入，而非只看准确率。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.13534",
+      "title": "Scaling Retrieval-Augmented Reasoning with Parallel Search and Explicit Merging",
+      "url": "https://arxiv.org/abs/2605.13534",
+      "authors": "Jiabei Liu, Wenyu Mao, Junfei Tan, Chunxu Shen, Lingling Yi, Jiancan Wu, Xiang Wang",
+      "company": [
+        "USTC",
+        "Tencent"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-13",
+      "total_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "MultiSearch 针对 search-augmented LLM 每步只生成单一 query 的局限，改为一次从多个视角生成多条 query 并行检索，再用显式 merging 步骤合并结果以提升信噪比。训练上用 RL + 多过程奖励(multi-process reward)同时优化多 query 检索与信息合并两个子目标。在 7 个 benchmark 上优于基线，检索信噪比与问答推理表现均有提升。",
+      "key_insight": "把多视角 query 扩展 + 显式合并做成可学习模块，比单一改写更适配 UGC 短文本搜索中表达多样、口语化的 query。多过程奖励分别监督检索与合并，缓解端到端 RL 的稀疏奖励问题，是值得参考的奖励设计。并行检索也利于降低多轮 agentic 检索的整体延迟。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.12213",
+      "title": "Goal-Oriented Reasoning for RAG-based Memory in Conversational Agentic LLM Systems",
+      "url": "https://arxiv.org/abs/2605.12213",
+      "authors": "Jiazhou Liang, Armin Toroghi, Yifan Simon Liu, Faeze Moradi Kalarde, Liam Gallagher, Scott Sanner",
+      "company": [
+        "University of Toronto"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-12",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "Goal-Mem 指出现有对话 agent 的记忆检索基于「原始用户话语的语义相似度」，缺乏对缺失中间事实的显式推理，常返回无关或不足的证据。它把用户 query 当作目标做 backward chaining，分解为原子子目标并定向检索记忆，并用 Natural Language Logic 兼顾形式化推理严谨性与自然语言表达力。在两个数据集上稳定超过 9 个基线，尤其在多跳推理与隐式推断任务上提升明显。",
+      "key_insight": "用目标驱动的反向链式分解替代「按相似度捞记忆」，对会话式搜索中需要补全中间事实的 query 很有价值。NL Logic 在保持可读性的同时引入推理结构，是平衡可解释性与表达力的一种思路。子目标定向检索能减少记忆库的无关召回，对长会话上下文管理有参考价值。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.20729",
+      "title": "MTR-Suite: A Framework for Evaluating and Synthesizing Conversational Retrieval Benchmarks",
+      "url": "https://arxiv.org/abs/2605.20729",
+      "authors": "Junhao Ruan, Abudukeyumu Abudula, Bei Li, Yongjing Yin, Xinyu Liu, Kechen Jiao, Xin Chen, Jingang Wang, Xunliang Cai, Tong Xiao, Jingbo Zhu",
+      "company": [
+        "Meituan",
+        "NEU"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "MTR-Suite 面向会话式检索(conversational retrieval)评测，包含三部分：MTR-Eval(基于 LLM 的审计器，量化既有 benchmark 的对齐偏差)、MTR-Pipeline(多 agent 系统，用 greedy traversal clustering 以人工 1/400 的成本合成高保真对话)、以及 MTR-Bench(覆盖话题切换、冗长表达等生产场景挑战的通用域 benchmark)。MTR-Bench 相比现有方案展现更强的区分度，代码与数据已开源。",
+      "key_insight": "多 agent 对话合成把会话检索训练/评测数据成本压到人工的 1/400，对缺乏标注对话数据的搜索团队很实用。先用 LLM 审计器定位旧 benchmark 的对齐缺口、再针对性合成，可迁移到社区搜索的 query 改写/相关性评测集构建。把话题切换、冗长表达等真实挑战纳入评测，提示评测集要贴近线上分布。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.17101",
+      "title": "SEMA-RAG: A Self-Evolving Multi-Agent Retrieval-Augmented Generation Framework for Medical Reasoning",
+      "url": "https://arxiv.org/abs/2605.17101",
+      "authors": "Yongfeng Huang, Ruiying Chen, James Cheng",
+      "company": [
+        "CUHK"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-16",
+      "total_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "SEMA-RAG 认为单轮静态检索与临床推理的多阶段过程不匹配，将医疗问答拆给三个专职 agent：临床解读、迭代检索探索、证据评估裁决，并支持自演化(self-evolving)。在 5 个 benchmark、5 种 LLM backbone 上平均比最强基线提升 +6.46 准确率点。",
+      "key_insight": "「解读—探索—裁决」的三角色分工是把单体 RAG 改造为多 agent 的清晰范式，证据评估 agent 对抑制幻觉、提升答案可信度有直接作用。虽落在医疗域，但三阶段分工与迭代检索探索可迁移到社区搜索中高确定性要求的问答场景。跨 5 个 backbone 的稳定增益说明该结构对模型选择不敏感。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.17946",
+      "title": "SVFSearch: A Multimodal Knowledge-Intensive Benchmark for Short-Video Frame Search in the Gaming Vertical Domain",
+      "url": "https://arxiv.org/abs/2605.17946",
+      "authors": "Lingtao Mao, Huangyu Dai, Xinyu Sun, Zihan Liang, Ben Chen, Chenyi Lei, Wenwu Ou",
+      "company": [
+        "Kuaishou"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-18",
+      "total_score": 3.65,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "SVFSearch 是首个面向游戏域短视频帧搜索的多模态知识密集型 benchmark：5000 条测试、4198 条训练样本(暂停的游戏画面)，配套冻结的离线检索环境(游戏域文本语料、话题关联图库、文本/图像/多模态检索接口)。评测涵盖 direct QA、RAG、Plan-Act-Replan agent、learned search。最优开源 direct QA 准确率 66.4%，最优实用 agent 79.1%，oracle 知识上界 95.4%；瓶颈在视觉 grounding、检索质量、推理与工具使用行为。",
+      "key_insight": "把短视频帧搜索拆成「视觉 grounding + 检索 + 推理 + 工具使用」四类瓶颈，对 UGC 多模态内容搜索的能力诊断很有参考价值。agent(79.1%) 明显优于 direct QA(66.4%) 但离 oracle(95.4%) 仍有差距，说明检索质量仍是多模态 agentic 搜索的主要短板。冻结离线检索环境的评测设计便于复现与公平比较。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.21482",
+      "title": "DeepWeb-Bench: A Deep Research Benchmark Demanding Massive Cross-Source Evidence and Long-Horizon Derivation",
+      "url": "https://arxiv.org/abs/2605.21482",
+      "authors": "Sixiong Xie, Zhuofan Shi, Haiyang Shen, Jiuzheng Wang, Siqi Zhong, Mugeng Liu, Chongyang Pan, Peilun Jia, Baoqing Sun, Xiang Jing, Yun Ma",
+      "company": [
+        "Peking University"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.4,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "DeepWeb-Bench 评测 deep research agent，覆盖三个难度维度：海量证据收集、跨源信息调和、长链多步推导，并带多层披露级别的来源溯源记录。在 9 个前沿模型上发现：检索并非瓶颈(检索失败仅占错误 12–14%)，推导与校准失败超过 70%；强模型错误集中在推导不完整，弱模型则表现为幻觉式的虚假精确；跨模型一致性仅 0.61。",
+      "key_insight": "「检索不是瓶颈、推导才是」的结论提醒搜索团队：堆检索召回的边际收益有限，证据调和与多步推导能力更值得投入。0.61 的跨模型一致性说明 deep research 任务高度依赖模型自身能力、缺乏稳定答案，评测需谨慎设计。带披露级别的溯源记录为可控对照实验提供了范式。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.10268",
+      "title": "MemReread: Enhancing Agentic Long-Context Reasoning via Memory-Guided Rereading",
+      "url": "https://arxiv.org/abs/2605.10268",
+      "authors": "Baibei Ji, Xiaoyang Weng, Juntao Li, Zecheng Tang, Yihang Lou, Min Zhang",
+      "company": [
+        "Soochow University"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 3.4,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "MemReread 基于线性读取文档、动态更新记忆的 agent 记忆机制；当最终记忆不足时触发问题分解与重读(rereading)，找回被过早丢弃的间接事实，避免易丢证据的检索模块。用 RL 动态决定重读次数。在保持随上下文线性时间复杂度的同时，长上下文推理稳定优于基线框架。",
+      "key_insight": "「记忆不足才重读」的按需机制，在长文档/长会话场景下兼顾效率与召回，比一次性全量检索更省算力。用 RL 学习重读次数，把「读多少遍」变成可优化策略，是长上下文 agent 的实用设计。线性复杂度对工业级长文本搜索的延迟控制友好。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2605.15109",
+      "title": "Why Neighborhoods Matter: Traversal Context and Provenance in Agentic GraphRAG",
+      "url": "https://arxiv.org/abs/2605.15109",
+      "authors": "Riccardo Terrenzi, Maximilian von Zastrow, Serkan Ayvaz",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-14",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该文研究 Agentic GraphRAG 中的引用忠实度(citation faithfulness)，主张它是轨迹级而非孤立证据级的属性，即引用是否需考虑图遍历路径、结构及「访问但未引用」的实体。通过对已引用/未引用图实体做隔离、移除、掩码的受控消融，发现移除已引用证据会显著改变答案、降低准确率，但仅靠引用并不充分：正确答案也可能依赖未引用的遍历上下文与周边图结构。",
+      "key_insight": "把引用评估从「证据是否支持答案」升级到「整条检索轨迹是否被考虑」，对 GraphRAG/可解释搜索的归因评测有方法论价值。「访问但未引用」实体也影响答案的发现，提示溯源与可解释性不能只看最终引用列表。受控消融(隔离/移除/掩码)是分析检索贡献的可复用实验设计。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2605.17072",
+      "title": "RAGA: Reading-And-Graph-building-Agent for Autonomous Knowledge Graph Construction and Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2605.17072",
+      "authors": "Chengrui Han, Zesheng Cheng",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-16",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "RAGA 针对现有 LLM 驱动知识图谱构建采用无状态批处理、缺乏跨 chunk 语义关系与实体消歧的问题，提出 agent 框架：覆盖完整 KG 操作的原子工具集、嵌入 ReAct 循环的 Read-Search-Verify-Construct 认知约束、符号+向量混合检索，以及把知识条目锚定到源文本的证据校验。在 QASPER 科学问答上，融合检索优于 zero-shot 基线，KG 集成在答案与证据质量上均有可测提升。",
+      "key_insight": "把 KG 构建从批处理改为带状态的 agent 流程，Read-Search-Verify-Construct 约束有助于跨 chunk 关系与实体消歧，对从 UGC 长文本沉淀结构化知识有参考价值。证据锚定到源文本提升了可追溯性，便于人工审核。符号+向量混合检索是平衡精确匹配与语义召回的常见而有效的组合。"
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 1927,
+      "language": "space",
+      "created_at": "2026-01-21",
+      "updated_at": "2026-05-22",
+      "published": "2026-01-21",
+      "discovered_at": "2026-05-24",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/Qwen3-TTS",
+        "likes": 1927,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-01-21T09:10:16.000Z",
+        "last_modified": "2026-05-22T12:14:31.000Z"
+      }
+    },
+    {
+      "id": "hf_model:zai-org/GLM-OCR",
+      "title": "zai-org/GLM-OCR",
+      "authors": "zai-org",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm_ocr, image-text-to-text, conversational, zh, en, fr",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, glm_ocr, image-text-to-text, conversational, zh, en, fr",
+      "url": "https://huggingface.co/zai-org/GLM-OCR",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1771,
+      "language": "model",
+      "created_at": "2026-01-30",
+      "updated_at": "2026-05-19",
+      "published": "2026-01-30",
+      "discovered_at": "2026-05-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-OCR",
+        "likes": 1771,
+        "downloads": 6136869,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm_ocr",
+          "image-text-to-text",
+          "conversational",
+          "zh",
+          "en",
+          "fr",
+          "es",
+          "ru",
+          "de",
+          "ja",
+          "ko",
+          "arxiv:2603.10910",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-01-30T04:24:21.000Z",
+        "last_modified": "2026-05-19T12:28:43.000Z"
+      }
+    },
+    {
+      "id": "hf_space:TencentARC/InstantMesh",
+      "title": "TencentARC/InstantMesh",
+      "authors": "TencentARC",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/TencentARC/InstantMesh",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 1570,
+      "language": "space",
+      "created_at": "2024-04-08",
+      "updated_at": "2026-05-22",
+      "published": "2024-04-08",
+      "discovered_at": "2026-05-24",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "TencentARC/InstantMesh",
+        "likes": 1570,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2024-04-08T08:30:18.000Z",
+        "last_modified": "2026-05-22T16:45:17.000Z"
+      }
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1333,
+      "language": "model",
+      "created_at": "2026-04-14",
+      "updated_at": "2026-05-19",
+      "published": "2026-04-14",
+      "discovered_at": "2026-05-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K2.6",
+        "likes": 1333,
+        "downloads": 2709464,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k25",
+          "feature-extraction",
+          "compressed-tensors",
+          "image-text-to-text",
+          "conversational",
+          "custom_code",
+          "arxiv:2602.02276",
+          "license:other",
+          "eval-results",
+          "region:us"
+        ],
+        "created_at": "2026-04-14T04:23:36.000Z",
+        "last_modified": "2026-05-19T09:01:54.000Z"
+      }
+    },
+    {
+      "id": "hf_space:zai-org/CogVideoX-5B-Space",
+      "title": "zai-org/CogVideoX-5B-Space",
+      "authors": "zai-org",
+      "description": "tags: gradio, cogvideox, video-generation, thudm, region:us",
+      "abstract": "tags: gradio, cogvideox, video-generation, thudm, region:us",
+      "url": "https://huggingface.co/spaces/zai-org/CogVideoX-5B-Space",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 1036,
+      "language": "space",
+      "created_at": "2024-08-23",
+      "updated_at": "2026-05-22",
+      "published": "2024-08-23",
+      "discovered_at": "2026-05-24",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "zai-org/CogVideoX-5B-Space",
+        "likes": 1036,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "cogvideox",
+          "video-generation",
+          "thudm",
+          "region:us"
+        ],
+        "created_at": "2024-08-23T08:18:57.000Z",
+        "last_modified": "2026-05-22T14:01:26.000Z"
+      }
+    }
+  ]
+}

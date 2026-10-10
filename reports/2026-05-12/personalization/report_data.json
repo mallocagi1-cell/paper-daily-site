@@ -1,0 +1,288 @@
+{
+  "date": "2026-05-12",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用，以及推荐侧的用户建模、CTR/CVR、生成式推荐。",
+  "stats": {
+    "papers_scored": 79,
+    "papers_selected": 10,
+    "score_min": 3.1,
+    "score_max": 4.35
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2511.14881",
+      "title": "SilverTorch: A Unified Model-based System to Democratize Large-Scale Recommendation on GPUs",
+      "url": "https://arxiv.org/abs/2511.14881",
+      "authors": "Meta",
+      "company": [
+        "Meta"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 4.35,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "SilverTorch 是 Meta 提出的一站式 DLRM 在线服务系统：将原本分散在 CPU 上的 ANN 索引和属性过滤服务统一收编进模型层，由模型本身完成召回、过滤、打分。系统设计了基于 GPU 的 model-based Bloom Index 用于特征过滤，以及融合 Int8 ANN 内核用于近邻检索，并通过 OverArch 打分层和多任务召回支持 learned similarity 等复杂打分结构。论文报告该系统已在 Meta 多个推荐场景部署，相比传统 CPU 索引方案显著降低成本并提升 QPS。",
+      "key_insight": "把召回链路从“独立的索引服务 + 排序模型”重构为“单一可微的统一模型”是当前工业级推荐系统架构演进的核心方向。SilverTorch 体现了三个值得借鉴的设计原则：(1) GPU 上 model-based Bloom filter 替代 CPU 倒排索引，避免跨机数据搬运；(2) Int8 量化的 ANN kernel 与排序网络 fuse 在一起，减少访存开销；(3) 通过 OverArch 层让多任务召回共享底层向量与特征流水。对于社区搜索这种召回+多目标排序联合优化场景，model-based serving 范式可以显著简化系统拓扑并打开 learned similarity / 个性化召回的设计空间。",
+      "deep_reading": {
+        "paper_id": "web:meta-silvertorch-2026-05-26",
+        "title": "SilverTorch: Index as Model — A New Retrieval Paradigm for Recommendation Systems",
+        "status": "completed",
+        "content": "# 深度解读：SilverTorch 将推荐索引变成可组合模型\n\n## 1. 问题与动机\n\n工业推荐召回通常把用户塔、ANN 索引、资格过滤和后续打分拆成多个服务：模型在 PyTorch/TensorFlow 中开发，向量索引由 Faiss、Milvus 或专有 CPU 服务维护，语言、地区、可见性等过滤再由倒排索引执行。论文指出这种分层并非只是工程风格差异，而会形成三个系统上限。其一，各组件拥有独立版本、调度、批处理和发布逻辑，端到端实验需要跨团队协调；其二，客户端必须扇出请求并搬运中间结果，无法联合优化搜索与过滤；其三，CPU 服务靠横向扩容支撑更大候选和复杂相似度，成本近似线性增长，难以承接多任务召回及深层交互。\n\n版本一致性是作者给出的直接生产证据。服务化方案中，用户塔几分钟即可发布，但数亿物品的 KNN 索引构建超过 4 小时；2022 年一次错误版本切换曾让生产性能指标下降 30%。与此同时，Faiss-GPU 的推荐用法受 Top-K/Probe 规模限制，而资格过滤仍主要停留在 CPU。推荐模型正从简单点积走向 HSTU 长序列、Mixture of Logits 和多任务价值建模，传统索引服务无法随训练图一起演化。SilverTorch 因而提出 Index as Model：把 ANN、过滤、缓存、重排和价值聚合全部定义为模型层，发布成一个可由纯 C++ Predictor 执行的快照。\n\n## 2. 方法详解\n\nSilverTorch 的发布链路先加载训练完成的用户塔和物品塔，在 GPU 上计算物品向量，并用 KMeans++ 构建 IVF 聚类。ANN 向量被全局 min/max 缩放到 Int8 的 [-128,127] 区间；用户塔、OverArch 和 Value Model 采用 BFloat16。资格特征不再写入倒排服务，而是编码为 GPU Bloom Index：每个物品用 M 位签名表示，k 个哈希函数把特征写入相应位；查询也生成签名，匹配等价于检查查询置 1 的位是否都在物品签名中为 1。实现把矩阵转置后只访问查询为 1 的行，并用一条 64 位 AND 指令同时处理 64 个物品，避免逐物品不规则访存。\n\nANN 层采用 IVF，但把索引选择、Embedding Gather、点积和 Top-K 融成 Int8 Kernel。标准实现会先物化巨大的临时向量张量，SilverTorch 则让 Warp 连续读取物品块，边读边做乘加，不生成中间 Gather 结果。Int8 将向量内存约减半，节省的显存用于让 OverArch 打分更多候选。作者报告在 64 probes、top-2048 时没有可测的 Recall 损失；系统实际支持 O(10,000) 的预筛候选，再由 OverArch 降到 O(1,000) 交给精排。\n\n关键的联合优化是 Probe-then-Filter。传统 Filter-then-Probe 先对全库过滤，但 ANN 最终只会访问少数被探测的聚类，其他过滤计算全部浪费。SilverTorch 先找出 IVF 的目标聚类，只对其中物品生成 Bloom 位掩码，然后在同一遍 Kernel 中完成过滤与相似度计算。由于 ANN 探测与资格过滤是合取条件，交换顺序不改变给定 probes 下的结果。论文给出的 8100 万物品、9000 个聚类、256 probes 案例只处理 230 万物品，约占 2.8%，过滤计算与临时显存均减少约 30 倍。\n\n扩展层包含两部分。OverArch 在 ANN 后读取预先缓存于 GPU 的物品向量，可使用 MLP、Self-Attention 或 Mixture of Logits 建模点积无法表达的用户—物品交互。多任务召回为点赞、分享、评论等目标生成任务专属用户向量，但共享物品索引；Value Model 再解析 JSON 风格业务公式，把各任务预测合成统一期望价值。多 GPU 时 ANN/Bloom 索引按物品分片，OverArch 和 Value Model 在各卡复制，局部结果汇总后统一打分；Embedding 表仍可放在 CPU 参数服务器。\n\n实验使用两个生产采样数据集，候选规模分别为 1000 万和 8000 万，向量维度 128，硬件为 A100 40GB；用户塔采用 HSTU，OverArch 使用 Mixture of Logits。系统回放 5000 个真实请求，在 P99 低于 200ms 的约束下逐步加压测最大 QPS。80M 配置用 2 张 GPU，10M 用 1 张；ANN 对照包括 Faiss-CPU IVF、Faiss-GPU IVF 与 HNSW，过滤对照为生产 CPU 倒排和 GPU Forward Index。ANN 微基准先预热 50 个 Batch，再测 100 个 Batch，Batch Size 为 16。论文不是训练算法工作，因此未报告优化器、训练 Batch 或训练步数；这不影响服务评测，但限制了端到端模型复现。\n\n## 3. 核心技术贡献\n\n第一，SilverTorch 把索引从外部状态提升为模型参数。ANN Tensor、Bloom Tensor、用户塔、缓存和打分层随一个快照发布，既消除用户/物品版本漂移，也让统一编译、量化和容量估算成为可能。发布阶段利用 GPU 后，完整快照构建从数天缩短到约 1 小时。\n\n第二，论文首次把推荐资格过滤系统性地搬到 GPU，并利用推荐特征较少、查询结构可预知的性质设计 Bloom Index。它牺牲极低概率的假阳性来换取连续位运算；假阳性还会被后续排序剔除。第三，Int8 ANN 与 Bloom Filter 的联合顺序优化不是简单拼装两个 Kernel，而是根据 IVF 只访问部分聚类的性质推迟过滤，直接删除无效计算和 Scratch Memory。\n\n第四，节省的系统预算被明确返还给模型能力：OverArch 用非点积交互重排更多候选，Value Model 把多任务预测翻译成业务价值。E-Task 上，单纯 SilverTorch 在 Recall@100 为 0.20306；加入完整精度 OverArch 后为 0.24189，同时 Recall@20 从 CPU 基线 0.08239 升到 0.09181。系统创新因此不只追求更快，而是把吞吐余量转化为更复杂的召回建模。\n\n## 4. 实验结果分析\n\n80M 数据、生产 24 probes 设置下，SilverTorch 达到 1210 QPS；加入 OverArch/Value Model 后仍有 771 QPS。其成本表给出了可以直接复算的结果：\n\n| 方案 | QPS | 每小时估算 TCO | 每千请求成本 |\n|---|---:|---:|---:|\n| CPU 基线 | 51 | $28.92 | $0.1580 |\n| GPU 基线 Faiss2 + Forward4 | 186 | $30.29 | $0.0452 |\n| GPU 基线 Faiss2 + Forward6 | 340 | $33.27 | $0.0272 |\n| SilverTorch | 1210 | $33.27 | $0.0077 |\n| SilverTorch + OverArch | 771 | $33.27 | $0.0120 |\n\n按每千请求计算，纯 SilverTorch 相比 CPU 基线约节省 95.1%，即成本效率约 20.5 倍；工程博客汇总为 20.9 倍。与最强列出的 GPU 基线相比，每千请求成本也下降约 71.7%。更重要的是，Pool 从 80M 降到 10M 时 SilverTorch QPS 继续上升到 3802，而服务化基线因每台服务器承载量接近，吞吐变化不明显，说明统一 GPU 路径对候选规模更敏感。\n\n联合索引消融显示，Probe-then-Filter 比先做全量 Bloom Filter 的 Filter-then-Probe 提高约 17%–25% QPS。80M 实例中模型显存大致由 5GB Bloom Index、5GB ANN Index、10GB FP16 Embedding Cache、12GB OverArch 与 Value Model 权重构成。该分解说明 Bloom/Int8 的意义不仅是局部加速，还决定复杂交互层是否装得进 40GB A100。\n\n质量结果呈现了速度与召回的可控交换。E-Task 的 CPU 基线在 Recall@100/500/1000 分别为 0.19179/0.42950/0.44127；SilverTorch + OverArch 为 0.24189/0.44758/0.45727，相对提升 25.04%、5.6%、2.4%，QPS 仍从 51 提至 771。Recall@20 达 0.09181，比基线高 28.2%。低位 Bloom 版本把签名从 1024 位降到 768 位后假阳性上升，却没有降低端到端召回，部分点还略升，说明过滤是训练外约束，微量放宽会让 OverArch 获得更多可能相关候选。\n\nInt8 ANN 在 2000 万条、128 维向量微基准中跨 Recall 0.35–0.92 均快于 Faiss-GPU；代价是无法到达 0.95 Recall。但 Faiss 为达到 0.95 需要 CPU 1024 probes 或 GPU 512 probes，延迟显著恶化。对推荐系统而言，作者选择以较低成本获取宽候选，再让 OverArch 修正点积误差。这是一个系统级结论：不要孤立追求 ANN 的极高 Recall，应优化 ANN、预排序和最终召回质量的总预算。\n\n## 5. 局限与未来方向\n\n作者明确指出，SilverTorch 当前聚焦 Embedding-based Retrieval，生产中仍存在规则召回频道；这些频道需要封装 CPU Key-Value Index 为模型层，或只复用 Bloom Filter 后再让 GPU OverArch 统一打分。频控、历史过滤等动态约束目前通常留在后续排序，并未全部进入统一快照。\n\nIVF 也带来已知边界。Probe-then-Filter 与 Filter-then-Probe 在固定 probes 下结果等价，但当过滤条件选择性极强时，被探测聚类可能没有足够合格物品，只能增加 probes；论文的语言、国家等过滤相对宽，不能代表稀有主题或严格安全策略。Bloom Index 还有假阳性，虽然下游可以清理，但在必须零误放的合规过滤中不能单独承担最终判定。\n\n物品新鲜度仍是未完成工作。作者提出独立 Fresh Index，与主索引同布局并在线合并候选，但把具体更新协议、压缩和一致性留作未来研究；简单预留内存并线性扫描新增项无法扩展。论文也没有公开线上 A/B、真实 P99 数值、模型训练成本或故障恢复时间，TCO 基于相近 AWS 实例估算而非完整财务账本。外部团队还需要评估 GPU 利用率波动、跨卡合并和 CPU 参数服务器是否成为新瓶颈。\n\n## 6. 工业实践意义\n\n对搜索/推荐团队，最可操作的第一步不是重写全部服务，而是把现有请求画成可测量的数据流：用户塔发布、索引构建、资格过滤、网络扇出、候选合并、预排序分别记录 P50/P99、QPS、显存和每千请求成本。若索引构建远慢于模型发布，先解决统一快照和版本原子切换；SilverTorch 的 30% 版本事故说明这一收益可能先于 GPU 加速出现。\n\n第二步可从宽而稳定的过滤条件试点 Bloom GPU 化，例如语言、地区、内容类型和基础资格；安全下架、隐私、频控仍保留精确后验检查。ANN 应先支持大 Top-K 的 Int8 路径，用同一批生产请求绘制 Recall—Latency 曲线，再把节省的显存给轻量 OverArch。对社区 UGC，OverArch 可加入查询—帖子跨特征、作者关系、时效和会话上下文；Value Model 则把点击、长停留、收藏、评论和负反馈映射为业务价值，避免只优化单一 CTR。\n\n部署容量可以直接参考论文的资源账：80M、128 维实例在两张 A100 40GB 上运行，但模型权重、缓存、索引各占显存大头，不能只按向量库大小估卡数。上线前应以影子流量复现 5000 请求以上的混合过滤分布，保持固定 P99 预算逐步加压，并加入突发流量、索引更新和回滚演练。若目标规模很小，论文也建议切换 CPU PyTorch Runtime，而不是为了架构统一强行上 GPU。\n\nSilverTorch 对生成式搜推的核心启示是，复杂模型是否可上线取决于检索系统能否把基础算子压缩成一个可联合优化的执行图。它没有直接生成物品 ID，却通过更宽候选、非点积 OverArch 和多任务价值层，为 LLM 级意图与内容表征留下了在线预算。真正值得复制的不是某个 Kernel，而是把索引、过滤、模型质量、成本和版本一致性放进同一个优化问题。",
+        "content_html": "<h1>深度解读：SilverTorch 将推荐索引变成可组合模型</h1>\n<h2>1. 问题与动机</h2>\n<p>工业推荐召回通常把用户塔、ANN 索引、资格过滤和后续打分拆成多个服务：模型在 PyTorch/TensorFlow 中开发，向量索引由 Faiss、Milvus 或专有 CPU 服务维护，语言、地区、可见性等过滤再由倒排索引执行。论文指出这种分层并非只是工程风格差异，而会形成三个系统上限。其一，各组件拥有独立版本、调度、批处理和发布逻辑，端到端实验需要跨团队协调；其二，客户端必须扇出请求并搬运中间结果，无法联合优化搜索与过滤；其三，CPU 服务靠横向扩容支撑更大候选和复杂相似度，成本近似线性增长，难以承接多任务召回及深层交互。</p>\n<p>版本一致性是作者给出的直接生产证据。服务化方案中，用户塔几分钟即可发布，但数亿物品的 KNN 索引构建超过 4 小时；2022 年一次错误版本切换曾让生产性能指标下降 30%。与此同时，Faiss-GPU 的推荐用法受 Top-K/Probe 规模限制，而资格过滤仍主要停留在 CPU。推荐模型正从简单点积走向 HSTU 长序列、Mixture of Logits 和多任务价值建模，传统索引服务无法随训练图一起演化。SilverTorch 因而提出 Index as Model：把 ANN、过滤、缓存、重排和价值聚合全部定义为模型层，发布成一个可由纯 C++ Predictor 执行的快照。</p>\n<h2>2. 方法详解</h2>\n<p>SilverTorch 的发布链路先加载训练完成的用户塔和物品塔，在 GPU 上计算物品向量，并用 KMeans++ 构建 IVF 聚类。ANN 向量被全局 min/max 缩放到 Int8 的 [-128,127] 区间；用户塔、OverArch 和 Value Model 采用 BFloat16。资格特征不再写入倒排服务，而是编码为 GPU Bloom Index：每个物品用 M 位签名表示，k 个哈希函数把特征写入相应位；查询也生成签名，匹配等价于检查查询置 1 的位是否都在物品签名中为 1。实现把矩阵转置后只访问查询为 1 的行，并用一条 64 位 AND 指令同时处理 64 个物品，避免逐物品不规则访存。</p>\n<p>ANN 层采用 IVF，但把索引选择、Embedding Gather、点积和 Top-K 融成 Int8 Kernel。标准实现会先物化巨大的临时向量张量，SilverTorch 则让 Warp 连续读取物品块，边读边做乘加，不生成中间 Gather 结果。Int8 将向量内存约减半，节省的显存用于让 OverArch 打分更多候选。作者报告在 64 probes、top-2048 时没有可测的 Recall 损失；系统实际支持 O(10,000) 的预筛候选，再由 OverArch 降到 O(1,000) 交给精排。</p>\n<p>关键的联合优化是 Probe-then-Filter。传统 Filter-then-Probe 先对全库过滤，但 ANN 最终只会访问少数被探测的聚类，其他过滤计算全部浪费。SilverTorch 先找出 IVF 的目标聚类，只对其中物品生成 Bloom 位掩码，然后在同一遍 Kernel 中完成过滤与相似度计算。由于 ANN 探测与资格过滤是合取条件，交换顺序不改变给定 probes 下的结果。论文给出的 8100 万物品、9000 个聚类、256 probes 案例只处理 230 万物品，约占 2.8%，过滤计算与临时显存均减少约 30 倍。</p>\n<p>扩展层包含两部分。OverArch 在 ANN 后读取预先缓存于 GPU 的物品向量，可使用 MLP、Self-Attention 或 Mixture of Logits 建模点积无法表达的用户—物品交互。多任务召回为点赞、分享、评论等目标生成任务专属用户向量，但共享物品索引；Value Model 再解析 JSON 风格业务公式，把各任务预测合成统一期望价值。多 GPU 时 ANN/Bloom 索引按物品分片，OverArch 和 Value Model 在各卡复制，局部结果汇总后统一打分；Embedding 表仍可放在 CPU 参数服务器。</p>\n<p>实验使用两个生产采样数据集，候选规模分别为 1000 万和 8000 万，向量维度 128，硬件为 A100 40GB；用户塔采用 HSTU，OverArch 使用 Mixture of Logits。系统回放 5000 个真实请求，在 P99 低于 200ms 的约束下逐步加压测最大 QPS。80M 配置用 2 张 GPU，10M 用 1 张；ANN 对照包括 Faiss-CPU IVF、Faiss-GPU IVF 与 HNSW，过滤对照为生产 CPU 倒排和 GPU Forward Index。ANN 微基准先预热 50 个 Batch，再测 100 个 Batch，Batch Size 为 16。论文不是训练算法工作，因此未报告优化器、训练 Batch 或训练步数；这不影响服务评测，但限制了端到端模型复现。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，SilverTorch 把索引从外部状态提升为模型参数。ANN Tensor、Bloom Tensor、用户塔、缓存和打分层随一个快照发布，既消除用户/物品版本漂移，也让统一编译、量化和容量估算成为可能。发布阶段利用 GPU 后，完整快照构建从数天缩短到约 1 小时。</p>\n<p>第二，论文首次把推荐资格过滤系统性地搬到 GPU，并利用推荐特征较少、查询结构可预知的性质设计 Bloom Index。它牺牲极低概率的假阳性来换取连续位运算；假阳性还会被后续排序剔除。第三，Int8 ANN 与 Bloom Filter 的联合顺序优化不是简单拼装两个 Kernel，而是根据 IVF 只访问部分聚类的性质推迟过滤，直接删除无效计算和 Scratch Memory。</p>\n<p>第四，节省的系统预算被明确返还给模型能力：OverArch 用非点积交互重排更多候选，Value Model 把多任务预测翻译成业务价值。E-Task 上，单纯 SilverTorch 在 Recall@100 为 0.20306；加入完整精度 OverArch 后为 0.24189，同时 Recall@20 从 CPU 基线 0.08239 升到 0.09181。系统创新因此不只追求更快，而是把吞吐余量转化为更复杂的召回建模。</p>\n<h2>4. 实验结果分析</h2>\n<p>80M 数据、生产 24 probes 设置下，SilverTorch 达到 1210 QPS；加入 OverArch/Value Model 后仍有 771 QPS。其成本表给出了可以直接复算的结果：</p>\n<table><thead><tr><th>方案</th><th>QPS</th><th>每小时估算 TCO</th><th>每千请求成本</th></tr></thead><tbody><tr><td>CPU 基线</td><td>51</td><td>$28.92</td><td>$0.1580</td></tr><tr><td>GPU 基线 Faiss2 + Forward4</td><td>186</td><td>$30.29</td><td>$0.0452</td></tr><tr><td>GPU 基线 Faiss2 + Forward6</td><td>340</td><td>$33.27</td><td>$0.0272</td></tr><tr><td>SilverTorch</td><td>1210</td><td>$33.27</td><td>$0.0077</td></tr><tr><td>SilverTorch + OverArch</td><td>771</td><td>$33.27</td><td>$0.0120</td></tr></tbody></table>\n<p>按每千请求计算，纯 SilverTorch 相比 CPU 基线约节省 95.1%，即成本效率约 20.5 倍；工程博客汇总为 20.9 倍。与最强列出的 GPU 基线相比，每千请求成本也下降约 71.7%。更重要的是，Pool 从 80M 降到 10M 时 SilverTorch QPS 继续上升到 3802，而服务化基线因每台服务器承载量接近，吞吐变化不明显，说明统一 GPU 路径对候选规模更敏感。</p>\n<p>联合索引消融显示，Probe-then-Filter 比先做全量 Bloom Filter 的 Filter-then-Probe 提高约 17%–25% QPS。80M 实例中模型显存大致由 5GB Bloom Index、5GB ANN Index、10GB FP16 Embedding Cache、12GB OverArch 与 Value Model 权重构成。该分解说明 Bloom/Int8 的意义不仅是局部加速，还决定复杂交互层是否装得进 40GB A100。</p>\n<p>质量结果呈现了速度与召回的可控交换。E-Task 的 CPU 基线在 Recall@100/500/1000 分别为 0.19179/0.42950/0.44127；SilverTorch + OverArch 为 0.24189/0.44758/0.45727，相对提升 25.04%、5.6%、2.4%，QPS 仍从 51 提至 771。Recall@20 达 0.09181，比基线高 28.2%。低位 Bloom 版本把签名从 1024 位降到 768 位后假阳性上升，却没有降低端到端召回，部分点还略升，说明过滤是训练外约束，微量放宽会让 OverArch 获得更多可能相关候选。</p>\n<p>Int8 ANN 在 2000 万条、128 维向量微基准中跨 Recall 0.35–0.92 均快于 Faiss-GPU；代价是无法到达 0.95 Recall。但 Faiss 为达到 0.95 需要 CPU 1024 probes 或 GPU 512 probes，延迟显著恶化。对推荐系统而言，作者选择以较低成本获取宽候选，再让 OverArch 修正点积误差。这是一个系统级结论：不要孤立追求 ANN 的极高 Recall，应优化 ANN、预排序和最终召回质量的总预算。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出，SilverTorch 当前聚焦 Embedding-based Retrieval，生产中仍存在规则召回频道；这些频道需要封装 CPU Key-Value Index 为模型层，或只复用 Bloom Filter 后再让 GPU OverArch 统一打分。频控、历史过滤等动态约束目前通常留在后续排序，并未全部进入统一快照。</p>\n<p>IVF 也带来已知边界。Probe-then-Filter 与 Filter-then-Probe 在固定 probes 下结果等价，但当过滤条件选择性极强时，被探测聚类可能没有足够合格物品，只能增加 probes；论文的语言、国家等过滤相对宽，不能代表稀有主题或严格安全策略。Bloom Index 还有假阳性，虽然下游可以清理，但在必须零误放的合规过滤中不能单独承担最终判定。</p>\n<p>物品新鲜度仍是未完成工作。作者提出独立 Fresh Index，与主索引同布局并在线合并候选，但把具体更新协议、压缩和一致性留作未来研究；简单预留内存并线性扫描新增项无法扩展。论文也没有公开线上 A/B、真实 P99 数值、模型训练成本或故障恢复时间，TCO 基于相近 AWS 实例估算而非完整财务账本。外部团队还需要评估 GPU 利用率波动、跨卡合并和 CPU 参数服务器是否成为新瓶颈。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队，最可操作的第一步不是重写全部服务，而是把现有请求画成可测量的数据流：用户塔发布、索引构建、资格过滤、网络扇出、候选合并、预排序分别记录 P50/P99、QPS、显存和每千请求成本。若索引构建远慢于模型发布，先解决统一快照和版本原子切换；SilverTorch 的 30% 版本事故说明这一收益可能先于 GPU 加速出现。</p>\n<p>第二步可从宽而稳定的过滤条件试点 Bloom GPU 化，例如语言、地区、内容类型和基础资格；安全下架、隐私、频控仍保留精确后验检查。ANN 应先支持大 Top-K 的 Int8 路径，用同一批生产请求绘制 Recall—Latency 曲线，再把节省的显存给轻量 OverArch。对社区 UGC，OverArch 可加入查询—帖子跨特征、作者关系、时效和会话上下文；Value Model 则把点击、长停留、收藏、评论和负反馈映射为业务价值，避免只优化单一 CTR。</p>\n<p>部署容量可以直接参考论文的资源账：80M、128 维实例在两张 A100 40GB 上运行，但模型权重、缓存、索引各占显存大头，不能只按向量库大小估卡数。上线前应以影子流量复现 5000 请求以上的混合过滤分布，保持固定 P99 预算逐步加压，并加入突发流量、索引更新和回滚演练。若目标规模很小，论文也建议切换 CPU PyTorch Runtime，而不是为了架构统一强行上 GPU。</p>\n<p>SilverTorch 对生成式搜推的核心启示是，复杂模型是否可上线取决于检索系统能否把基础算子压缩成一个可联合优化的执行图。它没有直接生成物品 ID，却通过更宽候选、非点积 OverArch 和多任务价值层，为 LLM 级意图与内容表征留下了在线预算。真正值得复制的不是某个 Kernel，而是把索引、过滤、模型质量、成本和版本一致性放进同一个优化问题。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.07296",
+      "title": "PRISM: Refracting the Entangled User Behavior Space for E-Commerce Search",
+      "url": "https://arxiv.org/abs/2605.07296",
+      "authors": "anonymous (E-commerce industry)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 4.2,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "PRISM 针对电商搜索中“用户偏好”与“商品相关性”信号在曝光、反馈循环和语义匹配作用下严重纠缠的问题，提出 Preference-Relevance Interaction Semantic Modeling 框架。核心是把偏好估计和相关性估计建模为相互交互而非独立：通过 preference rectification 模块在相关性感知条件下迭代修正用户偏好，再用语义对齐与去混淆约束抑制曝光偏差。论文在电商真实数据上验证 ranking 指标稳定提升。",
+      "key_insight": "PRISM 用“偏好-相关性交互建模”的角度去解电商/社区搜索中的混淆偏差问题，比常见的 IPS 或 debiasing loss 更接近实际数据生成过程。对社区搜索场景的启示是：query-doc 相关性与 user-doc 偏好不能用两条独立 head 直接相加，而应该让相关性条件化于用户当前的行为状态。落地路径上，可以先在精排阶段引入 preference rectification 子模块，再扩展到召回侧的语义匹配。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.07296",
+        "title": "PRISM: Refracting the Entangled User Behavior Space for E-Commerce Search",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nPRISM 关注电商/社区搜索系统的一个长期被忽视的核心问题：用户行为信号并不是\"用户偏好\"和\"商品相关性\"两个独立可学习信号的简单叠加，它们在曝光机制、反馈回路、语义匹配三重作用下被深度纠缠并动态漂移。具体表现是：(1) 偏好估计被曝光偏差扭曲——用户只能在被推荐到的商品中给反馈；(2) 相关性建模被用户的隐式偏好污染——同一个 query 不同用户点击不同商品；(3) 二者沿时间动态漂移使得静态去偏方法失效。现有 IPS、CLK/NISE/DCMT 等去偏方法把偏好和相关性建模为独立组件再各自加 debiasing constraint，无法捕捉它们之间的因果交互。论文核心立场是：必须显式建模 preference-relevance 的交互，而非把二者当成独立 head 相加。\n\n## 2. 方法详解\n\nPRISM 由三个紧密耦合的模块构成，最后通过可学习的交互函数输出 CTR：\n\n**(a) Preference Rectification Module（偏好纠偏模块）**：把原始偏好 𝐩 和相关性 𝐫 投影到同一 attention 空间，计算 relevance→preference 路径 e_rp 和 self-preserving 路径 e_pp，softmax 归一化得到系数 α_rp、α_pp，残差更新 𝐩_edit = 𝐩 + Δ𝐩。两条正则约束保证修正不过度：幅度惩罚 ℒ_mag = ||Δ𝐩||²₂（避免大改），方向惩罚 ℒ_dir = 1 − cos(𝐩_edit, 𝐩)（保留语义方向）。\n\n**(b) LLM-Driven Semantic Anchoring（LLM 语义锚定）**：用 BGE-base-en-v1.5 编码 query-item 的正例/负例 prototype 𝐫_pos、𝐫_neg，把学到的相关性表示投影到 prototype 空间 𝐫_proto = f_proj(𝐫)，再用 margin loss ℒ_pr = max(0, γ − t_i·Δs_i) 监督其与正/负 prototype 的相似度差。这一步把 LLM 的语义先验作为外部锚点，防止相关性表示在长期训练中漂移到统计相关而非语义相关的方向。\n\n**(c) Preference-Conditioned Evidence Routing（偏好条件证据路由）**：从 query、item、user 及两两交互构造 6 个 evidence token（𝐞_q、𝐞_t、𝐞_u、𝐞_qt、𝐞_qu、𝐞_ut），以 edited 偏好 𝐩_edit 经过 𝐖_qr 投影后的 𝐪_r 为 query 在 evidence 上做 attention，输出 𝐜_route = Σ α(𝐞)·𝐞；再通过修正网络给出 s'_rel = σ(logit(s_rel) + δ_rel)。Entropy 正则 ℒ_att = −Σ α(𝐞)·log(α(𝐞)+ε) 防止 attention 塌缩。最终预测 ŷ = g_θ(s_pref, s'_rel)。\n\n**总损失**：ℒ = ℒ_bce + λ_mag·ℒ_mag + λ_dir·ℒ_dir + λ_pr·ℒ_pr + λ_att·ℒ_att，超参 λ_mag=1e-4、λ_dir=1e-3、λ_pr=0.1、λ_att=1e-4。\n\n**训练设置**：在 KuaiSAR（25,877 users / 2.01M items / 3.17M interactions）和 JDSearch（12.14M items / 15.51M interactions）两个公开电商搜索数据集上，按时间顺序 8:1:1 划分。relevance backbone 试了 DSSM/QEM/HEM，preference backbone 试了 MLP/DCN，跑遍所有组合验证泛化性。\n\n## 3. 核心技术贡献\n\n(1) **首次把 preference-relevance 纠缠建模为可学习的交互**，而不是用各自独立的 debiasing constraint 处理。Preference Rectification 模块的残差结构有意限制 Δ𝐩 的幅度和方向，保证修正可控，这是与传统 IPS/DCMT 方法的本质区别。\n\n(2) **用 LLM prototype 给相关性建模提供语义锚**：margin loss 形式把 BGE 的语义先验注入 query-item 相关性表示，相当于免费引入一个稳定的去偏教师，对长期训练中的\"指标 hack\"特别有用。\n\n(3) **Evidence Routing 将\"用什么证据\"从手工特征工程升级为基于偏好的可学习路由**：6 个 evidence token 涵盖单源和交互源信号，让模型按 query 自适应选择，可视为搜索版的 Mixture-of-Evidence 设计。\n\n(4) **三组件互补**：消融显示去掉任一组件都有约 0.4% AUC 下降，且 prototype 监督单独贡献 +0.4% AUC，说明三个机制是必要而非冗余。\n\n## 4. 实验结果分析\n\n**KuaiSAR (DSSM+MLP)** 主表：\n\n| 指标 | Base | 最强基线 (DRP) | PRISM | 提升 |\n|------|------|---------------|-------|------|\n| AUC | 0.62741 | 0.62877 | **0.63422** | +0.55% |\n| LogLoss | 0.34473 | 0.34429 | **0.34199** | −0.67% |\n| NDCG@10 | 0.48120 | 0.48234 | **0.48775** | +1.12% |\n| HR@10 | 0.87362 | 0.87342 | **0.87571** | +0.26% |\n\n在工业 CTR 场景，AUC 提升 0.5% 通常对应明显线上收益。\n\n**JDSearch (DSSM+MLP)**：AUC 0.70876 vs baseline 0.69311，**+2.26%**——比 KuaiSAR 提升更大，作者归因于 JDSearch 数据规模和噪声更高，纠偏空间更大。\n\n**消融**：移除 Preference Rectification 模块带来最大降幅（约 0.4% AUC），LLM prototype 监督贡献 +0.4% AUC，证据路由模块贡献 +0.3% AUC。\n\n**频次切片**：PRISM 在 hot/tail 切片均稳定优于 baseline，最大增益出现在 query-tail impressions（AUC 0.62248 vs 0.61603，+0.65%）——这一点很关键，说明纠偏对长尾 query 帮助更大，符合\"长尾样本曝光偏差更严重\"的直觉。\n\n**Backbone 鲁棒性**：在 DSSM/QEM/HEM × MLP/DCN 的 6 个组合上 PRISM 都稳定优于所有基线，没有 backbone-specific 调参。\n\n## 5. 局限与未来方向\n\n作者明确承认：(1) 代码暂未公开，需等待 review 后释放；(2) **没有线上 A/B 测试结果**，所有结论都在离线公开数据集；(3) 评测维度仅限 AUC/NDCG/HR/LogLoss，没有用户满意度等业务指标；(4) 多行为场景（曝光-点击-加购-购买全链路）的适用性是未来工作。论文未充分讨论但实际存在的隐性局限：BGE prototype 一旦更新所有上游 relevance head 需要重训，工业部署成本不小；evidence token 数量固定为 6 个，是否需要随业务扩展是开放问题。\n\n## 6. 工业实践意义\n\n对社区搜索/电商搜索团队，PRISM 提供三个直接可借鉴的设计选择：\n\n**第一，preference 与 relevance 不能用两条独立 head 直接相加。** 传统精排架构（user tower + item tower + dot product + 单独的 relevance score 加权）天然假设两者独立，PRISM 的实验说明这个假设在 KuaiSAR/JDSearch 上能带 0.5%–2% AUC 的空间。落地上最低成本的改造路径是：在现有精排模型的 logit 层之前加一个轻量 preference rectification 模块（一个 attention + 残差），即可获得大部分收益。\n\n**第二，把 LLM 当成\"语义 prototype 教师\"而非生成器是更稳定的工业路径。** PRISM 用 BGE 提供固定的正负 prototype，相当于免费获得一个不漂移的去偏锚点，相比\"用 LLM 直接打分\"成本低一两个数量级，对延迟敏感的精排尤其友好。社区搜索可以用同样思路给 query-doc 相关性 head 加 BGE 锚定。\n\n**第三，长尾 query 是真正的纠偏价值所在。** PRISM 在 query-tail 切片增益最大（+0.65% AUC），这暗示工业部署收益与长尾流量占比正相关。对于头部 query 占主导的成熟搜索产品，建议先在小流量长尾切片上 A/B；对于长尾分布严重的社区搜索/UGC 搜索，PRISM 可以作为优先落地的候选。\n\n**部署考量**：模型推理增加约一个 attention block 的开销，对精排可控；离线训练需要 BGE 一次性编码所有 query-item prototype，是一次性成本；prototype 缓存可以做版本化管理。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>PRISM 关注电商/社区搜索系统的一个长期被忽视的核心问题：用户行为信号并不是&quot;用户偏好&quot;和&quot;商品相关性&quot;两个独立可学习信号的简单叠加，它们在曝光机制、反馈回路、语义匹配三重作用下被深度纠缠并动态漂移。具体表现是：(1) 偏好估计被曝光偏差扭曲——用户只能在被推荐到的商品中给反馈；(2) 相关性建模被用户的隐式偏好污染——同一个 query 不同用户点击不同商品；(3) 二者沿时间动态漂移使得静态去偏方法失效。现有 IPS、CLK/NISE/DCMT 等去偏方法把偏好和相关性建模为独立组件再各自加 debiasing constraint，无法捕捉它们之间的因果交互。论文核心立场是：必须显式建模 preference-relevance 的交互，而非把二者当成独立 head 相加。</p>\n<h2>2. 方法详解</h2>\n<p>PRISM 由三个紧密耦合的模块构成，最后通过可学习的交互函数输出 CTR：</p>\n<p><strong>(a) Preference Rectification Module（偏好纠偏模块）</strong>：把原始偏好 𝐩 和相关性 𝐫 投影到同一 attention 空间，计算 relevance→preference 路径 e_rp 和 self-preserving 路径 e_pp，softmax 归一化得到系数 α_rp、α_pp，残差更新 𝐩_edit = 𝐩 + Δ𝐩。两条正则约束保证修正不过度：幅度惩罚 ℒ_mag = ||Δ𝐩||²₂（避免大改），方向惩罚 ℒ_dir = 1 − cos(𝐩_edit, 𝐩)（保留语义方向）。</p>\n<p><strong>(b) LLM-Driven Semantic Anchoring（LLM 语义锚定）</strong>：用 BGE-base-en-v1.5 编码 query-item 的正例/负例 prototype 𝐫_pos、𝐫_neg，把学到的相关性表示投影到 prototype 空间 𝐫_proto = f_proj(𝐫)，再用 margin loss ℒ_pr = max(0, γ − t_i·Δs_i) 监督其与正/负 prototype 的相似度差。这一步把 LLM 的语义先验作为外部锚点，防止相关性表示在长期训练中漂移到统计相关而非语义相关的方向。</p>\n<p><strong>(c) Preference-Conditioned Evidence Routing（偏好条件证据路由）</strong>：从 query、item、user 及两两交互构造 6 个 evidence token（𝐞_q、𝐞_t、𝐞_u、𝐞_qt、𝐞_qu、𝐞_ut），以 edited 偏好 𝐩_edit 经过 𝐖_qr 投影后的 𝐪_r 为 query 在 evidence 上做 attention，输出 𝐜_route = Σ α(𝐞)·𝐞；再通过修正网络给出 s&#x27;_rel = σ(logit(s_rel) + δ_rel)。Entropy 正则 ℒ_att = −Σ α(𝐞)·log(α(𝐞)+ε) 防止 attention 塌缩。最终预测 ŷ = g_θ(s_pref, s&#x27;_rel)。</p>\n<p><strong>总损失</strong>：ℒ = ℒ_bce + λ_mag·ℒ_mag + λ_dir·ℒ_dir + λ_pr·ℒ_pr + λ_att·ℒ_att，超参 λ_mag=1e-4、λ_dir=1e-3、λ_pr=0.1、λ_att=1e-4。</p>\n<p><strong>训练设置</strong>：在 KuaiSAR（25,877 users / 2.01M items / 3.17M interactions）和 JDSearch（12.14M items / 15.51M interactions）两个公开电商搜索数据集上，按时间顺序 8:1:1 划分。relevance backbone 试了 DSSM/QEM/HEM，preference backbone 试了 MLP/DCN，跑遍所有组合验证泛化性。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>首次把 preference-relevance 纠缠建模为可学习的交互</strong>，而不是用各自独立的 debiasing constraint 处理。Preference Rectification 模块的残差结构有意限制 Δ𝐩 的幅度和方向，保证修正可控，这是与传统 IPS/DCMT 方法的本质区别。</p>\n<p>(2) <strong>用 LLM prototype 给相关性建模提供语义锚</strong>：margin loss 形式把 BGE 的语义先验注入 query-item 相关性表示，相当于免费引入一个稳定的去偏教师，对长期训练中的&quot;指标 hack&quot;特别有用。</p>\n<p>(3) <strong>Evidence Routing 将&quot;用什么证据&quot;从手工特征工程升级为基于偏好的可学习路由</strong>：6 个 evidence token 涵盖单源和交互源信号，让模型按 query 自适应选择，可视为搜索版的 Mixture-of-Evidence 设计。</p>\n<p>(4) <strong>三组件互补</strong>：消融显示去掉任一组件都有约 0.4% AUC 下降，且 prototype 监督单独贡献 +0.4% AUC，说明三个机制是必要而非冗余。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>KuaiSAR (DSSM+MLP)</strong> 主表：</p>\n<table><thead><tr><th>指标</th><th>Base</th><th>最强基线 (DRP)</th><th>PRISM</th><th>提升</th></tr></thead><tbody><tr><td>AUC</td><td>0.62741</td><td>0.62877</td><td><strong>0.63422</strong></td><td>+0.55%</td></tr><tr><td>LogLoss</td><td>0.34473</td><td>0.34429</td><td><strong>0.34199</strong></td><td>−0.67%</td></tr><tr><td>NDCG@10</td><td>0.48120</td><td>0.48234</td><td><strong>0.48775</strong></td><td>+1.12%</td></tr><tr><td>HR@10</td><td>0.87362</td><td>0.87342</td><td><strong>0.87571</strong></td><td>+0.26%</td></tr></tbody></table>\n<p>在工业 CTR 场景，AUC 提升 0.5% 通常对应明显线上收益。</p>\n<p><strong>JDSearch (DSSM+MLP)</strong>：AUC 0.70876 vs baseline 0.69311，<strong>+2.26%</strong>——比 KuaiSAR 提升更大，作者归因于 JDSearch 数据规模和噪声更高，纠偏空间更大。</p>\n<p><strong>消融</strong>：移除 Preference Rectification 模块带来最大降幅（约 0.4% AUC），LLM prototype 监督贡献 +0.4% AUC，证据路由模块贡献 +0.3% AUC。</p>\n<p><strong>频次切片</strong>：PRISM 在 hot/tail 切片均稳定优于 baseline，最大增益出现在 query-tail impressions（AUC 0.62248 vs 0.61603，+0.65%）——这一点很关键，说明纠偏对长尾 query 帮助更大，符合&quot;长尾样本曝光偏差更严重&quot;的直觉。</p>\n<p><strong>Backbone 鲁棒性</strong>：在 DSSM/QEM/HEM × MLP/DCN 的 6 个组合上 PRISM 都稳定优于所有基线，没有 backbone-specific 调参。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确承认：(1) 代码暂未公开，需等待 review 后释放；(2) <strong>没有线上 A/B 测试结果</strong>，所有结论都在离线公开数据集；(3) 评测维度仅限 AUC/NDCG/HR/LogLoss，没有用户满意度等业务指标；(4) 多行为场景（曝光-点击-加购-购买全链路）的适用性是未来工作。论文未充分讨论但实际存在的隐性局限：BGE prototype 一旦更新所有上游 relevance head 需要重训，工业部署成本不小；evidence token 数量固定为 6 个，是否需要随业务扩展是开放问题。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/电商搜索团队，PRISM 提供三个直接可借鉴的设计选择：</p>\n<p><strong>第一，preference 与 relevance 不能用两条独立 head 直接相加。</strong> 传统精排架构（user tower + item tower + dot product + 单独的 relevance score 加权）天然假设两者独立，PRISM 的实验说明这个假设在 KuaiSAR/JDSearch 上能带 0.5%–2% AUC 的空间。落地上最低成本的改造路径是：在现有精排模型的 logit 层之前加一个轻量 preference rectification 模块（一个 attention + 残差），即可获得大部分收益。</p>\n<p><strong>第二，把 LLM 当成&quot;语义 prototype 教师&quot;而非生成器是更稳定的工业路径。</strong> PRISM 用 BGE 提供固定的正负 prototype，相当于免费获得一个不漂移的去偏锚点，相比&quot;用 LLM 直接打分&quot;成本低一两个数量级，对延迟敏感的精排尤其友好。社区搜索可以用同样思路给 query-doc 相关性 head 加 BGE 锚定。</p>\n<p><strong>第三，长尾 query 是真正的纠偏价值所在。</strong> PRISM 在 query-tail 切片增益最大（+0.65% AUC），这暗示工业部署收益与长尾流量占比正相关。对于头部 query 占主导的成熟搜索产品，建议先在小流量长尾切片上 A/B；对于长尾分布严重的社区搜索/UGC 搜索，PRISM 可以作为优先落地的候选。</p>\n<p><strong>部署考量</strong>：模型推理增加约一个 attention block 的开销，对精排可控；离线训练需要 BGE 一次性编码所有 query-item prototype，是一次性成本；prototype 缓存可以做版本化管理。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.07125",
+      "title": "An Embarrassingly Simple Graph Heuristic Reveals Shortcut-Solvable Benchmarks for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2605.07125",
+      "authors": "anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 4.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "本文对当前生成式序列推荐研究广泛使用的若干基准数据集做了一次审计：作者仅用一个极简的图启发式（基于最后 1–2 个交互物品在 item-transition 图上做几跳检索、再按 item-feature 相似度排序，完全不训练、不用序列编码器、不用生成式目标）就在 Amazon Review Sports、CDs 等数据集上相对最佳基线分别取得 38.10% 和 44.18% 的 NDCG@10 相对提升。作者论证这反映的是“捷径可解”问题，而非启发式更强。",
+      "key_insight": "这篇审计文件给推荐工业界敲响警钟：很多在公开 benchmark 上声称的生成式推荐增益，可能根本不需要复杂的 sequence encoder 就能取得。对落地的实践启示是 (1) 评估自家序列推荐模型不能只看公开数据集，必须建立自己的线上 A/B 与稀疏/长尾切片；(2) 设计 benchmark 时要主动引入图启发式作为强对照基线；(3) 真正能击败图启发式的模型，其 lift 才更可能在工业全量场景泛化。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.07129",
+      "title": "RRCM: Ranking-Driven Retrieval over Collaborative and Meta Memories for LLM Recommendation",
+      "url": "https://arxiv.org/abs/2605.07129",
+      "authors": "anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "RRCM 关注 LLM-based 推荐中的两个核心痛点：异构证据（协同行为 + 物品 metadata）以何种顺序与粒度注入 prompt，以及 context window 被淹没的问题。论文提出 ranking-driven retrieval over collaborative memory 与 meta memory 的统一记忆架构：依据当下打分需求动态选择性地拉取协同信号与物品侧元信息，把“怎么构造 LLM 推荐 prompt”从静态模板转为可学习的检索过程。实验显示在公开推荐基准上 NDCG/MRR 显著优于固定 prompt 的 LLM 推荐基线。",
+      "key_insight": "RRCM 把 LLM 推荐里的 prompt 工程问题转化为一个可学习的“记忆检索 + 排序”问题，思路与 RAG 的检索增强一致，但目标函数对齐到推荐排序而非自然语言匹配。对工业实践的启示是：与其继续手工调 prompt，不如把协同信号、用户画像、物品元数据建成可路由的“记忆库”，由一个 ranking-aware 检索器决定每条 query 拉哪些证据，再交给 LLM 做打分或重排。这种结构在长上下文成本敏感的线上场景尤其有价值。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.06981",
+      "title": "Bridging Textual Profiles and Latent User Embeddings for Personalization",
+      "url": "https://arxiv.org/abs/2605.06981",
+      "authors": "anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "BLUE 是一个 RL 框架，目标是统一两种主流用户表示：可解释但难以面向下游优化的文本用户画像，以及面向召回有效但黑箱的隐式用户 embedding。给定用户历史，profiler LLM 生成文本画像，embedding 模型按是否拉近正样本、推远负样本给出 reward，从而引导文本画像向有用方向漂移；并引入文本特定正则保留语言可读性。实验显示 BLUE 在多个推荐评测集上同时优于单纯文本画像和单纯 latent embedding。",
+      "key_insight": "“文本画像 + RL 对齐到 embedding 推荐目标”是把可解释性与召回效用解耦再统一的好路径。对社区搜索/推荐落地有两点启示：(1) 文本画像可以作为客户系统、商业 BD、内容审核的可解释载体，又能在线上服务时直接接入 LLM；(2) 通过 RL 对齐推荐 reward，不必依赖手写 prompt 或人工标注，文本画像就能自适应优化 CTR/相关性指标。落地时关键工程点是 reward 模型必须真实反映线上排序目标，否则容易优化到文本风格而非业务指标。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.07314",
+      "title": "DCGL: Dual-Channel Graph Learning with Large Language Models for Knowledge-Aware Recommendation",
+      "url": "https://arxiv.org/abs/2605.07314",
+      "authors": "anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "DCGL 针对当前 KG+LLM 推荐的三个局限：隐式语义关系未充分建模、ID 与 LLM embedding 单通道融合互相干扰、未考虑用户-物品交互频次差异。论文提出双通道图学习架构：一条通道走 LLM 语义信息、另一条走用户行为模式，前期保持解耦避免信号互扰，再通过多层级融合机制做后融合；同时基于交互频次差异化推荐策略，对热门和长尾物品采用不同的检索路径。",
+      "key_insight": "DCGL 的 takeaway 是“LLM 语义信号”和“ID 行为信号”不应该早融合。这一点和工业界对 LLM4Rec 的经验吻合：直接把 LLM embedding concat 到 ID embedding 通常带来扰动，更稳定的方法是让两路独立训练、晚融合。对社区搜索/推荐的实践启示是：在 KG 或物品语义增强场景，先维护一条纯 ID/行为的 ranking pipeline 作为基线，再以独立通道接入 LLM 语义，融合点放在 logits 层而非 embedding 层。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2602.03324",
+      "title": "SCASRec: A Self-Correcting and Auto-Stopping Model for Generative Route List Recommendation",
+      "url": "https://arxiv.org/abs/2602.03324",
+      "authors": "anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-02-04",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "SCASRec 针对传统路线列表推荐中“精排-重排”多阶段范式的三大问题——离线目标与线上指标不一致、去重去冗依赖手工规则、阶段间次优解——提出端到端生成式方案。模型在生成路线列表时具备自我纠错能力，并能根据预测的列表级目标（多样性、长度）自动判断停止生成，避免硬编码 top-K。论文报告在路线推荐任务上相对多阶段基线在列表级指标上有明显增益。",
+      "key_insight": "把列表级目标（多样性、长度、覆盖度）从“后处理重排规则”内化为“生成器的 stopping criterion”是生成式推荐范式真正比多阶段范式更有竞争力的地方。社区搜索的 SRP 结果列表、推荐 Feed 这类“需要生成有序列表”的场景，可以借鉴 self-correcting + auto-stopping 设计，把多样性/疲劳控制直接做进 decoder loss，而不是靠规则层。落地难点是离线模拟列表级指标和线上 A/B 的对齐。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.07677",
+      "title": "TRACE: Tourism Recommendation with Accountable Citation Evidence",
+      "url": "https://arxiv.org/abs/2605.07677",
+      "authors": "anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "TRACE 是面向旅游场景的对话式推荐基准与方法，每条样本是多轮 POI 推荐对话，每次推荐必须给出来自历史评论的可验证证据 span，并支持多轮拒绝-恢复评价。与传统 CRS 仅看 Recall@k 不同，TRACE 引入 evidence-faithfulness 和 rejection-recovery 两个新维度。配套方法在多个 LLM 推荐 backbone 上验证带证据的推荐显著降低“看似合理但虚构”的失败率。",
+      "key_insight": "TRACE 提出的“每次推荐都附带来源证据 span” + “多轮拒绝-恢复”评价范式，几乎可以直接搬到社区搜索的问答/推荐答案上。对实践的启示是：LLM 在社区内容上做推荐或答案合成时，必须让模型输出 evidence span 而不是自由生成，否则容易因捏造内容产生信任成本；而拒绝-恢复评价则刻画了真实用户“不满意-再问一次”的场景，比单步 Recall 更接近线上漏斗。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2605.07770",
+      "title": "FAVOR: Efficient Filter-Agnostic Vector ANNS Based on Selectivity-Aware Exclusion Distances",
+      "url": "https://arxiv.org/abs/2605.07770",
+      "authors": "anonymous",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-11",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "FAVOR 针对推荐和 RAG 中越来越普遍的“向量召回 + 属性过滤”混合查询，提出一个 filter-agnostic 的 ANNS 系统。三个核心设计：(1) 选择性估计与过滤式 ANNS 在同一架构内协同执行，避免传统先查后过滤造成的吞吐塌陷；(2) HNSW 上的 inline-filtering 引入 selectivity-aware exclusion distance，让低选择性谓词下仍能保持图连通；(3) 任意过滤条件支持。实验显示在多个数据集低选择性场景下吞吐显著优于现有 HNSW 过滤方案。",
+      "key_insight": "推荐/搜索召回侧越来越多地遇到“向量召回 + 复杂属性硬过滤（合规、年龄、地域、风控）”的工程问题。FAVOR 给出的 selectivity-aware exclusion 思路，对自建向量召回栈是一个直接可借鉴的优化方向：与其先扩大召回再过滤，不如把谓词选择性纳入图遍历的距离函数。对社区搜索特别有意义——大量 query 需要带 user permission 或社区规则过滤后再返回。"
+    },
+    {
+      "rank": 10,
+      "id": "blog_rss:microsoft:socialreasoning-bench",
+      "title": "SocialReasoning-Bench: Measuring whether AI agents act in users' best interests",
+      "url": "https://www.microsoft.com/en-us/research/blog/socialreasoning-bench-measuring-whether-ai-agents-act-in-users-best-interests/",
+      "authors": "Microsoft Research",
+      "company": [
+        "Microsoft"
+      ],
+      "source": "blog_rss",
+      "published": "2026-05-11",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "Microsoft Research 发布 SocialReasoning-Bench，用于评测 AI agent 在与第三方交互（谈判、协商、规划）时是否真正促进了用户利益。研究发现：即使被明确指示要最大化用户利益，主流 LLM agent 在执行层面非常胜任，但难以稳定改进用户的实际处境——它们经常在与对手 agent 交互中做出对用户不利的让步。该 benchmark 同时覆盖单轮和多轮社交推理场景。",
+      "key_insight": "对于个性化产品中越来越多的“agent 帮用户行动”场景（购物比价、自动谈判、社区客服自动回复），Microsoft 这项结果提示：让 agent 执行任务的能力 ≠ agent 真正为用户争取利益。推荐/个性化系统在引入 agent 做下一步推荐或代为操作时，必须把“是否改善用户实际状态”作为独立评测维度，而不仅是任务完成率，否则容易让用户产生“agent 看似聪明实则吃亏”的负面体验。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:DataScienceUIBK/Rankify",
+      "title": "Rankify: 🔥 Rankify: A Comprehensive Python Toolkit for Retrieval, Re-Ranking, and Retrieval-Augmented Generation",
+      "url": "https://github.com/DataScienceUIBK/Rankify",
+      "source": "github",
+      "description": "A Comprehensive Python Toolkit for Retrieval, Re-Ranking, and Retrieval-Augmented Generation.",
+      "language": "Python",
+      "stars": 0,
+      "created_at": "2026-05-03"
+    },
+    {
+      "rank": 2,
+      "id": "github:neomatrix369/rag-params-finder",
+      "title": "rag-params-finder: RAG parameter sweep experimentation tool",
+      "url": "https://github.com/neomatrix369/rag-params-finder",
+      "source": "github",
+      "description": "RAG parameter sweep experimentation tool — systematically evaluate embedding models, chunking strategies, and retrieval methods.",
+      "language": "Python",
+      "stars": 8,
+      "created_at": "2026-05-03"
+    },
+    {
+      "rank": 3,
+      "id": "github:Lucasmantou/codex-proxy",
+      "title": "codex-proxy: 🚀 Let Codex use any LLM",
+      "url": "https://github.com/Lucasmantou/codex-proxy",
+      "source": "github",
+      "description": "Let Codex use any LLM - cost down 30-50x.",
+      "language": "TypeScript",
+      "stars": 0,
+      "created_at": "2026-05-03"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Qwen/WebWorld-32B",
+      "title": "Qwen/WebWorld-32B",
+      "url": "https://huggingface.co/Qwen/WebWorld-32B",
+      "source": "huggingface",
+      "description": "Qwen3-based web-agent / world-model / simulator (text-generation, 32B).",
+      "language": "model",
+      "stars": 27,
+      "created_at": "2026-02-13"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:Qwen/WebWorld-8B",
+      "title": "Qwen/WebWorld-8B",
+      "url": "https://huggingface.co/Qwen/WebWorld-8B",
+      "source": "huggingface",
+      "description": "Qwen3-based web-agent / world-model / simulator (text-generation, 8B).",
+      "language": "model",
+      "stars": 24,
+      "created_at": "2026-02-13"
+    }
+  ]
+}

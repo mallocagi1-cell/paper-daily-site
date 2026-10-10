@@ -1,0 +1,226 @@
+{
+  "date": "2026-04-27",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 71,
+    "papers_selected": 9,
+    "score_min": 3.1,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.20858",
+      "title": "Mixture of Sequence: Theme-Aware Mixture-of-Experts for Long-Sequence Recommendation",
+      "url": "https://arxiv.org/abs/2604.20858",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-25",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对长用户行为序列里『session hopping』（兴趣在 session 间突变、不连续）的问题，提出 Mixture of Sequence (MoS)：用 codebook+EMA 的主题感知路由保证语义一致的子序列被同一 expert 处理（Proposition 1），并以 Global/Item/Window 三类 expert 多尺度融合。Mamba4Rec / TransAct / TWIN / SDIM 四个 backbone × 三公开数据集，AUC/GAUC 平均 +0.68% / +0.72%，FLOPs 约比同规模 MoE 低 50%。",
+      "key_insight": "把『一条长序列由一个模型吃完』拆成『多个 expert 按主题分工』是抓住 session hopping 的关键。Codebook + EMA 取代标准 top-k routing 大幅降低专家坍塌风险，三阶段训练让 MoE 工业可控。对社区搜索/推荐里用户兴趣多样、跨版块切换频繁的场景非常对位，n=4 expert 即饱和，可作为长序列 backbone plug-in。当前缺线上 A/B 数据是落地前最大未知数。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.20858",
+        "title": "Mixture of Sequence: Theme-Aware Mixture-of-Experts for Long-Sequence Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n长序列推荐建模面临一个长期被低估的根本问题：用户兴趣不是连续光滑的演化，而是呈现**会话跳变**（session hopping）。论文用\"自相似度热力图\"在真实交易历史上做实证（Figure 2），明确了用户行为的三大性质：①Stability — 同一会话内行为高度一致；②Discontinuity — 跨会话出现\"突变且不连续\"的兴趣切换；③Reappearance — 相似兴趣会在非相邻位置重现。\n\n现有依赖 Attention/RNN/Transformer 的长序列模型本质都假设\"连续函数族\"，对这种离散跳变天然乏力。作者由此提出问题：能否让模型按\"主题\"在长序列上挑出策略性子集，从互补视角做更准的预测？这是过去 long-sequence rec 工作（MIRRN、AttenMixer、MiasRec）和标准 MoE（GShard、DSelect-k、Expert Choice）都没有正面回答的。\n\n## 2. 方法详解\n\n**主题感知路由（Theme-aware Routing）**：维护一个 codebook **W** ∈ ℝ^(n×D)，其中 n 是 expert 数，每行代表一种潜在用户行为主题。打分网络先把 item embedding 通过 MLP h(·) 投影到主题空间，然后用余弦相似度计算到 codebook 各行的归属：H(x) = (‖h(x)‖₂√diag(WW^T))^(-1) · Wh(x)。论文的 **Proposition 1** 给出理论保证：内部相似度高的子序列会被一致地路由到同一 expert——这正是\"按 session 分主题\"想要的性质。\n\n为防止 codebook 在联合训练中被梯度坍塌（典型 MoE 痛点），作者用 EMA（γ=0.999）更新 codebook，并用预训练 item embedding 做 K-means 聚类初始化。\n\n**多尺度融合**：三类 expert 互补：\n- **Global Expert**：吃完整长序列，相当于退化到 backbone；\n- **Item Experts**：基于主题路由抽取 item-level 子序列 S_I^(i)，由专属 expert F_I^(i) 处理；\n- **Window Experts**：先用滑窗（L=8, stride=4）把序列重切成 window embedding（窗内 item embedding 取均值），再走主题路由。\n\n最终融合：y = (1−α_I−α_W)·y_G + α_I·y_I + α_W·y_W，α_I=α_W=0.25。\n\n**三阶段训练**：①只训练 global expert（warm up backbone）；②冻 embedding/classifier，只训 item/window expert，强制 theme expert 与 global 对齐；③联合微调全部参数与融合权重。这种 staging 大幅降低 MoE 联合训练的不稳定性，是工业可复现的关键工程实践。\n\n## 3. 核心技术贡献\n\n**贡献 1：Codebook-based 主题路由 + Proposition 1 的理论保证**。区别于 GShard / DSelect-k 把 item 在 expert 间均匀分配，MoS 用余弦相似度+codebook 显式保证语义一致的子序列被同一 expert 接管，且只激活 top-k 个 expert（稀疏路由）。\n\n**贡献 2：多尺度（Global/Item/Window）融合架构**。这是真正解决 session hopping 的核心：单一尺度抓不住\"块状\"行为模式，而 Item+Window 双尺度专家天然把\"跨 session 的相似主题\"和\"session 内的短窗模式\"都拿到，再叠加 Global expert 兜底。消融显示三尺度同时启用最优。\n\n**贡献 3：复杂度优势**。理论时间复杂度为 O(k₁²N²/n₁ + k₂²N²/s²·n₂)，相对 shared-expert MoE 的 O((k₁+k₂)²N²/(n₁+n₂))，论文实验设置下约降 53%。Figure 4 把所有 MoE 变体打在 utility-FLOPs 二维图，MoS 占据\"左上\"（最高 utility、最低算力）。\n\n**贡献 4：Backbone-agnostic plug-in**。在 Mamba4Rec、TransAct、TWIN、SDIM 四个 backbone 上都稳定取得增益，工程上可直接接到现有长序列模型上而不重构架构。\n\n## 4. 实验结果分析\n\n**数据集**：MicroVideo（短视频多模态）、KuaiVideo（快手）、EBNeRD-Small（新闻），均为公开学术数据集。**注意：论文未报告任何线上 A/B 结果或工业部署数字**——这是它当前的弱点。\n\n**主表（Table 1）**：四个 backbone × 三个数据集，MoS 平均 AUC +0.68%、GAUC +0.72%，**全部 12 组配置 AUC/GAUC 都拿第一**（average rank 1.00/1.00）。最大单点增益是 Mamba4Rec/MicroVideo 的 AUC +2.91%、GAUC +0.85%。这种\"小平均、强稳定\"的格局对工业团队比\"局部极高但 backbone 切换就掉\"的方法更可信。\n\n**MoE Baseline 对比**：相对 GShard、DSelect-k、Expert Choice，MoS 在 utility 占优的同时 FLOPs 最低。Figure 5 的路由可视化显示 MoS 把流行 item 路由到固定 expert（如 #2），其它 MoE 则均匀分散——证实 codebook 真的让专家分化。\n\n**消融实验**：①多尺度融合：三类 expert 同时开最优，但融合权重 α_I/α_W 的小扰动只带来 0.26%/0.07% 的 AUC/GAUC 波动，对超参极鲁棒；②序列长度 100→400 单调改善；③专家数量 0→8 在 4 时性能饱和——超过 4 后主题被切得太细，反而降低子序列质量。这给工业部署一个实操参数：n=4 是甜蜜点。\n\n## 5. 局限与未来方向\n\n论文未单独写 Limitations 或 Future Work 章节。可观察到但作者未明说的局限包括：①缺乏线上 A/B 验证，只在三个公开数据集上做的离线对比，离工业部署的 latency/CTR 增益还差关键一步；②序列长度上限只测到 400，超过 1000 的极长序列（典型工业场景）行为未知；③主题数 n=4 已饱和，意味着 codebook 容量对真实复杂用户的覆盖可能不足；④codebook 用 K-means 初始化，对冷启动用户/新业务线时初始化质量未讨论；⑤Backbone 测试集中在 Transformer/Mamba 类，对 GNN-based 或 multi-task 框架的兼容性未验证。\n\n## 6. 工业实践意义\n\n**值得借鉴的设计**：\n- **Codebook + EMA 路由**是任何想引入 MoE 到长序列模型团队的标准模板，比 vanilla top-k routing 稳定很多；\n- **三阶段训练**是 MoE 落地的关键工程：先 warm up backbone 再 unfreeze experts，能直接复用到任何企业的现有 sequential rec 系统；\n- **n=4 experts、α=0.25** 这两个开箱可用的超参省去了大量调参成本。\n\n**对 UGC 社区搜索/推荐的启示**：用户在社区里频繁切换兴趣 board（生活→职场→数码→旅行），正是典型的 session hopping 场景。把现有 SASRec/TWIN 类长序列召回精排模型按 MoS 模板加 4 个 theme expert，预期能带来 0.5–1% AUC 增益（与论文公开数据集吻合区间）。Window expert 对短文本互动节奏（评论、点赞 burst）特别契合。\n\n**部署考虑**：\n- **算力**：相比同等 expert 数的 shared-expert MoE 节省约 50% FLOPs，serving 侧可承受；\n- **存储**：codebook (n×D, n=4, D≤64) 仅占 1KB 量级，可忽略；\n- **风险**：缺乏线上 A/B 验证是落地前的最大未知数，建议在小流量先做 7 天 holdout 实验，重点观察 long-tail item 召回率；\n- **监控**：Figure 5 的\"路由集中度\"应作为线上健康度指标——若专家分化退化为均匀分布，意味着 codebook 已坍塌，需重新初始化或降低 EMA 衰减。\n\n总体看，MoS 是一个\"理论清晰、工程可控、增益稳定\"的长序列 plug-in，缺一份线上 A/B 数据就能晋升工业首选 baseline。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>长序列推荐建模面临一个长期被低估的根本问题：用户兴趣不是连续光滑的演化，而是呈现<strong>会话跳变</strong>（session hopping）。论文用&quot;自相似度热力图&quot;在真实交易历史上做实证（Figure 2），明确了用户行为的三大性质：①Stability — 同一会话内行为高度一致；②Discontinuity — 跨会话出现&quot;突变且不连续&quot;的兴趣切换；③Reappearance — 相似兴趣会在非相邻位置重现。</p>\n<p>现有依赖 Attention/RNN/Transformer 的长序列模型本质都假设&quot;连续函数族&quot;，对这种离散跳变天然乏力。作者由此提出问题：能否让模型按&quot;主题&quot;在长序列上挑出策略性子集，从互补视角做更准的预测？这是过去 long-sequence rec 工作（MIRRN、AttenMixer、MiasRec）和标准 MoE（GShard、DSelect-k、Expert Choice）都没有正面回答的。</p>\n<h2>2. 方法详解</h2>\n<p><strong>主题感知路由（Theme-aware Routing）</strong>：维护一个 codebook <strong>W</strong> ∈ ℝ^(n×D)，其中 n 是 expert 数，每行代表一种潜在用户行为主题。打分网络先把 item embedding 通过 MLP h(·) 投影到主题空间，然后用余弦相似度计算到 codebook 各行的归属：H(x) = (‖h(x)‖₂√diag(WW^T))^(-1) · Wh(x)。论文的 <strong>Proposition 1</strong> 给出理论保证：内部相似度高的子序列会被一致地路由到同一 expert——这正是&quot;按 session 分主题&quot;想要的性质。</p>\n<p>为防止 codebook 在联合训练中被梯度坍塌（典型 MoE 痛点），作者用 EMA（γ=0.999）更新 codebook，并用预训练 item embedding 做 K-means 聚类初始化。</p>\n<p><strong>多尺度融合</strong>：三类 expert 互补：</p>\n<ul>\n<li><strong>Global Expert</strong>：吃完整长序列，相当于退化到 backbone；</li>\n<li><strong>Item Experts</strong>：基于主题路由抽取 item-level 子序列 S_I^(i)，由专属 expert F_I^(i) 处理；</li>\n<li><strong>Window Experts</strong>：先用滑窗（L=8, stride=4）把序列重切成 window embedding（窗内 item embedding 取均值），再走主题路由。</li>\n</ul>\n<p>最终融合：y = (1−α_I−α_W)·y_G + α_I·y_I + α_W·y_W，α_I=α_W=0.25。</p>\n<p><strong>三阶段训练</strong>：①只训练 global expert（warm up backbone）；②冻 embedding/classifier，只训 item/window expert，强制 theme expert 与 global 对齐；③联合微调全部参数与融合权重。这种 staging 大幅降低 MoE 联合训练的不稳定性，是工业可复现的关键工程实践。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：Codebook-based 主题路由 + Proposition 1 的理论保证</strong>。区别于 GShard / DSelect-k 把 item 在 expert 间均匀分配，MoS 用余弦相似度+codebook 显式保证语义一致的子序列被同一 expert 接管，且只激活 top-k 个 expert（稀疏路由）。</p>\n<p><strong>贡献 2：多尺度（Global/Item/Window）融合架构</strong>。这是真正解决 session hopping 的核心：单一尺度抓不住&quot;块状&quot;行为模式，而 Item+Window 双尺度专家天然把&quot;跨 session 的相似主题&quot;和&quot;session 内的短窗模式&quot;都拿到，再叠加 Global expert 兜底。消融显示三尺度同时启用最优。</p>\n<p><strong>贡献 3：复杂度优势</strong>。理论时间复杂度为 O(k₁²N²/n₁ + k₂²N²/s²·n₂)，相对 shared-expert MoE 的 O((k₁+k₂)²N²/(n₁+n₂))，论文实验设置下约降 53%。Figure 4 把所有 MoE 变体打在 utility-FLOPs 二维图，MoS 占据&quot;左上&quot;（最高 utility、最低算力）。</p>\n<p><strong>贡献 4：Backbone-agnostic plug-in</strong>。在 Mamba4Rec、TransAct、TWIN、SDIM 四个 backbone 上都稳定取得增益，工程上可直接接到现有长序列模型上而不重构架构。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>数据集</strong>：MicroVideo（短视频多模态）、KuaiVideo（快手）、EBNeRD-Small（新闻），均为公开学术数据集。<strong>注意：论文未报告任何线上 A/B 结果或工业部署数字</strong>——这是它当前的弱点。</p>\n<p><strong>主表（Table 1）</strong>：四个 backbone × 三个数据集，MoS 平均 AUC +0.68%、GAUC +0.72%，<strong>全部 12 组配置 AUC/GAUC 都拿第一</strong>（average rank 1.00/1.00）。最大单点增益是 Mamba4Rec/MicroVideo 的 AUC +2.91%、GAUC +0.85%。这种&quot;小平均、强稳定&quot;的格局对工业团队比&quot;局部极高但 backbone 切换就掉&quot;的方法更可信。</p>\n<p><strong>MoE Baseline 对比</strong>：相对 GShard、DSelect-k、Expert Choice，MoS 在 utility 占优的同时 FLOPs 最低。Figure 5 的路由可视化显示 MoS 把流行 item 路由到固定 expert（如 #2），其它 MoE 则均匀分散——证实 codebook 真的让专家分化。</p>\n<p><strong>消融实验</strong>：①多尺度融合：三类 expert 同时开最优，但融合权重 α_I/α_W 的小扰动只带来 0.26%/0.07% 的 AUC/GAUC 波动，对超参极鲁棒；②序列长度 100→400 单调改善；③专家数量 0→8 在 4 时性能饱和——超过 4 后主题被切得太细，反而降低子序列质量。这给工业部署一个实操参数：n=4 是甜蜜点。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文未单独写 Limitations 或 Future Work 章节。可观察到但作者未明说的局限包括：①缺乏线上 A/B 验证，只在三个公开数据集上做的离线对比，离工业部署的 latency/CTR 增益还差关键一步；②序列长度上限只测到 400，超过 1000 的极长序列（典型工业场景）行为未知；③主题数 n=4 已饱和，意味着 codebook 容量对真实复杂用户的覆盖可能不足；④codebook 用 K-means 初始化，对冷启动用户/新业务线时初始化质量未讨论；⑤Backbone 测试集中在 Transformer/Mamba 类，对 GNN-based 或 multi-task 框架的兼容性未验证。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>值得借鉴的设计</strong>：</p>\n<ul>\n<li><strong>Codebook + EMA 路由</strong>是任何想引入 MoE 到长序列模型团队的标准模板，比 vanilla top-k routing 稳定很多；</li>\n<li><strong>三阶段训练</strong>是 MoE 落地的关键工程：先 warm up backbone 再 unfreeze experts，能直接复用到任何企业的现有 sequential rec 系统；</li>\n<li><strong>n=4 experts、α=0.25</strong> 这两个开箱可用的超参省去了大量调参成本。</li>\n</ul>\n<p><strong>对 UGC 社区搜索/推荐的启示</strong>：用户在社区里频繁切换兴趣 board（生活→职场→数码→旅行），正是典型的 session hopping 场景。把现有 SASRec/TWIN 类长序列召回精排模型按 MoS 模板加 4 个 theme expert，预期能带来 0.5–1% AUC 增益（与论文公开数据集吻合区间）。Window expert 对短文本互动节奏（评论、点赞 burst）特别契合。</p>\n<p><strong>部署考虑</strong>：</p>\n<ul>\n<li><strong>算力</strong>：相比同等 expert 数的 shared-expert MoE 节省约 50% FLOPs，serving 侧可承受；</li>\n<li><strong>存储</strong>：codebook (n×D, n=4, D≤64) 仅占 1KB 量级，可忽略；</li>\n<li><strong>风险</strong>：缺乏线上 A/B 验证是落地前的最大未知数，建议在小流量先做 7 天 holdout 实验，重点观察 long-tail item 召回率；</li>\n<li><strong>监控</strong>：Figure 5 的&quot;路由集中度&quot;应作为线上健康度指标——若专家分化退化为均匀分布，意味着 codebook 已坍塌，需重新初始化或降低 EMA 衰减。</li>\n</ul>\n<p>总体看，MoS 是一个&quot;理论清晰、工程可控、增益稳定&quot;的长序列 plug-in，缺一份线上 A/B 数据就能晋升工业首选 baseline。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.04976",
+      "title": "The Tencent Advertising Algorithm Challenge 2025: All-Modality Generative Recommendation",
+      "url": "https://arxiv.org/abs/2604.04976",
+      "authors": "Tencent",
+      "company": [
+        "Tencent"
+      ],
+      "source": "web_search",
+      "published": "2026-04-05",
+      "total_score": 3.65,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "Tencent 公开 2025 广告算法挑战赛数据与方案：覆盖图片、视频、文本三模态生成式推荐。论文总结基线、获胜解法与离线 AUC 提升，多数 top 方案是『模态感知 embedding + 序列排序头』的组合。该挑战为工业广告里的生成式推荐提供了可复现公开基准。",
+      "key_insight": "工业级公开基准对社区/UGC 排序团队是稀缺资源——多模态 + 生成式 + 排序的组合贴近真实业务。挑战赛的获胜模板（modality embedding 接序列排序头）是值得在 UGC 帖子混排里直接复用的实操路径，无需从零摸索。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.20846",
+      "title": "ADS-POI: Agentic Spatiotemporal State Decomposition for Next Point-of-Interest Recommendation",
+      "url": "https://arxiv.org/abs/2604.20846",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-25",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对单状态用户表示在下一个 POI 推荐里的行为纠缠问题，ADS-POI 把用户行为分解到多个并行的潜在子状态，每个子状态以 agentic 框架关注用户时空上下文的不同侧面。在 Foursquare 和 Gowalla 上 Hit@10 与 NDCG@10 持续优于单状态 baseline。",
+      "key_insight": "『多状态 + agentic』是对传统单一 user embedding 的有力反思。把意图拆成多子状态可缓解长行为序列里的语义干扰，思路可迁移到 UGC 搜索的 query intent 分解、多目标排序。落地需考虑子状态数量与推理成本之间的权衡。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.21019",
+      "title": "Following the Eye-Tracking Evidence: Established Web-Search Assumptions Fail in Carousel Interfaces",
+      "url": "https://arxiv.org/abs/2604.21019",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-26",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "通过眼动追踪实验证明：单列搜索结果上的 F-pattern、examination hypothesis 等假设并不适用于 carousel 流式界面，基于这些假设的 click model 与排序评估指标存在系统性误判。作者提出针对 carousel 布局校准过的 examination model，更贴近真实点击行为。",
+      "key_insight": "对社区/电商常用的卡片流、横滑 carousel UI，传统 PBM/UBM 类 click model 直接套用会偏。论文给出的校准 examination model 是工业团队自建 click model 时可直接借鉴的形式，能改善偏差校准与 CTR 模型训练的样本权重。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.20847",
+      "title": "Revisiting Content-Based Music Recommendation: Efficient Feature Aggregation from Large-Scale Music Models",
+      "url": "https://arxiv.org/abs/2604.20847",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-25",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "重新审视基于内容的音乐推荐：以大规模自监督音乐编码器抽取的内容表征，配合高效特征聚合，能在召回与 CTR 任务上达到与协同过滤平齐的性能，并在冷启动区间显著领先。论文给出在生产音乐推荐日志上的对比结果。",
+      "key_insight": "结论可推广到 UGC 短文本：当大语料预训练编码器（如多语 BERT、多模态 CLIP）的内容表征质量足够高时，纯内容路线在长尾 / 冷启动上能稳定打过协同过滤。聚合方式（pooling、selector）的工程细节是发挥潜力的关键。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.20845",
+      "title": "CaST-POI: Candidate-Conditioned Spatiotemporal Modeling for Next POI Recommendation",
+      "url": "https://arxiv.org/abs/2604.20845",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-25",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "现有 POI 排序模型把用户历史轨迹一次性编码成单一表示后复用于所有候选 POI 的打分，丢失了候选感知信号。CaST-POI 提出候选条件化的时空建模——用户历史表示按候选 POI 进行调制，在标准 POI 数据集上取得显著提升，推理成本可控。",
+      "key_insight": "『user repr 一次编码、所有候选共享』是搜推系统的常见简化，CaST-POI 反向证明 candidate-conditioned 的 user 编码值得付一些算力。这种 cross-attention 形态可下沉到精排/重排的候选交互层，对 UGC 短文本里 query-doc 相关性建模也有迁移价值。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.15573",
+      "title": "Collaborative Filtering Through Weighted Similarities of User and Item Embeddings",
+      "url": "https://arxiv.org/abs/2604.15573",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-21",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "用一个加权融合 user-similarity 与 item-similarity 的简单集成方法，结合学得的 embedding，在 MovieLens、Yelp 等基准上与现代神经协同过滤打平，在交互图稀疏时与序列模型有竞争力。作者强调它是被近期工作忽略的强基线。",
+      "key_insight": "提醒：社区/UGC 团队上线复杂神经召回前，先把 user-CF + item-CF 加权集成 baseline 跑稳，是性价比最高的对照实验。简单基线在稀疏长尾上反而更鲁棒，能让后续复杂方案的增益归因更可信。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2511.20009",
+      "title": "Adaptive Knowledge Transfer for Cross-Disciplinary Cold-Start Knowledge Tracing",
+      "url": "https://arxiv.org/abs/2511.20009",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-13",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "针对跨学科知识追踪的小样本冷启动问题，提出基于门控机制的自适应跨域映射桥与对抗判别器：前者动态接桥源/目标域特征，后者强制特征分离。在 20 个极端跨学科冷启动场景上稳定优于现有迁移学习 baseline。WWW '26 接收。",
+      "key_insight": "『门控映射 + 对抗特征分离』是跨域冷启动的通用范式。社区里新版块、新兴趣点的冷启动场景可借鉴：把已成熟版块的用户行为做源域，新兴版块做目标域，加一个对抗判别器避免负迁移。比纯 meta-learning 更易在工程侧落地。"
+    },
+    {
+      "rank": 9,
+      "id": "dblp:conf/kdd/CaoCHQCZX26",
+      "title": "Two Heads Are Better Than One: Generalized Cross-Domain Federated Learning via Dual-Prototype",
+      "url": "https://doi.org/10.1145/3770854.3780269",
+      "authors": "",
+      "company": [],
+      "source": "conference_papers",
+      "published": "2026-01-01",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "针对跨域联邦学习中『单一聚合 prototype 难以同时表达共性与特异性』的问题，提出 Dual-Prototype 框架：双原型分别承担域共享与域特异表达，由轻量校准头完成对齐。KDD '26 接收，覆盖跨域推荐、跨平台用户建模等场景。",
+      "key_insight": "对多 App / 多业务线共享用户兴趣却又要保护隐私的场景，dual-prototype 给出比 FedAvg 更细粒度的方案。在隐私要求收紧、跨业务复用兴趣信号需求上升的趋势下，是值得跟进的工程范式。落地难点在客户端算力与原型同步频次的权衡。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:gruai/koifish",
+      "title": "koifish: A c++ framework on efficient training & fine-tuning LLMs",
+      "url": "https://github.com/gruai/koifish",
+      "source": "github",
+      "description": "A c++ framework on efficient training & fine-tuning LLMs",
+      "language": "C++",
+      "stars": 27,
+      "created_at": "2024-05-18"
+    },
+    {
+      "rank": 2,
+      "id": "github:MHHamdan/MARL_for_IoT",
+      "title": "MARL_for_IoT: Heterogenous multi-agent reinforcement learning for joint perception",
+      "url": "https://github.com/MHHamdan/MARL_for_IoT",
+      "source": "github",
+      "description": "Heterogenous multi-agent reinforcement learning for joint perception, task offloading in IoT–edge networks",
+      "language": "Python",
+      "stars": 0,
+      "created_at": ""
+    }
+  ]
+}

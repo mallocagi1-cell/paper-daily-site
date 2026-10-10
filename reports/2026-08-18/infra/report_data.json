@@ -1,0 +1,183 @@
+{
+  "date": "2026-08-18",
+  "track": "infra",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 38,
+    "papers_selected": 3,
+    "score_min": 3.8,
+    "score_max": 4.8
+  },
+  "coverage": {
+    "track_core": "The Clustering Strikes Back: Building Cost-Effective and High-Performance ANNS at Scale with HELMSMAN",
+    "industry_practice": "The Clustering Strikes Back: Building Cost-Effective and High-Performance ANNS at Scale with HELMSMAN",
+    "recent_paper": "Jais 2: A Family of Arabic-Centric Open Large Language Models",
+    "source_diversity": {
+      "arxiv": 66.67,
+      "web_search": 33.33,
+      "conference_papers": 0.0,
+      "huggingface": 0.0
+    },
+    "chinese_sources": "已找到（中文工程实践候选因历史去重未入选）",
+    "status": "pass"
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.13145",
+      "title": "The Clustering Strikes Back: Building Cost-Effective and High-Performance ANNS at Scale with HELMSMAN",
+      "url": "https://arxiv.org/abs/2606.13145",
+      "authors": "Xiaohongshu Engine Architecture Team",
+      "company": [
+        "Xiaohongshu"
+      ],
+      "source": "web_search",
+      "published": "2026-07-22",
+      "discovered_at": "2026-08-18",
+      "total_score": 4.8,
+      "base_score": 4.7,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.8,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 5,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "HELMSMAN 面向搜索、推荐和广告的大规模向量近似最近邻检索，把聚类式 ANNS、分层学习剪枝、GPU 加速和全闪存存储栈结合起来。公开工程数据中，约 40 台全闪存服务器承载原需 35000 个 CPU Core 与 350 TB DRAM 的负载，硬件成本降低超过 90%，相对 DiskANN/SPANN 吞吐提升 2–16 倍。",
+      "key_insight": "它的关键不是把 HNSW 简单搬到 SSD，而是用聚类式访问把随机串行 I/O 改造成可批量并行的 cluster 读取，再配合学习式剪枝和 GPU 构建。对 UGC 短文本搜索，值得优先验证“内存质心 + SSD 候选簇 + 混合召回”的分层架构，并用 nDCG、p99 延迟和索引重建时长共同做容量决策。",
+      "business_relevance": "约 40 台全闪存服务器、35000 CPU Core、350 TB DRAM、成本节省超过 90%、吞吐提升 2–16 倍、10B 索引数小时级重建。",
+      "track_fit": "向量数据库/ANNS、搜索推荐基础设施、在线 serving 优化",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.13145",
+        "title": "The Clustering Strikes Back: Building Cost-Effective and High-Performance ANNS at Scale with Helmsman",
+        "status": "completed",
+        "content": "## The Clustering Strikes Back: Helmsman ANNS (Xiaohongshu) — 深度解读\n\n### 1. 问题与动机\n小红书（RedNote）的搜索/推荐/广告全靠内存 HNSW 做 ANNS，到 2025 年内存 HNSW 索引消耗 PB 级 DRAM，仅搜索就吃掉数百 TB。核心矛盾是成本-性能错配：内存部署提供 100% 吞吐，但维持延迟 SLA 只需要其中 32–43%，剩下 57–68% 的 DRAM 纯粹为容量买单；而 DRAM 8 $/GB vs Gen5 SSD 0.2 $/GB，这种浪费经济上不可持续。图索引混合方案也救不了：在 96 核 + 12 块 PCIe Gen5 SSD 上实测 DiskANN/Starling/PipeANN 都无法满足 5–10ms 平均延迟 SLA，PipeANN 因串行依赖链 I/O 把 SSD-DRAM 之间 10²–10³ 的延迟差放大，吞吐只有 HNSW 的 1/10–1/25。问题落到：能否用全闪存把 DRAM 成本砍掉、又不破 SLA。\n\n### 2. 方法详解\n硬件底座：全闪存服务器（12×2TB PCIe Gen5 NVMe SSD + 12×96GB DDR5 + 96 核）。\n在线 serving 流水线：① Router 模型按 query 预测 nprobe（探查簇数）；② DRAM 里的 Centroid Graph 定位最近簇；③ Leveling 剪枝模型进一步过滤候选；④ 经 SPDK 直接 NVMe I/O 异步加载簇 posting list；⑤ 距离计算排出 top-k。\n面向 ANNS 的用户态存储栈（§4.2）：metadata 用普通文件，簇列表作为裸逻辑块存 SSD；绕过内核做 direct device I/O，固定 12KB 簇读；批量提交 NVMe 命令、每批只敲一次 PCIe doorbell；64MB 粒度的 chunk free-list 分配器管空间。profiling 发现传统 libaio/io_uring 栈占了高达 58% 的 I/O 开销，换 SPDK 才能达到每搜索线程 120–170 KIOPS 的需求。\nLeveling-Learned Search Pruning（LLSP，§4.3）：GBDT router 模型按 query+top-k 预测最大搜索范围；多级剪枝模型在不依赖中间结果反馈的前提下逐 query 精修 nprobe（从而保住批量 I/O）；特征含 query 向量、top-k、质心距离分布比；离线用大 nprobe(~4096) 的非剪枝搜索近似 ground truth 训练。之所以不学 Quake/LAET/Auncel 那种迭代式 probe-compute-decide，是因为它们会串行化簇 I/O、压低带宽利用率。\nGPU 加速弹性建索引（§4.4）三阶段：① GPU 粗聚类（FAISS k-means，多 GPU，对百万级向量约 10× 加速）；② 弹性细粒度均衡（分布式 CPU worker 最多 1 万核，在低峰拆分/再平衡簇，QoS 抢占保在线流量）；③ merge & finalize（多核服务器合并分片、建质心图、训剪枝模型）。\n\n### 3. 核心技术贡献\n① 给在线 ANNS「复活」了聚类路线：证明现代高带宽 NVMe 阵列（Gen5 约 12GB/s）让聚类方案能在满足 SLA 的同时靠批量 I/O 扩吞吐，颠覆「只有图索引才能上线」的默认。② 定制 I/O 栈：SPDK 用户态直接 device steering，Gen4 上 85%、Gen5 上 70% 带宽利用率，远高于 SPANN 的 26–59%、图基线的 <20%。③ 无中间反馈的 query 自适应剪枝：LLSP 在保持批量 I/O 友好的同时处理可变 top-k 与 query 分布，保证 >80% 的 query 达到 90% recall 目标。④ 异构弹性建索引：GPU + 弹性 CPU 池让 0.1B 向量亚小时、10B 向量小时级建完。\n\n### 4. 实验结果分析\n搜索性能（SIFT100M，90% recall）：吞吐比现有 DRAM-SSD ANNS 高 2–16×，达到内存 HNSW 吞吐的 85% 且始终满足平均延迟 SLA。在 RedSrch10B 上，单节点对比 10 shard 拿到 HNSW 吞吐的 47–85%，同时 CPU 核数少 3–4×、DRAM 少约 10×；P99.9 尾延迟稳定在约 10ms，而图基线尾延迟急剧恶化。\n带宽利用率（RedSrch0.5B）：Helmsman Gen4 约 85%、Gen5 约 70%，SPANN Gen4 仅 55%，图基线 <20%；升级到 Gen5 后 Helmsman 吞吐提升 55–87%，基线只涨 10–30%（说明基线吃不到新硬件红利）。\n剪枝效率：LLSP 比无剪枝快 1.1–1.6×，比固定剪枝策略高 5–25%；质量上固定策略对 >40% 的 query 达不到目标 recall，LLSP 保证 >80% 达 90% 目标。\n建索引：GPU 加速对 0.1B 向量约 10× 提速，从 9–12 小时降到 1 小时内；10B 向量从 >16 小时降到 4–7 小时（最多借 1 万在线集群 CPU 核）。\n成本效率（Table 4–5）：RedSrch0.5B 上 Helmsman 250 QPS/$，HNSW 仅 51、SPANN 88；RedSrch10B 上靠砍 90% DRAM 拿到 8.3× 成本效率（10 QPS/$ vs HNSW 1.2）。单节点 96 核 +4 GPU 建索引成本是纯 CPU HNSW 的 1.7×，但建索引时间效率更高。\n\n### 5. 局限与未来方向\n作者明确列出四点：① SSD die 级热点冲突——query 突发打同一批簇会引发芯片内部冲突，用冗余簇副本缓解也只有 1.5–2× 吞吐提升；② 内存带宽瓶颈——12 块 Gen5 SSD 提供约 140GB/s 但只有约 70% 可用，因为 DDR5 有效带宽 300–350GB/s 要同时服务 SSD→DRAM、DRAM→CPU、最近质心搜索，加到 20 块 SSD 收益递减；③ 原地更新——25–30 KOPS 更新与 25–30 KQPS 搜索并发已超现有大规模动态 ANNS 系统，当前用「周期重建 + 辅助内存 HNSW + tombstone 位图」的混合设计，额外吃内存与重建成本；④ top-k 评测缺口——学界惯用 recall@10，但生产要 top-k 100–1000 且 90% recall，未来 benchmark 应反映多阶段流水线。\n\n### 6. 工业实践意义\n这是给自建向量检索、被 DRAM 成本压制团队的一份直接施工图。落地结论：① 生产部署约 40 台全闪存服务器（每台 0.7–1.1TB DRAM + 12 SSD），承载了原先约 35000 核 + 0.35 PB DRAM 的负载，硬件成本降 >90%，已稳定运行数月，小红书计划迁移大部分内存部署、预期年省数千万美元。② 可借鉴的设计点：用 router 模型预测 nprobe，把「按 query 花预算」做成学习问题；I/O 别走内核（libaio/io_uring 能吃掉 58% 开销），上 SPDK 用户态 + 固定 12KB 簇读 + 批量 doorbell；建索引把 GPU k-means + 低峰借在线集群 CPU 核结合，能把 10B 级建索引从天级压到小时级。③ 关键认知：大规模召回瓶颈已从「召回精度」转向「内存/成本」，且内存 HNSW 有 57–68% 的 DRAM 是为容量而非吞吐买单，这部分正是全闪存能吃下的红利。④ 注意硬件天花板：SSD 加到一定数量受 DDR5 带宽限制收益递减，热点与高频更新仍是软肋，强更新场景需谨慎。代码开源于 github.com/Red-EAD/helmsman。",
+        "content_html": "<h2>The Clustering Strikes Back: Helmsman ANNS (Xiaohongshu) — 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>小红书（RedNote）的搜索/推荐/广告全靠内存 HNSW 做 ANNS，到 2025 年内存 HNSW 索引消耗 PB 级 DRAM，仅搜索就吃掉数百 TB。核心矛盾是成本-性能错配：内存部署提供 100% 吞吐，但维持延迟 SLA 只需要其中 32–43%，剩下 57–68% 的 DRAM 纯粹为容量买单；而 DRAM 8 $/GB vs Gen5 SSD 0.2 $/GB，这种浪费经济上不可持续。图索引混合方案也救不了：在 96 核 + 12 块 PCIe Gen5 SSD 上实测 DiskANN/Starling/PipeANN 都无法满足 5–10ms 平均延迟 SLA，PipeANN 因串行依赖链 I/O 把 SSD-DRAM 之间 10²–10³ 的延迟差放大，吞吐只有 HNSW 的 1/10–1/25。问题落到：能否用全闪存把 DRAM 成本砍掉、又不破 SLA。</p>\n<h3>2. 方法详解</h3>\n<p>硬件底座：全闪存服务器（12×2TB PCIe Gen5 NVMe SSD + 12×96GB DDR5 + 96 核）。<br>在线 serving 流水线：① Router 模型按 query 预测 nprobe（探查簇数）；② DRAM 里的 Centroid Graph 定位最近簇；③ Leveling 剪枝模型进一步过滤候选；④ 经 SPDK 直接 NVMe I/O 异步加载簇 posting list；⑤ 距离计算排出 top-k。<br>面向 ANNS 的用户态存储栈（§4.2）：metadata 用普通文件，簇列表作为裸逻辑块存 SSD；绕过内核做 direct device I/O，固定 12KB 簇读；批量提交 NVMe 命令、每批只敲一次 PCIe doorbell；64MB 粒度的 chunk free-list 分配器管空间。profiling 发现传统 libaio/io_uring 栈占了高达 58% 的 I/O 开销，换 SPDK 才能达到每搜索线程 120–170 KIOPS 的需求。<br>Leveling-Learned Search Pruning（LLSP，§4.3）：GBDT router 模型按 query+top-k 预测最大搜索范围；多级剪枝模型在不依赖中间结果反馈的前提下逐 query 精修 nprobe（从而保住批量 I/O）；特征含 query 向量、top-k、质心距离分布比；离线用大 nprobe(~4096) 的非剪枝搜索近似 ground truth 训练。之所以不学 Quake/LAET/Auncel 那种迭代式 probe-compute-decide，是因为它们会串行化簇 I/O、压低带宽利用率。<br>GPU 加速弹性建索引（§4.4）三阶段：① GPU 粗聚类（FAISS k-means，多 GPU，对百万级向量约 10× 加速）；② 弹性细粒度均衡（分布式 CPU worker 最多 1 万核，在低峰拆分/再平衡簇，QoS 抢占保在线流量）；③ merge &amp; finalize（多核服务器合并分片、建质心图、训剪枝模型）。</p>\n<h3>3. 核心技术贡献</h3>\n<p>① 给在线 ANNS「复活」了聚类路线：证明现代高带宽 NVMe 阵列（Gen5 约 12GB/s）让聚类方案能在满足 SLA 的同时靠批量 I/O 扩吞吐，颠覆「只有图索引才能上线」的默认。② 定制 I/O 栈：SPDK 用户态直接 device steering，Gen4 上 85%、Gen5 上 70% 带宽利用率，远高于 SPANN 的 26–59%、图基线的 &lt;20%。③ 无中间反馈的 query 自适应剪枝：LLSP 在保持批量 I/O 友好的同时处理可变 top-k 与 query 分布，保证 &gt;80% 的 query 达到 90% recall 目标。④ 异构弹性建索引：GPU + 弹性 CPU 池让 0.1B 向量亚小时、10B 向量小时级建完。</p>\n<h3>4. 实验结果分析</h3>\n<p>搜索性能（SIFT100M，90% recall）：吞吐比现有 DRAM-SSD ANNS 高 2–16×，达到内存 HNSW 吞吐的 85% 且始终满足平均延迟 SLA。在 RedSrch10B 上，单节点对比 10 shard 拿到 HNSW 吞吐的 47–85%，同时 CPU 核数少 3–4×、DRAM 少约 10×；P99.9 尾延迟稳定在约 10ms，而图基线尾延迟急剧恶化。<br>带宽利用率（RedSrch0.5B）：Helmsman Gen4 约 85%、Gen5 约 70%，SPANN Gen4 仅 55%，图基线 &lt;20%；升级到 Gen5 后 Helmsman 吞吐提升 55–87%，基线只涨 10–30%（说明基线吃不到新硬件红利）。<br>剪枝效率：LLSP 比无剪枝快 1.1–1.6×，比固定剪枝策略高 5–25%；质量上固定策略对 &gt;40% 的 query 达不到目标 recall，LLSP 保证 &gt;80% 达 90% 目标。<br>建索引：GPU 加速对 0.1B 向量约 10× 提速，从 9–12 小时降到 1 小时内；10B 向量从 &gt;16 小时降到 4–7 小时（最多借 1 万在线集群 CPU 核）。<br>成本效率（Table 4–5）：RedSrch0.5B 上 Helmsman 250 QPS/$，HNSW 仅 51、SPANN 88；RedSrch10B 上靠砍 90% DRAM 拿到 8.3× 成本效率（10 QPS/$ vs HNSW 1.2）。单节点 96 核 +4 GPU 建索引成本是纯 CPU HNSW 的 1.7×，但建索引时间效率更高。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确列出四点：① SSD die 级热点冲突——query 突发打同一批簇会引发芯片内部冲突，用冗余簇副本缓解也只有 1.5–2× 吞吐提升；② 内存带宽瓶颈——12 块 Gen5 SSD 提供约 140GB/s 但只有约 70% 可用，因为 DDR5 有效带宽 300–350GB/s 要同时服务 SSD→DRAM、DRAM→CPU、最近质心搜索，加到 20 块 SSD 收益递减；③ 原地更新——25–30 KOPS 更新与 25–30 KQPS 搜索并发已超现有大规模动态 ANNS 系统，当前用「周期重建 + 辅助内存 HNSW + tombstone 位图」的混合设计，额外吃内存与重建成本；④ top-k 评测缺口——学界惯用 recall@10，但生产要 top-k 100–1000 且 90% recall，未来 benchmark 应反映多阶段流水线。</p>\n<h3>6. 工业实践意义</h3>\n<p>这是给自建向量检索、被 DRAM 成本压制团队的一份直接施工图。落地结论：① 生产部署约 40 台全闪存服务器（每台 0.7–1.1TB DRAM + 12 SSD），承载了原先约 35000 核 + 0.35 PB DRAM 的负载，硬件成本降 &gt;90%，已稳定运行数月，小红书计划迁移大部分内存部署、预期年省数千万美元。② 可借鉴的设计点：用 router 模型预测 nprobe，把「按 query 花预算」做成学习问题；I/O 别走内核（libaio/io_uring 能吃掉 58% 开销），上 SPDK 用户态 + 固定 12KB 簇读 + 批量 doorbell；建索引把 GPU k-means + 低峰借在线集群 CPU 核结合，能把 10B 级建索引从天级压到小时级。③ 关键认知：大规模召回瓶颈已从「召回精度」转向「内存/成本」，且内存 HNSW 有 57–68% 的 DRAM 是为容量而非吞吐买单，这部分正是全闪存能吃下的红利。④ 注意硬件天花板：SSD 加到一定数量受 DDR5 带宽限制收益递减，热点与高频更新仍是软肋，强更新场景需谨慎。代码开源于 github.com/Red-EAD/helmsman。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2608.13580",
+      "title": "Jais 2: A Family of Arabic-Centric Open Large Language Models",
+      "url": "https://arxiv.org/abs/2608.13580",
+      "authors": "Mohamed Anwar, Abed Alhakim Freihat, George Ibrahim, Mostafa Awad, Abdelrahman Sadallah, Gurpreet Gosal, Gokulakrishnan Ramakrishnan, Sarath Chandran, Biswajit Mishra, Rituraj Joshi, Ahmed Frikha, Etienne Goffinet, Abhishek Maiti, Ali El Filali, Sarah AlBarri, Samujjwal Ghosh, Rahul Pal, Parvez Mullah, Awantika Shukla, Sajid siddiki, Samta Kamboj, Onkar Pandit, Sunil Kumar Sahu, AbdelRahman Elbadawy, Amr Mohamed, Ahmad Chamma, Evan Dufraisse, Abdelaziz Bounhar, Dani Bouch, Hadi Abdine, Guokan Shang, Fajri Koto, Yuxia Wang, Zhuohan Xie, Ali Mekky, Rania Elbadry, Sarfraz Ahmad, Momina Ahsan, Omar El Herraoui, Daniil Orel, Hasan Iqbal, Kareem Elzeky, Mervat Abassy, Kareem Elozeiri, Saadeldine Eletter, Farah Atif, Nurdaulet Mukhituly, Haonan Li, Xudong Han, Aaryamonvikram Singh, Zainul Abedien Ahmed Quraishi, Neha Sengupta, Larry Murray, Avraham Sheinin, Joel Hestness, Natalia Vassilieva, Hector Xuguang Ren, Zhengzhong Liu, Michalis Vazirgiannis, Preslav Nakov",
+      "company": [
+        "MBZUAI",
+        "Cerebras",
+        "Inception"
+      ],
+      "source": "arxiv",
+      "published": "2026-08-17",
+      "discovered_at": "2026-08-17",
+      "total_score": 3.95,
+      "base_score": 3.9,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "Jais 2 发布 70B 与 8B 两个阿拉伯语中心的开放权重模型，采用定制词表、优化架构和更省 token 的训练配方，兼顾阿拉伯语文化语境与英语任务。论文报告其在 OALL2、AraGen 等评测中领先所比较的开放模型；70B 版本在 Cerebras 部署上可达每秒 2000 tokens，并以商业友好许可证发布。",
+      "key_insight": "对社区搜索的启示不是直接采用阿拉伯语模型，而是关注“语言定制词表 + 计算友好架构 + 开放权重部署”这条模型基础设施路线。多语言 UGC 场景可以复用其小模型/大模型组合，先以 8B 做 query 理解或重排，再把高价值请求路由到更大模型，并用 CTR 与 nDCG 校验跨语言收益。",
+      "business_relevance": "70B/8B 参数规模、OALL2 与 AraGen 领先、最高 2000 tokens/s、开放权重与商业友好许可证。",
+      "track_fit": "开放模型、模型训练与推理部署"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2608.13578",
+      "title": "BCMT: Blockwise Causal Memory Transformer",
+      "url": "https://arxiv.org/abs/2608.13578",
+      "authors": "Rachid Arezki",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-08-17",
+      "discovered_at": "2026-08-17",
+      "total_score": 3.8,
+      "base_score": 3.75,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "BCMT 用局部 block 内的因果注意力处理近邻 token，再把每个 block 的自适应摘要写入指数因果记忆，并回注 token 表征，从而避免远距离 token 的稠密全局注意力。论文在最长 1024 token 的语言建模实验中报告与 Dense Transformer 相当的验证性能、更高训练吞吐和更低内存占用，消融实验将收益归因于记忆机制。",
+      "key_insight": "对于短文本搜索，BCMT 不一定需要替换现有 encoder，但可作为长用户行为、会话 query 或多轮上下文的低成本建模候选。工程上应重点复现 block 大小、记忆注入位置和吞吐/显存曲线；若只服务几十 token 的 query，收益可能不足以抵消新架构的运维和校准成本。",
+      "business_relevance": "最长 1024 token 上验证，性能与 Dense Transformer 相当，并报告训练吞吐提升、内存下降和记忆机制消融。",
+      "track_fit": "长上下文模型架构、训练/推理效率"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_dataset:internlm/WildClawBench-Trajectories",
+      "title": "internlm/WildClawBench-Trajectories",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench-Trajectories",
+      "source": "huggingface",
+      "description": "WildClawBench Trajectories Complete OpenClaw agent trajectories from the WildClawBench evaluation — every message, reasoning block, tool call, and tool result from real long-horizon agent runs, released for independent verification, side-by-side comparison, and trace-level analys; tags: task_categories:text-generation, language:en, language:zh, license:mit, size_categories:n<1K, format:parquet, modality:image, modality:text",
+      "language": "dataset",
+      "stars": 6,
+      "created_at": "2026-07-30"
+    },
+    {
+      "rank": 2,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "WildClawBench Hard, practical, end-to-end evaluation for AI agents — in the wild. WildClawBench is an agent benchmark that tests what actually matters: can an AI agent do real work, end-to-end, without hand-holding? We drop agents into a live OpenClaw environment — the same open-; tags: benchmark:official, benchmark:eval-yaml, task_categories:visual-question-answering, task_categories:image-text-to-text, task_categories:question-answering, language:en, language:zh, license:mit",
+      "language": "dataset",
+      "stars": 68,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 3,
+      "id": "hf_dataset:internlm/WildClawBench-Harbor",
+      "title": "internlm/WildClawBench-Harbor",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench-Harbor",
+      "source": "huggingface",
+      "description": "WildClawBench-Harbor This repository is the WildClawBench benchmark converted to the Harbor task format, so that all 60 tasks can be run directly with harbor run against any Harbor-supported agent (Claude Code, OpenHands, Codex CLI, custom agents, ...). WildClawBench is a benchma; tags: language:en, language:zh, license:mit, size_categories:n<1K, arxiv:2605.10912, region:us, agent, agent-evaluation",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-08-12"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Qwen/Qwen3.8-27B",
+      "title": "Qwen/Qwen3.8-27B",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, conversational, license:apache-2.0, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 10689,
+      "created_at": "2026-08-05"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5",
+      "title": "zai-org/GLM-5",
+      "url": "https://huggingface.co/zai-org/GLM-5",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 2121,
+      "created_at": "2026-02-11"
+    }
+  ],
+  "pipeline_meta": {
+    "crawler_candidates": 90,
+    "supplementary_added": 4,
+    "merged_candidates": 94,
+    "filtered_candidates": 38,
+    "min_score": 3.0,
+    "top": 10,
+    "days": 3
+  }
+}

@@ -1,0 +1,543 @@
+{
+  "date": "2026-06-01",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 68,
+    "papers_selected": 10,
+    "score_min": 3.7,
+    "score_max": 4.9
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.29755",
+      "title": "Rec-Distill: An Industrial Distillation Pipeline for Large-Scale Recommendation Models",
+      "url": "https://arxiv.org/abs/2605.29755",
+      "authors": "Haoran Ding, Wenlin Zhao, Yuchen Jiang, et al.",
+      "company": [
+        "ByteDance"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.9,
+      "adjusted_score": 4.9,
+      "preference_bonus": 0.25,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "大推荐模型在 scaling law 下有明显收益，但工业系统受在线 serving 延迟约束只能上线轻量模型，造成离线扩参与在线部署的鸿沟。Rec-Distill 通过解耦训练、黑盒蒸馏、去偏机制和混合 batch-streaming 流水线，把大教师的收益迁移到小学生模型。教师规模扩到 24B dense 参数、行为序列长度 20K，在多个推荐与广告场景上学生模型蒸馏迁移率超过 60%。",
+      "key_insight": "核心是用「黑盒蒸馏+解耦训练」把超大教师（24B、20K 序列）的能力压进满足延迟约束的在线学生模型，并用去偏机制缓解教师-学生分布差异。对工业搜推的启示：scaling 的收益不必直接上线，可先训大教师再蒸馏，>60% 迁移率说明这条「离线扩参、在线蒸馏」路线在广告/推荐多场景可复用；混合 batch-streaming 流水线适配推荐数据动态更新的特点。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.29755",
+        "title": "Rec-Distill: An Industrial Distillation Pipeline for Large-Scale Recommendation Models",
+        "status": "completed",
+        "content": "# Rec-Distill 深度解读\n\n## 1. 问题与动机\n\n大推荐模型在 scaling law 下能拿到明显收益，但工业系统的在线 serving 有严格延迟与成本约束，无法直接上线 24B+ 参数的超大模型——论文指出模型复杂度上升会\"显著抬高推理开销、拖垮系统响应\"，由此形成\"离线可扩参、在线难部署\"的根本鸿沟。更关键的是，传统知识蒸馏(KD)与推荐系统的训练范式不兼容：要么需要静态教师推理（与流式数据更新矛盾），要么需要 co-training（每个学生 step 都跑一次教师，推理成本不可承受）。Rec-Distill 要解决的就是：如何把大教师在 scaling 下获得的收益，稳定、高效地迁移到满足延迟约束的在线小学生模型上，并适配推荐数据持续流式更新的特点。本文是工业推荐场景中首个成功蒸馏「24B dense 参数 + 20K 行为序列长度」教师的工作。\n\n## 2. 方法详解\n\n整体框架基于一个增益分解：ΔGain_distill = ΔGain_scale × η，其中 ΔGain_scale 是教师相对学生的性能增益(P_T − P_S)，η 是蒸馏迁移率（学生吸收教师优势的比例）。框架分别从两端做优化。\n\n**教师侧（最大化 ΔGain_scale）** 沿三个维度扩展：(1) dense 参数用 TokenMixer-Large 架构扩到 24B；(2) 序列建模用 LONGER 架构（序列压缩 + 混合注意力）扩到 20K token；(3) 训练数据按 Chinchilla 规律提高采样比例。\n\n**学生侧（最大化 η）** 用 Decoupled-Tower（解耦双塔）架构：共享特征 backbone，分出 Main Task Tower（只用真值标签的 task loss 训练，负责在线打分，与蒸馏隔离）和 Auxiliary Tower（用 L_task + α·L_distill 接收教师监督）。这样即便教师更新延迟、蒸馏管线滞后或教师信号短暂不稳，主塔的在线服务都不受影响。\n\n**蒸馏损失**用黑盒方式，仅用教师最终输出 logit（不依赖白盒中间特征）。论文论证用交叉熵优于 MSE——CE 梯度 ∂L/∂θ=(p_S−p_T)·∂z_S/∂θ，避免概率趋近 0/1 时的梯度消失。损失 L_S = L_task + α·L_distill 中，作者刻意放弃\"权重和为 1\"的惯例：二分类下 L_distill 的尺度可能比 L_task 小两个数量级，必须经验性调 α 把两者量级对齐。\n\n**去偏机制**针对教师与学生采用不同采样策略(f_T≠f_S)造成的分布失配：先把教师原始 logit 经学生侧去偏校正投影到学生输出同一空间 T_2'=f_S(T_1)，再让蒸馏匹配 T_2' 与 S_2，而非直接匹配。\n\n**混合 batch-streaming 流水线**：batch 阶段用大 batch 快速收敛、教师把 logit 写入中间存储；streaming 阶段教师把新 logit 写入低延迟高速存储，与原始数据流 join 后供学生消费，缓解多学生查询造成的读放大，并把信号落 HDFS 以保证可复现。\n\n## 3. 核心技术贡献\n\n(1) **工业级超大教师蒸馏范式**：首次在推荐工业场景成功蒸馏 24B 参数、20K 序列的教师，把模型规模与推理成本解耦，验证了 scaling law 在推荐蒸馏中成立。(2) **高迁移率的系统化学生设计**：解耦双塔 + 黑盒蒸馏 + 采样去偏 + 统一流水线，峰值迁移率超 60%。其中解耦双塔是机制核心——消融显示单塔仅用 L_distill 只有 +0.03% 增益（近乎为零），而解耦设计达 +0.44%。(3) **跨场景普适性**：在电商广告(CVR)、多场景推荐、直播多目标排序三类业务上稳定有效，并已生产部署。\n\n## 4. 实验结果分析\n\n数据集为抖音/TikTok 三个真实场景：电商广告(~2 亿样本/天、1000+ 特征)、多场景推荐(~70 亿样本/天)、直播。核心结果（Table 1）：电商广告教师 +0.69% AUC、学生 +0.44%、迁移率 64%（参数比 1:7）；多场景推荐迁移率 45%（1:34）；直播 50%（1:5）。容量差消融（Table 3）：7B→1B 迁移率 73%，24B→1B 仍达 65%，说明大容量差下知识迁移依然稳健。学生容量(Table 2)：1B 学生 73%、376M 降到 65%、184M 降到 48%——越小迁移率越低但始终有正收益。Teacher scaling 消融(Table 6)：dense 扩参(1B→7B)迁移 73%、序列扩展(5K→20K)迁移 61%，两维度增益独立可叠加。数据扩展(Table 7)：带 data scaling 学生 +0.44% vs 不带 +0.28%。去偏(Table 9)贡献 +0.10%。流式消融(Table 8)：不做 streaming 蒸馏五天后只保留一半初始增益（+0.05% vs +0.10%），证明分布漂移的危害。在线 A/B：电商广告 GMV +0.62%、订单 +0.68%；多场景推荐 Finish/U +1.27%、Play/U +0.47%；直播打赏收入/U +0.78%。覆盖抖音/TikTok 数亿 DAU。\n\n## 5. 局限与未来方向\n\n作者明确指出：迁移率在不同场景间波动较大(45%–64%)，说明仍有场景特定优化空间；大容量差(24B:1B)会把迁移率从 73% 拉低到 65%；教师-学生分布失配即便有去偏仍是挑战。未来方向：扩展到多模态推荐任务；在高度非平稳环境中进一步提升迁移率。一个文中未充分展开的隐患是：黑盒蒸馏只用最终 logit，理论上比白盒中间特征蒸馏的信息带宽低（这正是后面 LoopFM 想解决的问题）。\n\n## 6. 工业实践意义\n\n对搜推团队最直接的启示：scaling 的收益不必、也不应直接上线，可走\"离线训大教师→在线蒸馏小学生\"的路线，>60% 迁移率说明这条路在广告/推荐/直播多场景可复用。可落地的具体设计：(1) 用解耦双塔把蒸馏与在线主塔隔离，规避教师不稳定/延迟对线上的冲击，这是工程鲁棒性的关键；(2) 蒸馏 loss 用 CE 且要按量级经验调 α，否则 L_distill 被淹没；(3) 必须做 streaming 蒸馏，否则分布漂移会在几天内吃掉一半收益；(4) 教师/学生采样策略不同要做去偏投影。部署上，本方法把模型规模与 serving 成本解耦，1B 学生吃下 7B 教师 64% 的收益、1:34 压缩比下仍有 45%，显著改善 serving ROI——这对延迟敏感、QPS 巨大的社区搜索/推荐排序系统尤其有价值。",
+        "content_html": "<h1>Rec-Distill 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>大推荐模型在 scaling law 下能拿到明显收益，但工业系统的在线 serving 有严格延迟与成本约束，无法直接上线 24B+ 参数的超大模型——论文指出模型复杂度上升会&quot;显著抬高推理开销、拖垮系统响应&quot;，由此形成&quot;离线可扩参、在线难部署&quot;的根本鸿沟。更关键的是，传统知识蒸馏(KD)与推荐系统的训练范式不兼容：要么需要静态教师推理（与流式数据更新矛盾），要么需要 co-training（每个学生 step 都跑一次教师，推理成本不可承受）。Rec-Distill 要解决的就是：如何把大教师在 scaling 下获得的收益，稳定、高效地迁移到满足延迟约束的在线小学生模型上，并适配推荐数据持续流式更新的特点。本文是工业推荐场景中首个成功蒸馏「24B dense 参数 + 20K 行为序列长度」教师的工作。</p>\n<h2>2. 方法详解</h2>\n<p>整体框架基于一个增益分解：ΔGain_distill = ΔGain_scale × η，其中 ΔGain_scale 是教师相对学生的性能增益(P_T − P_S)，η 是蒸馏迁移率（学生吸收教师优势的比例）。框架分别从两端做优化。</p>\n<p><strong>教师侧（最大化 ΔGain_scale）</strong> 沿三个维度扩展：(1) dense 参数用 TokenMixer-Large 架构扩到 24B；(2) 序列建模用 LONGER 架构（序列压缩 + 混合注意力）扩到 20K token；(3) 训练数据按 Chinchilla 规律提高采样比例。</p>\n<p><strong>学生侧（最大化 η）</strong> 用 Decoupled-Tower（解耦双塔）架构：共享特征 backbone，分出 Main Task Tower（只用真值标签的 task loss 训练，负责在线打分，与蒸馏隔离）和 Auxiliary Tower（用 L_task + α·L_distill 接收教师监督）。这样即便教师更新延迟、蒸馏管线滞后或教师信号短暂不稳，主塔的在线服务都不受影响。</p>\n<p><strong>蒸馏损失</strong>用黑盒方式，仅用教师最终输出 logit（不依赖白盒中间特征）。论文论证用交叉熵优于 MSE——CE 梯度 ∂L/∂θ=(p_S−p_T)·∂z_S/∂θ，避免概率趋近 0/1 时的梯度消失。损失 L_S = L_task + α·L_distill 中，作者刻意放弃&quot;权重和为 1&quot;的惯例：二分类下 L_distill 的尺度可能比 L_task 小两个数量级，必须经验性调 α 把两者量级对齐。</p>\n<p><strong>去偏机制</strong>针对教师与学生采用不同采样策略(f_T≠f_S)造成的分布失配：先把教师原始 logit 经学生侧去偏校正投影到学生输出同一空间 T_2&#x27;=f_S(T_1)，再让蒸馏匹配 T_2&#x27; 与 S_2，而非直接匹配。</p>\n<p><strong>混合 batch-streaming 流水线</strong>：batch 阶段用大 batch 快速收敛、教师把 logit 写入中间存储；streaming 阶段教师把新 logit 写入低延迟高速存储，与原始数据流 join 后供学生消费，缓解多学生查询造成的读放大，并把信号落 HDFS 以保证可复现。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>工业级超大教师蒸馏范式</strong>：首次在推荐工业场景成功蒸馏 24B 参数、20K 序列的教师，把模型规模与推理成本解耦，验证了 scaling law 在推荐蒸馏中成立。(2) <strong>高迁移率的系统化学生设计</strong>：解耦双塔 + 黑盒蒸馏 + 采样去偏 + 统一流水线，峰值迁移率超 60%。其中解耦双塔是机制核心——消融显示单塔仅用 L_distill 只有 +0.03% 增益（近乎为零），而解耦设计达 +0.44%。(3) <strong>跨场景普适性</strong>：在电商广告(CVR)、多场景推荐、直播多目标排序三类业务上稳定有效，并已生产部署。</p>\n<h2>4. 实验结果分析</h2>\n<p>数据集为抖音/TikTok 三个真实场景：电商广告(~2 亿样本/天、1000+ 特征)、多场景推荐(~70 亿样本/天)、直播。核心结果（Table 1）：电商广告教师 +0.69% AUC、学生 +0.44%、迁移率 64%（参数比 1:7）；多场景推荐迁移率 45%（1:34）；直播 50%（1:5）。容量差消融（Table 3）：7B→1B 迁移率 73%，24B→1B 仍达 65%，说明大容量差下知识迁移依然稳健。学生容量(Table 2)：1B 学生 73%、376M 降到 65%、184M 降到 48%——越小迁移率越低但始终有正收益。Teacher scaling 消融(Table 6)：dense 扩参(1B→7B)迁移 73%、序列扩展(5K→20K)迁移 61%，两维度增益独立可叠加。数据扩展(Table 7)：带 data scaling 学生 +0.44% vs 不带 +0.28%。去偏(Table 9)贡献 +0.10%。流式消融(Table 8)：不做 streaming 蒸馏五天后只保留一半初始增益（+0.05% vs +0.10%），证明分布漂移的危害。在线 A/B：电商广告 GMV +0.62%、订单 +0.68%；多场景推荐 Finish/U +1.27%、Play/U +0.47%；直播打赏收入/U +0.78%。覆盖抖音/TikTok 数亿 DAU。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出：迁移率在不同场景间波动较大(45%–64%)，说明仍有场景特定优化空间；大容量差(24B:1B)会把迁移率从 73% 拉低到 65%；教师-学生分布失配即便有去偏仍是挑战。未来方向：扩展到多模态推荐任务；在高度非平稳环境中进一步提升迁移率。一个文中未充分展开的隐患是：黑盒蒸馏只用最终 logit，理论上比白盒中间特征蒸馏的信息带宽低（这正是后面 LoopFM 想解决的问题）。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜推团队最直接的启示：scaling 的收益不必、也不应直接上线，可走&quot;离线训大教师→在线蒸馏小学生&quot;的路线，&gt;60% 迁移率说明这条路在广告/推荐/直播多场景可复用。可落地的具体设计：(1) 用解耦双塔把蒸馏与在线主塔隔离，规避教师不稳定/延迟对线上的冲击，这是工程鲁棒性的关键；(2) 蒸馏 loss 用 CE 且要按量级经验调 α，否则 L_distill 被淹没；(3) 必须做 streaming 蒸馏，否则分布漂移会在几天内吃掉一半收益；(4) 教师/学生采样策略不同要做去偏投影。部署上，本方法把模型规模与 serving 成本解耦，1B 学生吃下 7B 教师 64% 的收益、1:34 压缩比下仍有 45%，显著改善 serving ROI——这对延迟敏感、QPS 巨大的社区搜索/推荐排序系统尤其有价值。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.29280",
+      "title": "LoopFM: Learning frOm HistOrical RePresentations of Foundation Model for Recommendation",
+      "url": "https://arxiv.org/abs/2605.29280",
+      "authors": "Shali Jiang, Hua Zheng, Boyang Liu, Laming Chen, et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.9,
+      "adjusted_score": 4.9,
+      "preference_bonus": 0.25,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "传统知识蒸馏只把基础模型(FM)的单个标量预测传给垂直模型(VM)，随 FM 增大「迁移率」递减——单标量无法承载丰富的中间知识。LoopFM 把 FM 的中间层 embedding 结构化为 VM 的输入特征（如用户历史序列），开辟高带宽迁移通道，且 serving 时无需实时 FM 推理、不耦合两者架构。论文给出增益分解与迁移率理论分析，在三个公开数据集上 AUC 提升 6%+（TaobaoAd），工业级（十亿样本、万亿参数 FM）上把迁移率在 KD 基础上约翻倍。",
+      "key_insight": "关键洞察是「迁移什么」比「怎么蒸馏」更重要：用 FM 中间表示作为下游特征，比单标量蒸馏带宽高得多，且与 KD 互补、可叠加。工程上最大价值是解耦——离线缓存 FM 表示，在线 VM 不需实时跑 FM，规避了大模型 serving 延迟。对搜推团队：在已有 KD 管线上叠加「表示注入」即可再拿一部分 FM 收益，万亿参数 FM 场景迁移率翻倍证明其规模化可行。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2605.29280",
+        "title": "LoopFM: Learning frOm HistOrical RePresentations of Foundation Model for Recommendation",
+        "status": "completed",
+        "content": "# LoopFM 深度解读\n\n全文依据：[arXiv v3，2026-10-07](https://arxiv.org/html/2605.29280v3)。以下为对方法、正文表格及附录的中文改写分析；原文采用 CC BY-SA 4.0，本解读按同一许可提供。初稿发表于 2026-05-28，本次关注近期修订，不将其当作首次发表的新论文。\n\n## 1. 问题与动机\n\n工业推荐通常让大基座模型在离线学习跨场景信息，让百万参数量级的垂直模型承担在线排序。传统外部蒸馏把教师对一次曝光的预测压成一个软标签，学生虽能拟合教师判断，却难以得到教师在不同字段、不同历史时刻学到的关系。作者以迁移比 TR 衡量学生吸收教师升级的程度：用学生的归一化交叉熵改善除以教师的对应改善。教师扩展到万亿参数时，单一标量通道的迁移比出现衰减，这才是论文的主要出发点。\n\nLoopFM 将教师的历史中间表征作为另一条知识通道。区别在于，这些表征成为学生真正消费的输入特征，而不是仅在训练时要求学生某层模仿教师；同时只保留已发生事件的表征，避免在线请求等待完整教师推理。它也不同于一个用户静态向量：一次历史曝光的表示同时包含用户、物品与上下文，可以保留跨字段交互。本文与 IAT 的压缩后序列化方向相近，作者承认其独立并行工作，创新定位侧重基座到垂直模型的知识迁移分析和规模验证。\n\n## 2. 方法详解\n\n第一步是抽取。选择教师若干层，把对应激活拼接为一条曝光的原始向量。工业模型原始维度可能达到十万到百万量级，层的选择要兼顾输入信息保留与充分交互：太浅可能主要是 ID，太深可能已经丢失细节。提取可以复用生成蒸馏软标签的前向过程，不需再运行一遍教师。其抽取对象是历史交互，不是当前待排序候选的实时教师表示。\n\n第二步是压缩。作者用与教师共同训练的自编码器，把原始向量映射到较短向量，再以平方重构误差训练解码器。对教师表征做停止梯度，因此压缩损失不会反过来改变教师主干。编码器末层使用 tanh，将值限定在负一到一，便于量化。Matryoshka 方案对多个前缀长度分别重构，汇总各长度的误差，使同一压缩向量可以按部署预算截断，而不必每次更换维度都重新训练整个系统。\n\n第三步是组织。按用户等分组键收集压缩向量，依时间排序，在保留窗口内截取最近 L 条。正文给出 30 天窗口、最近 200 条的工业组织示例，但它不是公开基准的统一超参。学生对序列做均值、求和或注意力聚合，将结果与其他特征拼接后进入交互层。学生训练保留真实标签任务损失，并可加权叠加 KD 损失；表征通道与预测通道由此并行，而不是相互替代。\n\n公开实验采用 TaobaoAd 的 2500 万样本、22 个字段，KuaiVideo 的 1370 万样本、9 个字段，以及 Amazon Electronics 的 300 万样本、6 个字段。TaobaoAd 按 8 天划分，教师 DMIN 用前 4 天训练，对后 4 天记录软标签和表示；学生在第 5 至 7 天以不打乱的一遍流式训练，第 8 天测试。教师嵌入维度 32，DNN 为 512、256、128；压缩维度 32，公开学生历史长度 50，公共表示采用 FP32。论文使用 FuxiCTR，主文未给出可统一复用的优化器、批大小及硬件清单，不能用常见默认值补全这些信息。\n\n## 3. 核心技术贡献\n\n首先，历史交互表征携带的信息多于一个当前预测分数。正文把信息增益拆成历史行为增益、教师额外特征增益与压缩残余损失。这个分解说明，对有跨场景历史的学生，保留结构化表征能弥补在线特征缺口；如果教师没有额外信息，或压缩丢掉关键关系，收益就不应被先验保证。相关定理针对理想风险和互信息，不是对任意有限训练过程的效果承诺。\n\n其次，历史时间结构与压缩机制共同决定可用带宽。TaobaoAd 中，相比单纯 KD，当前样本表示作为特征、FitNets 式表示匹配和用户实体表示只增加约 0.0003 至 0.0005 AUC，而历史序列增加 0.0364。因而有用的变化不能仅归因于“多加一个向量”：被转移的信息、其历史结构与学生聚合方式都参与作用。\n\n再次，框架不要求教师与学生具有相同结构。学生只依赖明确的向量接口，可以独立升级序列编码器、压缩器或教师。工业 INT4 压缩还让表征特征更可持续：普通 INT4 引入 0.03% 至 0.07% NE 差距，针对分布学习 16 个聚类中心的非均匀 INT4 将差距收窄到 0.01% 至 0.02%。论文所说存储四倍压缩是相对 FP16，不能把它理解为所有系统开销都下降四倍。\n\n## 4. 实验结果分析\n\n以下摘取正文表 1 的 DeepFM 和 DMIN 两个学生，指标来自 TaobaoAd，同一列间才可直接比较。\n\n| 方法 | DeepFM AUC | DeepFM LogLoss | DMIN AUC |\n|---|---:|---:|---:|\n| 无蒸馏 | 0.5886 | 0.1979 | 0.5932 |\n| 仅 KD | 0.5980 | 0.1964 | 0.6002 |\n| 仅 LoopFM | 0.6245 | 0.1955 | 0.6319 |\n| KD + LoopFM | 0.6344 | 0.1940 | 0.6346 |\n\nDeepFM 加入 LoopFM 后相对仅 KD 提升 0.0364 AUC，约 6.09% 相对增幅，并进一步降低 LogLoss。即使学生和教师同为 DMIN，历史表征也能提供新的时间信息。因此它不只是通过换成更复杂的学生解释结果。五个随机种子的补充实验给出 KD 加 LoopFM 的 AUC 为 0.6342±0.0001，配对检验小于 0.001，支持收益在该配置下稳定。\n\n聚合消融尤其适合决定试点成本。表 3 的均值池化为 0.6118，求和池化为 0.6300，DIN 注意力为 0.6112，DMIN 注意力为 0.6344。求和比均值高出 0.0182，却只比最优注意力低 0.0044。应先把低成本方案做实，再判断复杂序列模块的额外收益是否值得。它也提示不能把“注意力”作为保证改善的标签：DIN 在这里没有胜过均值。\n\n教师更新频率并非越高越好。固定检查点达到 0.6344，每个切分更新教师后降到 0.6311；作者测得嵌入中心漂移增大约千倍，认为跨日表征不一致使学生更难建模。历史长度从 10 增到 100，AUC 从 0.6327 增到 0.6352，50 条已达到 0.6346，收益递减明显。公共数据里维度 8 至 128 的差异只有约 0.0008，不能把工业模型的大维度收益直接迁移到小模型。\n\n跨数据集结果也更谨慎。KuaiVideo 上部分 DeepFM 的 KD 加 DMIN 聚合表征出现负迁移，而均值池化有时更强；Amazon 的 DIEN 与 DMIN 在增加 LoopFM 后 AUC 改善但 LogLoss 略差，排序和概率校准不总是同步。工业系统报告迁移比约翻倍，首阶段转化提升 0.5%，后续两次上线分别为 1.03% 与 1.22%，这些是不同上线结果，不能相加成一个总提升。\n\n## 5. 局限与未来方向\n\n作者明确列出六类约束：长期表征历史占用存储，新用户没有历史，压缩不可避免丢失信息，学生序列模块仍会增加推理成本，公共百万级教师与工业万亿级教师存在规模差异，以及理论分析没有完整覆盖有限样本、优化误差与模型容量。正文还指出浅层信息丰富与深层交互充分之间的最佳提取点没有解决。\n\n未来方向包括按物品或图结构组织特征、跨域迁移、自身历史表示反馈给基座的 Self-LoopFM，以及不同教师版本之间的表征对齐。作者观察一致性更重要的时间尺度仅为两三天，超过多长时间后更新收益会胜过一致性损失，仍是开放问题。我的额外评估建议是明确特征版本、回填和事件时间的联合契约，避免训练读取了当时在线不可能获得的历史表示；这属于部署审查要求，而不是作者宣称已经解决的贡献。\n\n## 6. 工业实践意义\n\n社区 UGC 搜索如果已经拥有跨业务教师模型，可以先在用户的过去点击、浏览与收藏事件上离线记录表征，将它们交给现有 CTR 排序模块。这样新增的是学生的历史输入，不要求在线执行完整教师。第一轮对照应至少包含现有排序、仅 KD、求和历史表示和注意力历史表示，并保持候选集、曝光标签与训练时间一致，才能区分软标签价值、历史价值和学生扩容价值。\n\n上线设计应同时看 nDCG、CTR、LogLoss 与长尾表现。本文广告转化结果提供工业可行性的证据，却没有证明社区帖子排序具有同样的收益。对新用户或历史特征缺失，可保留原模型作为回退；对活跃用户则分别测试序列长度、维度和量化方式，量化误差应以业务敏感度衡量，而不只看向量重构误差。\n\n没有实时教师推理不意味着零在线成本。特征存储读取、序列组装和学生注意力都需要预算；当前服务规模、尾延迟与历史窗口共同决定是否可用。教师升级时可先冻结用于历史表示的版本或做版本分桶，比较新鲜度与表征一致性，而不要直接混合所有检查点。本文最值得借鉴的工程选择，是让知识传递拥有独立、可测量的表征接口，再用低成本池化和压缩消融决定增量投入。",
+        "content_html": "<h1>LoopFM 深度解读</h1>\n<p>全文依据：<a href=\"https://arxiv.org/html/2605.29280v3\" target=\"_blank\" rel=\"noopener\">arXiv v3，2026-10-07</a>。以下为对方法、正文表格及附录的中文改写分析；原文采用 CC BY-SA 4.0，本解读按同一许可提供。初稿发表于 2026-05-28，本次关注近期修订，不将其当作首次发表的新论文。</p>\n<h2>1. 问题与动机</h2>\n<p>工业推荐通常让大基座模型在离线学习跨场景信息，让百万参数量级的垂直模型承担在线排序。传统外部蒸馏把教师对一次曝光的预测压成一个软标签，学生虽能拟合教师判断，却难以得到教师在不同字段、不同历史时刻学到的关系。作者以迁移比 TR 衡量学生吸收教师升级的程度：用学生的归一化交叉熵改善除以教师的对应改善。教师扩展到万亿参数时，单一标量通道的迁移比出现衰减，这才是论文的主要出发点。</p>\n<p>LoopFM 将教师的历史中间表征作为另一条知识通道。区别在于，这些表征成为学生真正消费的输入特征，而不是仅在训练时要求学生某层模仿教师；同时只保留已发生事件的表征，避免在线请求等待完整教师推理。它也不同于一个用户静态向量：一次历史曝光的表示同时包含用户、物品与上下文，可以保留跨字段交互。本文与 IAT 的压缩后序列化方向相近，作者承认其独立并行工作，创新定位侧重基座到垂直模型的知识迁移分析和规模验证。</p>\n<h2>2. 方法详解</h2>\n<p>第一步是抽取。选择教师若干层，把对应激活拼接为一条曝光的原始向量。工业模型原始维度可能达到十万到百万量级，层的选择要兼顾输入信息保留与充分交互：太浅可能主要是 ID，太深可能已经丢失细节。提取可以复用生成蒸馏软标签的前向过程，不需再运行一遍教师。其抽取对象是历史交互，不是当前待排序候选的实时教师表示。</p>\n<p>第二步是压缩。作者用与教师共同训练的自编码器，把原始向量映射到较短向量，再以平方重构误差训练解码器。对教师表征做停止梯度，因此压缩损失不会反过来改变教师主干。编码器末层使用 tanh，将值限定在负一到一，便于量化。Matryoshka 方案对多个前缀长度分别重构，汇总各长度的误差，使同一压缩向量可以按部署预算截断，而不必每次更换维度都重新训练整个系统。</p>\n<p>第三步是组织。按用户等分组键收集压缩向量，依时间排序，在保留窗口内截取最近 L 条。正文给出 30 天窗口、最近 200 条的工业组织示例，但它不是公开基准的统一超参。学生对序列做均值、求和或注意力聚合，将结果与其他特征拼接后进入交互层。学生训练保留真实标签任务损失，并可加权叠加 KD 损失；表征通道与预测通道由此并行，而不是相互替代。</p>\n<p>公开实验采用 TaobaoAd 的 2500 万样本、22 个字段，KuaiVideo 的 1370 万样本、9 个字段，以及 Amazon Electronics 的 300 万样本、6 个字段。TaobaoAd 按 8 天划分，教师 DMIN 用前 4 天训练，对后 4 天记录软标签和表示；学生在第 5 至 7 天以不打乱的一遍流式训练，第 8 天测试。教师嵌入维度 32，DNN 为 512、256、128；压缩维度 32，公开学生历史长度 50，公共表示采用 FP32。论文使用 FuxiCTR，主文未给出可统一复用的优化器、批大小及硬件清单，不能用常见默认值补全这些信息。</p>\n<h2>3. 核心技术贡献</h2>\n<p>首先，历史交互表征携带的信息多于一个当前预测分数。正文把信息增益拆成历史行为增益、教师额外特征增益与压缩残余损失。这个分解说明，对有跨场景历史的学生，保留结构化表征能弥补在线特征缺口；如果教师没有额外信息，或压缩丢掉关键关系，收益就不应被先验保证。相关定理针对理想风险和互信息，不是对任意有限训练过程的效果承诺。</p>\n<p>其次，历史时间结构与压缩机制共同决定可用带宽。TaobaoAd 中，相比单纯 KD，当前样本表示作为特征、FitNets 式表示匹配和用户实体表示只增加约 0.0003 至 0.0005 AUC，而历史序列增加 0.0364。因而有用的变化不能仅归因于“多加一个向量”：被转移的信息、其历史结构与学生聚合方式都参与作用。</p>\n<p>再次，框架不要求教师与学生具有相同结构。学生只依赖明确的向量接口，可以独立升级序列编码器、压缩器或教师。工业 INT4 压缩还让表征特征更可持续：普通 INT4 引入 0.03% 至 0.07% NE 差距，针对分布学习 16 个聚类中心的非均匀 INT4 将差距收窄到 0.01% 至 0.02%。论文所说存储四倍压缩是相对 FP16，不能把它理解为所有系统开销都下降四倍。</p>\n<h2>4. 实验结果分析</h2>\n<p>以下摘取正文表 1 的 DeepFM 和 DMIN 两个学生，指标来自 TaobaoAd，同一列间才可直接比较。</p>\n<table><thead><tr><th>方法</th><th>DeepFM AUC</th><th>DeepFM LogLoss</th><th>DMIN AUC</th></tr></thead><tbody><tr><td>无蒸馏</td><td>0.5886</td><td>0.1979</td><td>0.5932</td></tr><tr><td>仅 KD</td><td>0.5980</td><td>0.1964</td><td>0.6002</td></tr><tr><td>仅 LoopFM</td><td>0.6245</td><td>0.1955</td><td>0.6319</td></tr><tr><td>KD + LoopFM</td><td>0.6344</td><td>0.1940</td><td>0.6346</td></tr></tbody></table>\n<p>DeepFM 加入 LoopFM 后相对仅 KD 提升 0.0364 AUC，约 6.09% 相对增幅，并进一步降低 LogLoss。即使学生和教师同为 DMIN，历史表征也能提供新的时间信息。因此它不只是通过换成更复杂的学生解释结果。五个随机种子的补充实验给出 KD 加 LoopFM 的 AUC 为 0.6342±0.0001，配对检验小于 0.001，支持收益在该配置下稳定。</p>\n<p>聚合消融尤其适合决定试点成本。表 3 的均值池化为 0.6118，求和池化为 0.6300，DIN 注意力为 0.6112，DMIN 注意力为 0.6344。求和比均值高出 0.0182，却只比最优注意力低 0.0044。应先把低成本方案做实，再判断复杂序列模块的额外收益是否值得。它也提示不能把“注意力”作为保证改善的标签：DIN 在这里没有胜过均值。</p>\n<p>教师更新频率并非越高越好。固定检查点达到 0.6344，每个切分更新教师后降到 0.6311；作者测得嵌入中心漂移增大约千倍，认为跨日表征不一致使学生更难建模。历史长度从 10 增到 100，AUC 从 0.6327 增到 0.6352，50 条已达到 0.6346，收益递减明显。公共数据里维度 8 至 128 的差异只有约 0.0008，不能把工业模型的大维度收益直接迁移到小模型。</p>\n<p>跨数据集结果也更谨慎。KuaiVideo 上部分 DeepFM 的 KD 加 DMIN 聚合表征出现负迁移，而均值池化有时更强；Amazon 的 DIEN 与 DMIN 在增加 LoopFM 后 AUC 改善但 LogLoss 略差，排序和概率校准不总是同步。工业系统报告迁移比约翻倍，首阶段转化提升 0.5%，后续两次上线分别为 1.03% 与 1.22%，这些是不同上线结果，不能相加成一个总提升。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出六类约束：长期表征历史占用存储，新用户没有历史，压缩不可避免丢失信息，学生序列模块仍会增加推理成本，公共百万级教师与工业万亿级教师存在规模差异，以及理论分析没有完整覆盖有限样本、优化误差与模型容量。正文还指出浅层信息丰富与深层交互充分之间的最佳提取点没有解决。</p>\n<p>未来方向包括按物品或图结构组织特征、跨域迁移、自身历史表示反馈给基座的 Self-LoopFM，以及不同教师版本之间的表征对齐。作者观察一致性更重要的时间尺度仅为两三天，超过多长时间后更新收益会胜过一致性损失，仍是开放问题。我的额外评估建议是明确特征版本、回填和事件时间的联合契约，避免训练读取了当时在线不可能获得的历史表示；这属于部署审查要求，而不是作者宣称已经解决的贡献。</p>\n<h2>6. 工业实践意义</h2>\n<p>社区 UGC 搜索如果已经拥有跨业务教师模型，可以先在用户的过去点击、浏览与收藏事件上离线记录表征，将它们交给现有 CTR 排序模块。这样新增的是学生的历史输入，不要求在线执行完整教师。第一轮对照应至少包含现有排序、仅 KD、求和历史表示和注意力历史表示，并保持候选集、曝光标签与训练时间一致，才能区分软标签价值、历史价值和学生扩容价值。</p>\n<p>上线设计应同时看 nDCG、CTR、LogLoss 与长尾表现。本文广告转化结果提供工业可行性的证据，却没有证明社区帖子排序具有同样的收益。对新用户或历史特征缺失，可保留原模型作为回退；对活跃用户则分别测试序列长度、维度和量化方式，量化误差应以业务敏感度衡量，而不只看向量重构误差。</p>\n<p>没有实时教师推理不意味着零在线成本。特征存储读取、序列组装和学生注意力都需要预算；当前服务规模、尾延迟与历史窗口共同决定是否可用。教师升级时可先冻结用于历史表示的版本或做版本分桶，比较新鲜度与表征一致性，而不要直接混合所有检查点。本文最值得借鉴的工程选择，是让知识传递拥有独立、可测量的表征接口，再用低成本池化和压缩消融决定增量投入。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.29287",
+      "title": "UniNote: A Unified Embedding Model for Multimodal Representation and Ranking",
+      "url": "https://arxiv.org/abs/2605.29287",
+      "authors": "Jinghan Zhao, Wenwei Jin, Anqi Li, ..., Yao Hu",
+      "company": [
+        "Xiaohongshu"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.6,
+      "adjusted_score": 4.6,
+      "preference_bonus": 0.2,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "Item-to-Item(I2I)检索是内容平台推荐与内容审核的基础环节，但通用多模态 embedding 在 I2I 上难以兼顾全局内容表示与细粒度局部检索，且 embedding 与 ranking 解耦管线效率低、精度-延迟难权衡。UniNote 提出统一的工业级多模态 I2I embedding 模型：两阶段训练，第一阶段用对比式 SFT 建立基础表示，第二阶段用强化学习(RL)按内容相关性精调排序质量，并针对不同粒度内容设计检索策略。",
+      "key_insight": "最值得借鉴的是「embedding 与 ranking 统一进一个模型」并用 RL 对齐相关性，避免了召回-排序两段式管线的累积误差与重复算力。对社区/UGC 短文本场景启示直接：小红书 Note 这类多模态 UGC 内容的 I2I 既要全局语义又要细粒度匹配，两阶段(对比 SFT→RL)范式可作模板；第二阶段用 RL 而非纯监督来精调 ranking，是把「相关性目标」直接写进 embedding 训练的实用做法。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.28888",
+      "title": "Generative Spatiotemporal Intent Sequence Recommendation via Implicit Reasoning in Amap",
+      "url": "https://arxiv.org/abs/2605.28888",
+      "authors": "Sicong Wang, Ruiting Dong, Yue Liu, Bowen Zheng, et al.",
+      "company": [
+        "Amap"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-27",
+      "total_score": 4.25,
+      "adjusted_score": 4.25,
+      "preference_bonus": 0.25,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "真实用户行为常是受时空依赖支配的意图流，而非孤立动作。论文定义生成式时空意图序列推荐(GSISR)任务：生成逻辑连贯且在复杂时空上下文中物理可执行的意图序列。LLM 推理能力强但直接工业部署受高延迟与「上下文不匹配/物理不可行计划」限制。GPlan 框架用两点解决：渐进式隐式 CoT 蒸馏，把显式推理压进保留的 latent token，让小模型继承规划逻辑而无需生成长推理文本；并引入机制对齐通用知识与真实世界时空约束。",
+      "key_insight": "亮点是「隐式 CoT 蒸馏」——把 LLM 的多步推理压缩进少量 latent token，使小模型在严格延迟下也能做复杂规划，避免在线生成长 reasoning。对搜推的启示：当业务需要 LLM 的推理能力但扛不住延迟时，可用 latent token 承载推理而非显式文本；高德的时空场景还提醒，生成式推荐要叠加「物理可执行性」约束，否则会产出不可落地的计划。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.29322",
+      "title": "ACE: Anisotropy-Controllable Embedding for LLM-enhanced Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2605.29322",
+      "authors": "Dongcheol Lee, Hye-young Kim, Jongwuk Lee",
+      "company": [
+        "SKKU"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.15,
+      "adjusted_score": 4.15,
+      "preference_bonus": 0.15,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM-as-Extractor 范式用大模型生成语义丰富的 item embedding 注入序列推荐(SR)，但 LLM 生成的 embedding 各向异性(anisotropy)严重——向量集中在相似方向，几何不均衡，微调时难以适配协同信号。ACE 用线性自编码器(LAE)重塑 embedding 分布：L2 正则项通过控制各维度离散度缓解各向异性，重构损失保持 item 间语义关系，在几何均匀性与语义保持间取得平衡，多数据集上稳定优于现有 LLM-enhanced SR 模型。",
+      "key_insight": "指出了 LLM embedding 直接用于推荐的一个被忽视的几何问题：各向异性导致协同信号难学。解法很轻——一个线性自编码器加 L2 正则即可重塑分布，几乎零额外推理成本，非常适合工业落地。对搜推团队：凡是把 LLM/预训练 embedding 接入召回或序列模型，都应先检查并校正各向异性（白化/LAE），这是用好语义向量的低成本前置步骤。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.28293",
+      "title": "ProRL: Effective Reinforcement Learning for Proactive Recommendation via Rectified Policy Gradient Estimation",
+      "url": "https://arxiv.org/abs/2605.28293",
+      "authors": "Hongru Hou, Tiehua Mei, ..., Jiaqing Liang, Deqing Yang",
+      "company": [
+        "Fudan"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-27",
+      "total_score": 4.1,
+      "adjusted_score": 4.1,
+      "preference_bonus": 0.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "主动推荐(PRS)通过生成中间推荐路径引导用户偏好向目标 item 迁移，RL 适合优化这类序列决策。但朴素策略梯度有两个缺陷：路径级奖励分解成步级奖励后均值为正，产生与路径长度相关的偏置，使梯度偏好「延长路径」而非有意义探索；用整条路径奖励加权每一步忽略了分解结构，导致高方差。ProRL 提出两机制：Stepwise Reward Centering 减去期望奖励中和长度偏置（保证路径延长的期望梯度为零）；以及降方差的奖励分配修正。",
+      "key_insight": "价值在于把「主动引导用户偏好」形式化为 RL 并精确诊断出策略梯度的两类偏差(长度偏置、高方差)，再给出可解释的修正项。对搜推 RL 实践的直接启示：做多步/序列推荐的策略优化时，要警惕路径长度带来的系统性梯度偏置，reward centering 是简单有效的纠偏手段；该思路可迁移到会话推荐、多轮重排等需要长期收益建模的场景。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.29863",
+      "title": "STAP: A Shuffle-Tokenized App Predictor with Ultra Long Context for Vocabulary-Free Mobile App Prediction",
+      "url": "https://arxiv.org/abs/2605.29863",
+      "authors": "Chengyu Fan, Hang Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 4.05,
+      "adjusted_score": 4.05,
+      "preference_bonus": 0.0,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "预测用户下一个要打开的 App 对资源管理与主动服务很重要，但现有模型依赖固定 App 词表，无法跨 App 生态泛化，且多依赖用户专属知识、冷启动困难。STAP 是无固定词表的 Transformer：通过 shuffle 机制把真实 App 身份随机重映射为虚拟索引，用超长上下文弥补丢弃的语义信息。理论证明在足够长上下文下，即便映射匿名，预测分布也会收敛到正确分布。跨大洲两数据集上取得强跨数据集零样本预测精度（固定词表方法此设定下完全不适用）。",
+      "key_insight": "最具启发的是「shuffle 去身份 + 超长上下文」实现词表无关的序列预测——靠行为序列的结构而非 item ID 语义建模，天然解决跨域迁移与新 item/冷启动。对推荐召回的启示：当 item 词表巨大或频繁变化(UGC、商品)时，可借鉴这种匿名化+长上下文的 ID-free 思路提升零样本/冷启动泛化；理论上的收敛保证也为「上下文长度换语义」提供了依据。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.29500",
+      "title": "Quotient DAGs for Off-Policy Evaluation: Forward-Flow Importance Sampling and Exact Slate Propensities",
+      "url": "https://arxiv.org/abs/2605.29500",
+      "authors": "Ziwen Xie, Shaowen Xiang, Hongyu He, Dianbo Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-28",
+      "total_score": 3.8,
+      "adjusted_score": 3.8,
+      "preference_bonus": 0.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "离线策略评估(OPE)用行为策略采集的数据估计目标策略表现，在推荐/医疗等在线测试代价高的场景关键。标准重要性采样会把生成过程的细节当作有意义信息，例如自回归 slate 推荐器生成有序 item 序列，而奖励只依赖无序 slate——这造成冗余方差且计算昂贵(精确无序 slate 倾向需对所有生成顺序求和)。论文提出 quotient-DAG 视角，合并对评估等价的历史，并在合并图上用 target-to-behavior 前向流比分配权重；对集合充分的 next-item 接口给出 Forward-DP 动态规划，无需阶乘枚举即可算出精确无序倾向。",
+      "key_insight": "针对 slate/列表推荐 OPE 的一个真实痛点：自回归生成顺序引入的伪方差。解法是把「对评估等价的轨迹」商掉，用动态规划精确计算无序 slate 倾向，避免阶乘级枚举。对搜推离线评估的启示：当用生成式/自回归召回器且评估指标与顺序无关时，应在 OPE 中显式消除顺序这一 nuisance，可显著降低估计方差、让离线指标更可信——这是生成式推荐上线前评估的实用工具。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2605.29141",
+      "title": "Toward User Preference Alignment in LLM Recommendation via Explicit Context Feedback",
+      "url": "https://arxiv.org/abs/2605.29141",
+      "authors": "Weizhi Zhang, Wooseong Yang, ..., Liangwei Yang, Henry Peng Zou",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-27",
+      "total_score": 3.8,
+      "adjusted_score": 3.8,
+      "preference_bonus": 0.2,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 4
+      },
+      "summary": "传统推荐主要从点击/观看/购买等隐式信号推断偏好，忽视了用户通过评论、点评等文本提供的显式上下文反馈——这类反馈捕捉了用户选择背后的细致原因，是偏好对齐和可解释推荐的重要异质信息。忽视它会导致偏好错配并强化信息茧房。论文主张在下一代 LLM-based RecSys 中优先利用显式上下文反馈，系统梳理了推荐范式的演进，并论证当前 LLM 推荐仍偏重 item 元数据、低估了用户生成内容这一资源。",
+      "key_insight": "这是一篇方向性主张文，但对社区/UGC 搜索场景特别契合：评论、点评等显式文本反馈直接揭示「为什么喜欢」，是隐式行为信号无法替代的偏好对齐与可解释信号。实践启示是把 UGC 文本反馈纳入 LLM 推荐的输入与对齐目标，而不仅用 item 元数据；这能缓解茧房、提升可解释性。需注意该文以综述/主张为主、缺少强实验，落地仍需自建反馈抽取与对齐方案。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2605.27043",
+      "title": "Causal Representation Learning for Generalisable Recommendation",
+      "url": "https://arxiv.org/abs/2605.27043",
+      "authors": "Yorgos Felekis, Michael O'Riordan, Oriol Corcoll, Ciarán M. Gilligan-Lee",
+      "company": [
+        "Spotify"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-26",
+      "total_score": 3.7,
+      "adjusted_score": 3.7,
+      "preference_bonus": 0.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "在观测数据上训练的预测模型部署时常难以泛化，推荐系统尤甚：训练日志被部署策略、历史用户行为和平台过滤混杂，训练分布与 serving 时打分的候选分布差异大，使离线指标无法可靠预测在线表现。论文用因果表示学习(CRL)应对该分布漂移：提出信息论的解耦判据并证明其最优解只依赖输入的因果成分，再推导可从有限观测数据优化的可处理变分下界；作用域聚焦「分布漂移下更好泛化」，而非完整因果可识别。",
+      "key_insight": "切中工业推荐的核心痛点——离线-在线鸿沟与日志反馈回路偏置。思路是只保留输入的因果成分来抵御分布漂移，用变分下界使其可从普通观测日志优化，落地门槛低于完整因果识别。对搜推团队的启示：当离线 AUC 涨而线上不涨时，可能是被部署策略混杂的分布漂移所致，引入因果解耦表示有助于让离线指标更能预测线上；但该文偏理论、实验规模有限，需在自有数据上验证。"
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:allenai/ir_datasets",
+      "title": "ir_datasets: Provides a common interface to many IR ranking datasets.",
+      "authors": "allenai",
+      "abstract": "Provides a common interface to many IR ranking datasets.",
+      "url": "https://github.com/allenai/ir_datasets",
+      "source": "github",
+      "published": "2020-11-05",
+      "discovered_at": "2026-05-31",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "allenai/ir_datasets",
+        "owner": "allenai",
+        "description": "Provides a common interface to many IR ranking datasets.",
+        "created_at": "2020-11-05T19:09:09Z",
+        "updated_at": "2026-05-28",
+        "pushed_at": "2026-05-28",
+        "stargazers_count": 390,
+        "language": "Python",
+        "topics": [
+          "dataset",
+          "information-retrieval",
+          "ir"
+        ]
+      },
+      "description": "Provides a common interface to many IR ranking datasets.",
+      "language": "Python",
+      "stars": 390,
+      "created_at": "2020-11-05",
+      "rank": 1
+    },
+    {
+      "id": "github:laoshan-song/Awesome-LLM-Interview",
+      "title": "Awesome-LLM-Interview:  LLM interview prep notes: Transformer, RLHF, DPO, LoRA, KV Cache,RAG, MoE, distributed training & 2026 frontier topics",
+      "authors": "laoshan-song",
+      "abstract": " LLM interview prep notes: Transformer, RLHF, DPO, LoRA, KV Cache,RAG, MoE, distributed training & 2026 frontier topics",
+      "url": "https://github.com/laoshan-song/Awesome-LLM-Interview",
+      "source": "github",
+      "published": "2026-05-28",
+      "discovered_at": "2026-05-31",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "laoshan-song/Awesome-LLM-Interview",
+        "owner": "laoshan-song",
+        "description": " LLM interview prep notes: Transformer, RLHF, DPO, LoRA, KV Cache,RAG, MoE, distributed training & 2026 frontier topics",
+        "created_at": "2026-05-28T04:36:23Z",
+        "updated_at": "2026-05-31",
+        "pushed_at": "2026-05-31",
+        "stargazers_count": 85,
+        "language": "HTML",
+        "topics": []
+      },
+      "description": " LLM interview prep notes: Transformer, RLHF, DPO, LoRA, KV Cache,RAG, MoE, distributed training & 2026 frontier topics",
+      "language": "HTML",
+      "stars": 85,
+      "created_at": "2026-05-28",
+      "rank": 2
+    },
+    {
+      "id": "github:konoeph/AgentClaimGuard",
+      "title": "AgentClaimGuard: Evidence gate for LLM agent claims - verify claims against evidence, tool results, and policies.",
+      "authors": "konoeph",
+      "abstract": "Evidence gate for LLM agent claims - verify claims against evidence, tool results, and policies.",
+      "url": "https://github.com/konoeph/AgentClaimGuard",
+      "source": "github",
+      "published": "2026-05-27",
+      "discovered_at": "2026-05-31",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "konoeph/AgentClaimGuard",
+        "owner": "konoeph",
+        "description": "Evidence gate for LLM agent claims - verify claims against evidence, tool results, and policies.",
+        "created_at": "2026-05-27T02:33:44Z",
+        "updated_at": "2026-05-31",
+        "pushed_at": "2026-05-28",
+        "stargazers_count": 37,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "Evidence gate for LLM agent claims - verify claims against evidence, tool results, and policies.",
+      "language": "Python",
+      "stars": 37,
+      "created_at": "2026-05-27",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "authors": "stepfun-ai",
+      "description": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "abstract": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 70,
+      "language": "model",
+      "created_at": "2026-05-28",
+      "updated_at": "2026-05-30",
+      "published": "2026-05-28",
+      "discovered_at": "2026-05-31",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "stepfun-ai/Step-3.7-Flash-GGUF",
+        "likes": 70,
+        "downloads": 35511,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "gguf",
+          "llama.cpp",
+          "quantized",
+          "imatrix",
+          "moe",
+          "agent",
+          "tool-calling",
+          "reasoning",
+          "vision",
+          "multimodal",
+          "image-text-to-text",
+          "en",
+          "zh",
+          "ja",
+          "ko",
+          "ar",
+          "hi",
+          "de",
+          "fr",
+          "es",
+          "ru",
+          "base_model:stepfun-ai/Step-3.7-Flash",
+          "base_model:quantized:stepfun-ai/Step-3.7-Flash",
+          "license:apache-2.0",
+          "endpoints_compatible",
+          "region:us",
+          "conversational"
+        ],
+        "created_at": "2026-05-28T11:34:17.000Z",
+        "last_modified": "2026-05-30T10:00:54.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_space:deepseek-ai/Janus-Pro-7B",
+      "title": "deepseek-ai/Janus-Pro-7B",
+      "authors": "deepseek-ai",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/deepseek-ai/Janus-Pro-7B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 2018,
+      "language": "space",
+      "created_at": "2025-01-27",
+      "updated_at": "2026-05-25",
+      "published": "2025-01-27",
+      "discovered_at": "2026-05-31",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "deepseek-ai/Janus-Pro-7B",
+        "likes": 2018,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2025-01-27T12:30:34.000Z",
+        "last_modified": "2026-05-25T02:07:35.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance",
+      "authors": "bytedance-research",
+      "description": "pipeline: any-to-any; tags: Lance, safetensors, multimodal, image-generation, video-generation, image-editing, video-understanding, any-to-any",
+      "abstract": "pipeline: any-to-any; tags: Lance, safetensors, multimodal, image-generation, video-generation, image-editing, video-understanding, any-to-any",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 990,
+      "language": "model",
+      "created_at": "2026-05-15",
+      "updated_at": "2026-05-28",
+      "published": "2026-05-15",
+      "discovered_at": "2026-05-31",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "bytedance-research/Lance",
+        "likes": 990,
+        "downloads": 2948,
+        "pipeline_tag": "any-to-any",
+        "tags": [
+          "Lance",
+          "safetensors",
+          "multimodal",
+          "image-generation",
+          "video-generation",
+          "image-editing",
+          "video-understanding",
+          "any-to-any",
+          "arxiv:2605.18678",
+          "base_model:Qwen/Qwen2.5-VL-3B-Instruct",
+          "base_model:finetune:Qwen/Qwen2.5-VL-3B-Instruct",
+          "license:apache-2.0",
+          "region:us"
+        ],
+        "created_at": "2026-05-15T08:05:57.000Z",
+        "last_modified": "2026-05-28T06:25:28.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_space:TencentARC/PhotoMaker-Style",
+      "title": "TencentARC/PhotoMaker-Style",
+      "authors": "TencentARC",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/TencentARC/PhotoMaker-Style",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 654,
+      "language": "space",
+      "created_at": "2024-01-14",
+      "updated_at": "2026-05-26",
+      "published": "2024-01-14",
+      "discovered_at": "2026-05-31",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "TencentARC/PhotoMaker-Style",
+        "likes": 654,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2024-01-14T05:44:39.000Z",
+        "last_modified": "2026-05-26T14:29:07.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_space:deepseek-ai/deepseek-vl2-small",
+      "title": "deepseek-ai/deepseek-vl2-small",
+      "authors": "deepseek-ai",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/deepseek-ai/deepseek-vl2-small",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 605,
+      "language": "space",
+      "created_at": "2025-01-16",
+      "updated_at": "2026-05-26",
+      "published": "2025-01-16",
+      "discovered_at": "2026-05-31",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "deepseek-ai/deepseek-vl2-small",
+        "likes": 605,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2025-01-16T03:18:38.000Z",
+        "last_modified": "2026-05-26T19:26:57.000Z"
+      },
+      "rank": 8
+    }
+  ]
+}

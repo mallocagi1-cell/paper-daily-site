@@ -1,0 +1,328 @@
+{
+  "date": "2026-06-24",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 13,
+    "papers_selected": 10,
+    "score_min": 3.35,
+    "score_max": 4.7
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.22807",
+      "title": "KaLM-Reranker-V1: Fast but Not Late Interaction for Compressed Document Reranking",
+      "url": "https://arxiv.org/abs/2606.22807",
+      "authors": "Xinping Zhao, Jiaxin Xu, Ziqi Dai, Xin Zhang, Shouzheng Huang",
+      "company": [
+        "HIT"
+      ],
+      "source": "huggingface",
+      "published": "2026-06-22",
+      "total_score": 4.7,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.7,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "重排序模型多把 query 与 passage 拼接做联合编码，计算耦合限制了部署效率与灵活性。KaLM-Reranker-V1 提出 \"fast but not late-interaction\"（FBNL）方案：基于 encoder-decoder，用 encoder 配合 Matryoshka 池化对 passage 预编码，decoder 编码 system/user instruction 与 query intent，再以 cross-attention 建模 query 上下文与 passage 表征的相关性，从而解耦 passage 编码又保留细粒度相关性建模。提供 Nano/Small/Large 三档（0.27B/1B/4B 激活参数）。BEIR 上达到 SOTA、与 Qwen3-Reranker 系列持平；MIRACL 多语未专门训练仍表现优异；LMEB 上 0.27B Nano 即可与 7–12B embedding 模型竞争。",
+      "key_insight": "FBNL 的关键是把 passage 编码与 query 计算分离（passage 可离线预编码、复用），同时用 cross-attention 替代 late-interaction 的逐 token MaxSim，在效率与相关性之间取了一个新折中点——对社区搜索这类候选量大、需要离线缓存 doc 表征再线上重排的场景有直接参考价值。Matryoshka 池化允许按延迟预算截断维度，0.27B 档即可上线，为小模型重排提供了可落地的尺寸选择。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.22807",
+        "title": "KaLM-Reranker-V1: Fast but Not Late Interaction for Compressed Document Reranking",
+        "status": "completed",
+        "content": "## KaLM-Reranker-V1 深度解读\n\n### 1. 问题与动机\n随着检索系统规模扩大，高质量重排（reranking）越来越关键。但现有 reranker——无论 encoder-based 还是 decoder-based——普遍把 query 与 passage 拼接做联合编码，使两者计算紧耦合：每来一个 query 就要对所有候选 passage 重算一遍，部署效率与灵活性受限。ColBERT 式 late interaction 通过 query/document 分离编码 + 多向量 MaxSim 提升效率，但把交互推迟到编码之后，无法在编码阶段捕捉深层 query–document 交互。本文要解决的核心问题是：能否既复用 passage 表征（像 late interaction 那样高效，passage 可离线预编码），又保留 cross-encoder 式的丰富 query–passage 交互（不退化为后置的浅交互）。作者把这一目标命名为 FBNL（fast but not late-interaction）。\n\n### 2. 方法详解\nKaLM-Reranker-V1 基于 T5Gemma2 的 encoder-decoder 架构，给出三档：Nano 270M-270M（0.27B 激活）、Small 1B-1B、Large 4B-4B。\n- **Passage 预编码**：encoder 把 passage p 映射为可复用表征 H_p = Enc(p) ∈ R^{n×d}（n 为文档长度，d 为隐藏维），离线计算、线上复用。为压缩存储引入 Matryoshka Embedding Pooling（MEP）：把连续 r 个 token 分组做 mean pooling，H_p^{(r)}[j]=MeanPool(H_p[(j-1)r+1 : min(jr,n)])，j=1..⌈n/r⌉。训练用压缩比 R={2,4,8,16}，评测默认 r=4。\n- **Decoder 编码 query 侧**：decoder 输入 X 包含 system instruction、task instruction 与 user query；decoder 以 X 形成 query，以 X 与 encoder 输出 H_p 的拼接形成 key/value，通过 cross-attention 让 query 上下文与 passage 表征交互。\n- **打分**：score(q,p)=exp(z_yes)/(exp(z_yes)+exp(z_no))，即用词表中 “yes”/“no” 两个 token 的 logit 算相关概率。\n- **训练数据与流程**：约 3.7M 样本（KaLM embedding fine-tuning 检索子集 + BGE-M3 训练数据子集），hard negative 用 KaLM-Embedding-V2.5 从 top10–50 挖掘。三阶段：① 无 task instruction 的通用重排；② 带 instruction 的任务适配；③ 以 KaLM-Reranker-V1-Large 为 teacher 的细粒度蒸馏。SFT loss 为 yes/no 上的交叉熵 ℒ_sft=-log[exp(z_l)/(exp(z_yes)+exp(z_no))]，蒸馏 loss ℒ_kd=-y·logŷ-(1-y)·log(1-ŷ)。\n- **优化超参**：Adam(β1=0.9, β2=0.999)，weight decay 1e-5，三阶段 lr 分别 1e-4 / 2e-4 / 5e-5，每阶段 1 epoch，per-GPU batch 2（Nano/Small）、1（Large），梯度累积 4，有效 batch 128，硬件 16 张（Nano/Small）/ 32 张（Large）RTX 5090，约 29k step/epoch。\n\n### 3. 核心技术贡献\n1. **FBNL 范式**：不同于联合编码（复用不了 passage 表征），它解耦 passage 编码与 query 计算、passage 离线预编码可复用；不同于 late interaction（把交互后置为多向量 MaxSim），它用 decoder cross-attention 在解码阶段保留深层 query–passage 交互。这是效率–表达力之间的一个新折中点：复用表征 + 不后置交互。\n2. **Matryoshka Embedding Pooling**：按 r 分组池化压缩 passage 表征，存储从 O(N·n·d) 降到 O(N·⌈n/r⌉·d)，并可按延迟/存储预算选 r；r=2/4 几乎无损，更大模型对压缩更鲁棒。\n3. **三阶段训练（通用→任务适配→蒸馏）**：仅用 3.7M 样本（远少于 Qwen3-Reranker 的 19M）即达可比性能，蒸馏把 Large 的能力下放到 Nano，使 0.27B 小模型也具竞争力。\n\n### 4. 实验结果分析\n**BEIR（13 个英文检索任务，avg nDCG@10）**：Nano 0.27B 得 57.41、cost 1.0x，超过 gte-reranker-base（0.3B，56.77，11.9x）与 jina-reranker-v2（56.26，11.9x）；Small 1B 得 60.01（6.9x），高于 Qwen3-Reranker-0.6B（59.36，42.4x）与 mxbai-rerank-base-v2（58.18，29.8x）；Large 4B 得 62.87（43.7x），接近 Qwen3-Reranker-4B（63.50，236.8x）但成本约 1/5；Qwen3-Reranker-8B 最高 65.11（539.7x）。Nano/Small/Large 分别在 9/13、8/13、11/13 任务取得最优或次优。\n**MIRACL（18 语言，avg nDCG@10）**：Nano 62.08（1.0x）远超 bge-reranker-large（0.6B，52.52，36.3x）；Small 66.89（6.9x）高于 mxbai-rerank-large-v2（1.5B，63.26，79.2x）；Large 70.07（43.7x）略高于 bge-reranker-v2-gemma（2.5B，69.82，81.3x）——未专门做多语训练仍有竞争力。\n**LMEB（6 个对话记忆检索任务，avg nDCG@10）**：Nano 61.39、Small 63.15、Large 64.16，Large 超过 Qwen3-Reranker-4B（62.86）；0.27B 的 Nano 即可与 7–12B embedding 模型竞争。\n**消融**：MEP 压缩比 r=2/4 几乎无损，r=8 轻微下降，r=16/32 明显退化；FiQA 上随 r 从 2→32，Nano 的 ROC-AUC 从 0.871 降到 0.832，而 Large 仅从 0.952 降到 0.948，说明大模型更耐压缩。\n**效率**：相对传统联合编码 reranker，n=256 时约 16.6× 提速，n=1024 时 18.5–33.3×（取决于 r），n=4096 时高达 203.4×；即便 r=2 也有近 10× 提速。空间上 MEP 把 O(N·n·d) 压到 O(N·⌈n/r⌉·d)。\n\n### 5. 局限与未来方向\n作者明确自陈：① **中文偏弱**——尽管用了大量中文数据训练，MIRACL 中文子集上仍相对弱，基座模型的中文能力是瓶颈，后续会继续改进；② **高压缩退化**——r≥16 的激进压缩带来较大 AUC 下降，尤其小模型，需要更好的压缩方法；③ **训练数据有限**——仅 3.7M 样本 vs Qwen3-Reranker 的 19M，加数据仍有提升空间；④ 整体受限于基座模型能力。这些是作者在 limitations 中点名的具体问题，而非泛泛而谈。\n\n### 6. 工业实践意义\n对社区搜索/UGC 检索的重排环节，FBNL 给出一条把 cross-encoder 质量与 late-interaction 效率结合的路线：passage 表征离线预编码并缓存，线上每个 query 只与缓存表征做 cross-attention——n=1024 时提速 18.5–33.3×、n=4096 时 200× 以上，对长帖/长文档场景收益尤其大。Matryoshka 池化提供按延迟/存储预算选 r 的旋钮（r=4 近无损可作稳妥默认），可按维度截断适配不同档位机器。0.27B 的 Nano 即能与 7–12B embedding 竞争，意味着可在成本极低的小模型上线高质量重排；若延迟预算充裕，Large 4B 以 Qwen3-Reranker-4B 约 1/5 的成本拿到接近精度。落地注意点：① 中文场景须自行评测（论文中文子集偏弱），可在中文数据上继续训练/蒸馏；② 缓存 passage 表征会增加存储，用 MEP 压缩到 O(N·⌈n/r⌉·d) 可控；③ 三阶段训练 + hard negative 挖掘是复刻关键，instruction 适配阶段对任务感知重排很重要。",
+        "content_html": "<h2>KaLM-Reranker-V1 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>随着检索系统规模扩大，高质量重排（reranking）越来越关键。但现有 reranker——无论 encoder-based 还是 decoder-based——普遍把 query 与 passage 拼接做联合编码，使两者计算紧耦合：每来一个 query 就要对所有候选 passage 重算一遍，部署效率与灵活性受限。ColBERT 式 late interaction 通过 query/document 分离编码 + 多向量 MaxSim 提升效率，但把交互推迟到编码之后，无法在编码阶段捕捉深层 query–document 交互。本文要解决的核心问题是：能否既复用 passage 表征（像 late interaction 那样高效，passage 可离线预编码），又保留 cross-encoder 式的丰富 query–passage 交互（不退化为后置的浅交互）。作者把这一目标命名为 FBNL（fast but not late-interaction）。</p>\n<h3>2. 方法详解</h3>\n<p>KaLM-Reranker-V1 基于 T5Gemma2 的 encoder-decoder 架构，给出三档：Nano 270M-270M（0.27B 激活）、Small 1B-1B、Large 4B-4B。</p>\n<ul>\n<li><strong>Passage 预编码</strong>：encoder 把 passage p 映射为可复用表征 H_p = Enc(p) ∈ R^{n×d}（n 为文档长度，d 为隐藏维），离线计算、线上复用。为压缩存储引入 Matryoshka Embedding Pooling（MEP）：把连续 r 个 token 分组做 mean pooling，H_p^{(r)}[j]=MeanPool(H_p[(j-1)r+1 : min(jr,n)])，j=1..⌈n/r⌉。训练用压缩比 R={2,4,8,16}，评测默认 r=4。</li>\n<li><strong>Decoder 编码 query 侧</strong>：decoder 输入 X 包含 system instruction、task instruction 与 user query；decoder 以 X 形成 query，以 X 与 encoder 输出 H_p 的拼接形成 key/value，通过 cross-attention 让 query 上下文与 passage 表征交互。</li>\n<li><strong>打分</strong>：score(q,p)=exp(z_yes)/(exp(z_yes)+exp(z_no))，即用词表中 “yes”/“no” 两个 token 的 logit 算相关概率。</li>\n<li><strong>训练数据与流程</strong>：约 3.7M 样本（KaLM embedding fine-tuning 检索子集 + BGE-M3 训练数据子集），hard negative 用 KaLM-Embedding-V2.5 从 top10–50 挖掘。三阶段：① 无 task instruction 的通用重排；② 带 instruction 的任务适配；③ 以 KaLM-Reranker-V1-Large 为 teacher 的细粒度蒸馏。SFT loss 为 yes/no 上的交叉熵 ℒ_sft=-log[exp(z_l)/(exp(z_yes)+exp(z_no))]，蒸馏 loss ℒ_kd=-y·logŷ-(1-y)·log(1-ŷ)。</li>\n<li><strong>优化超参</strong>：Adam(β1=0.9, β2=0.999)，weight decay 1e-5，三阶段 lr 分别 1e-4 / 2e-4 / 5e-5，每阶段 1 epoch，per-GPU batch 2（Nano/Small）、1（Large），梯度累积 4，有效 batch 128，硬件 16 张（Nano/Small）/ 32 张（Large）RTX 5090，约 29k step/epoch。</li>\n</ul>\n<h3>3. 核心技术贡献</h3>\n<ol>\n<li><strong>FBNL 范式</strong>：不同于联合编码（复用不了 passage 表征），它解耦 passage 编码与 query 计算、passage 离线预编码可复用；不同于 late interaction（把交互后置为多向量 MaxSim），它用 decoder cross-attention 在解码阶段保留深层 query–passage 交互。这是效率–表达力之间的一个新折中点：复用表征 + 不后置交互。</li>\n<li><strong>Matryoshka Embedding Pooling</strong>：按 r 分组池化压缩 passage 表征，存储从 O(N·n·d) 降到 O(N·⌈n/r⌉·d)，并可按延迟/存储预算选 r；r=2/4 几乎无损，更大模型对压缩更鲁棒。</li>\n<li><strong>三阶段训练（通用→任务适配→蒸馏）</strong>：仅用 3.7M 样本（远少于 Qwen3-Reranker 的 19M）即达可比性能，蒸馏把 Large 的能力下放到 Nano，使 0.27B 小模型也具竞争力。</li>\n</ol>\n<h3>4. 实验结果分析</h3>\n<p><strong>BEIR（13 个英文检索任务，avg nDCG@10）</strong>：Nano 0.27B 得 57.41、cost 1.0x，超过 gte-reranker-base（0.3B，56.77，11.9x）与 jina-reranker-v2（56.26，11.9x）；Small 1B 得 60.01（6.9x），高于 Qwen3-Reranker-0.6B（59.36，42.4x）与 mxbai-rerank-base-v2（58.18，29.8x）；Large 4B 得 62.87（43.7x），接近 Qwen3-Reranker-4B（63.50，236.8x）但成本约 1/5；Qwen3-Reranker-8B 最高 65.11（539.7x）。Nano/Small/Large 分别在 9/13、8/13、11/13 任务取得最优或次优。<br><strong>MIRACL（18 语言，avg nDCG@10）</strong>：Nano 62.08（1.0x）远超 bge-reranker-large（0.6B，52.52，36.3x）；Small 66.89（6.9x）高于 mxbai-rerank-large-v2（1.5B，63.26，79.2x）；Large 70.07（43.7x）略高于 bge-reranker-v2-gemma（2.5B，69.82，81.3x）——未专门做多语训练仍有竞争力。<br><strong>LMEB（6 个对话记忆检索任务，avg nDCG@10）</strong>：Nano 61.39、Small 63.15、Large 64.16，Large 超过 Qwen3-Reranker-4B（62.86）；0.27B 的 Nano 即可与 7–12B embedding 模型竞争。<br><strong>消融</strong>：MEP 压缩比 r=2/4 几乎无损，r=8 轻微下降，r=16/32 明显退化；FiQA 上随 r 从 2→32，Nano 的 ROC-AUC 从 0.871 降到 0.832，而 Large 仅从 0.952 降到 0.948，说明大模型更耐压缩。<br><strong>效率</strong>：相对传统联合编码 reranker，n=256 时约 16.6× 提速，n=1024 时 18.5–33.3×（取决于 r），n=4096 时高达 203.4×；即便 r=2 也有近 10× 提速。空间上 MEP 把 O(N·n·d) 压到 O(N·⌈n/r⌉·d)。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确自陈：① <strong>中文偏弱</strong>——尽管用了大量中文数据训练，MIRACL 中文子集上仍相对弱，基座模型的中文能力是瓶颈，后续会继续改进；② <strong>高压缩退化</strong>——r≥16 的激进压缩带来较大 AUC 下降，尤其小模型，需要更好的压缩方法；③ <strong>训练数据有限</strong>——仅 3.7M 样本 vs Qwen3-Reranker 的 19M，加数据仍有提升空间；④ 整体受限于基座模型能力。这些是作者在 limitations 中点名的具体问题，而非泛泛而谈。</p>\n<h3>6. 工业实践意义</h3>\n<p>对社区搜索/UGC 检索的重排环节，FBNL 给出一条把 cross-encoder 质量与 late-interaction 效率结合的路线：passage 表征离线预编码并缓存，线上每个 query 只与缓存表征做 cross-attention——n=1024 时提速 18.5–33.3×、n=4096 时 200× 以上，对长帖/长文档场景收益尤其大。Matryoshka 池化提供按延迟/存储预算选 r 的旋钮（r=4 近无损可作稳妥默认），可按维度截断适配不同档位机器。0.27B 的 Nano 即能与 7–12B embedding 竞争，意味着可在成本极低的小模型上线高质量重排；若延迟预算充裕，Large 4B 以 Qwen3-Reranker-4B 约 1/5 的成本拿到接近精度。落地注意点：① 中文场景须自行评测（论文中文子集偏弱），可在中文数据上继续训练/蒸馏；② 缓存 passage 表征会增加存储，用 MEP 压缩到 O(N·⌈n/r⌉·d) 可控；③ 三阶段训练 + hard negative 挖掘是复刻关键，instruction 适配阶段对任务感知重排很重要。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.21553",
+      "title": "Dissecting Agentic RAG: A Component Ablation for Multi-Hop QA with a Local 7B Model",
+      "url": "https://arxiv.org/abs/2606.21553",
+      "authors": "Sheroz Shaikh",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-19",
+      "total_score": 4.3,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "summary": "agentic RAG 常叠加自适应检索路由与多轮检索循环，但各组件实际贡献并不清楚。作者用本地 Qwen2.5-7B-Instruct 在 HotpotQA distractor 开发集 5000 题上做受控消融：完整 pipeline EM=53.2%/F1=61.6%，对比单轮 dense 检索基线 EM=43.1%/F1=54.0%。八组消融结论：(1) 基于 reciprocal rank fusion 的固定混合检索稳定优于规则式自适应路由（+1.8 EM/+1.9 F1），因为路由启发式会因子问题普遍含命名实体而过度路由到 BM25；(2) 对分解子问题做两轮检索即可获得五轮 95% 的收益，更深循环无明显增益；(3) query 分解与 cross-encoder 重排各自带来显著但更小的提升（p<0.01、p<0.001）。",
+      "key_insight": "结论指向简单且固定的选择往往不输甚至优于自适应版本：增益主要来自短检索循环，而非自适应路由或多轮迭代。落地启示——RRF 混合检索可作稳健默认项；检索轮数设到 2 即可，省掉深循环的延迟与成本；自适应路由要警惕命名实体触发的偏置。全程不用闭源 API、仅本地 7B，复现门槛低，适合作为社区搜索 RAG 链路的组件取舍基线。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.23642",
+      "title": "Improving Long-Context Retrieval with Multi-Prefix Embedding",
+      "url": "https://arxiv.org/abs/2606.23642",
+      "authors": "Zhenglin Yu, Xueguang Ma, Shengyao Zhuang, Zhichao Xu, Luyu Gao",
+      "company": [
+        "Waterloo",
+        "CMU"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-22",
+      "total_score": 4.05,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "长文档检索存在张力：单向量 embedding 丢失细粒度信息，token 级多向量方法存储开销过大。MPE（Multi-Prefix Embedding）把文档按 EOS token 切成 chunk，用一次 causal 前向编码整段序列，在每个 prefix 边界各取一个 embedding，从而保留跨 chunk 上下文、支持 chunk 级 MaxSim 匹配，且仅用文档级相关性标签训练。在 MLDR-en、BrowseComp-Plus、LongEmbed 上，MPE 与单向量、独立分块、多向量基线相比表现持平或更优，并天然提供定位证据 chunk 的来源归因机制。",
+      "key_insight": "MPE 的巧思是单次前向 + prefix 边界取向量，兼顾多向量的细粒度与单向量的存储成本（每文档存的向量数=chunk 数，远少于 token 级）。仅需文档级标签即可训练，省去 chunk 级标注。来源归因能力对社区搜索定位为何召回某条帖子、命中哪一段很实用，对长 UGC（长帖、多段问答）召回是可直接借鉴的折中表示方案。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.22778",
+      "title": "HAKARI-Bench: A Lightweight Benchmark for Comparing Retrieval Architectures and Efficiency Settings under Unified Conditions",
+      "url": "https://arxiv.org/abs/2606.22778",
+      "authors": "Yuichi Tateno",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-22",
+      "total_score": 4.05,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "RAG 与语义搜索普及后，选择 embedding 与检索配置越来越难，而大型检索 benchmark 太重、开发期难以反复跑。HAKARI-Bench 把现有检索套件重构为小数据集（Nano-sets）：35 个 benchmark、551 个任务、覆盖 43 种语言，统一格式下可在相同条件比较五类检索族（BM25、dense、sparse、late interaction、reranker）及其效率变体（降维、量化、重排）。在 55 个模型上，其总体排名与官方 MTEB retrieval v2、MMTEB v2 retrieval、English BEIR(full) 的 Spearman 相关均 >0.97。MIT 许可，开放代码、数据与榜单。",
+      "key_insight": "价值在于轻量但高保真——用 Nano-sets 在开发期快速做模型选型、回归检测、读取质量-效率 Pareto 前沿，且与官方大榜排名一致性 >0.97，不必每次重跑重型评测。统一同条件对比降维/量化/重排等生产设置，正对应社区搜索上线前的 embedding/reranker 选型与压缩取舍。MIT 开源可直接接入内部评测流水线。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.22681",
+      "title": "Only Ask What You Don't Know: Grounded Delta Planning for Efficient Multi-step RAG",
+      "url": "https://arxiv.org/abs/2606.22681",
+      "authors": "Wei-Chieh Chou, Xuanjun Chen, Jian-Ren Lin, Claire Lin, Hung-yi Lee",
+      "company": [
+        "National Taiwan University"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-21",
+      "total_score": 3.9,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "多跳问答中现有 RAG 要么跨轮检索传播误差，要么过度生成推理步、增加成本却不提精度。GDP-RAG 是基于规划的框架，只针对信息增量（delta）：(1) 先做初步检索为规划提供 grounding；(2) 用 gap-conditioned 规划提示只索取缺失信息；(3) 用 skeletal trajectory 把每个子查询与一个携带初检证据的 Thought 配对，贯穿到最终答案。在 HotpotQA、2WikiMultiHopQA、MuSiQue 上，GDP-RAG 取得最高准确率 60.63%，cost-of-pass 为 0.51——比 PAR-RAG（0.65）低 22%、比 KnowTrace（1.57）低 68%，且无方法能同时做到更高准确率与更低成本。",
+      "key_insight": "核心是只问你不知道的——先 grounding 再按信息缺口规划，把算力集中在未解决的 gap 上，避免重复检索已知信息。skeletal trajectory 让证据在子查询间显式传递，减少误差累积。准确率与 cost-of-pass 双指标同时占优，对需要控制 LLM 调用成本的搜索问答链路很有借鉴：用初检结果约束规划范围，是降本不降质的可操作手段。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.22728",
+      "title": "When Confidence Takes the Wrong Path: Diagnosing Retrieval-State Lock-In in RAG",
+      "url": "https://arxiv.org/abs/2606.22728",
+      "authors": "Sahib Julka",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-22",
+      "total_score": 3.6,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "很多黑盒不确定性方法把多次采样答案一致读作高置信，但当重复采样都条件于同一缺陷检索状态（空状态回退到参数记忆，或被一致但错误的邻域填充）时，答案会因错误稳定而一致。作者将该失败命名为 retrieval-state lock-in，并把单一置信分拆解为三个对象：答案面、检索证据、检索状态本身。在可检视的 KG-RAG 系统六个 QA 快照上测量：每题采样五次时，42% 的 KG-RAG 错误与 59% 的 dense 检索错误答案离散度为零，使一致性无从排序；而证据与检索状态检查仍能标记出多数错误。仅当三者都判为低风险才接受答案的规则达到 91.9% 池化精度（接受率 7.7%）。",
+      "key_insight": "提醒一个被忽视的盲区：RAG 里答案一致不等于可信，错误检索状态会制造稳定的错误一致。把置信拆成答案/证据/检索状态三个对象分别校验，是可审计的判定思路。对社区搜索+LLM 问答，落地启示是除答案自洽外要单独监控检索证据质量与检索状态（是否空召回、同质化邻域）；但代价是覆盖率仅 7.7%，高精度需要牺牲可回答比例。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2606.23475",
+      "title": "Multi-Vector Embeddings are Provably More Expressive than Single Vector Embeddings",
+      "url": "https://arxiv.org/abs/2606.23475",
+      "authors": "Rajesh Jayaram",
+      "company": [
+        "Google"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-22",
+      "total_score": 3.5,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 5,
+        "practicality": 2,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "多向量（MV）embedding 用多个向量表示数据、以非线性 Chamfer 相似度打分，检索精度高于用内积的单向量（SV）embedding，但此前缺乏 SV 在相同表示规模下无法逼近 MV 的形式化证明。近期 MUVERA 证明 D=m^O(1/ε²) 维 SV 可逼近；若能改进到 D=md 就意味着 MV 不比 SV 更强。本文排除了这一可能：构造了一族每个至多 m 个向量的 MV embedding，证明逼近它们所需的 SV 维度为 D=(ε²m)^Ω(1/ε)，建立了 MV 与 SV 在表示规模上的强分离。证明用 Pattern Matrix Method，把 Chamfer 相似度矩阵编码为 NAND_k 布尔函数的难例。",
+      "key_insight": "这是对 IR 社区长期信念的形式化背书：在固定表示规模下，多向量能表达单向量连近似都做不到的相似度。理论意义大于即时落地——它解释了 ColBERT 式多向量为何在检索精度上难以被单向量完全替代，也为是否引入多向量及其存储/检索成本提供了原理性依据。对社区搜索的取舍：当对细粒度相关性要求高时，多向量的表达力优势有理论保证，而非仅经验现象。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2606.22722",
+      "title": "moBERTo: A Modern Encoder for Portuguese via Continued Pretraining of ModernBERT",
+      "url": "https://arxiv.org/abs/2606.22722",
+      "authors": "Thiago Laitz, Thales Sales Almeida, João Guilherme Alves Santos, Giovana Kerche Bonás",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-21",
+      "total_score": 3.45,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "encoder-only transformer 仍是生产 NLP 流水线的关键。moBERTo 通过对 ModernBERT-base 做持续预训练（在 FineWeb2 经教育/STEM 分类器过滤的 12B token 语料上训练 5 个 epoch、共 60B token）得到葡萄牙语版本，保留 RoPE、局部-全局交替注意力、flash attention、unpadding 等结构。在信息检索（含 8192 token 长上下文检索）、文档分类、NER、NLU 上评测：最优变体（葡语 tokenizer + 子词匹配 embedding 迁移 + 长上下文后训练）在三个葡语检索 benchmark 上取得最高平均 reranking nDCG@10，并在 PLUE-PT 最佳。消融显示：持续预训练显著优于从头训练（尤其保留长上下文能力）；tokenizer 适配提升 token 级任务但损害长上下文检索；专门的 8192 长上下文后训练进一步提升重排与 NER。",
+      "key_insight": "给把 ModernBERT 适配到特定语言/领域做检索与重排提供了清晰配方：持续预训练优于从头训、长上下文后训练单列一阶段、tokenizer 适配对长上下文是双刃剑。对非英语社区搜索（含中文 UGC）的 encoder 选型有方法论参考——encoder-only 在判别式（召回/重排）任务上仍能与更大的 decoder-only 竞争，且权重与数据全开源便于复刻。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2606.22151",
+      "title": "Novelty-Aware Agentic Retrieval: Comparing Research Contributions Through Structured Multi-Step Reasoning",
+      "url": "https://arxiv.org/abs/2606.22151",
+      "authors": "Shou-Tzu Han",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-20",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "科研文献检索中排序列表不够用——研究者需要知道论文之间如何关联、在哪重叠、有何差异、哪些问题×方法组合缺失，而标准 RAG 独立总结文档、丢掉了这种比较信号。作者提出 Novelty-Aware Research Agent 原型：在 RAG 上叠加六个 typed-contract 组件（query 分析、ReAct 式检索循环、相关性排序、schema 引导的贡献抽取、三遍比较 agent、答案生成），除返回相关论文外还产出结构化比较产物：每篇贡献记录、论文级重叠、问题×方法 gap 矩阵。在 100 篇语料上，作者标注分级相关性下排序器主查询 Precision@5=1.000、nDCG@5=0.752，优于 BM25/dense/hybrid；十查询扩展评测 Precision@5=0.980、nDCG@5=0.739；schema 合规率 84–86.7%；gap 矩阵空格精度 0.600。",
+      "key_insight": "把检索从返回 ranked list 升级为产出结构化比较产物（重叠、差异、gap 矩阵），对调研型/探索型搜索是有意思的方向。typed-contract 组件化设计便于逐环节评测与替换。局限也坦诚：100 篇小语料、作者自标注、缺独立评测、延迟-结构权衡明显。对社区搜索的启示——面向找观点对比、找空白的复杂查询，agentic 比较式检索能给出列表之外的结构化答案，但需权衡延迟与可扩展性。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2606.21535",
+      "title": "From Embedding Geometry to Spectral Search: Energy Dispersion Networks For Vector Retrieval",
+      "url": "https://arxiv.org/abs/2606.21535",
+      "authors": "Lorenzo Moriondo, Ilias Azizi",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-19",
+      "total_score": 3.35,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "embedding 空间不必只用逐点几何分析，也可视为由列向量拓扑（特征空间结构）诱导的谱图上的能量网络。作者提出 Graph Wiring 通用框架来利用特征空间谱结构，及其面向向量搜索的具体实例 Spectral Indexing：把几何相似度与谱信息耦合，相比纯几何检索改善 head-tail 一致性与语义对齐，并通过 tau-modulation 支持自适应搜索行为以契合现代 RAG 流水线。论文给出完整算法流程，用 epiplexity 建立理论基础，并在 benchmark 与工业设置上用开源 arrowspace 库评测。",
+      "key_insight": "提供了一个不同视角：把向量检索从逐点几何最近邻扩展到谱图上的能量传播，借特征空间谱结构改善长尾（head-tail）召回一致性。tau-modulation 给检索行为一个可调旋钮以适配不同 RAG 需求。方法较前沿、落地门槛偏高，但 arrowspace 开源可供试验。对社区搜索长尾 query 的语义对齐问题，谱方法是一个值得小范围验证的探索方向。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:SantanderAI/genetic-algorithm",
+      "title": "genetic-algorithm: A dependency-free Python genetic-algorithm engine with pluggable fitness criteria — the reusable search core for an LLM/AI autoresearcher.",
+      "url": "https://github.com/SantanderAI/genetic-algorithm",
+      "source": "github",
+      "description": "A dependency-free Python genetic-algorithm engine with pluggable fitness criteria — the reusable search core for an LLM/AI autoresearcher.",
+      "language": "Python",
+      "stars": 26,
+      "created_at": "2026-06-17"
+    },
+    {
+      "rank": 2,
+      "id": "github:itsthelore/wayfinder-router",
+      "title": "wayfinder-router: Simple CLI tool for deterministic routing of queries between local and hosted LLM models",
+      "url": "https://github.com/itsthelore/wayfinder-router",
+      "source": "github",
+      "description": "Simple CLI tool for deterministic routing of queries between local and hosted LLM models",
+      "language": "Python",
+      "stars": 24,
+      "created_at": "2026-06-17"
+    },
+    {
+      "rank": 3,
+      "id": "hf_dataset:internlm/RNGBench-Game-Trajectories",
+      "title": "internlm/RNGBench-Game-Trajectories",
+      "url": "https://huggingface.co/datasets/internlm/RNGBench-Game-Trajectories",
+      "source": "huggingface",
+      "description": "RNGBench-Game-Trajectories SFT (supervised fine-tuning) trajectory data accompanying RNGBench · Reconstructive Non-Markov Games — an evaluation framework that tests whether multimodal language models can reconstruct hidden state from memory and act on it in closed-loop environmen; tags: task_categories:image-text-to-text, language:en, license:mit, arxiv:2606.19338, region:us, agent, trajectory, multimodal",
+      "language": "dataset",
+      "stars": 2,
+      "created_at": "2026-06-22"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "deepseek-ai/DeepSeek-V4-Pro",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, arxiv:2606.19348, license:mit, eval-results",
+      "language": "model",
+      "stars": 5028,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 2170,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "deepseek-ai/DeepSeek-V4-Flash",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, deepseek_v4, text-generation, conversational, arxiv:2606.19348, license:mit, eval-results",
+      "language": "model",
+      "stars": 1568,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: scail-2, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2606.10804, license:mit",
+      "language": "model",
+      "stars": 255,
+      "created_at": "2026-06-09"
+    }
+  ]
+}

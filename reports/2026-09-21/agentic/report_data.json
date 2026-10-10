@@ -1,0 +1,644 @@
+{
+  "date": "2026-09-21",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "papers_scored": 18,
+    "papers_selected": 10,
+    "score_min": 3.45,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "id": "arxiv:2609.19897",
+      "title": "TRACE: Accountable Agentic Retrieval for Source Discovery in Digital Archives",
+      "authors": "Bian, Donghan, Puren, Marie, Cafiero, Florian",
+      "abstract": "Historical archives pose a difficult retrieval problem for retrievalaugmented generation systems: documents are OCR-degraded, heterogeneous across genres and sources, and require strong source traceability for scholarly and institutional use. We introduce TRACE, a training-free agentic retrieval framework designed for accountable source discovery over historical corpora. The system was developed in the context of DECIDON, an interdisciplinary project on the circulation of political discourse between parliamentary debates and the press during the French Third Republic, involving digitised historical collections and institutional use cases. The prototype is currently deployed internally within the project and accessible to 24 researchers across six partner institutions. We evaluate TRACE on HistoriQA-ThirdRepublic, a benchmark of 1,752 French historical questions over parliamentary debates and newspapers from 1887, with documents derived from Biblioth{è}que nationale de France digitised collections. TRACE achieves R@10 = 0.856 and MRR = 0.653, outperforming sparse, dense, graph-based, and agentic RAG baselines, with the largest gains on multi-hop and cross-corpus questions. At approximately $0.02 per question under the default hosted inference configuration, TRACE also remains economically feasible for heritage institutions, laboratories or companies that cannot rely on costly local GPU infrastructure. These results suggest that, for large digital libraries and archives, retrieval accountability and corpus-aware agent design can provide a practical alternative to heavier training-based or graph-construction approaches.",
+      "url": "https://arxiv.org/abs/2609.19897",
+      "source": "web_search",
+      "published": "2026-09-17",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "ENC–PSL",
+        "EPITA",
+        "Geneva Graduate Institute"
+      ],
+      "summary": "TRACE 面向有噪声、跨语料且必须追溯出处的检索，将问题分解、混合召回、证据暂存复审与重规划组成免训练搜索循环。在 1,752 个历史问题上，R@10 达 0.856、MRR 达 0.653，高于稠密检索的 0.734 和 0.535；托管推理约每题 0.02 美元，但延迟不适合直接搬入同步搜索主链路。",
+      "key_insight": "对社区帖子、问答和评论的复杂搜索，可借鉴按内容类型分解问题，以及接受、拒绝、暂存三态证据管理。先保留可核验的原帖与接受理由，再合并排序；这些设计有利于解释跨帖证据，但历史档案实验尚不能证明 UGC 的 nDCG 或 CTR 收益，应先在复杂查询离线集验证。",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.4,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.19897",
+        "https://arxiv.org/html/2609.19897"
+      ],
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:2609.19897",
+        "title": "TRACE: Accountable Agentic Retrieval for Source Discovery in Digital Archives",
+        "status": "completed",
+        "content": "# TRACE：把多步检索做成可追溯的证据发现流程\n\n原文：[TRACE: Accountable Agentic Retrieval for Source Discovery in Digital Archives](https://arxiv.org/html/2609.19897)。以下依据论文正文第 3–6 节和表 1–3；工业迁移建议为本报告分析，不是作者已经完成的社区搜索实验。\n\n## 1. 问题与动机\n\nTRACE 处理的是带 OCR 噪声的法国历史档案。问题经常横跨议会辩论与报刊，既要找相关材料，也要保留可检查的来源路径。只看最终回答是否正确，会把模型已有知识和真正找到了证据混在一起；对历史研究者而言，返回哪些文献以及为什么返回，本身就是任务结果。作者因此把评价对象放在文档发现，而非生成答案的流畅度上。\n\n语料有两个特别约束。首先，同一实体在 OCR 文本中的拼写可能受损，纯向量检索和纯词法检索都会遗漏材料。其次，不同子语料规模不均，如果把所有结果共用一个截断上限，较小的报刊集合可能被大量议会材料挤出候选池。正文回放发现，BM25 与稠密检索的 top-20 集合平均 Jaccard 仅 0.19，融合找回的金标文档有 28.8% 只能由其中一路命中；融合召回 78.9%，较好的单路为 70.1%。这直接支持先做互补召回，再让智能体判读证据。\n\n框架沿用问题分解、ReAct 式交替检索与观察、倒数排名融合等成熟机制，贡献在于围绕语料边界、可追溯判断与重新规划组织这些组件。它没有声称提出新的基础模型，也不需要为该语料微调模型。\n\n## 2. 方法详解\n\n规划器首先用一次 LLM 调用，把原问题拆成有限个子问题。每个子问题记录文本、目标子语料和实体；提示要求覆盖原问题含义、一个子问题只指定一种子语料，并保留实体的原语言表面形式。跨语料问题因此产生多条有明确去向的检索路径。这个目标子语料约束只用于初始候选分配，后续探索仍允许跨库追踪线索。\n\n热启动阶段融合 BM25、稠密向量和日期检索。每一路先按片段打分，再把同一父文档的片段分数取最大值，使长文档不会凭片段数量多次占位；之后用 RRF 合并，常数为 60，即各路名次通过 1/(60+名次) 累加形成排序信号。日期通道仅在子问题包含可解析日期时启用，按时间距离指数衰减。候选截断在目标子语料内部执行，避免大库挤占小库。\n\n接下来进入有预算的智能体循环。可执行动作包括词法、语义、时间和精确子串搜索，以及审阅待处理片段。每次检索后必须审阅，不能连续搜索而不消化返回材料。审阅结果有三类：accept 表示可支持原始问题，记录至多 120 字符的理由，并对父文档去重；reject 只剔除当前片段，保留该文档其他片段的机会；hold 暂存尚无法确认的材料，等后续证据出现再评估。相关性始终对照原始问题，避免子问题过窄导致跨主题证据被提前丢弃。\n\n系统以五个槽位保存先前发现、问题分析、证据、缺口和下一步。每轮覆盖更新这些槽位，而不是不断累积原始对话；同时仅提供最近八条行动日志。模型以单次 JSON 输出返回 thought、action、args、memory_update，应用重新构造全部状态。重复查询、解析失败和空结果不计入有效动作预算，但连续两次相同检索会被强制终止。这一区别在实现时必须保留，否则无效调用可能无限消耗资源。\n\n时间搜索会在指定日期窗口两侧各扩展一天，边缘新增结果自动进入 hold，避免日期边界误差造成永久漏召回。子问题结束后，模型依据已接受证据和紧凑记忆重新审阅暂存项，然后生成包含事实、日期、实体、缺口和检索提示的简报。后续子问题通过简报获得上下文，重规划器可修改或增加未执行任务，但总数受上限约束。\n\n所有路径结束后，同一文档被不同子问题接受的次数成为第一排序依据。系统先按确认次数分组，再仅在组内有多个文档时，利用先前记录的接受理由进行 LLM 重排；单个文档的组直接通过。这里的确认次数是启发式证据，不能当成独立概率，因为不同路径仍由同一规划器和模型产生。\n\n实验使用 DeepSeek-V4-Flash 与 Qwen3-Embedding-8B；另比较 DeepSeek-V3.2。因为不训练，没有可复现的优化器、训练 batch size 或训练步数可填。真正需要固定的是分块、模型版本、提示、动作预算与子问题上限；正文未给出所有预算常数的具体值，复现时应进一步查开源配置，而不是凭空补写。\n\n## 3. 核心技术贡献\n\n第一，语料定向分解把跨库需求落实到初始候选预算。它不只改写查询，还改变不同数据来源获得召回机会的方式。累积消融中，单独加入分解使整体 R@10 从 0.688 到 0.777，是最大的一步提升，说明结构化任务分配比继续扩大无方向搜索更有价值。\n\n第二，显式接受、拒绝、暂存机制把不确定性保存在状态里。特别是拒绝片段不拒绝整篇文档，适合信息分散在不同位置的长文；暂存项则可以利用后来发现的实体关系重新判断。最终加入 hold 与复审使 R@10 从 0.851 到 0.856，增益较小，不能把它包装成主要效果来源。\n\n第三，系统将证据理由复用于最后排序，既降低重复阅读成本，也保留文档进入结果集的依据。确认次数优先、同次数才调用重排器的设计，使额外模型调用取决于并列组数。论文尚未通过用户研究证明这条审计路径确实提升专家信任，因此应把可追溯结构与已经验证的业务价值区分开。\n\n## 4. 实验结果分析\n\n数据集含 3,386 篇文档，分成 5,664 个不重叠片段，每段最多 1,000 个空格分隔 token；共 1,752 个问题，其中单跳 889、多跳综合 529、桥接实体 142、对比 192。所有系统共享文档、分块与适用的模型设置。论文的 MRR 对每个金标文档的倒数名次求平均，与只看第一个正确结果的常见定义不同，横向引用时必须说明。\n\n| 系统 | 整体 R@10 | 整体多金标 MRR |\n| --- | ---: | ---: |\n| BM25 | 0.643 | 0.467 |\n| Dense retrieval | 0.734 | 0.535 |\n| HippoRAG 2 | 0.737 | 0.453 |\n| LinearRAG | 0.727 | 0.513 |\n| A-RAG | 0.385 | 0.211 |\n| MA-RAG | 0.586 | 0.356 |\n| TRACE | 0.856 | 0.653 |\n\nTRACE 相对稠密检索的 R@10 增加 0.122，即 12.2 个百分点；这不是 CTR 的提升。对比类问题中，TRACE 为 0.674，稠密检索为 0.302，表明跨来源组织的价值更集中在复杂查询。图方法没有恢复其在其他基准上的优势：HippoRAG 2 与 LinearRAG 的 top-10 分别平均与稠密检索重叠 7.1 和 6.7 篇，新增命中与丢失大致相抵，说明 OCR 与领域结构会改变图索引的有效性。\n\n累积消融依次为：基础智能体 0.688，加入分解 0.777，加入记忆与重规划 0.801，加入热启动 0.851，加入暂存复审 0.856。对应增量是 8.9、2.4、5.0、0.5 个百分点。这是按固定顺序累加，不是独立组件因果效应；组件相互依赖，不能把四个数字理解为任意顺序都能获得的固定收益。局部结果也并非全部单调，例如最后一项使对比类 R@10 从 0.695 降为 0.674。\n\n模型选择体现精确率和召回率取舍。V3.2 的整体 R@10 为 0.884，接受集合精确率仅 0.238，每题平均接受 10.4 篇；V4-Flash 分别为 0.856、0.393 和 7.0 篇。更高召回意味着研究者要读更多材料，不宜单凭一个指标宣布某模型全面更好。\n\n失误归因进一步显示：82.6% 的漏失发生在智能体循环内，17.4% 是已接受但最终排在十名之外。循环内，被检出后误拒绝占全部漏失的 36.8%，从未检出占 36.5%，暂存后未提升占 9.3%。因此下一步优化应同时关注相关性判断和检索覆盖，而不是只更换 embedding。\n\n比较也有局限：A-RAG 与 MA-RAG 本来不输出文档排名，作者按发现顺序排序进行比较，这对它们不利。论文另报不依赖排序的接受集合精确率和召回率，TRACE 仍领先，但排名协议的不对称不能省略。\n\n## 5. 局限与未来方向\n\n作者明确列出：测试只覆盖 1887 年法国档案，其他语言、年代和文体尚待验证；提示中部分议会与报刊关系属于特定领域假设；动作预算、子问题数、记忆大小和时间扩展常数在该语料开发时固定，换域可能不适用。规划器偶尔把多跳问题缩为单个子问题，18 个这样的案例有 13 个失败，约 72%，显著高于文中引用的 20% 基准失败率。\n\n部署只是 DECIDON 内部原型，向六个机构的 24 名研究者开放，支持过数百次探索查询，不能等同于生产规模验收。可追溯信息能否降低阅读与核验负担，还没有系统用户实验。作者计划加入专家对分解、暂存和最终证据集的检查点，并扩大延迟、成本和用户工作量评估。\n\n本报告额外提醒：缺少多次随机运行的不确定性报告，也缺少社区短文本、实时更新和点击行为验证。知识密集的历史研究与移动端快速搜帖具有不同的延迟容忍度，结果迁移需要重新建立评价集。\n\n## 6. 工业实践意义\n\n可先在社区复杂搜索的异步研究入口试用三个设计：按帖子、问答与评论划分初始召回预算；保存逐步接受理由与原文链接；让后续证据触发暂存结果复审。评估应同时覆盖文档召回、nDCG、证据引用正确率和最终任务成功，线上再观察 CTR 与满意度。论文没有在线 A/B 数据，所以不能给出预期点击提升。\n\n成本便宜不代表响应快。全文报告 V4-Flash 在全部问题上消耗 177.6M 输入、39.7M 输出 token，实验时价格约 36 美元，平均每题约 0.02 美元；200 题计时样本平均每题 33.8 次 LLM 调用，模型时间 169 秒，97.8% 的墙钟时间用于等待服务。八题并发后的每题 22 秒是批处理摊销吞吐，不能误称为单个用户请求的响应延迟。\n\n因此社区搜索主链路可只借鉴分库预算、证据状态和紧凑记忆，把完整多步循环放在复杂问题的后台研究任务。对本地部署，作者在 RTX PRO 6000 上的初步测试发现小模型仍存在规划与结构化输出稳定性问题，未报告足够的数据来推算显存或吞吐；工程选型应先跑真实负载。只有在业务需要跨帖证据整合、且能接受多次模型调用时，完整 TRACE 才值得进入试点。",
+        "content_html": "<h1>TRACE：把多步检索做成可追溯的证据发现流程</h1>\n<p>原文：<a href=\"https://arxiv.org/html/2609.19897\" target=\"_blank\" rel=\"noopener\">TRACE: Accountable Agentic Retrieval for Source Discovery in Digital Archives</a>。以下依据论文正文第 3–6 节和表 1–3；工业迁移建议为本报告分析，不是作者已经完成的社区搜索实验。</p>\n<h2>1. 问题与动机</h2>\n<p>TRACE 处理的是带 OCR 噪声的法国历史档案。问题经常横跨议会辩论与报刊，既要找相关材料，也要保留可检查的来源路径。只看最终回答是否正确，会把模型已有知识和真正找到了证据混在一起；对历史研究者而言，返回哪些文献以及为什么返回，本身就是任务结果。作者因此把评价对象放在文档发现，而非生成答案的流畅度上。</p>\n<p>语料有两个特别约束。首先，同一实体在 OCR 文本中的拼写可能受损，纯向量检索和纯词法检索都会遗漏材料。其次，不同子语料规模不均，如果把所有结果共用一个截断上限，较小的报刊集合可能被大量议会材料挤出候选池。正文回放发现，BM25 与稠密检索的 top-20 集合平均 Jaccard 仅 0.19，融合找回的金标文档有 28.8% 只能由其中一路命中；融合召回 78.9%，较好的单路为 70.1%。这直接支持先做互补召回，再让智能体判读证据。</p>\n<p>框架沿用问题分解、ReAct 式交替检索与观察、倒数排名融合等成熟机制，贡献在于围绕语料边界、可追溯判断与重新规划组织这些组件。它没有声称提出新的基础模型，也不需要为该语料微调模型。</p>\n<h2>2. 方法详解</h2>\n<p>规划器首先用一次 LLM 调用，把原问题拆成有限个子问题。每个子问题记录文本、目标子语料和实体；提示要求覆盖原问题含义、一个子问题只指定一种子语料，并保留实体的原语言表面形式。跨语料问题因此产生多条有明确去向的检索路径。这个目标子语料约束只用于初始候选分配，后续探索仍允许跨库追踪线索。</p>\n<p>热启动阶段融合 BM25、稠密向量和日期检索。每一路先按片段打分，再把同一父文档的片段分数取最大值，使长文档不会凭片段数量多次占位；之后用 RRF 合并，常数为 60，即各路名次通过 1/(60+名次) 累加形成排序信号。日期通道仅在子问题包含可解析日期时启用，按时间距离指数衰减。候选截断在目标子语料内部执行，避免大库挤占小库。</p>\n<p>接下来进入有预算的智能体循环。可执行动作包括词法、语义、时间和精确子串搜索，以及审阅待处理片段。每次检索后必须审阅，不能连续搜索而不消化返回材料。审阅结果有三类：accept 表示可支持原始问题，记录至多 120 字符的理由，并对父文档去重；reject 只剔除当前片段，保留该文档其他片段的机会；hold 暂存尚无法确认的材料，等后续证据出现再评估。相关性始终对照原始问题，避免子问题过窄导致跨主题证据被提前丢弃。</p>\n<p>系统以五个槽位保存先前发现、问题分析、证据、缺口和下一步。每轮覆盖更新这些槽位，而不是不断累积原始对话；同时仅提供最近八条行动日志。模型以单次 JSON 输出返回 thought、action、args、memory_update，应用重新构造全部状态。重复查询、解析失败和空结果不计入有效动作预算，但连续两次相同检索会被强制终止。这一区别在实现时必须保留，否则无效调用可能无限消耗资源。</p>\n<p>时间搜索会在指定日期窗口两侧各扩展一天，边缘新增结果自动进入 hold，避免日期边界误差造成永久漏召回。子问题结束后，模型依据已接受证据和紧凑记忆重新审阅暂存项，然后生成包含事实、日期、实体、缺口和检索提示的简报。后续子问题通过简报获得上下文，重规划器可修改或增加未执行任务，但总数受上限约束。</p>\n<p>所有路径结束后，同一文档被不同子问题接受的次数成为第一排序依据。系统先按确认次数分组，再仅在组内有多个文档时，利用先前记录的接受理由进行 LLM 重排；单个文档的组直接通过。这里的确认次数是启发式证据，不能当成独立概率，因为不同路径仍由同一规划器和模型产生。</p>\n<p>实验使用 DeepSeek-V4-Flash 与 Qwen3-Embedding-8B；另比较 DeepSeek-V3.2。因为不训练，没有可复现的优化器、训练 batch size 或训练步数可填。真正需要固定的是分块、模型版本、提示、动作预算与子问题上限；正文未给出所有预算常数的具体值，复现时应进一步查开源配置，而不是凭空补写。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，语料定向分解把跨库需求落实到初始候选预算。它不只改写查询，还改变不同数据来源获得召回机会的方式。累积消融中，单独加入分解使整体 R@10 从 0.688 到 0.777，是最大的一步提升，说明结构化任务分配比继续扩大无方向搜索更有价值。</p>\n<p>第二，显式接受、拒绝、暂存机制把不确定性保存在状态里。特别是拒绝片段不拒绝整篇文档，适合信息分散在不同位置的长文；暂存项则可以利用后来发现的实体关系重新判断。最终加入 hold 与复审使 R@10 从 0.851 到 0.856，增益较小，不能把它包装成主要效果来源。</p>\n<p>第三，系统将证据理由复用于最后排序，既降低重复阅读成本，也保留文档进入结果集的依据。确认次数优先、同次数才调用重排器的设计，使额外模型调用取决于并列组数。论文尚未通过用户研究证明这条审计路径确实提升专家信任，因此应把可追溯结构与已经验证的业务价值区分开。</p>\n<h2>4. 实验结果分析</h2>\n<p>数据集含 3,386 篇文档，分成 5,664 个不重叠片段，每段最多 1,000 个空格分隔 token；共 1,752 个问题，其中单跳 889、多跳综合 529、桥接实体 142、对比 192。所有系统共享文档、分块与适用的模型设置。论文的 MRR 对每个金标文档的倒数名次求平均，与只看第一个正确结果的常见定义不同，横向引用时必须说明。</p>\n<table><thead><tr><th>系统</th><th>整体 R@10</th><th>整体多金标 MRR</th></tr></thead><tbody><tr><td>BM25</td><td>0.643</td><td>0.467</td></tr><tr><td>Dense retrieval</td><td>0.734</td><td>0.535</td></tr><tr><td>HippoRAG 2</td><td>0.737</td><td>0.453</td></tr><tr><td>LinearRAG</td><td>0.727</td><td>0.513</td></tr><tr><td>A-RAG</td><td>0.385</td><td>0.211</td></tr><tr><td>MA-RAG</td><td>0.586</td><td>0.356</td></tr><tr><td>TRACE</td><td>0.856</td><td>0.653</td></tr></tbody></table>\n<p>TRACE 相对稠密检索的 R@10 增加 0.122，即 12.2 个百分点；这不是 CTR 的提升。对比类问题中，TRACE 为 0.674，稠密检索为 0.302，表明跨来源组织的价值更集中在复杂查询。图方法没有恢复其在其他基准上的优势：HippoRAG 2 与 LinearRAG 的 top-10 分别平均与稠密检索重叠 7.1 和 6.7 篇，新增命中与丢失大致相抵，说明 OCR 与领域结构会改变图索引的有效性。</p>\n<p>累积消融依次为：基础智能体 0.688，加入分解 0.777，加入记忆与重规划 0.801，加入热启动 0.851，加入暂存复审 0.856。对应增量是 8.9、2.4、5.0、0.5 个百分点。这是按固定顺序累加，不是独立组件因果效应；组件相互依赖，不能把四个数字理解为任意顺序都能获得的固定收益。局部结果也并非全部单调，例如最后一项使对比类 R@10 从 0.695 降为 0.674。</p>\n<p>模型选择体现精确率和召回率取舍。V3.2 的整体 R@10 为 0.884，接受集合精确率仅 0.238，每题平均接受 10.4 篇；V4-Flash 分别为 0.856、0.393 和 7.0 篇。更高召回意味着研究者要读更多材料，不宜单凭一个指标宣布某模型全面更好。</p>\n<p>失误归因进一步显示：82.6% 的漏失发生在智能体循环内，17.4% 是已接受但最终排在十名之外。循环内，被检出后误拒绝占全部漏失的 36.8%，从未检出占 36.5%，暂存后未提升占 9.3%。因此下一步优化应同时关注相关性判断和检索覆盖，而不是只更换 embedding。</p>\n<p>比较也有局限：A-RAG 与 MA-RAG 本来不输出文档排名，作者按发现顺序排序进行比较，这对它们不利。论文另报不依赖排序的接受集合精确率和召回率，TRACE 仍领先，但排名协议的不对称不能省略。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出：测试只覆盖 1887 年法国档案，其他语言、年代和文体尚待验证；提示中部分议会与报刊关系属于特定领域假设；动作预算、子问题数、记忆大小和时间扩展常数在该语料开发时固定，换域可能不适用。规划器偶尔把多跳问题缩为单个子问题，18 个这样的案例有 13 个失败，约 72%，显著高于文中引用的 20% 基准失败率。</p>\n<p>部署只是 DECIDON 内部原型，向六个机构的 24 名研究者开放，支持过数百次探索查询，不能等同于生产规模验收。可追溯信息能否降低阅读与核验负担，还没有系统用户实验。作者计划加入专家对分解、暂存和最终证据集的检查点，并扩大延迟、成本和用户工作量评估。</p>\n<p>本报告额外提醒：缺少多次随机运行的不确定性报告，也缺少社区短文本、实时更新和点击行为验证。知识密集的历史研究与移动端快速搜帖具有不同的延迟容忍度，结果迁移需要重新建立评价集。</p>\n<h2>6. 工业实践意义</h2>\n<p>可先在社区复杂搜索的异步研究入口试用三个设计：按帖子、问答与评论划分初始召回预算；保存逐步接受理由与原文链接；让后续证据触发暂存结果复审。评估应同时覆盖文档召回、nDCG、证据引用正确率和最终任务成功，线上再观察 CTR 与满意度。论文没有在线 A/B 数据，所以不能给出预期点击提升。</p>\n<p>成本便宜不代表响应快。全文报告 V4-Flash 在全部问题上消耗 177.6M 输入、39.7M 输出 token，实验时价格约 36 美元，平均每题约 0.02 美元；200 题计时样本平均每题 33.8 次 LLM 调用，模型时间 169 秒，97.8% 的墙钟时间用于等待服务。八题并发后的每题 22 秒是批处理摊销吞吐，不能误称为单个用户请求的响应延迟。</p>\n<p>因此社区搜索主链路可只借鉴分库预算、证据状态和紧凑记忆，把完整多步循环放在复杂问题的后台研究任务。对本地部署，作者在 RTX PRO 6000 上的初步测试发现小模型仍存在规划与结构化输出稳定性问题，未报告足够的数据来推算显存或吞吐；工程选型应先跑真实负载。只有在业务需要跨帖证据整合、且能接受多次模型调用时，完整 TRACE 才值得进入试点。</p>"
+      }
+    },
+    {
+      "id": "arxiv:2609.19244",
+      "title": "Characterizing Web Search by Conversational LLM Agents: From Search Decisions and Strategies to Results and Responses",
+      "authors": "Amani, Mahsa, Lee, Seungeon, Dash, Abhisek, Fraihi, Asmaa El, Jang, Yunah, Kirsten, Elisabeth, Wu, Qinyuan, Gummadi, Krishna P., Gupta, Manish, Ravichander, Abhilasha, Zafar, Muhammad Bilal, Das, Soumi",
+      "abstract": "Conversational LLM agents increasingly rely on Web search, yet the end-to-end lifecycle of agentic search remains poorly understood. We present the first study of Web search across four major conversational platforms (ChatGPT, Claude, Grok, and DeepSeek), combining real-world user interactions (invivo) with controlled experiments using the same platform's models by their APIs (invitro). We investigate the quality of agentic decisions to invoke Web search, their strategies to formulate queries, the potential domain preferences in the search results they receive, and the choices they make when transforming search results into grounded responses. We find that Web-search decisions vary substantially across platforms and models, while more frequent Web-search invocation does not necessarily yield better response quality. We further show that conversational agents employ different complex querying strategies and that platform specific search engines return search results from their preferred domains. Finally, although responses are largely grounded in search results, some claims rely on uncited search results, raising concerns about attribution and reliability. Our findings have important implications for the design of future AI agents and Web search tools optimized for conversational retrieval.",
+      "url": "https://arxiv.org/abs/2609.19244",
+      "source": "web_search",
+      "published": "2026-09-16",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "MPI-SWS",
+        "Saarland University",
+        "LIX",
+        "Seoul National University",
+        "Ruhr University Bochum",
+        "Microsoft"
+      ],
+      "summary": "研究结合真实交互和受控 API 实验，分析四类会话平台从搜索决策、查询改写到引用回答的完整过程。同一组 1,000 个输入中，GPT 触发搜索 140 次，Claude 触发 825 次，但更多调用不必然带来更优回答；跨平台仍有约 15%–20% 的声明未获得证据支持，揭示调用次数与证据质量的差别。",
+      "key_insight": "社区搜索应把是否检索、如何改写、召回来源分布和回答引用分开评估，再关联到任务完成与点击反馈。可以记录未被引用却实际使用的帖子，检查来源偏好是否压制长尾 UGC；本文主要是观察与受控对照，模型和平台版本会影响结果，不宜将触发率当成通用优化目标。",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.05,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.15,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.19244",
+        "https://arxiv.org/html/2609.19244"
+      ],
+      "rank": 2
+    },
+    {
+      "id": "arxiv:2609.19680",
+      "title": "FINSKILLOPS: A Self-Evolving Multi-Agent System for SEC Filing QA",
+      "authors": "Ma, Yanzhang, Tai, Zhenghan, Wu, Hanwei, Guan, Sizhe, Lei, Jianliang, He, Hailin, Jiang, Chaolong, Chi, Jijun, Kwok, Tung Sum Thomas, Xiao, Bohuai, Tian, Jingrui, Wu, Xinlu, Zhan, Xingao, Lu, Peng, Li, Muzhi, Wu, Yihong, Ma, Liheng, Lyu, Sicheng, Yan, Tianshuo, Zhu, Junhao, Xu, Yaqian, Ding, Lei, Cui, Yufei, Liu, Ziquan, Han, Boyu, Liu, Hengli, Zhou, Ling, Wang, Xinyu",
+      "abstract": "Financial QA systems are typically improved before deployment through better retrieval, prompting, or agent coordination, leaving their reliability behavior fixed thereafter. In practice, new SEC-filing questions repeatedly expose heterogeneous errors in period, entity, evidence use, and calculation. Existing self-improvement methods can turn failures into new behaviors, but offer limited control over where a correction should apply or which previously correct answers it may break. We therefore frame post-deployment improvement as controlled behavioral maintenance: recurring failures should become scoped skill patches, and each patch should earn deployment with- out introducing regressions. We instantiate this view in FINSKILLOPS, a multi-agent system for SEC filing QA. FINSKILLOPS derives reusable skills from evidence-grounded, typed failure diagnoses and governs them through targeted validation, protected-case regression checks, negative controls, and versioned replacement or retirement. Across six financial QA benchmarks, a single frozen skill registry achieves the highest verdict-weighted correctness and reference consistency among the evaluated systems. Evolved skills raise correctness from 3.70 to 4.55 on our enhanced benchmark. In a separate 12-round operational study, only six of 33 proposed skills are promoted, while the monitoring non-correct rate falls from 20.0% to 12.5%. These results establish controlled skill scope, admission, and lifecycle management as the foundation for reliable self-improvement.",
+      "url": "https://arxiv.org/abs/2609.19680",
+      "source": "web_search",
+      "published": "2026-09-17",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "SimpleWay.AI",
+        "McGill",
+        "University of Toronto",
+        "UCLA",
+        "CUHK",
+        "University of Manitoba",
+        "Université de Montréal",
+        "Mila",
+        "McMaster",
+        "Harvard",
+        "Monash",
+        "HKU",
+        "Stanford",
+        "QMUL",
+        "UE Capital",
+        "CG Matrix"
+      ],
+      "summary": "FINSKILLOPS 将部署后的问答改进视为受控技能维护：从有证据的错误诊断生成局部技能，再经过定向验证、保护样本回归、负对照和版本管理。系统在 6 个金融问答基准评估，增强基准正确性评分从 3.70 升至 4.55；12 轮运行中仅接纳 33 个建议中的 6 个，不正确率从 20.0% 降到 12.5%。",
+      "key_insight": "社区搜索的自动纠错应限定技能适用的意图、时间和实体范围，避免修好一种问法却破坏其他正确查询。可维护包含高频查询、长尾问答与跨帖证据的保护集，让新技能通过回归后才上线，并支持替换或退出；金融问答的评分提升仍需在社区语料与真实点击反馈上单独验证。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.1,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.19680",
+        "https://arxiv.org/html/2609.19680"
+      ],
+      "rank": 3
+    },
+    {
+      "id": "arxiv:2609.20082",
+      "title": "MATCH: Model-Aware Tool Learning with Curriculum Scheduling and Hierarchically Gated Rewards",
+      "authors": "Liu, Shihao, Yin, Hao, Liu, Lijun, Chen, Zhengzong, Zhao, Yuanyuan, Huang, Fei",
+      "abstract": "Tool learning enables large language models (LLMs) to use external tools for tasks beyond parametric knowledge. Reinforcement learning can optimize tool-call behavior from feedback, but current methods still face two problems: fixed-threshold curricula can become misaligned with the policy's evolving capability boundary, and additive rewards can leak argument-level credit when the predicted tool is wrong. To address these problems, we propose MATCH, a closed-loop framework for model-aware tool learning with curriculum scheduling and hierarchically gated rewards. Model-Aware Curriculum Learning (MACL) maintains reward-derived sample difficulty that co-evolves with the policy, and each epoch selects samples near the current capability boundary together with a top-k pool of harder cases. Hierarchical Tool-call Gated Reward (HTGR) scores tool name, argument key, and argument value as a gated chain, granting credit at each level only when prerequisites hold. The same HTGR rewards drive both GRPO updates and MACL's difficulty refresh, closing the loop between policy optimization and sample scheduling. On API-Bank and BFCL V3, MATCH reaches 72.19% and 62.87% overall accuracy, outperforming the main supervised and RL-based baselines. Backbone experiments further show consistent improvements across four backbones from two model families.",
+      "url": "https://arxiv.org/abs/2609.20082",
+      "source": "web_search",
+      "published": "2026-09-17",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "UCAS",
+        "Honor"
+      ],
+      "summary": "MATCH 针对工具学习课程难度失配，以及选错工具仍获得参数奖励的问题，把动态课程与层级门控奖励闭环结合。只有工具名正确才评估参数键，前序条件成立后才奖励参数值；在 API-Bank 和 BFCL V3 上总体准确率分别达到 72.19% 与 62.87%，并在两个模型家族的四个基座上验证。",
+      "key_insight": "为搜索智能体训练检索、过滤和重排调用时，可按工具选择、字段选择、参数内容逐级奖励，避免模型凭部分参数碰巧正确获得高分。课程应随当前错误分布调整，并保留难例；迁移到社区 UGC 后，还需为过滤条件与用户意图一致性增加验证，单纯 API 调用准确不代表 nDCG 或 CTR 改善。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.75,
+      "preference_bonus": 0.26,
+      "adjusted_score": 4.01,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.20082",
+        "https://arxiv.org/html/2609.20082"
+      ],
+      "rank": 4
+    },
+    {
+      "id": "arxiv:2609.19425",
+      "title": "Closed-World Resolution Against Tool Hallucination in LLM Agents",
+      "authors": "Iyer, Laxmipriya Ganesh",
+      "abstract": "Tool-augmented large language model (LLM) agents fail in a way no tool-selection or tool-security method addresses: they call tools that do not exist and pass arguments no schema declares. Existing defenses either pick the right tool (selection) or constrain what an agent may do with real tools (gating), both of which presuppose the emitted call refers to a real tool at all. We show this is a structural blind spot: a hallucinated call is by construction not a decision any gate made, so no gate can reject it. This paper is primarily a measurement and benchmark study. We give a five-class taxonomy of tool hallucination (H1-H5) and, as a reference point, the Resolution Rung: a training-free, closed-world resolver (registry membership plus a signature check) whose interest is where it must sit, not what it computes. We prove hallucination defense must precede any causal gate, and characterize the one irreducible residue (borrowed arguments schema-indistinguishable from a valid call). Across ten hosted models under two invocation surfaces we measure 322 genuine hallucinations; fabricated-tool calls concentrate on the unconstrained raw-JSON surface (34 vs. 3), and model scale does not help (a 675B model matches a 7-8B one). We then extend to the Model Context Protocol, where merging several servers into one namespace creates hallucination surfaces a single registry cannot express (a second taxonomy, M1-M5); on the live MCP surface we measure 154 hallucinations, including from frontier models that were clean on the single-registry surface, because collisions and shadowing are structural to the merge. We release the versioned Hallucinated-Tools Benchmark (HTB) so any resolver is comparable across submissions.",
+      "url": "https://arxiv.org/abs/2609.19425",
+      "source": "web_search",
+      "published": "2026-09-16",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [],
+      "summary": "论文研究智能体调用不存在的工具、传递未声明参数的结构性错误，并提出在执行权限判断前进行注册表和签名解析。10 个托管模型的两种调用界面共出现 322 次真实工具幻觉，虚构工具在原始 JSON 界面为 34 次、受约束界面为 3 次；多服务器 MCP 测试另发现 154 次幻觉。",
+      "key_insight": "为社区搜索接入帖子检索、评论查询与重排工具时，可先校验完整工具命名空间和参数结构，再执行后续策略判断。该机制无需训练，适合以统一入口落地；不过结构合法的错误参数仍能通过，必须继续验证业务语义，并用任务成功率和失败调用率衡量效果，不能把签名通过等同于查询正确。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.9,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.0,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.19425",
+        "https://arxiv.org/html/2609.19425"
+      ],
+      "rank": 5
+    },
+    {
+      "id": "arxiv:2609.20784",
+      "title": "RetireOPD: Self-Retiring On-Policy Distillation for Agentic Reinforcement Learning",
+      "authors": "Yu, Yan, Lu, Zhengxi, Liu, Yizhou, Pan, Yichen, Wang, Aozhe, Chen, Qipeng, Yang, Hua, Zhang, Wenqi, Lu, Weiming, Chen, Qianglong, Shen, Yongliang",
+      "abstract": "Multi-turn agents trained with reinforcement learning (RL) receive a single scalar reward per trajectory, which motivates self on-policy distillation (OPD) to supply dense token-level supervision from a self-teacher with privileged task skills, letting a skill-free student internalize them. This recipe, however, is undermined by two findings in agentic tasks: privileged information alone does not always make a teacher reliable, and the benefit of teacher supervision is stage-dependent. We therefore propose RetireOPD (Self-Retiring On-Policy Distillation), which first optimizes a decoupled, skill-conditioned teacher with environment rewards and then trains a skill-free student jointly with RL and OPD. Rather than following a predefined distillation schedule, RetireOPD adopts Adaptive Retirement: the student drops the teacher on its own once their discrepancy stops shrinking and it reaches a target fraction of the teacher's success rate, after which training proceeds with RL alone. Across Qwen2.5 models from 1.5B to 7B, RetireOPD improves ALFWorld success rate over RL baseline by 14.1% to 18.8% and WebShop accuracy by 11.8% to 19.0%, and surpasses its own skill-conditioned teacher in every setting.",
+      "url": "https://arxiv.org/abs/2609.20784",
+      "source": "web_search",
+      "published": "2026-09-17",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "Zhejiang University",
+        "Alibaba"
+      ],
+      "summary": "RetireOPD 先用环境奖励训练具备任务技能的教师，再把强化学习与在线策略蒸馏结合训练无技能学生。当师生差距停止缩小且学生达到目标成功率比例时，自适应撤除教师；在 Qwen2.5 的 1.5B 至 7B 模型上，作者报告 ALFWorld 成功率增益 14.1%–18.8%、WebShop 准确率增益 11.8%–19.0%。",
+      "key_insight": "搜索智能体的教师轨迹可以缓解稀疏奖励，却也可能限制学生发现更好的工具调用路径。值得借鉴的是先验证教师的实际能力，再依据学习进展停止蒸馏；面向 UGC 检索需要重新定义可验证的证据奖励，并测量任务成功、调用预算与 nDCG，不能直接套用购物环境的提升幅度。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.75,
+      "preference_bonus": 0.22,
+      "adjusted_score": 3.97,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.20784",
+        "https://arxiv.org/html/2609.20784"
+      ],
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2609.02253",
+      "title": "APEx: Distillation of Agent Procedural Experience for Adaptive Deep Research Question Answering",
+      "authors": "Ding, Jie, Sun, Rui, Zhang, Xinyuan, Zhang, Zeyu, Liu, Xin",
+      "abstract": "Deep research agents augment large language models with external tools to answer complex, long-horizon questions through multi-turn reasoning. Learning from prior experience is crucial for continual improvement, yet existing methods either retrieve verbose task-specific traces that burden decision-making, or distill procedural skills that remain decoupled from downstream policy adaptation. We propose APEx, a hierarchical experience utilization framework that organizes interaction history into instance-level trajectory memories and category-level procedural skills, and couples them through a closed-loop architecture of Executor, Distiller, and Planner. The three modules are optimized via a three-stage alternating GRPO training paradigm, enabling reward-guided skill distillation rather than fixed-prompt generation. At test time, distilled skills serve as procedural priors for online Planner adaptation through skill-guided test-time reinforcement learning, allowing ground-truth-free self-improvement with skill-alignment regularization to prevent policy drift. Experiments on 7 benchmarks demonstrate that APEx achieves state-of-the-art performance, surpassing GPT-5.4 by 14.7 points and the strongest memory-augmented baseline by 3.0 points.",
+      "url": "https://arxiv.org/abs/2609.02253",
+      "source": "web_search",
+      "published": "2026-09-02",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "USTC",
+        "ByteDance",
+        "CAS"
+      ],
+      "summary": "APEx 针对深度研究智能体无法有效复用历史经验的问题，把实例轨迹和类别级程序技能分层组织，并让执行器、蒸馏器与规划器交替进行 GRPO 训练。测试时再以技能约束规划器适应，减少策略漂移；作者在 7 个基准上报告相对 GPT-5.4 高 14.7 分、相对最强记忆基线高 3.0 分。",
+      "key_insight": "社区复杂搜索可把反复出现的跨帖比较、条件拆解和证据补全流程提炼为技能，而非把整段旧对话直接塞进上下文。其可借鉴之处是用任务结果筛选技能并约束后续规划；三模块训练和测试时适应有额外成本，先离线复现，再比较固定技能库与动态适应的收益。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.19,
+      "adjusted_score": 3.84,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.02253",
+        "https://arxiv.org/html/2609.02253"
+      ],
+      "rank": 7
+    },
+    {
+      "id": "arxiv:2608.20627",
+      "title": "When Failures Propagate: Causal Failure Attribution in Agentic Retrieval-Augmented Generation",
+      "authors": "Pothuru, Lauren",
+      "abstract": "Agentic retrieval-augmented generation (RAG) interleaves retrieval, reasoning, and answer generation across multiple hops. A retrieval error at hop 1 can surface only as a wrong answer at hop 3, while later retrieval can also repair the trajectory. This paper introduces AgenticRAG-FP, an interventional benchmark for causal failure attribution in agentic RAG. The benchmark injects a certified fault at a specified hop, re-executes the downstream trajectory, and evaluates diagnosers against the known intervention. Its central question is whether a post-hoc trace still identifies the injected hop after the suffix changes. In the completed strict dense Claude Haiku 4.5 sweep on 80 three-hop MuSiQue questions, coverage-based diagnosis is 0.91 at hop 1 and 0.00 at hops 2 and 3 (n=43,36,21 failed trajectories). A smaller content-corruption study changes an answer-bearing or bridge fact in topically intact evidence. At depth 2, where 18 failed cases remain after filtering, coverage-based diagnosis is 0.00 and a frozen-hop counterfactual probe is 0.67 in an exploratory pooled comparison. Depth-3 content estimates are descriptive only because they contain three failed cases. These results make propagation depth an explicit evaluation axis for diagnosing agentic RAG failures while distinguishing broad evidence of post-hoc signal loss from small-sample method comparisons.",
+      "url": "https://arxiv.org/abs/2608.20627",
+      "source": "web_search",
+      "published": "2026-08-20",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "Anote"
+      ],
+      "summary": "AgenticRAG-FP 在指定检索跳注入已知故障，并重新执行后续轨迹，以检验最终日志能否定位最初错误。在 80 道三跳 MuSiQue 问题的严格实验中，覆盖率归因在第 1 跳为 0.91，第 2、3 跳均为 0；内容污染实验中，第 2 跳的冻结反事实探针为 0.67，但仅有 18 个失败样本。",
+      "key_insight": "社区搜索智能体的错误回答可能源于早期漏召回、事实污染或后续误读，仅凭最终答案无法定位责任。可保留逐跳查询、候选和状态快照，针对已知注入点重放，再分别衡量根因定位与回答修复；论文的小样本对照不能支持所有场景都能用反事实探针可靠纠错的结论。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "total_score": 3.7,
+      "preference_bonus": 0.07,
+      "adjusted_score": 3.77,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2608.20627",
+        "https://arxiv.org/html/2608.20627"
+      ],
+      "rank": 8
+    },
+    {
+      "id": "arxiv:2609.08248",
+      "title": "Agentic ML Exploration (A-MLE) for Ads Ranking",
+      "authors": "Gao, Erwin, Sunkara, Vinodh Kumar, Guan, Jingyi, Jia, Qinjin, Xu, Hangjun, Ji, Xiang, Wong, Sherman, Chavali, Surya Teja, Vaishnavi, Pratik, Pandhi, Aryan, Deng, Xiaoyu, Wang, Zhaodong, Inani, Samarth, Yang, Fan, Moberg, Jakob, Zu, Zoe, Bievre, Nicolas, Khenissi, Sami, Jaspal, Amit, Fakharizadi, Ehsan, Viswanathan, Srinidhi, Sun, Dorothy, Vanam, Abishek, Iyer, Sneha, Yadawad, Sheela, Chen, Wenjie, Nahum, Gaby, Gu, Junhua, Chu, Peter, Liu, Yucheng, Zhao, Xin, Cid, Vitor, Chen, Chaorong, Pappu, Vijay, Kumar, Ashwin, Chen, Wenlin, Schulte, Ben, Chandra, Deepak, Tewari, Ritwik",
+      "abstract": "Modern industrial ads ranking stacks are increasingly bottlenecked not by model capacity or training compute, but by the throughput of human ML iteration - the cycles of research, implementation, training, debugging, evaluation, and launch required to surface a single statistically significant improvement. A typical ranking stack contains numerous differentiated models with heterogeneous data, architectures, and infrastructure constraints, and each cycle takes days to weeks of senior engineer attention per model. As a result, techniques that have proven effective on one model diffuse into others slowly and unevenly, leaving substantial recoverable signal unexplored. We present Agentic ML Exploration (A-MLE), an autonomous LLM-agent system that systematically explores ML techniques across a portfolio of ads ranking models. A-MLE decomposes ML iteration into five stages involving hypothesis generation, exploration strategy, experiment execution, result analysis and shared knowledge substrate which are orchestrated by a single agent that invokes domain-specific skills and agentic workflows against a sandboxed execution layer, with human-in-the-loop checkpoints at each stage boundary. We deploy A-MLE across a representative set of large-scale ads ranking models and evaluate it along a tiered capability framework (tool availability, autonomous workflow execution, and open-ended exploration). We further report a controlled cross-LLM study using a fixed agent loop, which surfaces qualitative differences in execution reliability and exploration aggressiveness across the Claude Sonnet, Gemini, and GPT families. We discuss failure modes and the design choices that govern reliability. Our findings suggest that agentic exploration is a practical force multiplier for ML engineers in industrial recommenders, especially for the long tail of models that rarely receive expert attention.",
+      "url": "https://arxiv.org/abs/2609.08248",
+      "source": "web_search",
+      "published": "2026-09-08",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "Meta"
+      ],
+      "summary": "A-MLE 用单个工具型智能体串联广告排序的假设生成、实验规划、执行、分析与知识复用，在阶段边界保留工程师检查。领域技能使基础操作准确率达到 68%，通用 ML 智能体仅 16%；多源探索在实验模型上使离线回归误差相对下降约 2.56%，训练 QPS 增加 0.42%，并非线上 CTR 提升。",
+      "key_insight": "社区搜索团队可先将基线配置、分桶评估、失败重试和负结果记录封装成受控工具，再让智能体探索排序实验。论文强调滚动基线和统计复核，适合减少重复调参劳动；其数据与平台依赖较重，部分吞吐结果只给定性描述，应将复现范围限定在现有训练和 nDCG 评估流程。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.07,
+      "adjusted_score": 3.62,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.08248",
+        "https://arxiv.org/html/2609.08248"
+      ],
+      "rank": 9
+    },
+    {
+      "id": "arxiv:2607.09493",
+      "title": "Shared Selective Persistent Memory for Agentic LLM Systems",
+      "authors": "Pedada, Sanjana, Dhavala, Aditya, Patil, Neelraj",
+      "abstract": "Agentic LLM systems that generate code through multi-turn tool use face a fundamental context problem: each session starts from zero, discarding the domain constraints, data schemas, tool configurations, and output preferences that made previous sessions productive. We introduce shared selective persistent memory, an architecture that retains four categories of reusable context - task specifications, data schemas, tool configurations, and output constraints - while discarding session-specific reasoning traces, and that packages them into workspaces transferable across users under role-based access control. The resulting cost curve is non-monotonic. In a controlled replication on four public datasets, where a formatting specification is established once and then withheld, no memory completes 0/12 trials at 3.8K input tokens, selective memory completes 12/12 at 3.9K, and full conversation history completes 8/12 at 7.7K. What is kept matters more than how much is kept: the winning configuration costs essentially what the failing one does, and twice as much context does not improve on it. Both differences from no memory survive Bonferroni-corrected exact McNemar tests (p = 0.0005, p = 0.008); the two memory conditions separate on price rather than completion. We implement this in a deployed platform where agents produce git-versioned artifacts from CSV, SQL, REST, and MCP sources. A complementary zero-token data refresh contract decouples generated programs from runtime data, firing on 12/12 trials at a median 0.08s with no model call, while summary-driven data representation costs 97-431x fewer tokens than raw injection. Across 24 recurring enterprise tasks selective memory completes 23/24 against 19/24 and 17/24, though at that sample no pairwise difference reaches significance.",
+      "url": "https://arxiv.org/abs/2607.09493",
+      "source": "web_search",
+      "published": "2026-07-10",
+      "discovered_at": "2026-09-21",
+      "source_type": "paper",
+      "company": [
+        "Apple"
+      ],
+      "summary": "该工作仅持久化任务约束、数据结构、工具配置和输出要求，丢弃会话推理轨迹，并支持工作区共享。9 月修订版在四个公开数据集上报告：选择性记忆以 3.9K 输入令牌完成 12/12 次任务，完整历史以 7.7K 完成 8/12；两种记忆的完成率差异不显著，主要优势在成本和上下文组织。",
+      "key_insight": "社区多轮搜索可保留明确的检索范围、时间条件与展示偏好，同时清理旧推理和临时证据，减少过期上下文牵引新查询。应区分稳定约束与实时帖子数据，并验证刷新路径；论文的样本较小，企业任务的成对差异未达显著，不能将 12/12 直接解释为长期可靠性或 CTR 保证。",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0.07,
+      "adjusted_score": 3.52,
+      "evidence_urls": [
+        "https://arxiv.org/abs/2607.09493",
+        "https://arxiv.org/html/2607.09493"
+      ],
+      "updated": "2026-09-15",
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:w3cj/jev-chat",
+      "title": "jev-chat: A tool calling chat bot built with Jev and no LLM.",
+      "authors": "w3cj",
+      "abstract": "A tool calling chat bot built with Jev and no LLM.",
+      "url": "https://github.com/w3cj/jev-chat",
+      "source": "github",
+      "published": "2026-09-18",
+      "discovered_at": "2026-09-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "w3cj/jev-chat",
+        "owner": "w3cj",
+        "description": "A tool calling chat bot built with Jev and no LLM.",
+        "created_at": "2026-09-18T21:09:21Z",
+        "updated_at": "2026-09-20",
+        "pushed_at": "2026-09-18",
+        "stargazers_count": 65,
+        "language": "TypeScript",
+        "topics": []
+      },
+      "description": "A tool calling chat bot built with Jev and no LLM.",
+      "language": "TypeScript",
+      "stars": 65,
+      "created_at": "2026-09-18",
+      "rank": 1
+    },
+    {
+      "id": "github:SAGAR-TAMANG/sarvam-jev",
+      "title": "sarvam-jev: Generation-free typed decisions on Indic LLMs. An open Jev-style inference engine on sarvam-1: constrained logit readout instead of autoregressive JSON. Runs client-side in the browser.",
+      "authors": "SAGAR-TAMANG",
+      "abstract": "Generation-free typed decisions on Indic LLMs. An open Jev-style inference engine on sarvam-1: constrained logit readout instead of autoregressive JSON. Runs client-side in the browser.",
+      "url": "https://github.com/SAGAR-TAMANG/sarvam-jev",
+      "source": "github",
+      "published": "2026-09-18",
+      "discovered_at": "2026-09-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "SAGAR-TAMANG/sarvam-jev",
+        "owner": "SAGAR-TAMANG",
+        "description": "Generation-free typed decisions on Indic LLMs. An open Jev-style inference engine on sarvam-1: constrained logit readout instead of autoregressive JSON. Runs client-side in the browser.",
+        "created_at": "2026-09-18T06:42:31Z",
+        "updated_at": "2026-09-20",
+        "pushed_at": "2026-09-18",
+        "stargazers_count": 34,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "Generation-free typed decisions on Indic LLMs. An open Jev-style inference engine on sarvam-1: constrained logit readout instead of autoregressive JSON. Runs client-side in the browser.",
+      "language": "Python",
+      "stars": 34,
+      "created_at": "2026-09-18",
+      "rank": 2
+    },
+    {
+      "id": "github:R0MADEV/lexis",
+      "title": "lexis: Lexical + structural code search MCP server for Claude Code, Cursor, Windsurf and any MCP client. Gives AI assistants 28 precise search tools so they find the right code fast 80% fewer tokens per task. No vectors, no embeddings, just ripgrep.",
+      "authors": "R0MADEV",
+      "abstract": "Lexical + structural code search MCP server for Claude Code, Cursor, Windsurf and any MCP client. Gives AI assistants 28 precise search tools so they find the right code fast 80% fewer tokens per task. No vectors, no embeddings, just ripgrep.",
+      "url": "https://github.com/R0MADEV/lexis",
+      "source": "github",
+      "published": "2026-05-03",
+      "discovered_at": "2026-09-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "R0MADEV/lexis",
+        "owner": "R0MADEV",
+        "description": "Lexical + structural code search MCP server for Claude Code, Cursor, Windsurf and any MCP client. Gives AI assistants 28 precise search tools so they find the right code fast 80% fewer tokens per task. No vectors, no embeddings, just ripgrep.",
+        "created_at": "2026-05-03T19:42:20Z",
+        "updated_at": "2026-09-20",
+        "pushed_at": "2026-09-20",
+        "stargazers_count": 29,
+        "language": "TypeScript",
+        "topics": []
+      },
+      "description": "Lexical + structural code search MCP server for Claude Code, Cursor, Windsurf and any MCP client. Gives AI assistants 28 precise search tools so they find the right code fast 80% fewer tokens per task. No vectors, no embeddings, just ripgrep.",
+      "language": "TypeScript",
+      "stars": 29,
+      "created_at": "2026-05-03",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 672,
+      "language": "model",
+      "created_at": "2026-09-14",
+      "updated_at": "2026-09-20",
+      "published": "2026-09-14",
+      "discovered_at": "2026-09-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 672,
+        "downloads": 183,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "rgba",
+          "text-to-image",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-09-14T03:47:26.000Z",
+        "last_modified": "2026-09-20T09:41:05.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:internlm/Intern-S1-Pro",
+      "title": "internlm/Intern-S1-Pro",
+      "authors": "internlm",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, interns1_pro, text-generation, image-text-to-text, conversational, custom_code, arxiv:2603.25040",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, interns1_pro, text-generation, image-text-to-text, conversational, custom_code, arxiv:2603.25040",
+      "url": "https://huggingface.co/internlm/Intern-S1-Pro",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 278,
+      "language": "model",
+      "created_at": "2026-02-02",
+      "updated_at": "2026-09-15",
+      "published": "2026-02-02",
+      "discovered_at": "2026-09-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Intern-S1-Pro",
+        "likes": 278,
+        "downloads": 2992,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "interns1_pro",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "custom_code",
+          "arxiv:2603.25040",
+          "arxiv:2508.15763",
+          "license:apache-2.0",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-02-02T15:05:12.000Z",
+        "last_modified": "2026-09-15T03:08:14.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:internlm/Atria-Dawn-Preview",
+      "title": "internlm/Atria-Dawn-Preview",
+      "authors": "internlm",
+      "description": "tags: safetensors, glm_moe_dsa, arxiv:2609.15818, zh, en, license:mit, region:us",
+      "abstract": "tags: safetensors, glm_moe_dsa, arxiv:2609.15818, zh, en, license:mit, region:us",
+      "url": "https://huggingface.co/internlm/Atria-Dawn-Preview",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 207,
+      "language": "model",
+      "created_at": "2026-09-11",
+      "updated_at": "2026-09-16",
+      "published": "2026-09-11",
+      "discovered_at": "2026-09-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Atria-Dawn-Preview",
+        "likes": 207,
+        "downloads": 895,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "glm_moe_dsa",
+          "arxiv:2609.15818",
+          "zh",
+          "en",
+          "license:mit",
+          "region:us"
+        ],
+        "created_at": "2026-09-11T08:27:05.000Z",
+        "last_modified": "2026-09-16T12:35:55.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_space:stepfun-ai/StepAudio-3-Music",
+      "title": "stepfun-ai/StepAudio-3-Music",
+      "authors": "stepfun-ai",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/stepfun-ai/StepAudio-3-Music",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 93,
+      "language": "space",
+      "created_at": "2026-09-13",
+      "updated_at": "2026-09-16",
+      "published": "2026-09-13",
+      "discovered_at": "2026-09-20",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "stepfun-ai/StepAudio-3-Music",
+        "likes": 93,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-09-13T01:02:58.000Z",
+        "last_modified": "2026-09-16T06:01:53.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_space:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 40,
+      "language": "space",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-20",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-20",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 40,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T10:15:59.000Z",
+        "last_modified": "2026-09-20T14:26:15.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "status": "gaps",
+    "core": true,
+    "industry_practice": true,
+    "recent_7_days": true,
+    "source_diversity": false,
+    "chinese_source": false
+  },
+  "warnings": [
+    "来源多样性未满足：入选论文全部来自 web_search 补充；未改写来源来满足配额。",
+    "爬虫使用 --days 3，网页补充按技能允许的 90 天窗口筛选；本次入选首次发表日期均早于 3 天，6 篇在近 7 天内。",
+    "中文行业来源已搜索，但相关美团条目被历史去重；本次无中文原始来源入选。",
+    "Semantic Scholar 限流、OpenReview 请求错误、DBLP 超时或解析失败；arXiv RSS 与 HF 近窗返回 0 篇。",
+    "爬虫日志的日期使用 UTC（2026-09-20），报告与去重使用上海本地日期（2026-09-21）。"
+  ],
+  "parameters": {
+    "track": "agentic",
+    "top": 10,
+    "days": 3,
+    "min_score": 3.0
+  },
+  "preference_method": "主题精确匹配最高权重×0.3；偏好维度>=4.5且该维度评分>=4的比例×0.1；总加分上限0.4。"
+}

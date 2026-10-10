@@ -1,0 +1,247 @@
+{
+  "date": "2026-06-23",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 351,
+    "papers_selected": 10,
+    "score_min": 3.3,
+    "score_max": 4.35
+  },
+  "papers": [
+    {
+      "id": "arxiv:2606.18947",
+      "title": "Decoupling Search from Reasoning: A Vendor-Agnostic Grounding Architecture for LLM Agents",
+      "url": "https://arxiv.org/abs/2606.18947",
+      "authors": "Emmanuel Aboah Boateng, Kyle MacDonald, Amardeep Kumar, Siddharth Kodwani, Sudeep Das",
+      "company": [
+        "DoorDash"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-17",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.35,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.5,
+      "summary": "生产环境的 LLM agent 依赖实时检索，但厂商原生的 search grounding 把检索策略、provider 选择、证据注入、成本、延迟和生成行为全部耦合在模型边界内，难以检查、调优、复用与迁移，还会触发 Search-Induced Verbosity 破坏输出格式约束。论文提出 DSG（Decoupled Search Grounding），用 MCP 兼容网关把 grounding 移出推理模型，把 provider 路由、source-aware 上下文渲染、fallback、检索深度控制与精确+语义缓存都做成一等公民控制项。在 5 个前沿模型、SimpleQA/FreshQA/HotpotQA 上：SimpleQA 准确率 86.1% 接近原生 87.7%，但检索成本降 91%、warm-cache 命中率 99.4%、延迟降 68%；在电商 query 理解（QIU）线上负载上检索成本降超 98%。",
+      "key_insight": "把实时 grounding 当成可优化的接口边界来设计、而不是模型自带的固定功能，这条思路对社区搜索很有价值：检索 provider、检索深度、证据渲染、缓存都能独立调优和 A/B，无需绑定单一模型厂商。精确+语义双层缓存把重复 query 的延迟与成本压到极低（99.4% warm-cache 命中），对高 QPS 的短文本搜索意味着可观的成本节省；source-aware 渲染还能避免检索内容把答案撑长，保住简洁输出契约。",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:2606.18947",
+        "title": "Decoupling Search from Reasoning: A Vendor-Agnostic Grounding Architecture for LLM Agents",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n生产环境的 LLM agent 越来越依赖实时检索来 grounding，但主流的 native search grounding（模型厂商把检索做成 provider-managed 的一体化特性）把检索策略、provider 选择、结果归一化、缓存、工具输出格式、迁移路径全部锁在模型-厂商边界内。作者把耦合带来的部署难题概括为四点：模型-厂商锁定、不透明延迟、固定成本结构，以及指令遵循退化——后者被命名为 Search-Induced Verbosity（检索诱发啰嗦）。量化证据：HotpotQA 上即便 prompt 明确要求\"只给最终答案实体\"，Claude Sonnet 4 的 native-search 运行有 78.1% 的预测以\"Based on the search results...\"开头；在 exact-match 失败样本里 62.3% 其实包含正确答案子串——答案是对的，却被解释性散文包裹而违反下游 parser 的 exact-match/JSON/boolean 契约。Figure 2 显示 native 响应中位长度比无检索长 27.1%（353 字符）、78.4% 是解释性输出，而 DSG 格式漂移为 0%（示例中 native 245 字符 vs DSG 答\"Yes\"仅 3 字符）。当 LLM 在自动化管线里只是中间节点、输出要被解析/分类/缓存/路由时，这种啰嗦是真实部署风险。\n\n## 2. 方法详解\n\nDSG（Decoupled Search Grounding）把 grounding 实现为一个 MCP 兼容网关，夹在 agentic 应用、可互换推理模型、provider-agnostic 检索后端之间，核心是\"可控边界本身\"：把 provider 策略、缓存复用、fallback、source-aware 上下文渲染外化为配置，推理模型保持可替换。三大组件：\n\n(1) Source-Aware Tool Formatting：用显式可配置的 tool schema 暴露检索；LLM 发出 search tool call 后，网关执行并把异构 provider 响应归一化成结构化内部 result object，把 snippet 与 source URL 配对，给模型显式 provenance 线索（哪条证据支持哪个判断），这些 URL 同时成为日志、调试、来源过滤、fallback 的可检视产物，保住了检索-生成的边界（而 provider-managed 的上下文流会把它压平）。\n\n(2) Provider Abstraction and Fallback：网关充当 grounding control plane，Provider Registry 把 Serper、BrightData、Firecrawl、Exa 等 agnostic provider 归一化；标准 HTTP provider 经 YAML adapter 接入（指定 endpoint、method、headers、请求模板、响应字段映射、能力、成本元数据），复杂 provider 用专用 adapter。provider 超时或报错时请求沿配置 fallback 链推进，瞬时故障不打断模型收到的 grounding 上下文。\n\n(3) Search Intelligence Layer：跨请求优化检索策略的分层决策（Algorithm 1: Cache-Gated Provider Execution）。设 q 为 query、q̄ 归一化形式、C={(q_i,R_i)} 为 provider 隔离的语义缓存、e(·) 为 embedding、p_1..p_k 为配置 fallback 链。决策 D(q)：q̄ 命中 exact cache 则返回 R_e；否则取语义最近邻 j*=argmax cos(e(q),e(q_j))，若 s_{j*}≥τ（可配阈值）返回 R_{j*}；否则走 fallback 链 S(p,q) 逐 provider 执行，命中后写回 exact+semantic 双缓存。关键设计：缓存条目用 provider-scoped key，避免一个 provider 的结果悄悄替换另一个；缓存带 provider+domain 级 TTL，时效敏感 query 快速过期、静态事实长期保留，从而在不牺牲新鲜度下维持高命中。缓存位于共享网关之后，一个应用检索的证据可被另一应用复用，warm-cache 命中率随流量汇聚而升。所有控制以配置而非代码表达，使单一 grounding 层可在多 agent/多推理模型上统一治理，无需重训或重写 prompt。\n\n## 3. 核心技术贡献\n\n论文自述三点：(1) grounding 的系统边界——把 search grounding 形式化为解耦、provider-agnostic 的层，让推理模型可互换，同时把检索策略、缓存、provider 选择暴露为显式系统控制；其价值不在新算法，而在\"把这个选择变成可控决策\"，provider 退化时能逐 query/逐应用归因 grounding 成本与延迟、检测回归。(2) search-intelligence 与标准化框架——用 MCP 兼容网关给 agent 稳定检索接口，把异构 provider 输出归一化成 source-aware context，并支持带配置 fallback 的 cache-gated 检索（Algorithm 1 的分层 cache 决策）。(3) 对行为/质量/运营的证据——识别并量化 native 特有的 Search-Induced Verbosity，展示结构化工具边界如何缓解它，并在公开 QA 与生产负载上量化 accuracy/cost/retrieval-depth/cache-reuse 权衡。相比 Self-RAG/FLARE/RARR/Adaptive-RAG/IRCoT 等\"检索-推理交互\"工作，DSG 的定位正交：它不改检索时机或推理过程，而是固定 grounding 接口、让推理模型可换，研究\"检索被嵌成不透明 provider 行为，还是被暴露成显式可控子系统\"。\n\n## 4. 实验结果分析\n\n评测覆盖 5 个前沿模型（GPT-4o、GPT-4o-mini、Gemini 2.5 Flash、Gemini 2.5 Pro、Claude Sonnet 4）、4 类基准：SimpleQA（短事实）、FreshQA（时效）、HotpotQA（多跳）、QIU（电商意图：Retail N=7988 / Tail Synthetic N=2335）。成本为 provider 侧每 1K query 检索成本（不含模型推理）；SimpleQA/FreshQA 用 GPT-4.1 做 LLM-as-judge（3-judge 验证 97.78% 一致），HotpotQA 用确定性 EM/F1。\n\n主表（accuracy / 每 1K query 成本）：\n- SimpleQA（5 模型均值）：No Search 30.8/$0；Native 87.7/$20.00；DSG+BrightData 86.1/$1.80；DSG+Serper 83.3/$0.67。DSG+BrightData 仅低 1.6 点、成本降 91%。\n- FreshQA：Native 72.6/$20.00；DSG+BrightData 68.0/$1.86；DSG+Serper 67.3/$0.66。这是 native 领先场景（时效敏感，native 紧耦合新鲜度/索引占优），作者据此主张\"freshness 主导时把 native 当 fallback 链里的一个 provider\"。\n- QIU Retail（Gemini Flash）：Native 93.40/$7.90；DSG+Serper 93.90/$0.110；DSG+BrightData 93.81/$0.238。DSG+Serper 反超 native 0.5 点、成本降约 98.6%。\n- QIU Tail（Gemini Flash）：Native 87.62/$10.37；DSG+Serper 87.79/$0.146。同样反超且成本降超 98%。注意 native baseline 是原生支持 Google Search grounding 的 Gemini Flash，用通用 provider 仍能持平/超越，说明外化控制可抵消紧耦合 native 的优势。\n\n运营控制（Figure 4）：检索深度可调——SimpleQA 准确率从 2 个结果到 4–6 个结果急升、6–10 饱和（\"practical sweet spot\"），把 grounding 变成可调预算旋钮。重复 query 缓存实验（GPT-4o + DSG+BrightData）：warm pass 命中率 99.4%，平均延迟从 cold 4,570ms 降到 warm 1,465ms（降 68%），边际检索成本从 cold $0.739（6.2% 命中）降到 warm $0.0045（99.4% 命中），近乎归零。\n\n## 5. 局限与未来方向\n\n作者明确列出三条局限：(1) 依赖第三方 API——解耦架构根本上依赖 Serper/BrightData/Firecrawl 等 vendor 的稳定性、延迟、数据质量；其定价、限流、索引行为变化会移动论文的 cost-accuracy Pareto 前沿，论文强调贡献是\"可控 grounding 接口与它暴露的运营前沿\"而非某个价格点。(2) 多跳推理受限——HotpotQA 上无论 native 还是 DSG，检索增强相对单跳事实（SimpleQA）只带来温和增益；DSG 的工具边界对\"可控检索\"最有效，复杂多跳可能需更紧的迭代循环（planning、reflection、重复证据获取），单纯解耦不够。(3) 评测方法——LLM-as-judge（GPT-4.1）对格式敏感可能有偏，用 3-judge 多数投票缓解，但人评仍是金标准。未来方向：用 provider 侧 telemetry 进一步隔离 Search-Induced Verbosity 的内部触发器、在边界加 contract-aware validator、在同一接口上学习自适应路由/检索深度/多跳策略。\n\n## 6. 工业实践意义\n\nDSG 已作为 DoorDash 的共享生产 grounding 层服务电商 QIU（多应用复用），早期版本获 2026 DoorDash AI Hackathon 工程卓越奖。对社区搜索（UGC 短文本）实践者的直接借鉴：\n\n- 把实时 grounding 当成可优化的接口边界而非模型自带功能：用一个 MCP/网关层统一管 provider 路由、检索深度、证据渲染、缓存，可独立 A/B 调优且不绑定单一模型厂商，更强推理模型出现时可热插拔。\n- 双层缓存（exact + provider-scoped semantic，带 domain/TTL）是高 QPS 短文本搜索降本提速的高杠杆点：99.4% warm-cache 命中把延迟降 68%、边际检索成本近乎归零；provider-scoped key + 差异化 TTL 避免缓存污染与时效失真，可直接落地。\n- source-aware 渲染 + 结构化 tool 边界能根治 Search-Induced Verbosity：当搜索结果要被下游 parser/排序/分类消费时，保持 answer-only 契约（DSG 0% 格式漂移 vs native 78.4% 解释性输出）能避免\"答案对但格式错\"的隐性故障。\n- 检索深度 4–6 的 sweet spot 提示：召回更多文档收益快速饱和，可据此设预算旋钮控成本。\n- 部署注意：强依赖第三方检索 API，需做好 fallback 链与 provider 退化监控；时效敏感场景（类似 FreshQA）native/紧耦合索引仍占优，应把它作为 fallback 链中的一个 provider 按需启用，而非全盘替换。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>生产环境的 LLM agent 越来越依赖实时检索来 grounding，但主流的 native search grounding（模型厂商把检索做成 provider-managed 的一体化特性）把检索策略、provider 选择、结果归一化、缓存、工具输出格式、迁移路径全部锁在模型-厂商边界内。作者把耦合带来的部署难题概括为四点：模型-厂商锁定、不透明延迟、固定成本结构，以及指令遵循退化——后者被命名为 Search-Induced Verbosity（检索诱发啰嗦）。量化证据：HotpotQA 上即便 prompt 明确要求&quot;只给最终答案实体&quot;，Claude Sonnet 4 的 native-search 运行有 78.1% 的预测以&quot;Based on the search results...&quot;开头；在 exact-match 失败样本里 62.3% 其实包含正确答案子串——答案是对的，却被解释性散文包裹而违反下游 parser 的 exact-match/JSON/boolean 契约。Figure 2 显示 native 响应中位长度比无检索长 27.1%（353 字符）、78.4% 是解释性输出，而 DSG 格式漂移为 0%（示例中 native 245 字符 vs DSG 答&quot;Yes&quot;仅 3 字符）。当 LLM 在自动化管线里只是中间节点、输出要被解析/分类/缓存/路由时，这种啰嗦是真实部署风险。</p>\n<h2>2. 方法详解</h2>\n<p>DSG（Decoupled Search Grounding）把 grounding 实现为一个 MCP 兼容网关，夹在 agentic 应用、可互换推理模型、provider-agnostic 检索后端之间，核心是&quot;可控边界本身&quot;：把 provider 策略、缓存复用、fallback、source-aware 上下文渲染外化为配置，推理模型保持可替换。三大组件：</p>\n<p>(1) Source-Aware Tool Formatting：用显式可配置的 tool schema 暴露检索；LLM 发出 search tool call 后，网关执行并把异构 provider 响应归一化成结构化内部 result object，把 snippet 与 source URL 配对，给模型显式 provenance 线索（哪条证据支持哪个判断），这些 URL 同时成为日志、调试、来源过滤、fallback 的可检视产物，保住了检索-生成的边界（而 provider-managed 的上下文流会把它压平）。</p>\n<p>(2) Provider Abstraction and Fallback：网关充当 grounding control plane，Provider Registry 把 Serper、BrightData、Firecrawl、Exa 等 agnostic provider 归一化；标准 HTTP provider 经 YAML adapter 接入（指定 endpoint、method、headers、请求模板、响应字段映射、能力、成本元数据），复杂 provider 用专用 adapter。provider 超时或报错时请求沿配置 fallback 链推进，瞬时故障不打断模型收到的 grounding 上下文。</p>\n<p>(3) Search Intelligence Layer：跨请求优化检索策略的分层决策（Algorithm 1: Cache-Gated Provider Execution）。设 q 为 query、q̄ 归一化形式、C={(q_i,R_i)} 为 provider 隔离的语义缓存、e(·) 为 embedding、p_1..p_k 为配置 fallback 链。决策 D(q)：q̄ 命中 exact cache 则返回 R_e；否则取语义最近邻 j<em>=argmax cos(e(q),e(q_j))，若 s_{j</em>}≥τ（可配阈值）返回 R_{j*}；否则走 fallback 链 S(p,q) 逐 provider 执行，命中后写回 exact+semantic 双缓存。关键设计：缓存条目用 provider-scoped key，避免一个 provider 的结果悄悄替换另一个；缓存带 provider+domain 级 TTL，时效敏感 query 快速过期、静态事实长期保留，从而在不牺牲新鲜度下维持高命中。缓存位于共享网关之后，一个应用检索的证据可被另一应用复用，warm-cache 命中率随流量汇聚而升。所有控制以配置而非代码表达，使单一 grounding 层可在多 agent/多推理模型上统一治理，无需重训或重写 prompt。</p>\n<h2>3. 核心技术贡献</h2>\n<p>论文自述三点：(1) grounding 的系统边界——把 search grounding 形式化为解耦、provider-agnostic 的层，让推理模型可互换，同时把检索策略、缓存、provider 选择暴露为显式系统控制；其价值不在新算法，而在&quot;把这个选择变成可控决策&quot;，provider 退化时能逐 query/逐应用归因 grounding 成本与延迟、检测回归。(2) search-intelligence 与标准化框架——用 MCP 兼容网关给 agent 稳定检索接口，把异构 provider 输出归一化成 source-aware context，并支持带配置 fallback 的 cache-gated 检索（Algorithm 1 的分层 cache 决策）。(3) 对行为/质量/运营的证据——识别并量化 native 特有的 Search-Induced Verbosity，展示结构化工具边界如何缓解它，并在公开 QA 与生产负载上量化 accuracy/cost/retrieval-depth/cache-reuse 权衡。相比 Self-RAG/FLARE/RARR/Adaptive-RAG/IRCoT 等&quot;检索-推理交互&quot;工作，DSG 的定位正交：它不改检索时机或推理过程，而是固定 grounding 接口、让推理模型可换，研究&quot;检索被嵌成不透明 provider 行为，还是被暴露成显式可控子系统&quot;。</p>\n<h2>4. 实验结果分析</h2>\n<p>评测覆盖 5 个前沿模型（GPT-4o、GPT-4o-mini、Gemini 2.5 Flash、Gemini 2.5 Pro、Claude Sonnet 4）、4 类基准：SimpleQA（短事实）、FreshQA（时效）、HotpotQA（多跳）、QIU（电商意图：Retail N=7988 / Tail Synthetic N=2335）。成本为 provider 侧每 1K query 检索成本（不含模型推理）；SimpleQA/FreshQA 用 GPT-4.1 做 LLM-as-judge（3-judge 验证 97.78% 一致），HotpotQA 用确定性 EM/F1。</p>\n<p>主表（accuracy / 每 1K query 成本）：</p>\n<ul>\n<li>SimpleQA（5 模型均值）：No Search 30.8/$0；Native 87.7/$20.00；DSG+BrightData 86.1/$1.80；DSG+Serper 83.3/$0.67。DSG+BrightData 仅低 1.6 点、成本降 91%。</li>\n<li>FreshQA：Native 72.6/$20.00；DSG+BrightData 68.0/$1.86；DSG+Serper 67.3/$0.66。这是 native 领先场景（时效敏感，native 紧耦合新鲜度/索引占优），作者据此主张&quot;freshness 主导时把 native 当 fallback 链里的一个 provider&quot;。</li>\n<li>QIU Retail（Gemini Flash）：Native 93.40/$7.90；DSG+Serper 93.90/$0.110；DSG+BrightData 93.81/$0.238。DSG+Serper 反超 native 0.5 点、成本降约 98.6%。</li>\n<li>QIU Tail（Gemini Flash）：Native 87.62/$10.37；DSG+Serper 87.79/$0.146。同样反超且成本降超 98%。注意 native baseline 是原生支持 Google Search grounding 的 Gemini Flash，用通用 provider 仍能持平/超越，说明外化控制可抵消紧耦合 native 的优势。</li>\n</ul>\n<p>运营控制（Figure 4）：检索深度可调——SimpleQA 准确率从 2 个结果到 4–6 个结果急升、6–10 饱和（&quot;practical sweet spot&quot;），把 grounding 变成可调预算旋钮。重复 query 缓存实验（GPT-4o + DSG+BrightData）：warm pass 命中率 99.4%，平均延迟从 cold 4,570ms 降到 warm 1,465ms（降 68%），边际检索成本从 cold $0.739（6.2% 命中）降到 warm $0.0045（99.4% 命中），近乎归零。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出三条局限：(1) 依赖第三方 API——解耦架构根本上依赖 Serper/BrightData/Firecrawl 等 vendor 的稳定性、延迟、数据质量；其定价、限流、索引行为变化会移动论文的 cost-accuracy Pareto 前沿，论文强调贡献是&quot;可控 grounding 接口与它暴露的运营前沿&quot;而非某个价格点。(2) 多跳推理受限——HotpotQA 上无论 native 还是 DSG，检索增强相对单跳事实（SimpleQA）只带来温和增益；DSG 的工具边界对&quot;可控检索&quot;最有效，复杂多跳可能需更紧的迭代循环（planning、reflection、重复证据获取），单纯解耦不够。(3) 评测方法——LLM-as-judge（GPT-4.1）对格式敏感可能有偏，用 3-judge 多数投票缓解，但人评仍是金标准。未来方向：用 provider 侧 telemetry 进一步隔离 Search-Induced Verbosity 的内部触发器、在边界加 contract-aware validator、在同一接口上学习自适应路由/检索深度/多跳策略。</p>\n<h2>6. 工业实践意义</h2>\n<p>DSG 已作为 DoorDash 的共享生产 grounding 层服务电商 QIU（多应用复用），早期版本获 2026 DoorDash AI Hackathon 工程卓越奖。对社区搜索（UGC 短文本）实践者的直接借鉴：</p>\n<ul>\n<li>把实时 grounding 当成可优化的接口边界而非模型自带功能：用一个 MCP/网关层统一管 provider 路由、检索深度、证据渲染、缓存，可独立 A/B 调优且不绑定单一模型厂商，更强推理模型出现时可热插拔。</li>\n<li>双层缓存（exact + provider-scoped semantic，带 domain/TTL）是高 QPS 短文本搜索降本提速的高杠杆点：99.4% warm-cache 命中把延迟降 68%、边际检索成本近乎归零；provider-scoped key + 差异化 TTL 避免缓存污染与时效失真，可直接落地。</li>\n<li>source-aware 渲染 + 结构化 tool 边界能根治 Search-Induced Verbosity：当搜索结果要被下游 parser/排序/分类消费时，保持 answer-only 契约（DSG 0% 格式漂移 vs native 78.4% 解释性输出）能避免&quot;答案对但格式错&quot;的隐性故障。</li>\n<li>检索深度 4–6 的 sweet spot 提示：召回更多文档收益快速饱和，可据此设预算旋钮控成本。</li>\n<li>部署注意：强依赖第三方检索 API，需做好 fallback 链与 provider 退化监控；时效敏感场景（类似 FreshQA）native/紧耦合索引仍占优，应把它作为 fallback 链中的一个 provider 按需启用，而非全盘替换。</li>\n</ul>"
+      }
+    },
+    {
+      "id": "arxiv:2606.19667",
+      "title": "CacheWeaver: Cache-Aware Evidence Ordering for Efficient Grounded RAG Inference",
+      "url": "https://arxiv.org/abs/2606.19667",
+      "authors": "Kaizhen Tan, Rong Gu, Mingyuan Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-18",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.05,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.25,
+      "summary": "RAG 提升事实性的同时拉长 prompt、抬高 prefill 成本，而 vLLM 等引擎的 prefix caching 只在请求共享相同 token 前缀时才省钱。问题在于相邻 query 检索到的证据集合常有重叠但顺序不同，集合重叠无法转化为可复用的前缀重叠。CacheWeaver 是一个轻量的 prompt 层方法：维护一棵近期已服务证据序列的前缀树，用贪心游走把最可复用的前缀排在最前，不改动 serving 引擎和检索结果集。在 3 种 vLLM 配置下，相对按检索顺序的 prefix caching，中位 TTFT 降低约 20–33%，QA 答案质量不受影响；贪心策略达到 oracle 排序 TTFT 收益的 97.5%。",
+      "key_insight": "证据排序这个被忽视的环节直接决定 RAG 的 KV-cache 复用率。对社区搜索的 RAG 问答场景，只需在检索与推理之间插一个调度层重排证据顺序，就能拿到接近最优的 TTFT 收益，几乎零成本、零模型改动。前缀树+贪心的设计简单可落地，尤其适合证据集高度重叠的高频 query；可借鉴的点是把 cache 友好性纳入证据组装策略，而不是只看相关性排序。",
+      "rank": 2
+    },
+    {
+      "id": "arxiv:2606.19559",
+      "title": "Uncertainty Decomposition for Clarification Seeking in LLM Agents",
+      "url": "https://arxiv.org/abs/2606.19559",
+      "authors": "Gregory Matsnev",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-17",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "summary": "交互式 LLM agent 需要在任务描述模糊时主动追问澄清，但经典的 aleatoric/epistemic 不确定性框架不够用，且黑盒 API、交互延迟预算、缺少标注轨迹排除了基于 logprob、多次采样或训练的方法。论文提出一个简单的 prompt-based 分解：把 action confidence 与 request uncertainty 分开，让 agent 在任务欠定时发起澄清。作者构造 WebShop-Clarification 与 ALFWorld-Clarification 两个基准（50% 任务故意欠定），在 5 个 backbone（GPT-5.1、DeepSeek-v3.2-exp、GLM-4.7、Qwen3.5-35B、GPT-OSS-120B）上对比 ReAct+UE 与 UAM：ALFWorld-Clarification 上澄清 F1 平均较 ReAct+UE 提升 73%、较 UAM 提升 36%，且在多数 backbone 上领先。",
+      "key_insight": "把动作置信度与请求不确定性解耦，是判断该追问还是该执行的关键，对社区搜索的 query 理解直接可用：面对歧义 query（短文本、口语化），系统应识别欠定并主动澄清而非强行召回。方法纯 prompt、不需训练、兼容黑盒 API 与低延迟预算，落地门槛低；两个澄清增强基准的构造方式（注入 50% 欠定任务）也可借鉴用于评测搜索澄清能力。",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:2606.20113",
+      "title": "When Does Streaming Tool Use Help? Characterizing Tool-Intent Stabilization in Streaming Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2606.20113",
+      "authors": "Elroy Galbraith",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-18",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "summary": "Streaming RAG 通过在用户还在输入时就并行发出检索 query 来降低感知延迟，但增益本质上依赖 query：只有当正确的检索 query 在用户说完/打完之前就能确定时，提前检索才有用。论文定义并测量 tool-intent stabilization（投机 query 的检索收敛到含答案结果的时点），在 CRAG 基准（1371 题）上推导出可隐藏延迟比例的模型无关上界 H（关于工具延迟 L 与输入节奏 δ），并用真实流式管线验证。在 L=600ms、δ=3 词/秒、θ=0.8 的现实工作点，73.9% 的 query 可获得可观的延迟隐藏；问题类型对早/晚稳定有显著但粗粒度的影响（Kruskal-Wallis p=0.017）。全程无需训练、可在普通 CPU 上运行。",
+      "key_insight": "流式检索不是对所有 query 都划算，只在检索意图能提前确定的 query 上有效。这个量化框架（stabilization 时点 + 可隐藏延迟上界）给出了何时该触发投机检索的判据，对社区搜索的搜索建议/即时检索很实用：可据此训练一个轻量投机触发器，只在收益大于成本的 query 上提前发检索，避免无谓检索调用。无需训练、CPU 可跑，便于离线分析自家 query 分布。",
+      "rank": 4
+    },
+    {
+      "id": "arxiv:2606.18051",
+      "title": "Compositional Skill Routing for LLM Agents: Decompose, Retrieve, and Compose",
+      "url": "https://arxiv.org/abs/2606.18051",
+      "authors": "Xueping Gao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-16",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.6,
+      "summary": "LLM agent 依赖外部 skill（可复用工具规格），但真实任务常需组合多个 skill 而非选一个。论文把它形式化为 Compositional Skill Routing：把复杂 query 分解为原子子任务、为每个子任务检索合适 skill、再组合成可执行计划。SkillWeaver 框架由 LLM 任务分解器、bi-encoder + FAISS 的 skill 检索器、依赖感知的 DAG 规划器组成。作者构造 CompSkillBench（300 条组合 query，覆盖公共 MCP 生态的 2209 个真实 skill、24 类）。实验发现分解质量是主要瓶颈：标准 LLM 分解的步级类别召回仅 34.2%。提出 Iterative Skill-Aware Decomposition（SAD）检索增强反馈循环，一轮迭代把分解准确率从 51.0% 提到 67.7%（+32.7%，Wilcoxon p<1e-6）；SkillWeaver 把上下文窗口消耗降低超 99%。",
+      "key_insight": "先把 query 分解到正确粒度、再检索，这条 decompose-retrieve-compose 范式对社区搜索的复杂/多意图 query 处理有借鉴意义：分解粒度对齐可检索资源是检索成功的前提（DA=1 时 CatR@1 从 34% 升到 41%）。SAD 用检索可行性反过来指导分解迭代的思路，可迁移到 query 改写/子查询生成；bi-encoder+FAISS 的 skill 检索 + DAG 组合也是工具/技能库规模化的实用骨架。",
+      "rank": 5
+    },
+    {
+      "id": "arxiv:2606.18831",
+      "title": "Beyond Reward Engineering: A Data Recipe for Long-Context Reinforcement Learning",
+      "url": "https://arxiv.org/abs/2606.18831",
+      "authors": "Xiaoyue Xu, Sikui Zhang, Xiaorong Wang, Xu Han, Chaojun Xiao",
+      "company": [
+        "Tsinghua"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-17",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "summary": "长上下文推理是 LLM 作为 agent 处理长轨迹的核心能力，RL 是主流提升手段，但已有工作多聚焦 reward engineering，训练数据多样性不足。论文从数据视角出发，证明仅靠一份简单有效的数据配方 + 最小化的 outcome-based GRPO 就能大幅提升长上下文推理。配方覆盖检索、多证据综合、推理三类互补任务，构建并整理 8 个数据集共约 14K 样本。在 Qwen3-4B/8B/30B-A3B 上，跨 7 个长上下文基准平均提升 +7.2/+3.2/+6.4 分，超过已有 RL 训练集；增益还迁移到 agentic 任务：在 agent 调优模型上继续用该配方 RL，GAIA +4.8、BrowseComp +7.0。数据集将开源。",
+      "key_insight": "长上下文/agentic RL 的瓶颈常被误判为 reward 设计，本文显示训练数据配方才是更高杠杆：检索+多证据综合+推理三类任务的组合，约 14K 样本就拿到可观且可迁移的收益。对自建搜索/RAG agent 有直接启示：与其反复调 reward，不如先把训练任务的数据多样性补齐；GAIA/BrowseComp 的迁移增益说明这类数据对会搜索的 agent 尤其有效，开源数据集也降低了复现门槛。",
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2606.20047",
+      "title": "PACMS: Submodular Context Selection as a Pluggable Engine for LLM Agents",
+      "url": "https://arxiv.org/abs/2606.20047",
+      "authors": "Manu Ghulyani, Arunabh Singh, Karan Bharadwaj, Ankit Nath, Suranjan Goswami",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-18",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "summary": "对话与工具型 LLM agent 的上下文窗口同时被多个来源填充：用户/助手轮次、持久记忆条目，以及往往占比最大的工具调用原文（文件读取、搜索结果、API 返回）。当累计上下文超过 token 预算，主流做法是 recency truncation（按时间截断），这是 topic-blind 的：早期建立的事实仅因旧被丢弃，即便当前 query 正问它；冗长但无关的近期内容反被保留。多轮记忆场景恰是 recency truncation 失效之处。已有替代方案都在 agent 组装环节之外——RAG 取外部文档但不裁决 agent 已有的池化上下文，上下文压缩则 query-blind 且有损。PACMS 把记忆条目、对话轮次、工具输出当成单一候选池，用 submodular 选择在组装 prompt 的当下按相关性挑选。",
+      "key_insight": "把上下文该保留什么建模为 submodular 选择、且作用在 agent 组装 prompt 的当下，是相对 recency 截断/RAG/压缩的一个清晰新定位。对长会话的社区搜索助手有启示：工具/检索返回原文常占满窗口，按当前 query 相关性从已在手的全部上下文里做子模选择，比一刀切按时间截断更能保住关键事实。可插拔引擎的定位便于嵌入现有 agent 框架。注：摘要侧重问题动机，具体实验数据需读正文确认。",
+      "rank": 7
+    },
+    {
+      "id": "arxiv:2606.20122",
+      "title": "ScaffoldAgent: Utility-Guided Dynamic Outline Optimization for Open-Ended Deep Research",
+      "url": "https://arxiv.org/abs/2606.20122",
+      "authors": "Zhibang Yang, Xinke Jiang, Yuzhen Xiao, Ruizhe Zhang, Yue Fang, XinFei Wan, Zhengxing Song, Yuxuan Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-18",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "summary": "开放式深度研究（OEDR）需要系统通过多轮检索获取知识并生成连贯的长篇报告，其中 outline（提纲）作为结构骨架协调检索、证据组织与生成。已有方法要么写作前固定提纲、要么用局部启发式微调，导致信息持续累积时出现 scaffold drift，且评估提纲修改的反馈滞后。ScaffoldAgent 把提纲演化建模为含 Expansion/Contraction/Revision 三种操作的结构化决策过程，并引入 utility-guided 反馈：从检索增益、结构连贯性、试生成质量估计每次提纲操作的下游价值，用该 utility 信号指导节点选择、操作调度与终止。在 DeepResearch Bench 与 DeepResearch Gym 上一致提升长篇报告生成质量与事实 grounding。",
+      "key_insight": "把提纲当成可动态优化的决策对象、并用下游 utility（检索增益+连贯性+试生成）驱动增删改，是深度研究类长文生成的一个实用设计。对社区搜索里的生成式回答/聚合长答案有借鉴：先有可演化的结构骨架协调多轮检索，再边检索边调整提纲，能缓解证据累积导致的结构漂移。utility 信号的三要素（retrieval gain/coherence/trial-generation）也可作为长答案质量的过程性评估维度。",
+      "rank": 8
+    },
+    {
+      "id": "arxiv:2606.19893",
+      "title": "MetaResearcher: Scaling Deep Research via Self-Reflective Reinforcement Learning in Adversarial Virtual Environments",
+      "url": "https://arxiv.org/abs/2606.19893",
+      "authors": "Wei Yu, Suxing Liu, Minjie Yu, Jiahao Wang, Zhijian Zheng, Haocheng Deng, Bing Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-18",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "total_score": 3.35,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.4,
+      "summary": "深度研究 agent 在自主信息收集与综合上表现亮眼，但训练受限于模拟环境的静态性、仅做 fact-retrieval 的任务设计、以及 outcome-based RL 的低效。MetaResearcher 从四个维度扩展深度研究 agent 训练：(1) Evolving Virtual World 向训练环境注入时间动态与对抗性错误信息，迫使 agent 习得 source credibility 评估与时间冲突消解；(2) Discovery-Oriented Tasks（假设生成、矛盾消解）超越简单事实检索；(3) GRPO 框架内的 Self-Reflective Meta-Reward，联合优化答案正确性、搜索路径效率、反思深度、工具调用多样性，针对重复动作循环问题；(4) 由 Scout/Filter/Synthesizer 专用模型组成的异构多智能体 swarm。基于 LiteResearcher，训练零边际 API 成本，目标提升 GAIA、Xbench-DS 表现与对抗鲁棒性。",
+      "key_insight": "亮点在训练环境与奖励设计：把对抗性错误信息+时间动态做进虚拟世界，逼 agent 学会判断来源可信度与消解时间冲突，这对社区搜索（UGC 噪声大、时效性强、存在误导信息）的检索 agent 训练思路很有启发。Self-Reflective Meta-Reward 同时奖励搜索路径效率与工具调用多样性，是缓解 agent 重复检索的可借鉴信号设计。需注意：本文为框架设计与方法论，实验为 planned validation，尚无完整结果，落地价值待正文与后续验证。",
+      "rank": 9
+    },
+    {
+      "id": "arxiv:2606.20235",
+      "title": "ScholarQuest: A Taxonomy-Guided Benchmark for Agentic Academic Paper Search in Open Literature Environments",
+      "url": "https://arxiv.org/abs/2606.20235",
+      "authors": "Tingyue Pan, Mingyue Cheng, Daoyu Wang, Yitong Zhou, Jie Ouyang, Qi Liu, Enhong Chen",
+      "company": [
+        "USTC"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-18",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.35,
+      "summary": "学术论文检索是科研核心一步，基于 LLM 的 search agent 正成为迭代式、意图驱动文献探索的有前景范式，但现有基准不足以在真实开放文献环境下系统评测 agentic 学术检索。ScholarQuest 是一个大规模、taxonomy-guided 的 agentic 学术论文检索基准：基于 1000+ 计算机科学主题与四类研究意图（method-oriented、setting-anchored、comparison-based、scope-controlled）构造，并提供可扩展的答案构造与共享检索后端 ScholarBase 以保证可复现。结果显示 agentic 方法优于单次检索基线，但最佳 agent 仅达 Recall@100 0.314、Recall@All 0.355，提升空间巨大；此外还提供搜索效率、意图级鲁棒性与失败案例分析。",
+      "key_insight": "该基准把研究意图显式拆成四类（方法/设定锚定/对比/范围控制），并用共享检索后端保证可复现，这套按意图分型的评测思路可迁移到社区搜索的 query 意图评测。最佳 agent Recall@100 仅 0.314 说明 agentic 检索在开放、长尾文献环境下仍远未解决，单纯多轮迭代不等于高召回。对自建搜索 agent 的启示：意图识别与召回质量是瓶颈，需要针对不同意图类型分别优化检索策略，并用失败案例驱动迭代。",
+      "rank": 10
+    }
+  ],
+  "code_projects": []
+}

@@ -1,0 +1,323 @@
+{
+  "date": "2026-05-21",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 49,
+    "papers_selected": 10,
+    "score_min": 3.35,
+    "score_max": 4.65
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.18857",
+      "title": "The 99% Success Paradox: When Near-Perfect Retrieval Equals Random Selection",
+      "url": "https://arxiv.org/abs/2605.18857",
+      "authors": "Vyzantinos Repantis, Harshvardhan Singh, Tony Joseph, Cien Zhang 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 4.65,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文指出传统 IR 评估按「人工最终过滤」假设设计，覆盖率/Top-K 命中率在 LLM 直接消费检索结果时严重失真。作者提出 Bits-over-Random (BoR) 这一基于超几何基线的「机会校正」选择性度量：BoR = log2(P_obs / P_rand)，其中 P_rand 来自命中规则下的随机基线。在 20 Newsgroups 上，BM25 与 SPLADE 在 K=100 的 coverage 都报告 >99% 成功率，但 BoR ≈ 0，说明这相对随机选择毫无信息增益。",
+      "key_insight": "对社区搜索/UGC RAG 系统的启示是：当下游是 LLM 而非人工时，Recall@K 这种「宽松命中」指标会高估检索器价值，导致离线评估与线上效果脱节。BoR 提供一个几乎零成本的诊断信号——只需现有 qrels 即可计算，特别适合短文本召回中「候选池大但相关文档稀少」的场景。可立即落地用于排序模型 A/B 评估的辅助指标，识别「看上去成功」的检索回路。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.18857",
+        "title": "The 99% Success Paradox: When Near-Perfect Retrieval Equals Random Selection",
+        "status": "completed",
+        "content": "# 深度解读：The 99% Success Paradox\n\n## 1. 问题与动机\n\n传统 IR 评估（Recall@K、Precision、F1、nDCG）的设计假设是\"人工读者最终过滤\"——人能扫描、跳过、忽略不相关结果，所以系统的目标是尽量把相关文档塞进 top-K 即可。但 LLM 作为消费者并不具备这种过滤能力：每一条候选都进入 token、注意力与生成损失，无关候选直接拖垮下游质量。论文用一个直观例子说明问题：在 1,000 文档、10 个相关项的语料下，馆员 A 取 20 项（命中 6 个），馆员 B 取 12 项（命中 4 个），传统 F1 偏好 A（40% vs 36%），但 B 用更小池子获得更高\"选择性\"，对 LLM 更友好。\n\n更尖锐的实证：在 20 Newsgroups 上，BM25 和 SPLADE 在 K=100 的 coverage 都报告 100% 成功率，但作者证明它们的\"机会校正后选择性\"BoR ≈ 0，意味着这套 99% 报表与\"随机抽 100 篇\"几乎没区别。这种现象在 BEIR/SciFact、MS MARCO 等通用基准上同样隐藏——只是被低 λ 值（候选/相关比例）掩盖。\n\n## 2. 方法详解\n\n**核心定义** Bits-over-Random：\n\n```\nBoR = log2(P_obs / P_rand)\n```\n\n其中 P_obs 是观测成功率，P_rand 是同样命中规则下随机选取的成功率基线，用超几何分布给出：\n\n```\nP_rand(K; R_q) = 1 − C(N − R_q, K) / C(N, K)\n```\n\nN 为语料规模，R_q 为该 query 的相关文档数。BoR 单位是 bit：0 表示与随机持平，每多 1 bit 等价 2× 选择性提升，3 bit 即 8× 改进。理论上限：\n\n```\nBoR_max(K) = −log2(P̄_rand(K))\n```\n\n**坍塌边界 (selectivity collapse)**：当 λ = K·R̄_q/N 足够大时，随机命中已接近 1，BoR 上限被压到 0 附近：\n- λ ≈ 3 → 95% 随机命中 → BoR_max ≈ 0.074 bit\n- λ ≈ 4.6 → 99% 随机命中 → BoR_max ≈ 0.014 bit\n\n20 Newsgroups 在 K=100、R̄_q≈572 下，λ≈5.1，正好落在 collapse 区，所以 100% 成功率根本不携带信息。\n\n**深度校准恒等式 (depth-calibrated identity)**：BoR 随 K 变化可解析分解：\n\n```\nΔBoR = log2(P2/P1) − log2(P̄_rand(K2)/P̄_rand(K1))\n```\n\n在 rare-hit regime（K·R̄_q/N ≪ 1）下近似为 `ΔBoR ≈ log2(P2/P1) − log2(K2/K1)`。直接给出工程结论：\"当 success 已经饱和，再翻倍 K 会损失约 1 bit 选择性。\"实验中预测 ΔBoR 与实际观测在多数系统/数据集上偏差 <0.01 bit，公式有效。\n\n实验设置：在 BEIR/SciFact、MS MARCO（41 个公开系统）和 20 Newsgroups 三种\"相关密度光谱\"上覆盖低/中/高 R̄_q；并补充 RAG 下游验证（50 query、温度 0.0、instruction-tuned LLM）以及 LLM agent tool-selection 场景的代入分析。\n\n## 3. 核心技术贡献\n\n1. **机会校正度量 BoR**：把\"覆盖率/Recall\"从单调上升的\"假阳性偏好\"指标，转为与随机基线对比的对数选择性度量。它不奖励多召回——把 K 翻倍而 P 不变会立刻吃掉 1 bit。这一改写直接对齐了 LLM 消费者的成本结构。\n\n2. **解析的坍塌边界**：明确给出 λ = K·R̄_q/N 这一无量纲量作为评估有效区/无效区的判据。一旦 λ ∈ [3, 5]，连完美检索器都无法区分有意义的选择性。这给出了\"什么时候 Recall@K 报表纯属噪声\"的代数答案，比经验阈值更通用。\n\n3. **深度校准恒等式**：把 ΔBoR 拆成\"成功率增益\"与\"深度成本\"两项，可直接用来做\"再加 K 是否值得\"的离线决策。实验中 <0.01 bit 的偏差表明这是接近精确的工程工具，而非仅理论装饰。\n\n4. **跨场景统一框架**：同一个 λ-BoR 框架既覆盖文档检索（N 千～千万），又覆盖 LLM agent tool selection（N=50–500 工具）；后者天然容易坍塌（论文示例：N=58、R_q=4，把 58 个工具全塞进 prompt 时 BoR_max≈0.02 bit），解释了 agent 工具池膨胀后效果反而退化的实证现象。\n\n## 4. 实验结果分析\n\n**核心对比表（关键数字）：**\n\n| 数据集 | N | R̄_q | 系统 | K | Success | BoR | Ceiling |\n|---|---|---|---|---|---|---|---|\n| SciFact | 5,185 | 1.1 | BM25 | 100 | 89% | 5.36 bit | 5.52 |\n| SciFact | 5,185 | 1.1 | SPLADE | 100 | 93% | 5.41 bit | 5.52 |\n| MS MARCO | 8.84M | ≈1 | BM25 | 1000 | 85.7% Recall | 12.89 bit | 13.11 |\n| MS MARCO | 8.84M | ≈1 | SimLM (SOTA) | 1000 | 98.7% Recall | 13.09 bit | 13.11 |\n| 20NG | 11,314 | 572 | BM25 | 100 | 100% | 0.01 bit | 0.01 |\n| 20NG | 11,314 | 572 | SPLADE | 100 | 100% | 0.01 bit | 0.01 |\n\n关键发现：MS MARCO 上 BM25 与 SimLM 的 Recall 相差 13 个百分点，但 BoR 只相差 0.20 bit——因为大家都贴着 13.11 bit 的理论上限，所以\"SOTA 提升\"在选择性维度上几乎不存在；这与\"近几年 MS MARCO 的进展是否被 leaderboard 高估\"的业界质疑高度共振。\n\n**RAG 下游消融（20 Newsgroups，50 query，温度 0）：**\n\n| 系统 | K=10 Accuracy | K=100 Accuracy | Success K=10→K=100 |\n|---|---|---|---|\n| BM25 | 66% | 50% | 94% → 100% |\n| SPLADE | 68% | 58% | 95% → 100% |\n\n把 K 从 10 提到 100，传统 Recall/Success 看上去\"无损升级\"，但 LLM 答案准确率反而掉 10–16 个百分点，token 成本 10×。这是直接的\"99% 成功率却让产品变差\"的下游证据。\n\n**Agent 工具选择代入**：N=58 工具、R_q=4 时，展示 5 个工具 λ=0.34 → BoR_max≈1.7 bit（有意义），全部 58 个 λ=4.0 → BoR_max≈0.02 bit（坍塌）。论文引用业界数据：当前主流 agent harness 工具定义已占 50,000–134,000 token，说明该坍塌区在生产中很常见。\n\n**与传统指标对照**：作者明确指出 Recall 单调随 K 上升、Precision 不感知任务难度、nDCG/MAP/RBP/ERR 只优化排序顺序而忽略 LLM 全读 K 项的 token 成本——这些都解释了为什么传统 leaderboard 与 LLM 实际下游性能之间出现脱节。\n\n## 5. 局限与未来方向\n\n作者明确声明的局限：\n1. 当前主要讨论 m=1（coverage 命中规则），m≥2（要求至少 m 个相关）需要更复杂的超几何展开；\n2. 关键近似（rare-hit regime, λ ≪ 1）在相关密度高时失效，baseline 饱和效应超过 m-bit 近似；\n3. RAG 下游验证只用了 50 个 query，仍属 \"preliminary\" 量级；\n4. 给出 Recall@K 版本的 BoR（Eq.12）但未做大规模实验。\n\n未提到但工程上需要注意：BoR 对小语料（N<1000）方差大，需要 bootstrap 置信区间；对长尾 query（R_q=0 或 1）的稳定估计也是开放问题。\n\n## 6. 工业实践意义\n\n对社区搜索 / UGC RAG 团队的直接动作项：\n\n1. **新增离线指标**：把 BoR@K 加入排序模型 A/B 评估。代码量极小——只需现有 qrels 即可计算。一旦发现某条链路 BoR_max < 0.1 bit，就说明\"目前的 K 设置下评估已无意义\"，需要降 K 或换数据集。\n\n2. **K 选择的代数判据**：依 λ = K·R̄_q/N 控制候选池大小。社区搜索短文本场景下 R̄_q 通常较大（同一帖与多个 query 相关），N 在百万级时 λ 仍可能接近坍塌，应主动收缩 K，把\"召回宽度\"从 KPI 中剔除。\n\n3. **LLM 摘要前重排刚需**：实验表明 K 从 10→100 直接掉 10–16% 的下游准确率。任何\"召回到 LLM 直答\"的产品都必须有一个把 K 收回到个位数的精排或自适应阈值层（呼应 #6 的 Adaptive Table Retrieval）。\n\n4. **Agent 工具池治理**：本论文对 LLM agent harness 设计给出了量化警告——工具数 N=50–500、相关工具 R_q≈3-5 时极易坍塌。社区搜索若要集成 agent（如复杂主题汇总），必须实现按 query 动态收敛工具集，而非把所有 skill 描述全部塞入 prompt。\n\n部署考量：BoR 计算开销 O(1) per query，可直接接到现有 offline pipeline；λ 监控可作为 dashboards 一行 SQL；唯一需要注意的是 R_q 估计——对没有充分人工标注的长尾意图，建议先用强 reranker 的高分文档做近似相关集再计算 BoR_max。",
+        "content_html": "<h1>深度解读：The 99% Success Paradox</h1>\n<h2>1. 问题与动机</h2>\n<p>传统 IR 评估（Recall@K、Precision、F1、nDCG）的设计假设是&quot;人工读者最终过滤&quot;——人能扫描、跳过、忽略不相关结果，所以系统的目标是尽量把相关文档塞进 top-K 即可。但 LLM 作为消费者并不具备这种过滤能力：每一条候选都进入 token、注意力与生成损失，无关候选直接拖垮下游质量。论文用一个直观例子说明问题：在 1,000 文档、10 个相关项的语料下，馆员 A 取 20 项（命中 6 个），馆员 B 取 12 项（命中 4 个），传统 F1 偏好 A（40% vs 36%），但 B 用更小池子获得更高&quot;选择性&quot;，对 LLM 更友好。</p>\n<p>更尖锐的实证：在 20 Newsgroups 上，BM25 和 SPLADE 在 K=100 的 coverage 都报告 100% 成功率，但作者证明它们的&quot;机会校正后选择性&quot;BoR ≈ 0，意味着这套 99% 报表与&quot;随机抽 100 篇&quot;几乎没区别。这种现象在 BEIR/SciFact、MS MARCO 等通用基准上同样隐藏——只是被低 λ 值（候选/相关比例）掩盖。</p>\n<h2>2. 方法详解</h2>\n<p><strong>核心定义</strong> Bits-over-Random：</p>\n<pre><code>BoR = log2(P_obs / P_rand)</code></pre>\n<p>其中 P_obs 是观测成功率，P_rand 是同样命中规则下随机选取的成功率基线，用超几何分布给出：</p>\n<pre><code>P_rand(K; R_q) = 1 − C(N − R_q, K) / C(N, K)</code></pre>\n<p>N 为语料规模，R_q 为该 query 的相关文档数。BoR 单位是 bit：0 表示与随机持平，每多 1 bit 等价 2× 选择性提升，3 bit 即 8× 改进。理论上限：</p>\n<pre><code>BoR_max(K) = −log2(P̄_rand(K))</code></pre>\n<p><strong>坍塌边界 (selectivity collapse)</strong>：当 λ = K·R̄_q/N 足够大时，随机命中已接近 1，BoR 上限被压到 0 附近：</p>\n<ul>\n<li>λ ≈ 3 → 95% 随机命中 → BoR_max ≈ 0.074 bit</li>\n<li>λ ≈ 4.6 → 99% 随机命中 → BoR_max ≈ 0.014 bit</li>\n</ul>\n<p>20 Newsgroups 在 K=100、R̄_q≈572 下，λ≈5.1，正好落在 collapse 区，所以 100% 成功率根本不携带信息。</p>\n<p><strong>深度校准恒等式 (depth-calibrated identity)</strong>：BoR 随 K 变化可解析分解：</p>\n<pre><code>ΔBoR = log2(P2/P1) − log2(P̄_rand(K2)/P̄_rand(K1))</code></pre>\n<p>在 rare-hit regime（K·R̄_q/N ≪ 1）下近似为 <code>ΔBoR ≈ log2(P2/P1) − log2(K2/K1)</code>。直接给出工程结论：&quot;当 success 已经饱和，再翻倍 K 会损失约 1 bit 选择性。&quot;实验中预测 ΔBoR 与实际观测在多数系统/数据集上偏差 &lt;0.01 bit，公式有效。</p>\n<p>实验设置：在 BEIR/SciFact、MS MARCO（41 个公开系统）和 20 Newsgroups 三种&quot;相关密度光谱&quot;上覆盖低/中/高 R̄_q；并补充 RAG 下游验证（50 query、温度 0.0、instruction-tuned LLM）以及 LLM agent tool-selection 场景的代入分析。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>机会校正度量 BoR</strong>：把&quot;覆盖率/Recall&quot;从单调上升的&quot;假阳性偏好&quot;指标，转为与随机基线对比的对数选择性度量。它不奖励多召回——把 K 翻倍而 P 不变会立刻吃掉 1 bit。这一改写直接对齐了 LLM 消费者的成本结构。</li>\n</ol>\n<ol>\n<li><strong>解析的坍塌边界</strong>：明确给出 λ = K·R̄_q/N 这一无量纲量作为评估有效区/无效区的判据。一旦 λ ∈ [3, 5]，连完美检索器都无法区分有意义的选择性。这给出了&quot;什么时候 Recall@K 报表纯属噪声&quot;的代数答案，比经验阈值更通用。</li>\n</ol>\n<ol>\n<li><strong>深度校准恒等式</strong>：把 ΔBoR 拆成&quot;成功率增益&quot;与&quot;深度成本&quot;两项，可直接用来做&quot;再加 K 是否值得&quot;的离线决策。实验中 &lt;0.01 bit 的偏差表明这是接近精确的工程工具，而非仅理论装饰。</li>\n</ol>\n<ol>\n<li><strong>跨场景统一框架</strong>：同一个 λ-BoR 框架既覆盖文档检索（N 千～千万），又覆盖 LLM agent tool selection（N=50–500 工具）；后者天然容易坍塌（论文示例：N=58、R_q=4，把 58 个工具全塞进 prompt 时 BoR_max≈0.02 bit），解释了 agent 工具池膨胀后效果反而退化的实证现象。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p><strong>核心对比表（关键数字）：</strong></p>\n<table><thead><tr><th>数据集</th><th>N</th><th>R̄_q</th><th>系统</th><th>K</th><th>Success</th><th>BoR</th><th>Ceiling</th></tr></thead><tbody><tr><td>SciFact</td><td>5,185</td><td>1.1</td><td>BM25</td><td>100</td><td>89%</td><td>5.36 bit</td><td>5.52</td></tr><tr><td>SciFact</td><td>5,185</td><td>1.1</td><td>SPLADE</td><td>100</td><td>93%</td><td>5.41 bit</td><td>5.52</td></tr><tr><td>MS MARCO</td><td>8.84M</td><td>≈1</td><td>BM25</td><td>1000</td><td>85.7% Recall</td><td>12.89 bit</td><td>13.11</td></tr><tr><td>MS MARCO</td><td>8.84M</td><td>≈1</td><td>SimLM (SOTA)</td><td>1000</td><td>98.7% Recall</td><td>13.09 bit</td><td>13.11</td></tr><tr><td>20NG</td><td>11,314</td><td>572</td><td>BM25</td><td>100</td><td>100%</td><td>0.01 bit</td><td>0.01</td></tr><tr><td>20NG</td><td>11,314</td><td>572</td><td>SPLADE</td><td>100</td><td>100%</td><td>0.01 bit</td><td>0.01</td></tr></tbody></table>\n<p>关键发现：MS MARCO 上 BM25 与 SimLM 的 Recall 相差 13 个百分点，但 BoR 只相差 0.20 bit——因为大家都贴着 13.11 bit 的理论上限，所以&quot;SOTA 提升&quot;在选择性维度上几乎不存在；这与&quot;近几年 MS MARCO 的进展是否被 leaderboard 高估&quot;的业界质疑高度共振。</p>\n<p><strong>RAG 下游消融（20 Newsgroups，50 query，温度 0）：</strong></p>\n<table><thead><tr><th>系统</th><th>K=10 Accuracy</th><th>K=100 Accuracy</th><th>Success K=10→K=100</th></tr></thead><tbody><tr><td>BM25</td><td>66%</td><td>50%</td><td>94% → 100%</td></tr><tr><td>SPLADE</td><td>68%</td><td>58%</td><td>95% → 100%</td></tr></tbody></table>\n<p>把 K 从 10 提到 100，传统 Recall/Success 看上去&quot;无损升级&quot;，但 LLM 答案准确率反而掉 10–16 个百分点，token 成本 10×。这是直接的&quot;99% 成功率却让产品变差&quot;的下游证据。</p>\n<p><strong>Agent 工具选择代入</strong>：N=58 工具、R_q=4 时，展示 5 个工具 λ=0.34 → BoR_max≈1.7 bit（有意义），全部 58 个 λ=4.0 → BoR_max≈0.02 bit（坍塌）。论文引用业界数据：当前主流 agent harness 工具定义已占 50,000–134,000 token，说明该坍塌区在生产中很常见。</p>\n<p><strong>与传统指标对照</strong>：作者明确指出 Recall 单调随 K 上升、Precision 不感知任务难度、nDCG/MAP/RBP/ERR 只优化排序顺序而忽略 LLM 全读 K 项的 token 成本——这些都解释了为什么传统 leaderboard 与 LLM 实际下游性能之间出现脱节。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确声明的局限：</p>\n<ol>\n<li>当前主要讨论 m=1（coverage 命中规则），m≥2（要求至少 m 个相关）需要更复杂的超几何展开；</li>\n<li>关键近似（rare-hit regime, λ ≪ 1）在相关密度高时失效，baseline 饱和效应超过 m-bit 近似；</li>\n<li>RAG 下游验证只用了 50 个 query，仍属 &quot;preliminary&quot; 量级；</li>\n<li>给出 Recall@K 版本的 BoR（Eq.12）但未做大规模实验。</li>\n</ol>\n<p>未提到但工程上需要注意：BoR 对小语料（N&lt;1000）方差大，需要 bootstrap 置信区间；对长尾 query（R_q=0 或 1）的稳定估计也是开放问题。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索 / UGC RAG 团队的直接动作项：</p>\n<ol>\n<li><strong>新增离线指标</strong>：把 BoR@K 加入排序模型 A/B 评估。代码量极小——只需现有 qrels 即可计算。一旦发现某条链路 BoR_max &lt; 0.1 bit，就说明&quot;目前的 K 设置下评估已无意义&quot;，需要降 K 或换数据集。</li>\n</ol>\n<ol>\n<li><strong>K 选择的代数判据</strong>：依 λ = K·R̄_q/N 控制候选池大小。社区搜索短文本场景下 R̄_q 通常较大（同一帖与多个 query 相关），N 在百万级时 λ 仍可能接近坍塌，应主动收缩 K，把&quot;召回宽度&quot;从 KPI 中剔除。</li>\n</ol>\n<ol>\n<li><strong>LLM 摘要前重排刚需</strong>：实验表明 K 从 10→100 直接掉 10–16% 的下游准确率。任何&quot;召回到 LLM 直答&quot;的产品都必须有一个把 K 收回到个位数的精排或自适应阈值层（呼应 #6 的 Adaptive Table Retrieval）。</li>\n</ol>\n<ol>\n<li><strong>Agent 工具池治理</strong>：本论文对 LLM agent harness 设计给出了量化警告——工具数 N=50–500、相关工具 R_q≈3-5 时极易坍塌。社区搜索若要集成 agent（如复杂主题汇总），必须实现按 query 动态收敛工具集，而非把所有 skill 描述全部塞入 prompt。</li>\n</ol>\n<p>部署考量：BoR 计算开销 O(1) per query，可直接接到现有 offline pipeline；λ 监控可作为 dashboards 一行 SQL；唯一需要注意的是 R_q 估计——对没有充分人工标注的长尾意图，建议先用强 reranker 的高分文档做近似相关集再计算 BoR_max。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.18767",
+      "title": "DualView: Adaptive Local-Global Fusion for Multi-Hop Document Reranking",
+      "url": "https://arxiv.org/abs/2605.18767",
+      "authors": "Litong Zhang, Jiaxin Li, Kuo Zhao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 4.25,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "面向多跳问答的级联重排框架，作为 E5-base-v2 召回后的轻量级后处理阶段。包含两个评分器：Local Scorer 用堆叠交叉注意力做 query-doc 细粒度相关性打分；Global Scorer 用 Transformer 建模候选间依赖关系。两个视角通过一个由 query 语义条件化的 Adaptive Gate 动态融合。在固定候选集 + 离线 embedding 缓存的重排设置下，模型在 MuSiQue 等多跳基准上达到有竞争力的结果。",
+      "key_insight": "对社区搜索的实践启发：现有重排器多停留在「逐文档独立打分」，没有显式建模候选间冗余/互补关系；DualView 把「全局视角」参数化成 Transformer + 自适应门，是一种比 listwise 简单又能感知集合上下文的折中。Adaptive Gate 让模型在「单跳查询直接信赖 Local」和「多跳查询启用 Global」之间切换——这与社区搜索「事实型 vs 探索型」query 混合分布天然契合，可作为现有 BERT 重排上的可插拔升级路径。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.19908",
+      "title": "Where Does Authorship Signal Emerge in Encoder-Based Language Models?",
+      "url": "https://arxiv.org/abs/2605.19908",
+      "authors": "Francis Kulumba, Guillaume Vimont, Laurent Romary, Florian Cafiero",
+      "company": [
+        "INRIA"
+      ],
+      "source": "huggingface",
+      "published": "2026-05-18",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "在同一编码器、同一数据、同一损失下，仅「打分机制」不同就能让作者归因模型的性能产生四倍差距。作者用机制可解释性工具发现：词长、标点密度、虚词频率等风格特征在所有层中都同样可获取，性能差距不来自表示质量，而来自打分器决定了编码器在哪一层「汇聚」信号。Mean Pooling 强迫早中层完成汇聚，Late Interaction（如 ColBERT 风格）则把汇聚推到更深层；该差异可从两类 scorer 的梯度结构直接推导。",
+      "key_insight": "对社区短文本检索意义重大：业界长期纠结于「换更大编码器」还是「加多向量」，这篇用因果干预证明，pooling 策略决定信号「何时何处汇聚」，进而决定哪些下游任务能赚到红利。短文本场景里 Late Interaction 把信号留在深层，可能更适合细粒度词级别匹配；而内容池子大时 Mean Pooling 的早层汇聚反而压缩出更鲁棒的稠密向量。这给「为什么换 scorer 比换 backbone 更划算」提供了机制层证据，应直接指导社区搜索召回/精排架构选型。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.19628",
+      "title": "Understanding Wacky Weights: A Dissection of SPLADE's Learned Term Importance",
+      "url": "https://arxiv.org/abs/2605.19628",
+      "authors": "Gregory Polyakov, Harrisen Scells, Carsten Eickhoff",
+      "company": [
+        "University of Tübingen"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "学习型稀疏检索（如 SPLADE）号称比稠密向量「可解释」，但扩展词中常常出现与输入语义无关的「怪异权重」（wacky weights）。论文复现 SPLADE-v2 并对 SPLADE 全家族系统性剖析：基于扩展词的词汇效用给出 wackiness 的形式化定义，提出一种跨模型比较 wacky token 普遍程度的新度量，并量化它们对检索效果的贡献——即「看起来怪」的权重并不一定是噪声，可能扛起了相当部分的检索分数。",
+      "key_insight": "对生产环境直接相关：很多团队在线上 sparse retrieval 时会对扩展词做「语义白名单」裁剪，以为是在去噪，但这篇说明部分 wacky token 实际承担效用，盲目裁剪会掉点。社区搜索若采用 SPLADE 类倒排索引，需要把「可解释性」和「效用」分开评估，先用论文提出的 wackiness 度量做诊断，再决定是否对扩展词做语义约束训练。这也是为什么直接搬「BM25+人类先验」调权常常打不过端到端学习的扩展。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.18760",
+      "title": "DOTRAG: Retrieval-Time Reasoning Along Paths",
+      "url": "https://arxiv.org/abs/2605.18760",
+      "authors": "Larnell Moore, Naihao Deng, Rada Mihalcea, Farnaz Jahanbakhsh",
+      "company": [
+        "University of Michigan"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对 GraphRAG 中「retrieve-then-reason」范式难以适配 query 特定逻辑、容易堆积无关上下文的问题，提出 DotRAG：一个免训练的 GraphRAG 框架，把检索本身重构为「沿路径推理」。核心是 Division of Thought (DOT) 抽象：把检索分解为局部搜索空间，由 query 条件化约束指导图探索、剪枝与迭代发现关系路径，无需显式 step-by-step 推理链。在 MetaQA 与 UltraDomain 上达到 SOTA，多跳任务上一致提升。",
+      "key_insight": "对社区搜索的间接价值在于「复杂查询下的迭代检索」思路：当用户提「昨天那个讲 A 又涉及 B 的帖子」这类多跳意图时，把检索看作「带约束的探索过程」而非「一次相似度排序」，可以避免一次拉过多无关候选。DotRAG 的「训练自由 + query-conditioned 约束生成」用 LLM 直接产出剪枝条件，工程门槛低于训练一个专用 multi-hop 检索器，适合在评论/答案这类弱结构知识图上灰度上线。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.18766",
+      "title": "Retrieve Only Relevant Tables Whether Few or Many: Adaptive Table Retrieval Method",
+      "url": "https://arxiv.org/abs/2605.18766",
+      "authors": "Taehee Kim, Seungbin Yang, Jihwan Kim, Jaegul Choo",
+      "company": [
+        "KAIST"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "现有表检索方法对所有 query 都返回固定 top-k 表，导致需要少数表的 query 浪费 token、需要多表的 query 又证据不足。论文提出自适应表检索：用自适应阈值机制按 query 需求决定返回数量，并通过滑动窗口重排算法在大表语料上高效处理。在 text-to-SQL 任务上展示了相比固定 k 设置的显著效果提升与 token 节省。",
+      "key_insight": "把「自适应阈值 + 滑动窗口重排」这一组合搬到社区搜索完全可行：很多 query（如「如何蒸鱼」）只需 3-5 篇高相关帖，另一些（如「减肥经验大全」）需要十几篇。当前业界普遍写死 top-k 用于下游 LLM 摘要，既会被低相关候选稀释也会出 token 浪费。自适应阈值由模型自学校准，再叠滑窗 rerank，可作为「召回后→摘要前」的轻量中间件，无需重训召回模型即可显著优化 LLM 摘要的 grounding 质量。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.20123",
+      "title": "BiRD: A Bidirectional Ranking Defense Mechanism for Retrieval Augmented Generation",
+      "url": "https://arxiv.org/abs/2605.20123",
+      "authors": "Chengcai Gao, Zhihong Sun, Xiaochuan Shi, Qiufeng Wang, Chao Liang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "RAG 系统对抗污染防御目前要么靠语义分析（成本高）要么靠投票（鲁棒性差）。BiRD 发现一个判别性模式：被污染文档的「反向排名」（用 doc 作为 query 去召回原 query）与 query 的「正向排名」一致性显著强于正常文档。基于此提出双向排名防御框架——正向排名度量语义内容相关性，反向排名量化排名上下文一致性，双信号联合识别注入文档，避免单一语义判别的高假阳/假阴问题。",
+      "key_insight": "把「反向召回」作为信号在工业搜推里其实是被低估的设计：UGC 平台天然存在大量低质/SEO 灌水帖，它们对热门 query 的相关性看上去合理但本质是「为命中而写」。借鉴 BiRD 思路，可在召回阶段后加一个「反向召回签名」——把候选 doc 反过来当 query，看它召回的还是不是当前 query 同分布的真实 query。这种基于排名结构的特征不依赖标注，对反作弊、低质压制可比纯语义模型更稳，且推理成本可控。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.19932",
+      "title": "PEEK: Context Map as an Orientation Cache for Long-Context LLM Agents",
+      "url": "https://arxiv.org/abs/2605.19932",
+      "authors": "Zhuohan Gu, Qizheng Zhang, Omar Khattab, Samuel Madden",
+      "company": [
+        "MIT",
+        "Stanford"
+      ],
+      "source": "huggingface",
+      "published": "2026-05-18",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM agent 反复操作同一文档库/代码库时，现有方案只保留 trajectory、原始材料或任务级策略，没有保留「对上下文本身的定向知识」。PEEK 把这种 orientation knowledge 缓存为 context map：一个小尺寸、常数大小的 prompt artifact，提供对外部上下文的持久「窥视」。由可编程缓存策略维护，包含 Distiller（从推理信号抽取可迁移知识）、Cartographer（把知识翻译为结构化编辑）以及优先级模块。",
+      "key_insight": "对社区搜索的延展意义在于「会话级语义索引」：当用户在同一话题下连续多轮搜索时，传统做法每次重新走全量召回，而 PEEK 提示我们可以缓存一份「该用户在该话题下的关键实体、惯用 query 改写、历史相关 doc id」作为定向地图，把每次召回从「全库探索」降级为「地图引导」。这与电商/社区已有的「个性化 query 改写」是同源思想，但 PEEK 的可编程缓存策略让「何时更新、保留什么」显式化，可作为下一代 personalized rewriter 的工程蓝本。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2603.14828",
+      "title": "Toward Robust GraphRAG: Mitigating Retrieval Drift and Hallucination from Imperfect Knowledge Graphs",
+      "url": "https://arxiv.org/abs/2603.14828",
+      "authors": "Yizhuo Ma, Jinchuan Xu, Tao Wen, Qizhi Chen 等",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "实证分析发现 LLM 自动构建的 KG 普遍存在两类被现有 GraphRAG 忽略的退化模式：spurious noise（导致检索漂移到看似合理但无依据的三元组）和 incomplete information（迫使在弱支撑结构上继续走，引发检索幻觉）。论文提出 CS-RAG，不依赖 KG 修复，而是在检索时缓解这些缺陷：先把 query 规划为多个「约束-探索」步骤，再用一致性信号过滤漂移路径。",
+      "key_insight": "对社区平台知识图谱应用的提醒：用 LLM 自动抽 UGC 形成的 KG 误差极大，但「先修图再检索」在工程上几乎不可行——边的总量太大。CS-RAG 的「承认 KG 不完美，在检索期间做鲁棒化」是更现实的工程路线：把 query 分解为约束串再做路径探索，可与现有图召回链路并存，作为对噪声三元组的运行时滤波器。对推荐侧「用户-话题-意图」图也直接适用。"
+    },
+    {
+      "rank": 10,
+      "id": "blog:nvidia-deep-research-skill-2026-05-20",
+      "title": "Add a Specialized Deep Research Skill to Agent Harnesses",
+      "url": "https://developer.nvidia.com/blog/add-a-specialized-deep-research-skill-to-agent-harnesses/",
+      "authors": "NVIDIA Developer Blog",
+      "company": [
+        "NVIDIA"
+      ],
+      "source": "blog_rss",
+      "published": "2026-05-20",
+      "total_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "NVIDIA 在 Claude Code / Codex / LangChain Deep Agents 这类 agent harness 之上，封装了一个专门化的「Deep Research」技能模块，把会话编排、工具链调用、代码执行与多轮检索/综合统一到一个可发布、可治理的 skill artifact 里。博客介绍了 skill repository、软件架构、训练新 sub-agent 的工作流，并强调通用 harness 与专门化能力的分层。",
+      "key_insight": "对搜索/RAG 团队的直接启发是：把「深度研究式检索」从应用代码里拆出来做成可分发的 skill，是 deep research 类产品工程化的关键一步——对内可被多个上层产品复用，对外可受治理框架约束。社区搜索的「复杂主题汇总」「跨日话题追踪」完全可以照这个范式做成 skill，由 agent harness 调度，而不是堆在主搜索链路里。NVIDIA 强调 verified agent skills 治理与本博客是配套出现，提示这条工程路线已经在大厂内部成熟。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:MarianoVilla/Trolley-to-LLM",
+      "title": "Trolley-to-LLM: 同时对多个 LLM 抛出经典电车难题，可分别约束不同伦理世界观",
+      "url": "https://github.com/MarianoVilla/Trolley-to-LLM",
+      "source": "github",
+      "description": "并行向多个 LLM 提出电车难题等道德困境，每个模型可选不同的伦理框架约束，做道德决策对比测评。",
+      "language": "",
+      "stars": 15,
+      "created_at": "2026-05-16"
+    },
+    {
+      "rank": 2,
+      "id": "github:sonnedu/ai-model-icons",
+      "title": "ai-model-icons: AI/LLM 模型图标资源库（SVG/PNG + alias + API profile）",
+      "url": "https://github.com/sonnedu/ai-model-icons",
+      "source": "github",
+      "description": "聚合各家 AI/LLM 模型的图标资源，提供别名、SVG/PNG 缓存与 API profile，方便前端集成。",
+      "language": "",
+      "stars": 13,
+      "created_at": "2026-05-19"
+    },
+    {
+      "rank": 3,
+      "id": "github:chengez/Tool-Cognition-Action",
+      "title": "Tool-Cognition-Action: 论文 Model-Adaptive Tool Necessity Reveals the Knowing-Doing Gap in LLM Tool Use 的代码与数据",
+      "url": "https://github.com/chengez/Tool-Cognition-Action",
+      "source": "github",
+      "description": "研究 LLM 在工具调用上「知道却不去做」的差距，提出按模型自适应判定工具必要性的数据集与评估代码。",
+      "language": "",
+      "stars": 10,
+      "created_at": "2026-05-14"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench: 真实环境下的端到端 AI Agent 评测基准",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "把 agent 投放到真实 OpenClaw 环境中评估其端到端完成实际工作的能力，强调 in-the-wild 难度。",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-05-18"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:zai-org/ImageMining",
+      "title": "zai-org/ImageMining: 多模态图像挖掘与知识发现基准",
+      "url": "https://huggingface.co/datasets/zai-org/ImageMining",
+      "source": "huggingface",
+      "description": "给定图像，要求模型识别实体并做搜索增强的多步推理，评测多模态模型的图像挖掘/知识发现能力。",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-05-18"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:zai-org/GLM-OCR",
+      "title": "zai-org/GLM-OCR: GLM 系列 OCR 多语种 image-text-to-text 模型",
+      "url": "https://huggingface.co/zai-org/GLM-OCR",
+      "source": "huggingface",
+      "description": "智谱发布的 GLM-OCR 多模态模型，支持中英法的 image-text-to-text 任务，含 conversational 形态。",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-05-18"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6: 月之暗面 Kimi K2.6 多模态模型权重",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "Kimi K2.5/K2.6 路线的多模态发布，提供 image-text-to-text、conversational 形态，含 compressed-tensors。",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-05-18"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance: 字节研究的统一多模态 any-to-any 模型",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "字节 research 发布的 Lance 多模态模型，支持图像/视频生成、图像编辑、视频理解的 any-to-any 范式。",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-05-18"
+    }
+  ]
+}

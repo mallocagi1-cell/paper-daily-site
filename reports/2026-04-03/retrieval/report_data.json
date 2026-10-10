@@ -1,0 +1,230 @@
+{
+  "date": "2026-04-03",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 539,
+    "papers_selected": 10,
+    "score_min": 3.1,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2604.00242",
+      "title": "FGR-ColBERT: Identifying Fine-Grained Relevance Tokens During Retrieval",
+      "url": "https://arxiv.org/abs/2604.00242",
+      "authors": "Antonín Jarolím, Martin Fajčík",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 4.3,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.45,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "该论文提出 FGR-ColBERT，在 ColBERT 检索模型中集成从 LLM 蒸馏的细粒度相关性信号，使检索阶段即可识别文档中的具体相关片段，无需额外 LLM 后处理。在 MS MARCO 上取得 64.5 的 token 级 F1（超过 Gemma 2 27B 的 62.8），模型仅 110M 参数（比 Gemma 2 小约 245 倍），检索有效性保持在 99% 相对 Recall@50，延迟仅增加约 1.12 倍。",
+      "key_insight": "将 LLM 的细粒度相关性判断能力蒸馏到轻量检索模型中，实现检索即定位的效果，是一种高效的知识迁移范式。对搜索系统而言，这意味着无需昂贵的 LLM 后处理即可在检索阶段提供证据级别的结果解释，极大提升用户体验。110M 参数的模型规模完全适合在线服务部署，1.12 倍延迟开销几乎可忽略。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2604.00242",
+        "title": "FGR-ColBERT: Identifying Fine-Grained Relevance Tokens During Retrieval",
+        "status": "completed",
+        "content": "# FGR-ColBERT: 检索阶段的细粒度相关性 Token 识别 — 深度解读\n\n## 问题与动机\n\n传统文档检索系统的核心任务是**找到相关文档**，但用户往往不仅需要知道\"哪篇文档相关\"，还需要知道**文档中哪些具体片段是相关的**——即证据级别的细粒度定位。这在问答、事实核查、法律检索等场景中尤为重要。\n\n当前解决这一问题的主流做法是\"检索 + LLM 后处理\"的两阶段方案：先用轻量检索模型召回文档，再用大语言模型（如 Gemma 2 27B）对文档进行细粒度分析，标注出相关文本片段。这种方案存在两个核心问题：\n\n1. **计算成本高昂**：27B 参数的 LLM 推理代价极大，难以在线上系统中大规模部署\n2. **额外延迟**：后处理阶段引入显著延迟，影响用户体验\n\n论文的核心动机是：**能否让检索模型本身就具备细粒度相关性识别能力，在检索的同时就定位出文档中的证据片段？** 这是一个\"检索即定位\"的愿景。\n\n## 方法概述\n\nFGR-ColBERT 基于 ColBERT 的 late interaction 架构，通过以下核心思路实现细粒度相关性识别：\n\n**1. 利用 ColBERT 的天然优势**\n\nColBERT 的 MaxSim 机制为每个文档 token 计算与所有 query token 的最大相似度分数。这些分数天然包含了\"每个文档 token 与 query 的匹配程度\"信息。FGR-ColBERT 的关键洞察是：**这些匹配分数可以被进一步转化为细粒度相关性概率**。\n\n具体做法是：对每个文档 token，找到其最佳匹配的 query token，通过 sigmoid 激活将匹配分数转化为相关性概率。\n\n**2. 增加轻量 FFN 变换层**\n\n在原始 ColBERT 的 embedding 之上，增加一个带残差连接的前馈网络：\n\n$$\\hat{E}_{(\\cdot)} = E_{(\\cdot)} + \\text{ReLU}(E_{(\\cdot)} W_1) W_2$$\n\n其中 $W_1 \\in \\mathbb{R}^{h \\times h_2}$，$W_2 \\in \\mathbb{R}^{h_2 \\times h}$。这个 FFN 的作用是在保持检索能力的同时，让 embedding 空间适配细粒度相关性判断任务。\n\n**3. 联合训练目标**\n\n总损失函数为：\n\n$$\\mathcal{L} = \\mathcal{L}_{KL} + \\lambda \\mathcal{L}_{BCE}$$\n\n- $\\mathcal{L}_{KL}$：从 cross-encoder 蒸馏的 KL 散度损失，保持检索有效性\n- $\\mathcal{L}_{BCE}$：基于 LLM 标注的 token 级二元交叉熵损失，学习细粒度相关性\n\n**4. LLM 蒸馏的监督信号**\n\n使用 Gemma 2 27B 对 MS MARCO 数据集进行标注，生成 token 级的证据 span 标签（MS-MARCO-Gemma-Train 和 MS-MARCO-Gemma-Dev），作为 BCE 损失的监督信号。\n\n## 核心技术贡献\n\n**1. \"检索即定位\"的范式创新**\n\n区别于传统的\"检索 → 后处理\"两阶段方案，FGR-ColBERT 将细粒度相关性识别**内嵌到检索过程本身**，是一种端到端的方案。这不仅节省计算资源，更在架构层面消除了两阶段方案的信息瓶颈。\n\n**2. 巧妙利用 ColBERT 架构特性**\n\nColBERT 的 late interaction 机制本身就产生 token 级的匹配信号，FGR-ColBERT 巧妙地将这些信号\"升级\"为细粒度相关性判断，几乎是零成本地复用了已有的计算结果。这与直接在 dense retriever 上添加分类头的做法不同——后者无法获得 token 级的交互信号。\n\n**3. 高效的知识蒸馏策略**\n\n将 27B LLM 的能力蒸馏到 110M 的检索模型中（约 245 倍压缩），且蒸馏后的小模型在 token 级 F1 上**反超**了教师模型（64.5 vs 62.8）。这可能归因于：检索模型通过 query-document 交互获得了更精准的上下文信号，而 LLM 标注时可能存在一定的噪声。\n\n**4. 检索效果几乎无损**\n\n残差连接 + 联合训练的设计确保了检索能力的保持：Recall@50 从 98.0 仅微降至 97.12（99% 相对保持），说明细粒度相关性学习与检索目标之间是兼容而非冲突的。\n\n## 实验结果分析\n\n| 模型 | 参数量 | Human F1 | LLM F1 | Recall@50 |\n|------|--------|----------|--------|-----------|\n| FGR-ColBERT | 110M | **64.51** | **70.38** | 97.12 |\n| 原始 ColBERT | 140M | 51.67 | 50.08 | **98.0** |\n| Gemma 2 27B | 27B | 62.82 | – | – |\n\n**关键发现：**\n\n1. **细粒度相关性**：FGR-ColBERT 在 Human F1 上达到 64.51，超过 27B 参数的 Gemma 2（62.82），提升约 1.7 个百分点。相比原始 ColBERT 的 51.67，提升近 13 个百分点。\n2. **检索有效性**：Recall@50 仅从 98.0 降至 97.12，下降不到 1 个百分点，几乎可忽略。\n3. **延迟开销**：FFN 变换增加的计算量为 $4nhh_2 + nh_2 + nh$ FLOPs，平均延迟仅增加约 0.77ms，总体延迟开销约 1.12 倍。\n4. **索引无膨胀**：不增加索引大小，对存储和内存友好。\n5. **人工评估**：基于 140 个 query-document 对、3 名标注员的评估，结果具有一定的可信度。\n\n## 局限与未来方向\n\n**现有局限：**\n\n1. **评估覆盖面有限**：仅在 MS MARCO 上评估，未在 BEIR 等多领域/跨领域 benchmark 上验证泛化能力。对于领域迁移场景（如医疗、法律），效果未知。\n2. **人工评估规模较小**：140 个 query-document 对的规模偏小，可能存在评估偏差。\n3. **依赖 LLM 标注质量**：训练信号来自 Gemma 2 的标注，如果 LLM 标注本身存在偏差（如偏好长片段或遗漏隐含证据），这些偏差会被蒸馏到小模型中。\n4. **短文档假设**：MS MARCO 的段落长度有限，对于长文档（如论文全文、法律条文）的表现未验证。\n5. **标注粒度固定**：当前是 token 级别的二元标注（相关/不相关），未考虑相关性的程度差异。\n\n**未来方向：**\n\n- 作者提出在 **BEIR** 等更广泛的 benchmark 上评估跨领域泛化能力\n- 扩展到**长文档检索**场景，验证方法在更长上下文中的有效性\n- 研究细粒度蒸馏对**检索鲁棒性**的增强效果\n- 我认为还可以探索：多粒度相关性（token → span → sentence）、与 RAG 系统的深度集成、以及自监督方式生成细粒度标签以减少对 LLM 标注的依赖\n\n## 工业实践意义\n\n这篇论文对搜索/推荐/广告系统有多方面的借鉴价值：\n\n**1. 搜索结果解释性**\n\n最直接的应用场景是**搜索摘要高亮**。当前搜索引擎的摘要高亮通常基于简单的关键词匹配，FGR-ColBERT 可以在检索阶段直接输出语义级别的相关片段，生成更精准的摘要高亮，提升用户对搜索结果的信任感和点击决策效率。\n\n**2. RAG 系统的证据定位**\n\n在 RAG（检索增强生成）系统中，FGR-ColBERT 可以在检索阶段就筛选出文档中的关键证据片段，而非将整个文档送入 LLM。这不仅减少了 LLM 的输入 token 数（降低成本），还可能提升生成质量（减少无关信息的干扰）。\n\n**3. 部署友好性**\n\n110M 参数、1.12 倍延迟、无索引膨胀——这些特性使其完全适合在线服务部署。相比之下，调用 27B LLM 做后处理在大多数在线系统中是不现实的。这种\"以训练时的计算换推理时的效率\"的思路值得借鉴。\n\n**4. 知识蒸馏范式的启示**\n\n将 LLM 的高级能力（如细粒度理解、推理判断）蒸馏到轻量在线模型中，是一种通用的工业化路径。这不仅限于相关性判断，还可以扩展到：\n- 将 LLM 的意图理解能力蒸馏到 query 理解模型\n- 将 LLM 的内容质量判断蒸馏到文档质量评估模型\n- 将 LLM 的 query-ad 匹配能力蒸馏到广告相关性模型\n\n**5. 多任务检索的趋势**\n\nFGR-ColBERT 展示了检索模型可以同时承担\"召回\"和\"证据定位\"两个任务而互不冲突。这启示我们：未来的检索模型可能会承载更多的下游任务信号（如多意图识别、实体链接、情感分析等），向\"一次检索，多重理解\"的方向演进。",
+        "content_html": "<h1>FGR-ColBERT: 检索阶段的细粒度相关性 Token 识别 — 深度解读</h1>\n<h2>问题与动机</h2>\n<p>传统文档检索系统的核心任务是<strong>找到相关文档</strong>，但用户往往不仅需要知道&quot;哪篇文档相关&quot;，还需要知道<strong>文档中哪些具体片段是相关的</strong>——即证据级别的细粒度定位。这在问答、事实核查、法律检索等场景中尤为重要。</p>\n<p>当前解决这一问题的主流做法是&quot;检索 + LLM 后处理&quot;的两阶段方案：先用轻量检索模型召回文档，再用大语言模型（如 Gemma 2 27B）对文档进行细粒度分析，标注出相关文本片段。这种方案存在两个核心问题：</p>\n<ol>\n<li><strong>计算成本高昂</strong>：27B 参数的 LLM 推理代价极大，难以在线上系统中大规模部署</li>\n<li><strong>额外延迟</strong>：后处理阶段引入显著延迟，影响用户体验</li>\n</ol>\n<p>论文的核心动机是：<strong>能否让检索模型本身就具备细粒度相关性识别能力，在检索的同时就定位出文档中的证据片段？</strong> 这是一个&quot;检索即定位&quot;的愿景。</p>\n<h2>方法概述</h2>\n<p>FGR-ColBERT 基于 ColBERT 的 late interaction 架构，通过以下核心思路实现细粒度相关性识别：</p>\n<p><strong>1. 利用 ColBERT 的天然优势</strong></p>\n<p>ColBERT 的 MaxSim 机制为每个文档 token 计算与所有 query token 的最大相似度分数。这些分数天然包含了&quot;每个文档 token 与 query 的匹配程度&quot;信息。FGR-ColBERT 的关键洞察是：<strong>这些匹配分数可以被进一步转化为细粒度相关性概率</strong>。</p>\n<p>具体做法是：对每个文档 token，找到其最佳匹配的 query token，通过 sigmoid 激活将匹配分数转化为相关性概率。</p>\n<p><strong>2. 增加轻量 FFN 变换层</strong></p>\n<p>在原始 ColBERT 的 embedding 之上，增加一个带残差连接的前馈网络：</p>\n<p>$$\\hat{E}_{(\\cdot)} = E_{(\\cdot)} + \\text{ReLU}(E_{(\\cdot)} W_1) W_2$$</p>\n<p>其中 $W_1 \\in \\mathbb{R}^{h \\times h_2}$，$W_2 \\in \\mathbb{R}^{h_2 \\times h}$。这个 FFN 的作用是在保持检索能力的同时，让 embedding 空间适配细粒度相关性判断任务。</p>\n<p><strong>3. 联合训练目标</strong></p>\n<p>总损失函数为：</p>\n<p>$$\\mathcal{L} = \\mathcal{L}_{KL} + \\lambda \\mathcal{L}_{BCE}$$</p>\n<ul>\n<li>$\\mathcal{L}_{KL}$：从 cross-encoder 蒸馏的 KL 散度损失，保持检索有效性</li>\n<li>$\\mathcal{L}_{BCE}$：基于 LLM 标注的 token 级二元交叉熵损失，学习细粒度相关性</li>\n</ul>\n<p><strong>4. LLM 蒸馏的监督信号</strong></p>\n<p>使用 Gemma 2 27B 对 MS MARCO 数据集进行标注，生成 token 级的证据 span 标签（MS-MARCO-Gemma-Train 和 MS-MARCO-Gemma-Dev），作为 BCE 损失的监督信号。</p>\n<h2>核心技术贡献</h2>\n<p><strong>1. &quot;检索即定位&quot;的范式创新</strong></p>\n<p>区别于传统的&quot;检索 → 后处理&quot;两阶段方案，FGR-ColBERT 将细粒度相关性识别<strong>内嵌到检索过程本身</strong>，是一种端到端的方案。这不仅节省计算资源，更在架构层面消除了两阶段方案的信息瓶颈。</p>\n<p><strong>2. 巧妙利用 ColBERT 架构特性</strong></p>\n<p>ColBERT 的 late interaction 机制本身就产生 token 级的匹配信号，FGR-ColBERT 巧妙地将这些信号&quot;升级&quot;为细粒度相关性判断，几乎是零成本地复用了已有的计算结果。这与直接在 dense retriever 上添加分类头的做法不同——后者无法获得 token 级的交互信号。</p>\n<p><strong>3. 高效的知识蒸馏策略</strong></p>\n<p>将 27B LLM 的能力蒸馏到 110M 的检索模型中（约 245 倍压缩），且蒸馏后的小模型在 token 级 F1 上<strong>反超</strong>了教师模型（64.5 vs 62.8）。这可能归因于：检索模型通过 query-document 交互获得了更精准的上下文信号，而 LLM 标注时可能存在一定的噪声。</p>\n<p><strong>4. 检索效果几乎无损</strong></p>\n<p>残差连接 + 联合训练的设计确保了检索能力的保持：Recall@50 从 98.0 仅微降至 97.12（99% 相对保持），说明细粒度相关性学习与检索目标之间是兼容而非冲突的。</p>\n<h2>实验结果分析</h2>\n<table><thead><tr><th>模型</th><th>参数量</th><th>Human F1</th><th>LLM F1</th><th>Recall@50</th></tr></thead><tbody><tr><td>FGR-ColBERT</td><td>110M</td><td><strong>64.51</strong></td><td><strong>70.38</strong></td><td>97.12</td></tr><tr><td>原始 ColBERT</td><td>140M</td><td>51.67</td><td>50.08</td><td><strong>98.0</strong></td></tr><tr><td>Gemma 2 27B</td><td>27B</td><td>62.82</td><td>–</td><td>–</td></tr></tbody></table>\n<p><strong>关键发现：</strong></p>\n<ol>\n<li><strong>细粒度相关性</strong>：FGR-ColBERT 在 Human F1 上达到 64.51，超过 27B 参数的 Gemma 2（62.82），提升约 1.7 个百分点。相比原始 ColBERT 的 51.67，提升近 13 个百分点。</li>\n<li><strong>检索有效性</strong>：Recall@50 仅从 98.0 降至 97.12，下降不到 1 个百分点，几乎可忽略。</li>\n<li><strong>延迟开销</strong>：FFN 变换增加的计算量为 $4nhh_2 + nh_2 + nh$ FLOPs，平均延迟仅增加约 0.77ms，总体延迟开销约 1.12 倍。</li>\n<li><strong>索引无膨胀</strong>：不增加索引大小，对存储和内存友好。</li>\n<li><strong>人工评估</strong>：基于 140 个 query-document 对、3 名标注员的评估，结果具有一定的可信度。</li>\n</ol>\n<h2>局限与未来方向</h2>\n<p><strong>现有局限：</strong></p>\n<ol>\n<li><strong>评估覆盖面有限</strong>：仅在 MS MARCO 上评估，未在 BEIR 等多领域/跨领域 benchmark 上验证泛化能力。对于领域迁移场景（如医疗、法律），效果未知。</li>\n<li><strong>人工评估规模较小</strong>：140 个 query-document 对的规模偏小，可能存在评估偏差。</li>\n<li><strong>依赖 LLM 标注质量</strong>：训练信号来自 Gemma 2 的标注，如果 LLM 标注本身存在偏差（如偏好长片段或遗漏隐含证据），这些偏差会被蒸馏到小模型中。</li>\n<li><strong>短文档假设</strong>：MS MARCO 的段落长度有限，对于长文档（如论文全文、法律条文）的表现未验证。</li>\n<li><strong>标注粒度固定</strong>：当前是 token 级别的二元标注（相关/不相关），未考虑相关性的程度差异。</li>\n</ol>\n<p><strong>未来方向：</strong></p>\n<ul>\n<li>作者提出在 <strong>BEIR</strong> 等更广泛的 benchmark 上评估跨领域泛化能力</li>\n<li>扩展到<strong>长文档检索</strong>场景，验证方法在更长上下文中的有效性</li>\n<li>研究细粒度蒸馏对<strong>检索鲁棒性</strong>的增强效果</li>\n<li>我认为还可以探索：多粒度相关性（token → span → sentence）、与 RAG 系统的深度集成、以及自监督方式生成细粒度标签以减少对 LLM 标注的依赖</li>\n</ul>\n<h2>工业实践意义</h2>\n<p>这篇论文对搜索/推荐/广告系统有多方面的借鉴价值：</p>\n<p><strong>1. 搜索结果解释性</strong></p>\n<p>最直接的应用场景是<strong>搜索摘要高亮</strong>。当前搜索引擎的摘要高亮通常基于简单的关键词匹配，FGR-ColBERT 可以在检索阶段直接输出语义级别的相关片段，生成更精准的摘要高亮，提升用户对搜索结果的信任感和点击决策效率。</p>\n<p><strong>2. RAG 系统的证据定位</strong></p>\n<p>在 RAG（检索增强生成）系统中，FGR-ColBERT 可以在检索阶段就筛选出文档中的关键证据片段，而非将整个文档送入 LLM。这不仅减少了 LLM 的输入 token 数（降低成本），还可能提升生成质量（减少无关信息的干扰）。</p>\n<p><strong>3. 部署友好性</strong></p>\n<p>110M 参数、1.12 倍延迟、无索引膨胀——这些特性使其完全适合在线服务部署。相比之下，调用 27B LLM 做后处理在大多数在线系统中是不现实的。这种&quot;以训练时的计算换推理时的效率&quot;的思路值得借鉴。</p>\n<p><strong>4. 知识蒸馏范式的启示</strong></p>\n<p>将 LLM 的高级能力（如细粒度理解、推理判断）蒸馏到轻量在线模型中，是一种通用的工业化路径。这不仅限于相关性判断，还可以扩展到：</p>\n<ul>\n<li>将 LLM 的意图理解能力蒸馏到 query 理解模型</li>\n<li>将 LLM 的内容质量判断蒸馏到文档质量评估模型</li>\n<li>将 LLM 的 query-ad 匹配能力蒸馏到广告相关性模型</li>\n</ul>\n<p><strong>5. 多任务检索的趋势</strong></p>\n<p>FGR-ColBERT 展示了检索模型可以同时承担&quot;召回&quot;和&quot;证据定位&quot;两个任务而互不冲突。这启示我们：未来的检索模型可能会承载更多的下游任务信号（如多意图识别、实体链接、情感分析等），向&quot;一次检索，多重理解&quot;的方向演进。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2604.01178",
+      "title": "Screening Is Enough",
+      "url": "https://arxiv.org/abs/2604.01178",
+      "authors": "Ken M. Nakanishi",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-01",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该论文指出标准 softmax attention 的核心缺陷：无法定义绝对 query-key 相关性，只能基于相对分数分配注意力权重，无法显式拒绝无关 key。提出 Multiscreen 架构，引入 screening 机制——对每个 key 评估是否超过显式阈值，丢弃不相关 key 后聚合剩余信息。实验显示比 Transformer 基线减少约 40% 参数达到相当 loss，支持更大学习率，在 100K 上下文长度下推理延迟降低最高 3.2 倍。",
+      "key_insight": "从相对相关性到绝对相关性的范式转变对搜索排序有深刻启示。传统排序模型在候选集质量差异大时容易给低质量文档分配不必要的注意力。Screening 机制的硬阈值过滤思想可迁移到搜索场景的多阶段排序中——在精排阶段显式过滤低相关候选而非仅重排，有望提升排序效率和结果质量。40% 参数减少和 3.2 倍推理加速的数据也很有吸引力。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2602.03992",
+      "title": "Nemotron ColEmbed V2: Top-Performing Late Interaction Embedding Models for Visual Document Retrieval",
+      "url": "https://arxiv.org/abs/2602.03992",
+      "authors": "Gabriel de Souza P. Moreira, Ronay Ak, Mengyao Xu, Oliver Holworthy, Benedikt Schifferer, Zhiding Yu, Yauhen Babakhin, Radek Osmulski, Jiarui Cai, Ryan Chesler, Bo Liu, Even Oldridge",
+      "company": [
+        "NVIDIA"
+      ],
+      "source": "arxiv",
+      "published": "2026-02-06",
+      "total_score": 3.7,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "NVIDIA 发布的视觉文档检索模型 Nemotron ColEmbed V2，基于 VLM（Eagle 2、Qwen3-VL）构建 3B/4B/8B 三个规模版本，采用 late interaction 架构。通过聚类采样、hard-negative mining、双向注意力和模型合并等技术，8B 模型在 ViDoRe V3 排行榜排名第一，NDCG@10 达 63.42。该模型直接处理文档视觉信息，绕过 OCR 管线，简化索引流程。",
+      "key_insight": "视觉文档检索是搜索系统的重要延伸方向。Nemotron ColEmbed V2 展示了 VLM 在文档理解和检索中的巨大潜力，通过保留文档视觉布局信息避免 OCR 错误传播。对于包含图片、表格等富媒体内容的 UGC 平台，这种端到端视觉检索方案比传统 OCR+文本检索更鲁棒。late interaction 架构在质量和效率间取得良好平衡。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2510.27141",
+      "title": "Compass: General Filtered Search across Vector and Structured Data",
+      "url": "https://arxiv.org/abs/2510.27141",
+      "authors": "Chunxiao Ye, Xiao Yan, Eric Lo",
+      "company": [],
+      "source": "arxiv",
+      "published": "2025-10-31",
+      "total_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "该论文提出 Compass 框架，解决向量检索与结构化数据过滤的联合查询问题。不同于依赖专用索引的现有方案，Compass 复用已有的 HNSW、IVF 和 B+ 树索引结构，通过协同查询执行策略协调向量候选生成与谓词过滤，支持任意的合取、析取和范围条件。实验显示其在多种混合查询负载下一致优于 NaviX，在单属性场景中匹配专用索引的吞吐量。",
+      "key_insight": "在实际搜索系统中，纯向量检索往往不够——用户经常需要同时筛选时间、类别、地域等结构化属性。Compass 的价值在于提供了通用过滤检索框架，无需为每种过滤条件构建专用索引。对 UGC 搜索场景（如最近一周+某分区+语义相关的复合查询），这种向量+结构化的统一检索方案能显著降低索引维护成本。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2604.00865",
+      "title": "Doctor-RAG: Failure-Aware Repair for Agentic Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2604.00865",
+      "authors": "Shuguang Jiao, Chengkai Huang, Shuhan Qi, Xuan Wang, Yifan Li, Lina Yao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该论文针对 Agentic RAG 系统中多跳推理失败的问题，提出 Doctor-RAG (DR-RAG) 诊断-修复框架。不同于重跑整条推理链路的暴力方案，DR-RAG 将失败处理分为两阶段：(1) 基于覆盖度门控分类法的轨迹级故障诊断与定位，识别最早故障点；(2) 工具条件化的局部修复，仅在故障点干预并最大化复用已验证的推理前缀。在三个多跳 QA 基准上显著提升回答准确率，同时大幅减少推理 token 消耗。",
+      "key_insight": "DR-RAG 的诊断+局部修复思路对搜索系统中的检索失败处理有启发意义。在复杂搜索场景中（如多轮对话搜索、多步检索），当某一步检索失败时，不必重新开始整个流程，而是定位失败环节并进行针对性修复。故障点定位+前缀复用的设计可显著降低计算开销，这对在线搜索系统的可靠性和效率至关重要。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2604.00500",
+      "title": "Evidence Units: Ontology-Grounded Document Organization for Parser-Independent Retrieval",
+      "url": "https://arxiv.org/abs/2604.00500",
+      "authors": "Yeonjee Han",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-02",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "该论文针对结构化文档检索中的碎片化问题，提出 Evidence Units (EUs)——将表格与标题、图片与说明、公式与解释等语义完整单元作为检索粒度，而非简单的元素级分块。通过扩展 DoCO 本体映射、相似度矩阵优化段落分配、Neo4j 验证规则和跨解析器验证，在 OmniDocBench 上将检索 LCS 提升 +0.31，Recall@1 提升 3.4 倍（0.15 到 0.51），MinK 从 2.58 降至 1.72。",
+      "key_insight": "文档分块质量直接影响检索效果，这是许多 RAG 和搜索系统的共性痛点。Evidence Units 的核心价值在于以语义完整性而非固定长度作为分块标准，确保检索单元自包含且可理解。对 UGC 搜索而言，这种思路可延伸到帖子+评论、问题+回答等关联内容的组合检索，避免信息碎片化导致的语义丢失。3.4 倍 Recall@1 提升非常显著。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2507.21989",
+      "title": "Benchmarking Filtered Approximate Nearest Neighbor Search Algorithms on Transformer-based Embedding Vectors",
+      "url": "https://arxiv.org/abs/2507.21989",
+      "authors": "Patrick Iff, Paul Bruegger, Marcin Chrapek, David Kochergin, Maciej Besta, Torsten Hoefler",
+      "company": [
+        "ETH Zurich"
+      ],
+      "source": "arxiv",
+      "published": "2025-07-29",
+      "total_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "该论文填补了过滤近似最近邻搜索 (Filtered ANN) 公开基准的空白，发布了 arxiv-for-fanns 数据集——包含超过 270 万篇 arXiv 论文的 transformer 嵌入向量及 11 种真实属性。对 11 种 FANNS 算法进行系统基准测试，涵盖不同过滤类型、邻居数量、数据规模和查询选择性，提炼出 8 条关键选择指南，为实际向量检索系统的算法选型提供参考。",
+      "key_insight": "在实际搜索系统中，带过滤条件的向量检索是刚需（如按时间、分类过滤后的语义搜索），但不同 FANNS 算法在不同场景下表现差异巨大。该论文的 8 条选择指南为工程实践提供了直接参考，特别是在高选择性过滤（返回少量结果）和低选择性过滤（大范围搜索）场景下的算法推荐。270 万规模的基准数据集也为后续研究提供了可复现的评测平台。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2510.14377",
+      "title": "PluriHopRAG: Exhaustive, Recall-Sensitive QA Through Corpus-Specific Document Structure Learning",
+      "url": "https://arxiv.org/abs/2510.14377",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2025-10-18",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "该论文提出 PluriHopRAG，针对需要穷举所有相关文档的复杂检索场景（如金融、法律、医疗报告分析）。不同于传统单跳/多跳 RAG 假设存在明确的停止条件，PluriHop 问题要求检索系统覆盖所有包含相关信息的文档。通过语料库特定的文档结构学习，构建文档间的语义关系图，实现高召回率的穷举式检索。该方法解决了传统 RAG 在高召回要求场景下的不足。",
+      "key_insight": "PluriHop 概念的提出填补了 RAG 研究中的一个重要空白——当搜索需要穷举所有相关结果而非仅找到最佳答案时，传统的 top-k 检索范式不再适用。对 UGC 搜索中的合规审查、内容审核等需要全面覆盖的场景，这种召回敏感的检索方法有直接应用价值。文档结构学习的思路也可用于构建帖子间的语义关联图。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2405.15556",
+      "title": "Certifiably Robust RAG against Retrieval Corruption",
+      "url": "https://arxiv.org/abs/2405.15556",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2024-05-24",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "该论文提出 RobustRAG，首个针对检索结果注入攻击的可证明鲁棒防御框架。核心策略是隔离-聚合：将检索到的文档分为互不相交的组，各组独立生成 LLM 回答，然后通过安全聚合机制（关键词投票或 LLM 判断）合并最终答案。当恶意文档数量低于阈值时，RobustRAG 可提供数学可证明的鲁棒性保证，有效抵御知识库投毒攻击。",
+      "key_insight": "随着 RAG 和语义检索在搜索系统中的广泛应用，检索结果注入攻击成为现实威胁。RobustRAG 的隔离-聚合策略提供了一种通用的防御范式——对检索结果进行分组独立处理再聚合，可有效降低单个恶意文档对最终结果的影响。对 UGC 搜索而言，这种方法可用于防御 SEO 作弊和内容投毒，尤其适用于对结果可靠性要求高的场景。"
+    },
+    {
+      "rank": 10,
+      "id": "s2:f16bed8d09a2dbad3b58bc17619122fb41bd5322",
+      "title": "Reproducing NevIR: Negation in Neural Information Retrieval",
+      "url": "https://www.semanticscholar.org/paper/f16bed8d09a2dbad3b58bc17619122fb41bd5322",
+      "authors": "",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "2025-02-19",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "该论文复现并扩展了 NevIR 基准测试，系统研究否定语义在神经信息检索中的处理能力。尽管现代 IR 系统大量采用语言模型作为骨干架构，但对否定表达的处理仍是一个被忽视的短板。研究验证了原始 NevIR 的发现——主流检索模型在否定查询上表现显著下降，并进一步分析了不同模型架构和训练策略对否定理解能力的影响。",
+      "key_insight": "否定查询处理是搜索系统中一个容易被忽视但影响显著的问题——用户搜索'不含XX的YY'时，大多数语义匹配模型会错误地将包含XX的文档排在前面。该研究提醒搜索工程师需要专门评测和优化否定语义的处理能力。对 UGC 搜索场景，用户经常使用否定表达（如'不想看XXX类型的帖子'），提升模型的否定理解能力可直接改善搜索体验。"
+    }
+  ]
+}

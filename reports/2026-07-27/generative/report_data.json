@@ -1,0 +1,377 @@
+{
+  "date": "2026-07-27",
+  "track": "generative",
+  "scenario": "社区搜索（UGC 短文本搜索）：用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性（nDCG）和点击率（CTR），关注语义匹配、query 理解、短文本召回、排序模型及 LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 21,
+    "papers_selected": 10,
+    "score_min": 3.8,
+    "score_max": 4.9
+  },
+  "coverage": {
+    "status": "gaps",
+    "track_core": "OxygenREC: An Instruction-Following Generative Framework for E-commerce Recommendation",
+    "industry_practice": "Bridging the Structural Gap: Adapting Autoregressive Generation for Recommendation",
+    "recent_paper": "Diffusion Language Model for Recommendation",
+    "source_distribution": {
+      "web_search": 1.0
+    },
+    "chinese_source": true,
+    "warnings": [
+      "来源多样性未满足：上游 arXiv/Hugging Face/Semantic Scholar/会议接口失败或限流，历史去重后可用的赛道相关候选均来自 Web 补充。"
+    ]
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "web_search:doi:10.1145/3805712.3808404",
+      "title": "OxygenREC: An Instruction-Following Generative Framework for E-commerce Recommendation",
+      "url": "https://doi.org/10.1145/3805712.3808404",
+      "authors": "Xuegang Hao, Ming Zhang, Alex Li, Xiangyu Qian, Zhi Ma, Yanlong Zang, Shijie Yang, Zhongxuan Han, Xiaolong Ma, Jinguang Liu, Zhen Li, Zhida Jiang, Shusheng Wang, Ning Tang, Yanchen Qiao, Chenxiang Yang, Chen Sun, Jincheng Yuan, Chunhua Peng, Heng Hu, Peijun Yang, Baopeng Yuan, Caiyun Qiu, Zhaolong Xing, Haofei Yuan, Haipeng Zhang, Yuzhang Guo, Weijie Ding, Jiahua Gao, Hao Huang, Zhen Chen, Tongxuan Liu, Pinghua Gong",
+      "company": [
+        "JD"
+      ],
+      "source": "web_search",
+      "published": "2026-07-20",
+      "total_score": 4.9,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 5,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 5.0,
+      "summary": "OxygenREC 将近线 LLM 的“慢思考”意图推理与实时编码器—解码器的“快生成”拆开，并用 Q2I 对齐、指令引导历史检索及 SA-GCPO 统一六个电商场景。京东 10% 流量 A/B 中，订单量提升 1.49%–8.03%、GMV 提升 1.46%–11.80%，线上延迟为 50–80ms。",
+      "key_insight": "工业生成式推荐不必把大模型放进在线关键路径：可先离线或近线把时间、地域、画像与 query 压成可监控指令，再让轻量生成器完成召回。社区搜推可复用“场景指令+意图指令”双控制面，把频道规则、候选池和实时 query 分离；同时用奖励映射统一 CTR、相关性与多样性目标，减少每个入口单独训练模型的维护成本。",
+      "deep_reading": {
+        "paper_id": "web_search:doi:10.1145/3805712.3808404",
+        "title": "OxygenREC: An Instruction-Following Generative Framework for E-commerce Recommendation",
+        "status": "completed",
+        "content": "# 深度解读：OxygenREC 如何把大模型推理变成可在线服务的生成式推荐指令\n\n## 1. 问题与动机\n\nOxygenREC 研究的不是把现有排序器换成更大的模型，而是如何让生成式推荐在真实电商多场景中同时获得大模型的推理能力、统一建模能力和毫秒级在线服务能力。传统推荐系统通常由召回、粗排、精排等多个阶段串联，每一阶段使用不同目标和特征，前一阶段漏掉的商品无法在后续恢复，且跨场景需要分别训练、部署和维护模型。生成式推荐把用户历史和候选商品离散化为 token，再以 next-token prediction 直接生成商品序列，理论上能减少级联误差并统一任务，但它通常只从行为共现中做归纳学习：面对稀疏兴趣、促销事件、时间地点变化、复杂比较或跨场景需求时，日志并没有足够样本告诉模型为什么此刻应推荐某类商品。\n\n大语言模型具备世界知识和演绎推理能力，却不适合直接放入在线请求链路。论文面临三重约束：第一，LLM 逐 token 解码的延迟与成本远高于推荐系统预算；第二，LLM 的自然语言空间与推荐模型的商品语义 ID 空间不一致，直接生成容易产生不可服务商品或幻觉；第三，同一个电商平台包含主页、搜索后推荐、购物车、订单完成页等多个场景，每个场景的触发条件和业务目标不同，独立模型维护成本高，简单混训又会发生负迁移。OxygenREC 的核心思路是把复杂推理放到近线慢路径，将其压缩为结构化 recommendation instruction，再由小型实时生成模型执行，从而形成 fast–slow 双系统。\n\n## 2. 方法详解\n\n慢系统首先构建可持续更新的指令。场景指令刻画时间、地点、用户阶段和触发事件。论文设计 STP 层次索引，以时间、位置与用户画像组织模板；Query Rewriter 采用 Qwen3-0.6B，把结构化条件改写成自然、紧凑且可执行的推荐要求。为了让小模型可靠改写，作者合成六类常见错误并加入自纠训练，再用点击一致性信号校准。人工评估中，这套 QR 的指令通过率为 95.33%，高于 DeepSeek-R1 的 88.67%，说明任务专用小模型比直接调用通用推理模型更稳定。\n\n推理指令关注用户为什么会需要某些商品。系统以 Qwen3-32B 和 DeepSeek-R1 等教师模型分析用户行为、上下文和商品语义，生成意图推理伪标签；论文报告其中 72% 可直接使用。为避免长历史淹没当前需求，Instruction-Guided Retrieval（IGR）把当前指令当作 query，在商品语义空间检索与指令最相关的历史行为。Query-to-Item（Q2I）则把自然语言指令映射到商品空间，使慢系统输出不只是文字解释，而是与下游商品 token 表示对齐的条件信号。这样，大模型只在近线更新指令，不参与每次在线请求。\n\n商品表示采用多模态语义 ID。文本和图像先经各自编码器提取特征，再由 Q-Former 与 MLP 压缩到 256 维共享空间，并通过 item-to-item 对比目标保持相似商品邻近。随后使用残差量化 K-means，将每个商品编码为 3 层离散 token，每层词表大小为 8192。分层语义 ID 既能表达从粗类目到细粒度商品的层级，又把十亿级商品空间转成生成模型可处理的有限词表。它也带来工程约束：量化碰撞、码本负载和新品映射质量必须被持续监控。\n\n快系统接收用户画像、短期与长期行为、场景指令和推理指令，并把指令插在 BOS 之后。论文的消融显示，这个位置优于序列尾部或其他插入方式，因为条件信号可从解码开始影响全部商品 token。预训练阶段以 next-token prediction 学习用户行为和商品语义 ID；后训练阶段进一步做指令对齐与列表级优化。统一模型使用场景 token 区分不同入口，并把场景指令与触发原因融合，既共享商品和用户知识，又保留场景条件。\n\n为优化生成列表，作者提出 Scenario-Aware Group Clipped Policy Optimization（SA-GCPO）。它在组内计算相对奖励，并针对正、负优势分别采用不同温度和裁剪策略，减少不同场景奖励尺度与样本难度差异造成的更新失衡。奖励映射把点击、转化、订单等业务反馈统一成可比较信号，使同一策略可覆盖六个线上场景。论文比较了 GRPO、GSPO 与 SA-GCPO，后者在 HR@1、HR@10 和 Recall@30 上均更好，说明场景感知裁剪不只是训练稳定技巧，而是统一模型避免强场景压制弱场景的关键。\n\n训练与服务采用稀疏—稠密混合架构。论文披露训练基于 PyTorch，使用 128 张 H800 GPU，节点内 NVLink 带宽约 400 GB/s，节点间采用 8×200 Gb/s RoCE；通过通信与计算重叠、稀疏算子优化和负载均衡，模型浮点利用率达到约 40%，稀疏操作耗时占比从 15% 降到 5%，端到端训练获得 1.1—2.4 倍加速。在线侧的 xLLM 系统包含 xSchedule、xAttention 与 xBeam，用连续批处理、注意力缓存和受约束 beam search 控制吞吐与延迟。论文没有披露优化器、学习率、batch size、总训练步数、绝对训练样本量及总训练成本，这些参数不能从文中补推。\n\n## 3. 核心技术贡献\n\n第一项贡献是可部署的 fast–slow 生成式推荐范式。论文没有让在线小模型自行发现所有复杂意图，也没有让昂贵 LLM 直接生成线上商品；它把世界知识和演绎推理压缩为可缓存、可审核、可更新的指令，再由低延迟模型执行。慢路径可独立降级，快路径仍能使用行为序列服务，这比请求时强依赖外部 LLM 更符合核心电商链路的可用性要求。\n\n第二项贡献是打通自然语言指令与商品语义 ID。Q2I、IGR、多模态分层量化和指令插入共同解决了语义空间错位问题：指令不仅是一段附加文本，而会决定选取哪些历史行为、如何条件化解码以及最终生成哪些可服务 ID。右侧 BOS 插入和场景—触发原因融合的消融结果表明，指令结构与放置方式对生成质量有实质影响。\n\n第三项贡献是六场景统一训练与强化学习。独立模型会重复维护并错失跨场景迁移，简单共享模型又容易由大流量场景主导。OxygenREC 用场景 token、统一监督学习和 SA-GCPO 把共享与差异化结合起来。统一训练在六个场景的 HR@10 上都明显超过独立 SFT，最强场景也没有因共享而退化，说明跨场景行为确实可作为稀疏入口的辅助监督。\n\n第四项贡献是端到端工业证据。论文覆盖指令生成、商品 token 化、训练通信、强化学习和在线解码，而不是只报告公开数据集离线指标。128 张 H800 上的训练优化、十亿级商品空间、50—80 ms 的线上延迟以及六场景 A/B 结果，构成一套从算法到系统的完整实现路径。其价值不在于某个单独模块绝对新颖，而在于这些模块被连接成可长期运行的生产系统。\n\n## 4. 实验结果分析\n\n线上实验把实验组与对照组各分配 10% 流量，在六个真实电商场景中比较用户点击率、点击转化率、订单和 GMV。论文给出的核心交易指标如下；延迟列按论文表格中披露的场景组口径记录，未单独披露的条目不做推断。\n\n| 场景 | 订单变化 | GMV 变化 | 在线延迟 |\n|---|---:|---:|---:|\n| 场景 1 | +2.81% | +4.52% | 50 ms |\n| 场景 2 | +2.21% | +8.40% | 未单列 |\n| 场景 3 | +8.03% | +1.46% | 80 ms |\n| 场景 4 | +1.49% | +1.66% | 未单列 |\n| 场景 5 | +4.28% | +11.80% | 50 ms |\n| 场景 6 | +2.92% | +4.15% | 未单列 |\n\n六个场景的订单和 GMV 全为正，订单提升范围为 1.49%—8.03%，GMV 为 1.46%—11.80%。场景 3 的用户点击率下降 0.25%，但点击转化率提升 7.89%、订单提升 8.03%，是一个很有解释力的反例：模型并非简单制造更多浅层点击，而可能减少低意图曝光，把流量转向更高质量购买。场景 5 的 GMV 增幅 11.80% 明显高于订单增幅 4.28%，可能意味着客单价或商品结构变化，但论文没有提供绝对基数、品类拆分或显著性区间，不能把这一差异进一步归因。\n\n指令位置消融中，不使用指令的 HR@1 为 2.78；把指令放在 BOS 右侧升至 3.53。融合场景信息与触发原因后，HR@1 达 3.60、HR@10 达 12.82、Recall@30 达 15.08，优于单一信息来源。这个结果支持两点：一是指令必须在解码早期进入注意力上下文，二是抽象场景标签不足以表达用户当下需求，触发原因提供了更细粒度条件。\n\n统一训练相对独立 SFT 的提升尤其大。六个场景的独立模型 HR@10 分别为 23.29、29.05、5.22、8.44、29.84 和 19.38，统一模型对应为 46.73、55.02、53.57、29.89、37.90 和 62.62。场景 3 从 5.22 提升到 53.57、场景 6 从 19.38 提升到 62.62，说明低资源或行为稀疏场景从跨场景共享中获益最大。需要注意，这些离线命中率的数值跨度异常大，论文没有给出不同场景候选规模和负采样口径，跨场景横向比较绝对值并不严谨；更可靠的是同一场景内独立与统一模型的变化。\n\n强化学习消融中，GRPO 的 HR@1/HR@10 为 23.85/62.15，GSPO 为 24.13/62.88，SA-GCPO 达 25.58/65.95，并在 Recall@30 上保持领先。提升说明正负优势分开裁剪有助于列表策略，但论文没有报告多次随机种子方差、奖励权重敏感性和在线单独增量，无法区分算法改进与奖励调参的贡献。系统实验显示稀疏算子占比由 15% 降至 5%、训练加速 1.1—2.4 倍，证明算法收益并非依靠不可接受的训练低效换取。\n\n实验最强的部分是线上六场景一致正向与完整系统指标，最弱的部分是外部可复现性。全部线上数据来自单一公司，公开数据集实验不足以覆盖指令质量、商品量级与工程组件的组合效果；A/B 表格也未提供实验周期、样本量、置信区间、绝对指标和分人群结果。因此，结论应表述为“在京东的六个场景中验证有效”，不能直接外推为所有电商平台都会获得同等比例收益。\n\n## 5. 局限与未来方向\n\n作者明确指出两项未来方向。第一，当前 next-token prediction 逐个生成列表，延迟随推荐长度近似线性增长；未来计划探索 non-autoregressive generation，以并行生成降低长列表服务成本。第二，现有指令主要描述即时场景和触发上下文，还没有充分建模跨场景完整轨迹与长期目标；后续应把用户在搜索、浏览、加购、购买和复购之间的长期演化纳入指令与奖励。\n\n论文未充分讨论的限制同样重要。慢系统指令有刷新延迟：促销结束、库存变化或用户意图突变后，旧指令可能继续影响推荐，需要 TTL、版本和失败回退机制。LLM 伪标签可用率为 72%，其余样本如何过滤、教师偏差是否被学生放大、不同语言或敏感品类是否稳定，均未完整披露。语义 ID 存在碰撞和码本漂移，新品、长尾商品及多模态信息缺失时的表现需要单独评估。\n\n系统门槛也不低。128 张 H800、专用 RoCE 网络与自研 xLLM 服务栈使完整方案难被中小团队复现；论文报告优化后的效率，却没有给训练成本、能耗、模型参数量和低配版本。线上结果缺少显著性和长期指标，也没有报告退货、取消、投诉、多样性、公平性及商家生态影响。统一奖励若只强调短期交易，可能牺牲探索、长期满意度或小商家曝光。\n\n## 6. 工业实践意义\n\n搜索与推荐团队最值得先复制的不是 128 卡训练，而是职责分离。把高延迟、易变化、需要世界知识的任务放在近线层，例如识别节日与天气需求、概括用户当前任务、解释一次搜索改写或购物车触发原因；把严格延迟路径限定为可审核 instruction、用户行为和商品 ID 的执行。每条指令应带生成时间、来源、置信度、适用场景和过期时间，在线模型必须能在指令缺失、超时或质量失败时退回纯行为基线。\n\n对社区 UGC 搜索，可把帖子主题、作者领域、内容形式和多模态摘要量化为分层语义 ID；慢层从查询、最近浏览、关注关系和社区事件生成类似“寻找近期高可信实测、排除营销转载”的指令。IGR 用该指令从长历史中挑出真正相关的搜索与阅读，而不是把全部历史平均输入。生成结果必须再经过权限、时效、安全和去重过滤，避免语义模型生成已删除或无权访问的内容。\n\n落地可分三阶段。第一阶段只做离线 instruction generation 和 IGR，继续使用现有召回或排序器，验证指令通过率、历史检索相关性、Recall@K 与 P99 延迟。第二阶段引入商品或内容语义 ID，在一个低风险场景做受约束生成，重点监控码本利用率、碰撞率、新品覆盖、无效 ID 率和回退比例。第三阶段才统一多场景模型并加入策略优化；奖励至少应同时包含点击、成功转化、负反馈、长期回访和生态约束，不能只照搬订单目标。\n\n工程监控要覆盖快慢两条链路。慢链路监控指令生成通过率、刷新时延、教师分布漂移、Q2I 对齐质量和 IGR 命中；快链路监控每 token 延迟、beam 宽度、缓存命中、无效序列、场景间梯度与收益差异。论文的 50—80 ms 可作为成熟自研系统的参考，而不是新系统承诺值。A/B 时应像论文一样分场景报告，但补充样本量、置信区间、绝对基数、用户与商家分层，并至少跨越完整促销周期。\n\nOxygenREC 最现实的启示是：大模型在推荐中的价值不一定表现为在线调用次数，而可以表现为更好的条件变量。将复杂推理压缩成稳定指令，再由高吞吐模型消费，能够保留知识与解释力，同时把成本、延迟和故障域隔离。团队若先建立可靠的指令数据与回退机制，即便暂时不使用 SA-GCPO 或大规模生成模型，也能获得更清晰的场景建模和历史选择能力；之后再按业务收益逐步增加生成与强化学习复杂度。",
+        "content_html": "<h1>深度解读：OxygenREC 如何把大模型推理变成可在线服务的生成式推荐指令</h1>\n<h2>1. 问题与动机</h2>\n<p>OxygenREC 研究的不是把现有排序器换成更大的模型，而是如何让生成式推荐在真实电商多场景中同时获得大模型的推理能力、统一建模能力和毫秒级在线服务能力。传统推荐系统通常由召回、粗排、精排等多个阶段串联，每一阶段使用不同目标和特征，前一阶段漏掉的商品无法在后续恢复，且跨场景需要分别训练、部署和维护模型。生成式推荐把用户历史和候选商品离散化为 token，再以 next-token prediction 直接生成商品序列，理论上能减少级联误差并统一任务，但它通常只从行为共现中做归纳学习：面对稀疏兴趣、促销事件、时间地点变化、复杂比较或跨场景需求时，日志并没有足够样本告诉模型为什么此刻应推荐某类商品。</p>\n<p>大语言模型具备世界知识和演绎推理能力，却不适合直接放入在线请求链路。论文面临三重约束：第一，LLM 逐 token 解码的延迟与成本远高于推荐系统预算；第二，LLM 的自然语言空间与推荐模型的商品语义 ID 空间不一致，直接生成容易产生不可服务商品或幻觉；第三，同一个电商平台包含主页、搜索后推荐、购物车、订单完成页等多个场景，每个场景的触发条件和业务目标不同，独立模型维护成本高，简单混训又会发生负迁移。OxygenREC 的核心思路是把复杂推理放到近线慢路径，将其压缩为结构化 recommendation instruction，再由小型实时生成模型执行，从而形成 fast–slow 双系统。</p>\n<h2>2. 方法详解</h2>\n<p>慢系统首先构建可持续更新的指令。场景指令刻画时间、地点、用户阶段和触发事件。论文设计 STP 层次索引，以时间、位置与用户画像组织模板；Query Rewriter 采用 Qwen3-0.6B，把结构化条件改写成自然、紧凑且可执行的推荐要求。为了让小模型可靠改写，作者合成六类常见错误并加入自纠训练，再用点击一致性信号校准。人工评估中，这套 QR 的指令通过率为 95.33%，高于 DeepSeek-R1 的 88.67%，说明任务专用小模型比直接调用通用推理模型更稳定。</p>\n<p>推理指令关注用户为什么会需要某些商品。系统以 Qwen3-32B 和 DeepSeek-R1 等教师模型分析用户行为、上下文和商品语义，生成意图推理伪标签；论文报告其中 72% 可直接使用。为避免长历史淹没当前需求，Instruction-Guided Retrieval（IGR）把当前指令当作 query，在商品语义空间检索与指令最相关的历史行为。Query-to-Item（Q2I）则把自然语言指令映射到商品空间，使慢系统输出不只是文字解释，而是与下游商品 token 表示对齐的条件信号。这样，大模型只在近线更新指令，不参与每次在线请求。</p>\n<p>商品表示采用多模态语义 ID。文本和图像先经各自编码器提取特征，再由 Q-Former 与 MLP 压缩到 256 维共享空间，并通过 item-to-item 对比目标保持相似商品邻近。随后使用残差量化 K-means，将每个商品编码为 3 层离散 token，每层词表大小为 8192。分层语义 ID 既能表达从粗类目到细粒度商品的层级，又把十亿级商品空间转成生成模型可处理的有限词表。它也带来工程约束：量化碰撞、码本负载和新品映射质量必须被持续监控。</p>\n<p>快系统接收用户画像、短期与长期行为、场景指令和推理指令，并把指令插在 BOS 之后。论文的消融显示，这个位置优于序列尾部或其他插入方式，因为条件信号可从解码开始影响全部商品 token。预训练阶段以 next-token prediction 学习用户行为和商品语义 ID；后训练阶段进一步做指令对齐与列表级优化。统一模型使用场景 token 区分不同入口，并把场景指令与触发原因融合，既共享商品和用户知识，又保留场景条件。</p>\n<p>为优化生成列表，作者提出 Scenario-Aware Group Clipped Policy Optimization（SA-GCPO）。它在组内计算相对奖励，并针对正、负优势分别采用不同温度和裁剪策略，减少不同场景奖励尺度与样本难度差异造成的更新失衡。奖励映射把点击、转化、订单等业务反馈统一成可比较信号，使同一策略可覆盖六个线上场景。论文比较了 GRPO、GSPO 与 SA-GCPO，后者在 HR@1、HR@10 和 Recall@30 上均更好，说明场景感知裁剪不只是训练稳定技巧，而是统一模型避免强场景压制弱场景的关键。</p>\n<p>训练与服务采用稀疏—稠密混合架构。论文披露训练基于 PyTorch，使用 128 张 H800 GPU，节点内 NVLink 带宽约 400 GB/s，节点间采用 8×200 Gb/s RoCE；通过通信与计算重叠、稀疏算子优化和负载均衡，模型浮点利用率达到约 40%，稀疏操作耗时占比从 15% 降到 5%，端到端训练获得 1.1—2.4 倍加速。在线侧的 xLLM 系统包含 xSchedule、xAttention 与 xBeam，用连续批处理、注意力缓存和受约束 beam search 控制吞吐与延迟。论文没有披露优化器、学习率、batch size、总训练步数、绝对训练样本量及总训练成本，这些参数不能从文中补推。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是可部署的 fast–slow 生成式推荐范式。论文没有让在线小模型自行发现所有复杂意图，也没有让昂贵 LLM 直接生成线上商品；它把世界知识和演绎推理压缩为可缓存、可审核、可更新的指令，再由低延迟模型执行。慢路径可独立降级，快路径仍能使用行为序列服务，这比请求时强依赖外部 LLM 更符合核心电商链路的可用性要求。</p>\n<p>第二项贡献是打通自然语言指令与商品语义 ID。Q2I、IGR、多模态分层量化和指令插入共同解决了语义空间错位问题：指令不仅是一段附加文本，而会决定选取哪些历史行为、如何条件化解码以及最终生成哪些可服务 ID。右侧 BOS 插入和场景—触发原因融合的消融结果表明，指令结构与放置方式对生成质量有实质影响。</p>\n<p>第三项贡献是六场景统一训练与强化学习。独立模型会重复维护并错失跨场景迁移，简单共享模型又容易由大流量场景主导。OxygenREC 用场景 token、统一监督学习和 SA-GCPO 把共享与差异化结合起来。统一训练在六个场景的 HR@10 上都明显超过独立 SFT，最强场景也没有因共享而退化，说明跨场景行为确实可作为稀疏入口的辅助监督。</p>\n<p>第四项贡献是端到端工业证据。论文覆盖指令生成、商品 token 化、训练通信、强化学习和在线解码，而不是只报告公开数据集离线指标。128 张 H800 上的训练优化、十亿级商品空间、50—80 ms 的线上延迟以及六场景 A/B 结果，构成一套从算法到系统的完整实现路径。其价值不在于某个单独模块绝对新颖，而在于这些模块被连接成可长期运行的生产系统。</p>\n<h2>4. 实验结果分析</h2>\n<p>线上实验把实验组与对照组各分配 10% 流量，在六个真实电商场景中比较用户点击率、点击转化率、订单和 GMV。论文给出的核心交易指标如下；延迟列按论文表格中披露的场景组口径记录，未单独披露的条目不做推断。</p>\n<table><thead><tr><th>场景</th><th>订单变化</th><th>GMV 变化</th><th>在线延迟</th></tr></thead><tbody><tr><td>场景 1</td><td>+2.81%</td><td>+4.52%</td><td>50 ms</td></tr><tr><td>场景 2</td><td>+2.21%</td><td>+8.40%</td><td>未单列</td></tr><tr><td>场景 3</td><td>+8.03%</td><td>+1.46%</td><td>80 ms</td></tr><tr><td>场景 4</td><td>+1.49%</td><td>+1.66%</td><td>未单列</td></tr><tr><td>场景 5</td><td>+4.28%</td><td>+11.80%</td><td>50 ms</td></tr><tr><td>场景 6</td><td>+2.92%</td><td>+4.15%</td><td>未单列</td></tr></tbody></table>\n<p>六个场景的订单和 GMV 全为正，订单提升范围为 1.49%—8.03%，GMV 为 1.46%—11.80%。场景 3 的用户点击率下降 0.25%，但点击转化率提升 7.89%、订单提升 8.03%，是一个很有解释力的反例：模型并非简单制造更多浅层点击，而可能减少低意图曝光，把流量转向更高质量购买。场景 5 的 GMV 增幅 11.80% 明显高于订单增幅 4.28%，可能意味着客单价或商品结构变化，但论文没有提供绝对基数、品类拆分或显著性区间，不能把这一差异进一步归因。</p>\n<p>指令位置消融中，不使用指令的 HR@1 为 2.78；把指令放在 BOS 右侧升至 3.53。融合场景信息与触发原因后，HR@1 达 3.60、HR@10 达 12.82、Recall@30 达 15.08，优于单一信息来源。这个结果支持两点：一是指令必须在解码早期进入注意力上下文，二是抽象场景标签不足以表达用户当下需求，触发原因提供了更细粒度条件。</p>\n<p>统一训练相对独立 SFT 的提升尤其大。六个场景的独立模型 HR@10 分别为 23.29、29.05、5.22、8.44、29.84 和 19.38，统一模型对应为 46.73、55.02、53.57、29.89、37.90 和 62.62。场景 3 从 5.22 提升到 53.57、场景 6 从 19.38 提升到 62.62，说明低资源或行为稀疏场景从跨场景共享中获益最大。需要注意，这些离线命中率的数值跨度异常大，论文没有给出不同场景候选规模和负采样口径，跨场景横向比较绝对值并不严谨；更可靠的是同一场景内独立与统一模型的变化。</p>\n<p>强化学习消融中，GRPO 的 HR@1/HR@10 为 23.85/62.15，GSPO 为 24.13/62.88，SA-GCPO 达 25.58/65.95，并在 Recall@30 上保持领先。提升说明正负优势分开裁剪有助于列表策略，但论文没有报告多次随机种子方差、奖励权重敏感性和在线单独增量，无法区分算法改进与奖励调参的贡献。系统实验显示稀疏算子占比由 15% 降至 5%、训练加速 1.1—2.4 倍，证明算法收益并非依靠不可接受的训练低效换取。</p>\n<p>实验最强的部分是线上六场景一致正向与完整系统指标，最弱的部分是外部可复现性。全部线上数据来自单一公司，公开数据集实验不足以覆盖指令质量、商品量级与工程组件的组合效果；A/B 表格也未提供实验周期、样本量、置信区间、绝对指标和分人群结果。因此，结论应表述为“在京东的六个场景中验证有效”，不能直接外推为所有电商平台都会获得同等比例收益。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出两项未来方向。第一，当前 next-token prediction 逐个生成列表，延迟随推荐长度近似线性增长；未来计划探索 non-autoregressive generation，以并行生成降低长列表服务成本。第二，现有指令主要描述即时场景和触发上下文，还没有充分建模跨场景完整轨迹与长期目标；后续应把用户在搜索、浏览、加购、购买和复购之间的长期演化纳入指令与奖励。</p>\n<p>论文未充分讨论的限制同样重要。慢系统指令有刷新延迟：促销结束、库存变化或用户意图突变后，旧指令可能继续影响推荐，需要 TTL、版本和失败回退机制。LLM 伪标签可用率为 72%，其余样本如何过滤、教师偏差是否被学生放大、不同语言或敏感品类是否稳定，均未完整披露。语义 ID 存在碰撞和码本漂移，新品、长尾商品及多模态信息缺失时的表现需要单独评估。</p>\n<p>系统门槛也不低。128 张 H800、专用 RoCE 网络与自研 xLLM 服务栈使完整方案难被中小团队复现；论文报告优化后的效率，却没有给训练成本、能耗、模型参数量和低配版本。线上结果缺少显著性和长期指标，也没有报告退货、取消、投诉、多样性、公平性及商家生态影响。统一奖励若只强调短期交易，可能牺牲探索、长期满意度或小商家曝光。</p>\n<h2>6. 工业实践意义</h2>\n<p>搜索与推荐团队最值得先复制的不是 128 卡训练，而是职责分离。把高延迟、易变化、需要世界知识的任务放在近线层，例如识别节日与天气需求、概括用户当前任务、解释一次搜索改写或购物车触发原因；把严格延迟路径限定为可审核 instruction、用户行为和商品 ID 的执行。每条指令应带生成时间、来源、置信度、适用场景和过期时间，在线模型必须能在指令缺失、超时或质量失败时退回纯行为基线。</p>\n<p>对社区 UGC 搜索，可把帖子主题、作者领域、内容形式和多模态摘要量化为分层语义 ID；慢层从查询、最近浏览、关注关系和社区事件生成类似“寻找近期高可信实测、排除营销转载”的指令。IGR 用该指令从长历史中挑出真正相关的搜索与阅读，而不是把全部历史平均输入。生成结果必须再经过权限、时效、安全和去重过滤，避免语义模型生成已删除或无权访问的内容。</p>\n<p>落地可分三阶段。第一阶段只做离线 instruction generation 和 IGR，继续使用现有召回或排序器，验证指令通过率、历史检索相关性、Recall@K 与 P99 延迟。第二阶段引入商品或内容语义 ID，在一个低风险场景做受约束生成，重点监控码本利用率、碰撞率、新品覆盖、无效 ID 率和回退比例。第三阶段才统一多场景模型并加入策略优化；奖励至少应同时包含点击、成功转化、负反馈、长期回访和生态约束，不能只照搬订单目标。</p>\n<p>工程监控要覆盖快慢两条链路。慢链路监控指令生成通过率、刷新时延、教师分布漂移、Q2I 对齐质量和 IGR 命中；快链路监控每 token 延迟、beam 宽度、缓存命中、无效序列、场景间梯度与收益差异。论文的 50—80 ms 可作为成熟自研系统的参考，而不是新系统承诺值。A/B 时应像论文一样分场景报告，但补充样本量、置信区间、绝对基数、用户与商家分层，并至少跨越完整促销周期。</p>\n<p>OxygenREC 最现实的启示是：大模型在推荐中的价值不一定表现为在线调用次数，而可以表现为更好的条件变量。将复杂推理压缩成稳定指令，再由高吞吐模型消费，能够保留知识与解释力，同时把成本、延迟和故障域隔离。团队若先建立可靠的指令数据与回退机制，即便暂时不使用 SA-GCPO 或大规模生成模型，也能获得更清晰的场景建模和历史选择能力；之后再按业务收益逐步增加生成与强化学习复杂度。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "web_search:arxiv:2607.21028",
+      "title": "Bridging the Structural Gap: Adapting Autoregressive Generation for Recommendation",
+      "url": "https://arxiv.org/abs/2607.21028",
+      "authors": "Junchao Zeng, Junzhang Zhu, Junyang Chen, Yudong Li, Wei Liu, Chengxiang Zhuo, Zang Li",
+      "company": [
+        "Tencent"
+      ],
+      "source": "web_search",
+      "published": "2026-07-23",
+      "total_score": 4.65,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.95,
+      "summary": "BARGE 针对语义 ID 展平后物品边界消失、层级解码早期错误造成语义漂移，加入 Item Context-Aware Attention、Hierarchical Path Reranking 与双路径解码。腾讯商业媒体平台以 6% 流量验证，相比现网多阶段系统 CTR 提升 0.60%、点击用户数提升 1.34%、总阅读时长提升 1.70%。",
+      "key_insight": "生成式推荐的关键瓶颈不只在编码质量，还在“物品边界”和层级路径的一致性。对 UGC 搜推，可在用户历史编码时显式保留每条帖子或问答的 token 分组，并在每层语义码上做路径级对比排序；双路径解码则把单一路径的级联错误变成可互补的候选来源，适合先替换召回与预排而保留现有精排。"
+    },
+    {
+      "rank": 3,
+      "id": "web_search:arxiv:2606.20554",
+      "title": "Structuring and Tokenizing Distributed User Interest Context for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2606.20554",
+      "authors": "Ruizhong Qiu, Yinglong Xia, Dongqi Fu, Hanqing Zeng, Ren Chen, Xiangjun Fan, Hong Li, Hong Yan, Hanghang Tong",
+      "company": [
+        "Meta",
+        "UIUC"
+      ],
+      "source": "web_search",
+      "published": "2026-06-18",
+      "total_score": 4.55,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 3
+      },
+      "preference_bonus": 0.35,
+      "adjusted_score": 4.9,
+      "summary": "G2Rec 以 O(M log M) 稀疏共参与图和软聚类提取分布式兴趣原型，再把兴趣 token 与物品 token 交替输入生成模型。四个公开数据集上均领先，例如 Yelp NDCG@10 达 0.4927；Meta 多产品面 7 天与长期 A/B 中，会话指标提升超过 0.03%，时长、点赞、分享等提升 0.06%–0.19%。",
+      "key_insight": "把图结构直接塞进在线模型代价很高，而 G2Rec 将图计算移到离线，只在线拼接兴趣原型 token，单批推理开销仅从 0.0534 增至 0.0561。社区平台可由用户共同点击、收藏或停留构建帖子图，再软聚类出可重叠兴趣；这比单一 hard cluster 更能表达跨圈层用户，也便于给生成式召回提供稳定、可刷新且有业务含义的上下文。"
+    },
+    {
+      "rank": 4,
+      "id": "web_search:arxiv:2607.21101",
+      "title": "Can Generative Recommendation Reach Cold Items? A Temporal Perspective on Semantic-ID Generation",
+      "url": "https://arxiv.org/abs/2607.21101",
+      "authors": "Jie Peng, Yanping Zheng, Zhewei Wei, Bin Tong, Guan Wang, Bo Zheng",
+      "company": [
+        "Alibaba",
+        "Renmin University of China"
+      ],
+      "source": "web_search",
+      "published": "2026-07-23",
+      "total_score": 4.05,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.35,
+      "summary": "该研究用绝对时间切分重新评估 TIGER，并以 token 覆盖、前缀支持与 oracle-prefix probing 诊断冷物品可达性。Sports 中 40.5% 冷物品的所有 token 均见过，但 Recall@20 仍仅 0.00006；含未见原子 token 的样本为 0，只有三层前缀受支持时 Recall@20 升至 0.01007。",
+      "key_insight": "语义 ID 的“可组合”不等于能生成新物品：当前模型更像沿已学层级树做受限搜索，深前缀支持比单个 token 覆盖更重要。社区内容持续新增时，应按时间而非随机留一评测冷启动，并单独统计未见 token、未见路径和深前缀三类；上线可考虑独立码本、生成后打分接口或动态文本上下文，避免新品永久落在不可达路径。"
+    },
+    {
+      "rank": 5,
+      "id": "web_search:arxiv:2607.21519",
+      "title": "Diffusion Language Model for Recommendation",
+      "url": "https://arxiv.org/abs/2607.21519",
+      "authors": "Chengyi Liu, Yongqi Zhou, Junwei Pan, Zhixiang Feng, Chengguo Yin, Haijie Gu, Jie Jiang, Yinghao Liu, Yujuan Ding, Qing Li, Wenqi Fan",
+      "company": [
+        "Tencent",
+        "Hong Kong Polytechnic University"
+      ],
+      "source": "web_search",
+      "published": "2026-07-23",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "preference_bonus": 0.35,
+      "adjusted_score": 4.35,
+      "summary": "DLMRec 以离散扩散替代自回归 next-token 生成，用多跳协同随机 tokenizer、逐级掩码课程学习和稳定性投票并行修正整段推荐。LastFM、MovieLens-1M、Amazon-Beauty 上相对最强基线各指标提升 3.25%–8.22%，对强 LLM 基线平均 Recall 与 NDCG 分别提升 6.75% 和 5.19%。",
+      "key_insight": "推荐序列的先后顺序往往带噪，双向去噪比不可回退的左到右解码更适合恢复整体偏好。其代价是迭代步数：8B 模型三步生成 Top-20 约 154.27ms，但只需 2–3 步即可达最优。实践中可先在离线候选生成或低频刷新链路试验，并用稳定投票提前锁定高置信 token，避免过度迭代破坏已正确结果。"
+    },
+    {
+      "rank": 6,
+      "id": "web_search:arxiv:2606.17276",
+      "title": "On the Memorization Behavior of LLMs in Generative Recommendation: Observations, Implications, and Training Strategies",
+      "url": "https://arxiv.org/abs/2606.17276",
+      "authors": "Sunwoo Kim, Sunkyung Lee, Clark Mingxuan Ju, Donald Loveland, Bhuvesh Kumar, Kijung Shin, Neil Shah, Liam Collins",
+      "company": [
+        "Snap",
+        "KAIST",
+        "Sungkyunkwan University"
+      ],
+      "source": "web_search",
+      "published": "2026-06-15",
+      "total_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.2,
+      "summary": "研究发现 LLM 生成式推荐的大部分领先来自记住训练集中一跳物品转移，而非真正利用预训练知识泛化。IIRG 增加多跳协同邻居和语义邻居生成任务；在 Beauty 上 Recall@10 从朴素训练的 0.0828 提至 0.1011，Toys 从 0.0892 提至 0.1097，二者联合优于任一单独任务。",
+      "key_insight": "离线总指标会掩盖模型只是在复述热门转移路径。社区搜推应将测试用户按目标是否被一跳历史覆盖分桶，并把冷门 query、跨主题跳转和新内容作为独立泛化切片；训练时加入多跳共现与文本语义邻居，可迫使模型学习更丰富的物品关系。该方法仍保留标准 next-item 主任务，适合以辅助样本生成方式接入现有训练管线。"
+    },
+    {
+      "rank": 7,
+      "id": "web_search:arxiv:2607.16633",
+      "title": "Beyond Fixed Depths and Widths: Optimizing Textual Decoding Tries in LLM-based Generative Recommendation",
+      "url": "https://arxiv.org/abs/2607.16633",
+      "authors": "Jingzhe Liu, Hanbing Wang, Jiliang Tang, Liam Collins, Tong Zhao, Neil Shah, Mingxuan Ju",
+      "company": [
+        "Snap",
+        "Michigan State University"
+      ],
+      "source": "web_search",
+      "published": "2026-07-18",
+      "total_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.15,
+      "summary": "BONSAI 不再把文本 ID 的前缀树视为副产品，而以贪心最小集合覆盖共同设计可变长度 ID 和低浅层分支的解码 trie，再用 SFT 与强化学习适配真实束搜索。三个 Amazon 类目上相对强基线最高提升 21.6%；控制实验还显示分支因子从 6 增至 12 时 Hit@5 持续下降。",
+      "key_insight": "生成式召回的准确率同时由语义表示和搜索树几何决定：根部一次分太多支，正确路径会在束宽有限时过早被剪掉。UGC 物品描述长短差异大，固定码长会压缩丰富帖子又浪费简单帖子；可先抽取标题、话题与实体词，再用最小覆盖构建可变深度 trie。该改造主要发生在索引与训练阶段，不必更换 LLM 主干。"
+    },
+    {
+      "rank": 8,
+      "id": "web_search:arxiv:2606.27684",
+      "title": "Intuition-Guided Latent Reasoning for LLM-Based Recommendation",
+      "url": "https://arxiv.org/abs/2606.27684",
+      "authors": "Chang Liu, Yimeng Bai, Xiaoyan Zhao, Yang Zhang, Qifan Wang, Fuli Feng, Wenge Rong",
+      "company": [
+        "Meta",
+        "Beihang University",
+        "USTC",
+        "CUHK",
+        "NUS"
+      ],
+      "source": "web_search",
+      "published": "2026-06-26",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.1,
+      "summary": "IntuRec 先由推荐器生成 Top-K 候选，再经自注意力与交叉注意力压成“直觉”向量，作为 LLM 连续空间多步推理的起点，减少隐状态与目标物品空间错位。CDs 上 D³ 的 Recall@5 从 0.1122 提至 0.1174，Games 从 0.0608 提至 0.0751；Toys NDCG@5 从 0.0610 提至 0.0708。",
+      "key_insight": "潜在推理若从任意 hidden state 开始，计算步数增加也可能沿错误方向细化。更稳妥的结构是让现有召回器先给出低成本候选分布，再把它作为推理先验；这很适合社区搜索的“传统召回+LLM 精炼”渐进改造。直觉向量仍在连续空间内迭代，无需生成可见 CoT，可降低额外 token 延迟，同时保留对多兴趣的深层推断。"
+    },
+    {
+      "rank": 9,
+      "id": "web_search:arxiv:2605.17267",
+      "title": "RAGR: Review-Augmented Generative Recommendation",
+      "url": "https://arxiv.org/abs/2605.17267",
+      "authors": "Yingyi Zhang, Junyi Li, Yejing Wang, Wenlin Zhang, Xiaowei Qian, Sheng Zhang, Yue Feng, Yichao Wang, Yong Liu, Xiangyu Zhao, Xianneng Li",
+      "company": [
+        "Huawei",
+        "City University of Hong Kong",
+        "Dalian University of Technology"
+      ],
+      "source": "web_search",
+      "published": "2026-05-17",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.1,
+      "summary": "RAGR 将物品语义 ID 与评论语义 ID 按时间交错，让自回归模型同时学习用户选了什么与为什么选择，再以 DPO 保证预测位置偏向物品 token。三套 Amazon 数据上对 TIGER 与 LETTER 均显著提升；Toys 的 TIGER NDCG@5 从 0.0206 升至 0.0259（+26%），Beauty 的 LETTER Hit@5 提升 20%。",
+      "key_insight": "点击序列只记录行为结果，评论、问答或搜索改写更接近选择原因；把这些信号作为序列内原生 token，比末端拼接辅助向量更容易参与逐步生成。社区产品可将帖子评论、收藏备注或追问离散成语义码与内容码交错训练，但要用 item-centric 对齐约束输出类型，避免模型在推荐位置生成解释 token 而不是可服务的候选。"
+    },
+    {
+      "rank": 10,
+      "id": "web_search:arxiv:2604.26760",
+      "title": "Factorized Latent Reasoning for LLM-based Recommendation",
+      "url": "https://arxiv.org/abs/2604.26760",
+      "authors": "Tianqi Gao, Chengkai Huang, Zihan Wang, Cao Liu, Ke Zeng, Lina Yao",
+      "company": [
+        "Meituan",
+        "UNSW",
+        "Macquarie University"
+      ],
+      "source": "web_search",
+      "published": "2026-04-29",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.1,
+      "summary": "FLR 用多因子注意力把单一潜在思维向量拆成可解耦偏好，并以正交、注意力多样性和稀疏正则避免因子塌缩，再用 GRPO 在连续思维空间对齐。四个数据集上较 LatentR3 平均提升 3.2%；Games NDCG@5 从 0.0419 提至 0.0462（+10.26%），完整正则使 Hit@5 比无约束版本高 7.2%。",
+      "key_insight": "用户兴趣天然多面，单个 latent token 容易把主题、风格与时效偏好混成平均表示。社区搜推可用若干可学习 query 分别读取历史行为，再由门控按当前 query 动态聚合；正交、多样性与稀疏约束缺一不可，否则多头只是重复注意同一热门兴趣。该方案不输出文本 CoT，推理长度固定，更适合受延迟约束的精排或重排链路。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:lys2-14/douyin-knowledge-rag",
+      "title": "douyin-knowledge-rag: 抖音收藏夹 → RAG 知识库",
+      "url": "https://github.com/lys2-14/douyin-knowledge-rag",
+      "source": "github",
+      "description": "把抖音收藏内容经 Playwright、Whisper 和 BGE 转为可检索知识库，再由 DeepSeek 完成问答。项目近期获得 5 个 Star，可参考其把短视频兴趣沉淀为可搜索长期记忆的端到端流程。",
+      "language": "Python",
+      "stars": 5,
+      "created_at": "2026-07-20"
+    },
+    {
+      "rank": 2,
+      "id": "github:nopnoping/micro-vllm",
+      "title": "micro-vllm: Educational vLLM implementation",
+      "url": "https://github.com/nopnoping/micro-vllm",
+      "source": "github",
+      "description": "一个用于理解调度、KV Cache 与 GPU 执行的小型 vLLM 实现，近期获得 12 个 Star。可作为生成式推荐在线推理优化和批处理策略实验的轻量代码读物。",
+      "language": "Python",
+      "stars": 12,
+      "created_at": "2026-07-26"
+    },
+    {
+      "rank": 3,
+      "id": "github:alphaparkinc/genpark-fast-inference-engine-skill",
+      "title": "genpark-fast-inference-engine-skill: Disaggregated high-speed LLM inference router",
+      "url": "https://github.com/alphaparkinc/genpark-fast-inference-engine-skill",
+      "source": "github",
+      "description": "面向 LoRA、Serverless 和按需层级的解耦式 LLM 推理路由器，近期获得 9 个 Star。其多层服务设计可为近线意图生成与在线推荐解码分开扩缩容提供参考。",
+      "language": "Python",
+      "stars": 9,
+      "created_at": "2026-07-20"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:zai-org/GLM-4.1V-9B-Thinking",
+      "title": "zai-org/GLM-4.1V-9B-Thinking",
+      "url": "https://huggingface.co/zai-org/GLM-4.1V-9B-Thinking",
+      "source": "huggingface",
+      "description": "支持中英对话与视觉推理的 9B 多模态模型，获 781 个 Like、下载超过 42 万次。可用于离线生成 UGC 图文内容语义、兴趣解释或多模态物品 token。",
+      "language": "model",
+      "stars": 781,
+      "created_at": "2025-06-28"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:internlm/Intern-S2-Preview-397B",
+      "title": "internlm/Intern-S2-Preview-397B",
+      "url": "https://huggingface.co/internlm/Intern-S2-Preview-397B",
+      "source": "huggingface",
+      "description": "InternLM 发布的 397B 多模态对话预览模型，近期获得 63 个 Like。体量较大，更适合作为离线教师，生成用户意图、物品描述或推荐推理监督。",
+      "language": "model",
+      "stars": 63,
+      "created_at": "2026-07-16"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:Qwen/Qwen3-ASR-0.6B-hf",
+      "title": "Qwen/Qwen3-ASR-0.6B-hf",
+      "url": "https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf",
+      "source": "huggingface",
+      "description": "Qwen3 ASR 的 0.6B 多语言版本，获 40 个 Like、下载超过 13 万次。小体量适合把语音 query、短视频口播和用户主动表达低成本转为推荐建模信号。",
+      "language": "model",
+      "stars": 40,
+      "created_at": "2026-06-26"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:Qwen/Qwen3-ASR-1.7B-hf",
+      "title": "Qwen/Qwen3-ASR-1.7B-hf",
+      "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B-hf",
+      "source": "huggingface",
+      "description": "Qwen3 ASR 的 1.7B 多语言版本，近期获得 40 个 Like。相比 0.6B 版本更适合追求离线转写质量的语音搜索与内容理解链路。",
+      "language": "model",
+      "stars": 40,
+      "created_at": "2026-06-26"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:internlm/Intern-S2-Preview-397B-FP8",
+      "title": "internlm/Intern-S2-Preview-397B-FP8",
+      "url": "https://huggingface.co/internlm/Intern-S2-Preview-397B-FP8",
+      "source": "huggingface",
+      "description": "Intern-S2-Preview-397B 的 FP8 量化版本，保留多模态能力并降低部署资源需求。可评估其作为大规模离线标注教师时的吞吐、成本与质量折中。",
+      "language": "model",
+      "stars": 9,
+      "created_at": "2026-07-16"
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "date": "2026-03-18",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 1333,
+    "papers_selected": 7,
+    "score_min": 3.1,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2603.15262",
+      "title": "Probe-then-Plan: Environment-Aware Planning for Industrial E-commerce Search",
+      "url": "https://arxiv.org/abs/2603.15262",
+      "authors": "Mengxiang Chen, Zhouwei Zhai, Jin Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-17",
+      "total_score": 4.4,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "现有 LLM 搜索范式面临「盲目性-延迟困境」：query 改写不感知检索能力与实时库存，产生无效计划；而 deep search agent 依赖多轮工具调用，延迟达数秒，与工业亚秒级 SLA 不兼容。本文提出 Environment-Aware Search Planning (EASP) 框架，核心是 Probe-then-Plan 机制：用轻量级 Retrieval Probe 先探测检索快照，再让 Planner 基于真实库存状态生成落地计划。训练分三阶段：教师智能体离线合成执行验证的数据、SFT 微调学生模型、GRPO 强化学习优化规划质量。实验显示该方法在工业电商搜索中显著提升复杂 query 的命中率，同时满足亚秒级延迟约束。",
+      "key_insight": "该工作最大贡献是将「规划与执行解耦」——先用 Probe 暴露检索环境（哪些词能召回什么），再做有依据的 query 改写，从而避免改写后无结果的空操作。对 UGC 搜索实践的启示：(1) 在 query 改写前插入轻量检索探针，可大幅减少改写后的召回为零问题；(2) GRPO 强化信号可设计为「改写后召回文档是否相关」，与线上 nDCG 指标直接对齐；(3) 该框架可适配社区搜索，将「库存」替换为「帖子索引快照」，Probe 探针复用现有倒排索引即可。",
+      "deep_reading": {
+        "paper_id": "arxiv:2603.15262",
+        "title": "Probe-then-Plan: Environment-Aware Planning for Industrial E-commerce Search",
+        "status": "completed",
+        "content": "## 深度解读：Probe-then-Plan — 面向工业电商搜索的环境感知规划\n\n### 1. 问题与动机（~300字）\n\n现代电商搜索日益需要处理复杂的用户意图，但现有 LLM 搜索范式面临一个根本性矛盾——「盲目性-延迟困境」。一方面，传统 query 改写方法对检索能力与实时库存一无所知，生成的改写计划往往召回为零（Blind Rewriter 仅 REL@30=20.7）；另一方面，ReAct 风格的深度搜索 agent 通过多轮工具调用和反思能获得更好结果（REL@30=24.1），却产生数秒延迟，与工业亚秒级 SLA（p99 < 1s）根本不兼容。\n\n作者的核心洞察来自对线上日志的诊断分析：对于绝大多数复杂电商 query，一次初始检索的诊断反思就足以制定有效的搜索计划，无需 multi-turn 迭代。这一发现直接激发了 Probe-then-Plan 机制——在规划之前先「探测」检索环境，而非规划之后再迭代修正。JD.com（京东）已将 EASP 部署于生产，每日服务数百万 query，2周在线 A/B 测试验证了 UCVR +0.89%、GMV +0.57% 的商业增益。\n\n### 2. 方法详解（~600字）\n\n**EASP 框架**整体分三层：Retrieval Probe（探针）、Planner（规划器）、Router（路由器）。\n\n**核心机制：Probe-then-Plan**\n\nRetrieval Probe 是一个轻量级检索模块，在规划前先执行一次初始检索，暴露以下「环境快照」信息：当前 query 能召回的文档集合、相关性分布、以及库存边界。Planner 接收 (原始 query, 环境快照 O_init) 作为输入，在单步推理中诊断执行间隙并生成落地计划 P。设计上刻意避免多轮交互，将 Probe 延迟控制在 ms 级（比完整检索管线快约 75%）。\n\n**三阶段训练**\n\n**Stage 1：教师智能体离线数据合成**。以 DeepSeek-R1 为教师，对 query-观察对进行「感知诊断」，将检索状态分为三类：(a) Effective State（高相关，足够覆盖，无需修改）；(b) Recall Failure（召回失败，分两子类：Query Noise——词汇噪声/营销词干扰；Inventory Void——有效意图但库存为零）；(c) Precision Failure（精度不足，分两维：Bias Perception——检索器实体漂移或粒度不匹配；Gap Perception——用户词汇与商品属性的对齐缺口）。基于诊断结果，教师生成三类执行路径：Preservation（保留原 query）、Sanitization（去除噪声）、Concretization（将模糊意图转化为精确可检索表达）。教师以温度 τ>0 随机采样生成多个候选计划，对每个计划验证其检索结果，只保留执行成功的计划，最终构建包含 100k 条 (query, O_init, P) 三元组的 SFT 数据集 D_sft。\n\n**Stage 2：规划器训练与业务对齐**。以 Qwen3-4B 为学生规划器，先在 D_sft 上做 2 epoch SFT，使其内化教师的诊断推理模式。随后用 GRPO（Group Relative Policy Optimization）做业务对齐：对每个输入采样 G=8 个计划，每个计划执行后检索 Top-K 商品，奖励函数为：\n\nR(P_i) = (1/K) × Σ [I(φ_rel(q,d_j) ≥ τ) · φ_cvr(q,d_j)]\n\n即硬相关门控 × CVR 预估值的均值。硬相关门控 I(·) 确保只有通过相关性阈值的商品才贡献转化收益——防止模型为追求高 CVR 而召回不相关高价值商品，是防止奖励篡改的关键设计。RL 在 5k 高频、高方差 query 子集上运行，使用 8 台 NVIDIA H800 GPU。\n\n**Stage 3：自适应在线服务**。以 Qwen3-0.6B 为复杂度感知路由器，将 query 分流：约 80% 的明确产品 query（如「iPhone 17 256G」）走 Fast Path，直接检索，延迟 p75 < 20ms；复杂 query 走完整 EASP 管线，延迟 p99 < 700ms。\n\n### 3. 核心技术贡献（~400字）\n\n**贡献一：规划与环境解耦的 Probe-then-Plan 范式**。区别于 Blind Rewriter（完全忽略检索状态）和 ReAct Agent（检索-反思交替迭代），EASP 将「单次环境感知」与「单步规划」解耦为两个轻量操作，在保留感知能力的同时消除迭代延迟。离线消融验证：移除 Probe 后 REL@30 从 23.3 降至 20.7（-2.6pp），证明环境感知是核心增益来源。\n\n**贡献二：GRPO 业务对齐——相关性门控 + CVR 的奖励设计**。SFT-only 方法在 REL@30 上接近 EASP（23.0 vs 23.3），但 HR@30 显著低于 EASP（29.5% vs 31.0%），说明 SFT 擅长模仿教师行为但无法直接优化购买命中率。GRPO 以「购买命中」为终态奖励，将语义相关与转化信号对齐，弥补 SFT 与业务指标的鸿沟。\n\n**贡献三：结构化诊断分类体系**。将检索失败分解为 Recall Failure（Query Noise / Inventory Void）和 Precision Failure（Bias Perception / Gap Perception），为每类失败提供对应处理策略（Sanitization / Concretization），使模型能够区分「无库存」（应放弃改写）和「词汇偏差」（应换词）两种本质不同的问题，比简单的 query 改写具有更精细的控制。\n\n**贡献四：轻量级 0.6B 路由器降低整体延迟**。80% Fast Path 绕过规划，使平均延迟大幅低于单纯部署 EASP 管线，是工业落地的重要工程贡献。\n\n### 4. 实验结果分析（~600字）\n\n**离线评测**（10k 复杂 query）核心指标：REL@30（Top-30 中相关商品数）和 HR@30（购买商品是否出现在 Top-30）。\n\n| 方法 | REL@30 | HR@30 | 延迟 |\n|------|--------|-------|------|\n| Blind Rewriter | 20.7 | 28.6% | ms级 |\n| SFT-only（无RL） | 23.0 | 29.5% | ms级 |\n| ReAct Agent | 24.1 | 30.2% | 数秒 |\n| **EASP（完整）** | **23.3** | **31.0%** | **ms级** |\n\n关键发现：\n- EASP 的 REL@30 略低于 ReAct（-0.8pp），但 HR@30 反超 ReAct（+0.8pp）。这一交叉说明 GRPO 的奖励设计有效地将「商品相关」与「用户购买」对齐，而 ReAct 的反思迭代虽能召回更多相关商品，但召回的商品不一定是用户会购买的那一个。\n- SFT-only 的 REL@30 与 EASP 相近（差 0.3pp），但 HR@30 低 1.5pp，验证了 GRPO 在业务指标对齐上的独立贡献。\n- Blind Rewriter 与 EASP 之间 REL@30 差距达 2.6pp，是所有消融中最大的单因素影响，确认 Probe 是系统核心。\n\n**在线 A/B 测试**（JD.com，2周，10% 流量）：\n\n| 指标 | 全流量 | 仅复杂 query |\n|------|--------|--------------|\n| UCVR 提升 | +0.89%（p<0.05） | +4.10% |\n| GMV 提升 | +0.57%（p<0.05） | +2.59% |\n\n全流量结果因 ~80% 简单 query 走 Fast Path 而被摊薄；在复杂 query 子集上，UCVR +4.10% 和 GMV +2.59% 的提升是相当显著的工业增益，验证了 EASP 在真实商业场景中的价值。延迟方面：Fast Path p75 < 20ms，复杂路径 p99 < 700ms，完全满足亚秒级工业约束。\n\n一个值得注意的 surprising result：ReAct Agent 在离线 REL@30 上高于 EASP，但在线环境中 EASP 的业务指标更好。这提示「相关性」指标与「转化」指标存在分离，多轮反思不总是带来更好的业务结果，单步规划在有限信息下已接近「足够好」的决策点。\n\n### 5. 局限与未来方向（~300字）\n\n**作者明确指出的局限**：EASP 当前聚焦 query 级别规划，未整合用户个性化信号。相同的「蓝色运动鞋」query 对不同用户应有不同的检索策略（跑步爱好者 vs. 篮球爱好者），但当前系统对此无感知。作者明确列出用户行为信号整合作为下一步工作，扩展至会话级优化。\n\n**作者未明确指出但显而易见的局限**：(1) Probe 的检索快照质量直接影响规划质量——若初始检索召回集本身存在系统性偏差（如索引覆盖不均），Planner 将基于有偏快照做出有偏计划，无法自我纠偏；(2) GRPO 奖励中的 CVR 预估模型（φ_cvr）质量是隐含的上界约束，若 CVR 模型对某类商品存在偏差，奖励信号也会传递这种偏差；(3) 教师模型 DeepSeek-R1 的分类诊断是在离线阶段完成的，若新品类/新意图不在训练分布内，学生规划器的泛化能力需要持续监控。\n\n### 6. 工业实践意义（~400字）\n\n对社区搜索和 UGC 平台的**直接可迁移经验**：\n\n**(1) Probe-then-Plan 的社区搜索适配**：社区搜索中的「库存」即帖子/回答索引。Probe 可设计为：给定 query，先做一次轻量 BM25 或向量检索，检查召回集的相关性分布和覆盖情况；若召回为空或平均相关性低于阈值，触发 query 改写；否则直接进入精排。这个判断逻辑比无条件改写更节省算力，且能避免「改写导致召回变差」的常见问题。\n\n**(2) GRPO 奖励设计的参考**：将 GRPO 奖励替换为社区搜索的「点击率 + 相关性」组合，即：R = I(相关性 ≥ τ) × CTR_预估，可让 query 改写模型直接优化用户点击而非中间指标。硬相关门控的设计尤为重要——它防止模型学习「改写为热词」（高 CTR 但语义偏移）的捷径策略。\n\n**(3) 结构化诊断框架的借鉴**：Recall Failure vs. Precision Failure 的分类对搜索系统调试极具参考价值。Query Noise 对应 UGC 搜索中用户输入口语化/表情符号/错别字等问题；Inventory Void 对应特定长尾内容的索引缺失；Bias Perception 对应 embedding 召回偏向高热内容的问题；Gap Perception 对应用户词汇（「好看的穿搭」）与内容标签（「OOTD」）的对齐缺口。针对这四类问题应有不同的处置策略，而非统一做 query 改写。\n\n**(4) 路由器设计**：80% Fast Path 的设计对资源受限团队尤为重要——不需要对所有 query 启用 LLM 推理，只有真正「难」的 query 才值得额外计算预算。这一原则可直接应用于 UGC 搜索，通过 query 难度预测模型分流，将 LLM 算力集中在长尾复杂意图上。\n\n**(5) 延迟 SLA 的工程意义**：本文提供了实际部署参考值：Fast Path p75 < 20ms，完整 EASP p99 < 700ms。对于需要在搜索链路中引入 LLM 规划的团队，这两个数字是可参照的工业基准。",
+        "content_html": "<h2>深度解读：Probe-then-Plan — 面向工业电商搜索的环境感知规划</h2>\n<h3>1. 问题与动机（~300字）</h3>\n<p>现代电商搜索日益需要处理复杂的用户意图，但现有 LLM 搜索范式面临一个根本性矛盾——「盲目性-延迟困境」。一方面，传统 query 改写方法对检索能力与实时库存一无所知，生成的改写计划往往召回为零（Blind Rewriter 仅 REL@30=20.7）；另一方面，ReAct 风格的深度搜索 agent 通过多轮工具调用和反思能获得更好结果（REL@30=24.1），却产生数秒延迟，与工业亚秒级 SLA（p99 &lt; 1s）根本不兼容。</p>\n<p>作者的核心洞察来自对线上日志的诊断分析：对于绝大多数复杂电商 query，一次初始检索的诊断反思就足以制定有效的搜索计划，无需 multi-turn 迭代。这一发现直接激发了 Probe-then-Plan 机制——在规划之前先「探测」检索环境，而非规划之后再迭代修正。JD.com（京东）已将 EASP 部署于生产，每日服务数百万 query，2周在线 A/B 测试验证了 UCVR +0.89%、GMV +0.57% 的商业增益。</p>\n<h3>2. 方法详解（~600字）</h3>\n<p><strong>EASP 框架</strong>整体分三层：Retrieval Probe（探针）、Planner（规划器）、Router（路由器）。</p>\n<p><strong>核心机制：Probe-then-Plan</strong></p>\n<p>Retrieval Probe 是一个轻量级检索模块，在规划前先执行一次初始检索，暴露以下「环境快照」信息：当前 query 能召回的文档集合、相关性分布、以及库存边界。Planner 接收 (原始 query, 环境快照 O_init) 作为输入，在单步推理中诊断执行间隙并生成落地计划 P。设计上刻意避免多轮交互，将 Probe 延迟控制在 ms 级（比完整检索管线快约 75%）。</p>\n<p><strong>三阶段训练</strong></p>\n<p><strong>Stage 1：教师智能体离线数据合成</strong>。以 DeepSeek-R1 为教师，对 query-观察对进行「感知诊断」，将检索状态分为三类：(a) Effective State（高相关，足够覆盖，无需修改）；(b) Recall Failure（召回失败，分两子类：Query Noise——词汇噪声/营销词干扰；Inventory Void——有效意图但库存为零）；(c) Precision Failure（精度不足，分两维：Bias Perception——检索器实体漂移或粒度不匹配；Gap Perception——用户词汇与商品属性的对齐缺口）。基于诊断结果，教师生成三类执行路径：Preservation（保留原 query）、Sanitization（去除噪声）、Concretization（将模糊意图转化为精确可检索表达）。教师以温度 τ&gt;0 随机采样生成多个候选计划，对每个计划验证其检索结果，只保留执行成功的计划，最终构建包含 100k 条 (query, O_init, P) 三元组的 SFT 数据集 D_sft。</p>\n<p><strong>Stage 2：规划器训练与业务对齐</strong>。以 Qwen3-4B 为学生规划器，先在 D_sft 上做 2 epoch SFT，使其内化教师的诊断推理模式。随后用 GRPO（Group Relative Policy Optimization）做业务对齐：对每个输入采样 G=8 个计划，每个计划执行后检索 Top-K 商品，奖励函数为：</p>\n<p>R(P_i) = (1/K) × Σ [I(φ_rel(q,d_j) ≥ τ) · φ_cvr(q,d_j)]</p>\n<p>即硬相关门控 × CVR 预估值的均值。硬相关门控 I(·) 确保只有通过相关性阈值的商品才贡献转化收益——防止模型为追求高 CVR 而召回不相关高价值商品，是防止奖励篡改的关键设计。RL 在 5k 高频、高方差 query 子集上运行，使用 8 台 NVIDIA H800 GPU。</p>\n<p><strong>Stage 3：自适应在线服务</strong>。以 Qwen3-0.6B 为复杂度感知路由器，将 query 分流：约 80% 的明确产品 query（如「iPhone 17 256G」）走 Fast Path，直接检索，延迟 p75 &lt; 20ms；复杂 query 走完整 EASP 管线，延迟 p99 &lt; 700ms。</p>\n<h3>3. 核心技术贡献（~400字）</h3>\n<p><strong>贡献一：规划与环境解耦的 Probe-then-Plan 范式</strong>。区别于 Blind Rewriter（完全忽略检索状态）和 ReAct Agent（检索-反思交替迭代），EASP 将「单次环境感知」与「单步规划」解耦为两个轻量操作，在保留感知能力的同时消除迭代延迟。离线消融验证：移除 Probe 后 REL@30 从 23.3 降至 20.7（-2.6pp），证明环境感知是核心增益来源。</p>\n<p><strong>贡献二：GRPO 业务对齐——相关性门控 + CVR 的奖励设计</strong>。SFT-only 方法在 REL@30 上接近 EASP（23.0 vs 23.3），但 HR@30 显著低于 EASP（29.5% vs 31.0%），说明 SFT 擅长模仿教师行为但无法直接优化购买命中率。GRPO 以「购买命中」为终态奖励，将语义相关与转化信号对齐，弥补 SFT 与业务指标的鸿沟。</p>\n<p><strong>贡献三：结构化诊断分类体系</strong>。将检索失败分解为 Recall Failure（Query Noise / Inventory Void）和 Precision Failure（Bias Perception / Gap Perception），为每类失败提供对应处理策略（Sanitization / Concretization），使模型能够区分「无库存」（应放弃改写）和「词汇偏差」（应换词）两种本质不同的问题，比简单的 query 改写具有更精细的控制。</p>\n<p><strong>贡献四：轻量级 0.6B 路由器降低整体延迟</strong>。80% Fast Path 绕过规划，使平均延迟大幅低于单纯部署 EASP 管线，是工业落地的重要工程贡献。</p>\n<h3>4. 实验结果分析（~600字）</h3>\n<p><strong>离线评测</strong>（10k 复杂 query）核心指标：REL@30（Top-30 中相关商品数）和 HR@30（购买商品是否出现在 Top-30）。</p>\n<table><thead><tr><th>方法</th><th>REL@30</th><th>HR@30</th><th>延迟</th></tr></thead><tbody><tr><td>Blind Rewriter</td><td>20.7</td><td>28.6%</td><td>ms级</td></tr><tr><td>SFT-only（无RL）</td><td>23.0</td><td>29.5%</td><td>ms级</td></tr><tr><td>ReAct Agent</td><td>24.1</td><td>30.2%</td><td>数秒</td></tr><tr><td><strong>EASP（完整）</strong></td><td><strong>23.3</strong></td><td><strong>31.0%</strong></td><td><strong>ms级</strong></td></tr></tbody></table>\n<p>关键发现：</p>\n<ul>\n<li>EASP 的 REL@30 略低于 ReAct（-0.8pp），但 HR@30 反超 ReAct（+0.8pp）。这一交叉说明 GRPO 的奖励设计有效地将「商品相关」与「用户购买」对齐，而 ReAct 的反思迭代虽能召回更多相关商品，但召回的商品不一定是用户会购买的那一个。</li>\n<li>SFT-only 的 REL@30 与 EASP 相近（差 0.3pp），但 HR@30 低 1.5pp，验证了 GRPO 在业务指标对齐上的独立贡献。</li>\n<li>Blind Rewriter 与 EASP 之间 REL@30 差距达 2.6pp，是所有消融中最大的单因素影响，确认 Probe 是系统核心。</li>\n</ul>\n<p><strong>在线 A/B 测试</strong>（JD.com，2周，10% 流量）：</p>\n<table><thead><tr><th>指标</th><th>全流量</th><th>仅复杂 query</th></tr></thead><tbody><tr><td>UCVR 提升</td><td>+0.89%（p&lt;0.05）</td><td>+4.10%</td></tr><tr><td>GMV 提升</td><td>+0.57%（p&lt;0.05）</td><td>+2.59%</td></tr></tbody></table>\n<p>全流量结果因 ~80% 简单 query 走 Fast Path 而被摊薄；在复杂 query 子集上，UCVR +4.10% 和 GMV +2.59% 的提升是相当显著的工业增益，验证了 EASP 在真实商业场景中的价值。延迟方面：Fast Path p75 &lt; 20ms，复杂路径 p99 &lt; 700ms，完全满足亚秒级工业约束。</p>\n<p>一个值得注意的 surprising result：ReAct Agent 在离线 REL@30 上高于 EASP，但在线环境中 EASP 的业务指标更好。这提示「相关性」指标与「转化」指标存在分离，多轮反思不总是带来更好的业务结果，单步规划在有限信息下已接近「足够好」的决策点。</p>\n<h3>5. 局限与未来方向（~300字）</h3>\n<p><strong>作者明确指出的局限</strong>：EASP 当前聚焦 query 级别规划，未整合用户个性化信号。相同的「蓝色运动鞋」query 对不同用户应有不同的检索策略（跑步爱好者 vs. 篮球爱好者），但当前系统对此无感知。作者明确列出用户行为信号整合作为下一步工作，扩展至会话级优化。</p>\n<p><strong>作者未明确指出但显而易见的局限</strong>：(1) Probe 的检索快照质量直接影响规划质量——若初始检索召回集本身存在系统性偏差（如索引覆盖不均），Planner 将基于有偏快照做出有偏计划，无法自我纠偏；(2) GRPO 奖励中的 CVR 预估模型（φ_cvr）质量是隐含的上界约束，若 CVR 模型对某类商品存在偏差，奖励信号也会传递这种偏差；(3) 教师模型 DeepSeek-R1 的分类诊断是在离线阶段完成的，若新品类/新意图不在训练分布内，学生规划器的泛化能力需要持续监控。</p>\n<h3>6. 工业实践意义（~400字）</h3>\n<p>对社区搜索和 UGC 平台的<strong>直接可迁移经验</strong>：</p>\n<p><strong>(1) Probe-then-Plan 的社区搜索适配</strong>：社区搜索中的「库存」即帖子/回答索引。Probe 可设计为：给定 query，先做一次轻量 BM25 或向量检索，检查召回集的相关性分布和覆盖情况；若召回为空或平均相关性低于阈值，触发 query 改写；否则直接进入精排。这个判断逻辑比无条件改写更节省算力，且能避免「改写导致召回变差」的常见问题。</p>\n<p><strong>(2) GRPO 奖励设计的参考</strong>：将 GRPO 奖励替换为社区搜索的「点击率 + 相关性」组合，即：R = I(相关性 ≥ τ) × CTR_预估，可让 query 改写模型直接优化用户点击而非中间指标。硬相关门控的设计尤为重要——它防止模型学习「改写为热词」（高 CTR 但语义偏移）的捷径策略。</p>\n<p><strong>(3) 结构化诊断框架的借鉴</strong>：Recall Failure vs. Precision Failure 的分类对搜索系统调试极具参考价值。Query Noise 对应 UGC 搜索中用户输入口语化/表情符号/错别字等问题；Inventory Void 对应特定长尾内容的索引缺失；Bias Perception 对应 embedding 召回偏向高热内容的问题；Gap Perception 对应用户词汇（「好看的穿搭」）与内容标签（「OOTD」）的对齐缺口。针对这四类问题应有不同的处置策略，而非统一做 query 改写。</p>\n<p><strong>(4) 路由器设计</strong>：80% Fast Path 的设计对资源受限团队尤为重要——不需要对所有 query 启用 LLM 推理，只有真正「难」的 query 才值得额外计算预算。这一原则可直接应用于 UGC 搜索，通过 query 难度预测模型分流，将 LLM 算力集中在长尾复杂意图上。</p>\n<p><strong>(5) 延迟 SLA 的工程意义</strong>：本文提供了实际部署参考值：Fast Path p75 &lt; 20ms，完整 EASP p99 &lt; 700ms。对于需要在搜索链路中引入 LLM 规划的团队，这两个数字是可参照的工业基准。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2603.15599",
+      "title": "SmartSearch: How Ranking Beats Structure for Conversational Memory Retrieval",
+      "url": "https://arxiv.org/abs/2603.15599",
+      "authors": "Jesper Derehag, Carlos Calva, Timmy Ghiurau",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-17",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文针对对话记忆检索任务，证明了基于 LLM 的结构化摄取（ingestion）和学习式检索策略均非必要。SmartSearch 使用完全确定性的 pipeline：NER 加权子串匹配做初步召回，基于规则的实体发现做多跳扩展，CrossEncoder+ColBERT 分数融合做最终排序（唯一的学习组件，CPU 上约 650ms）。关键发现：召回率达 98.6%，但若无智能排序，仅 22.5% 的黄金证据能在 token 预算截断中存活；引入分数自适应截断后，模型在 LoCoMo 达 93.5%、LongMemEval-S 达 88.4%，超越所有已知记忆系统，且仅使用全上下文 baseline 1/8.5 的 token。",
+      "key_insight": "核心洞察是「排序质量比结构化存储更重要」：LLM 结构化摄取的成本极高且不必要，关键瓶颈在于排序层能否将最相关证据放在 token 预算之内。对 UGC 搜索的启示：(1) CrossEncoder 细粒度重排能显著提升长上下文中的相关片段召回；(2) ColBERT 的 MaxSim 机制与 CrossEncoder 互补融合可提升 token 级别的匹配精度；(3) 在低延迟约束场景下，无需 LLM 的纯 CPU 重排管线是可行的工业选择，值得在社区搜索精排阶段尝试。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2508.03453",
+      "title": "Cropping outperforms dropout as an augmentation strategy for self-supervised training of text embeddings",
+      "url": "https://arxiv.org/abs/2508.03453",
+      "authors": "Rita González-Márquez, Philipp Berens, Dmitry Kobak",
+      "company": [],
+      "source": "arxiv",
+      "published": "2025-08-07",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "本文系统对比了文本 embedding 自监督微调中最主流的两种数据增强策略：基于 dropout 的方法（SimCSE 范式）与基于随机裁剪（cropping）的方法。作者在 MTEB 和多个领域内评测数据集上进行了评估，结论是 cropping 增强显著优于 dropout 方法。在领域外数据上，自监督方法与有监督 SOTA 仍有差距；但在领域内数据上，cropping 自监督方法可以接近或超越有监督模型，表明在无标注数据的领域迁移场景下具有重要实用价值。",
+      "key_insight": "Dropout 增强的核心问题是：同一句话的两个 dropout 版本在语义上几乎等价但在 embedding 空间中引入了微弱的人工扰动，导致负样本区分度不足；而 cropping 产生的正样本对（同文档不同片段）天然包含语义重叠但也有信息差异，更接近真实检索场景中的 query-passage 关系。对 UGC 搜索的实践意义：在无标注 UGC 语料上微调 embedding 模型时，优先使用 cropping 增强可比 SimCSE/ESimCSE 获得更好的领域适配效果，且无需任何标注成本。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2603.15594",
+      "title": "OpenSeeker: Democratizing Frontier Search Agents by Fully Open-Sourcing Training Data",
+      "url": "https://arxiv.org/abs/2603.15594",
+      "authors": "Yuwen Du, Rui Ye, Shuo Tang, Xinyu Zhu, Yijun Lu, Yuzhu Cai, Siheng Chen",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-17",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "OpenSeeker 是首个完全开源（模型 + 数据）的 frontier 级搜索 agent，针对高性能搜索 agent 训练数据长期由大厂垄断的问题提供解决方案。两项核心技术贡献：(1) 基于事实的可扩展可控 QA 合成——通过拓扑展开和实体混淆反向工程 web 图，生成具有可控覆盖范围和复杂度的多跳推理任务；(2) 去噪轨迹合成——通过回顾性摘要机制对 agent 轨迹进行去噪，提升训练数据质量。OpenSeeker 开放了 model weights、训练数据和完整训练流程，在标准 deep search 评测上达到 frontier 级别性能。",
+      "key_insight": "OpenSeeker 最重要的贡献是搜索 agent 训练数据的开源化。对搜索系统工程师的启示：(1) 可控 QA 合成（基于 web 图拓扑 + 实体混淆）是构建高质量检索训练数据的有效框架，可迁移至 UGC 平台内部的搜索 query 合成；(2) 轨迹去噪机制可减少错误搜索路径对模型的负向影响，是搜索 agent RLHF 训练的关键工程技巧；(3) 开放数据为研究团队提供了跳过从零合成数据阶段、直接基于 OpenSeeker 构建垂域搜索 agent 的可能性。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2603.14558",
+      "title": "JobMatchAI An Intelligent Job Matching Platform Using Knowledge Graphs, Semantic Search and Explainable AI",
+      "url": "https://arxiv.org/abs/2603.14558",
+      "authors": "Mayank Vyaas, Abhijit Chakrabroty, Vivek Gupta",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-17",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "JobMatchAI 是一个生产就绪的职位匹配搜索系统，整合了 Transformer embedding、技能知识图谱和可解释重排，解决了现有系统依赖关键词过滤、无法处理技能同义词和非线性职业路径的问题。系统采用 BM25 + 知识图谱 + 语义 embedding 的混合检索栈，优化多维度效用（技能匹配、经验、地点、薪资、公司偏好），并为每个匹配结果提供因素级别的可解释性说明。作者同时发布了 JobSearch-XS 基准，用于评估技能泛化能力。",
+      "key_insight": "该系统的工程价值在于混合检索三件套（BM25 + KG + 语义 embedding）的融合设计。对 UGC 社区搜索的借鉴：(1) 知识图谱可替换为社区内的标签体系或话题图谱，解决短文本 UGC 中语义扩展不足问题；(2) 多维度效用优化框架（技能/经验/薪资权重）可类比为社区搜索中的相关性 + 时效性 + 互动度多目标排序；(3) 因素级可解释输出对于构建调试友好的搜索系统具有工程参考价值；(4) JobSearch-XS 基准的构建方法（对现有 IR 数据集的垂域适配）可为 UGC 搜索评测集建设提供参考。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2603.13266",
+      "title": "Multi-hop Reasoning and Retrieval in Embedding Space: Leveraging Large Language Models with Knowledge",
+      "url": "https://arxiv.org/abs/2603.13266",
+      "authors": "Lihui Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-17",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "EMBRAG 框架解决了 LLM 与知识图谱（KG）集成时面临的两个核心问题：(1) 查询多义性——LLM 可能对同一 query 产生错误的 KG 推理路径；(2) KG 不完整性与噪声——导致检索失败。方法核心是：LLM 首先基于输入 query 生成多条逻辑规则，各规则对应 KG 上的一条推理路径；随后在 embedding 空间中按规则引导多跳检索，最终融合多路径结果以提高鲁棒性。该方法在标准 KGQA 基准上超越 baseline，在噪声 KG 场景下尤为显著。",
+      "key_insight": "EMBRAG 的关键思路是「多规则 + embedding 空间多跳」，有效对冲了 KG 噪声和单路径推理的脆弱性。对搜索工程的实践参考：(1) 在有内部知识图谱（如品类树、实体图）的平台，可借鉴 EMBRAG 在 embedding 空间做实体级多跳召回，提升复杂查询的相关文档覆盖；(2) 多规则生成机制可类比为查询改写的多样化路径，为融合排序提供更丰富的召回信号；(3) 方法依赖 KG 基础设施，对无 KG 的 UGC 平台可行性有限，需权衡建设成本。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2504.17884",
+      "title": "Unsupervised Corpus Poisoning Attacks in Continuous Space for Dense Retrieval",
+      "url": "https://arxiv.org/abs/2504.17884",
+      "authors": "Yongkang Li, Panagiotis Eustratiadis, Simon Lupart, Evangelos Kanoulas",
+      "company": [],
+      "source": "arxiv",
+      "published": "2025-04-24",
+      "total_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "本文研究密集检索中的语料库中毒攻击问题：攻击者向语料库注入少量恶意文档以破坏检索排序。现有攻击在离散词汇空间进行对抗梯度搜索，而检索本身发生在连续 embedding 空间——两者不一致。作者提出在 embedding 空间中直接优化的扰动模型：保持原始文档和对抗文档 embedding 几何距离的同时最大化 token 级别差异，且无需对检索模型的先验知识（无监督设置）。实验显示该方法能以更少注入文档实现更高攻击成功率，在多种密集检索模型上均有效。",
+      "key_insight": "该研究的防御意义在于揭示：当前密集检索系统在无监督对抗攻击下具有系统性弱点——连续 embedding 空间的近邻关系可以被恶意利用。对搜索系统工程师的启示：(1) 线上内容平台需重视「语义作弊」（semantic spam）风险，即通过构造 embedding 相似但内容有意义差异的文档注入排行；(2) 防御手段包括 embedding 空间异常检测（检测新入库文档与高相关 query 的异常高相似度）；(3) 在用户可提交内容的 UGC 场景下，此类攻击的实际风险值得纳入搜索安全审查。"
+    }
+  ]
+}

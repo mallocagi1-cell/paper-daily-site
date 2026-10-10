@@ -1,0 +1,185 @@
+{
+  "date": "2026-04-27",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 38,
+    "papers_selected": 7,
+    "score_min": 3.1,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.15148",
+      "title": "IG-Search: Step-Level Information Gain Rewards for Search-Augmented Reasoning",
+      "url": "https://arxiv.org/abs/2604.15148",
+      "authors": "Zihan Liang, Yufei Ma, Ben Chen, Zhipeng Qian, Huangyu Dai, Lingtao Mao, Xuxin Zhang, Chenyi Lei, Wenwu Ou",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "web_search",
+      "published": "2026-04-16",
+      "total_score": 4.1,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文提出 IG-Search，一个基于步骤级信息增益（Information Gain）奖励的强化学习框架，用于训练搜索增强推理模型。核心思路是为每一步检索计算 IG 分数：度量当前检索结果相对于随机文档基线，对模型给出正确答案的置信度提升幅度，作为稠密奖励信号注入 GRPO 的 token 级 advantage。基于 Qwen2.5-3B，在 7 个 QA 基准上较轨迹级奖励基线提升 1.6 分，较已有步骤级方法提升 0.9 分，且训练开销极低、推理速度无影响。",
+      "key_insight": "步骤级信息增益奖励解决了 Agentic RL 训练中稀疏轨迹奖励难以做信用分配的核心问题。对搜索系统的启示：在多轮检索/Query 改写场景，可借鉴 IG 思路为每一次检索动作设计可计算的中间奖励，避免依赖人工标注；而且该方法不增加推理时延，工程上可与现有重排/召回链路无缝集成，是把 RL 引入线上搜索 agent 的一条务实路径。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.15148",
+        "title": "IG-Search: Step-Level Information Gain Rewards for Search-Augmented Reasoning",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n论文针对当前 search-augmented reasoning（搜索增强推理）训练范式中轨迹级（trajectory-level）奖励的两个核心结构性缺陷展开。**第一个缺陷是无法区分查询质量**：当多条轨迹给出同一个最终答案、但中途的检索 query 质量差异很大时，trajectory-level reward 会对它们打出完全相同的分数。论文 Figure 1 展示了一个直观例子：一条轨迹生成精确 query 检索到含答案的文档，另一条只发出模糊 query 拿回毫不相关的内容，两者却获得相同的 reward 信号，造成搜索行为优化的噪声。**第二个缺陷是「all-failure」场景下梯度消失**：当 group 内所有轨迹都答错时，trajectory-level advantage 趋近于 0，几乎没有可用梯度——而这恰好是训练早期和困难多跳问题最需要监督的时刻。\n\n现有的 step-level 方案（StepSearch 用 GPT-4o 生成 sub-question 标注、GiGPO 依赖跨轨迹共享环境状态、IGPO/Tree-GRPO 引入树结构等）要么需要昂贵外部标注，要么对采样结构有强约束。论文的核心动机就是：能否只用 standard QA 监督（gold answer），仅靠模型自己的概率分布，就构造稠密的、可信的步骤级 reward？这是把 RL 引入复杂多跳搜索 agent 训练的「最后一公里」问题。\n\n## 2. 方法详解\n\n**核心 reward 公式（信息增益 IG）**。对于第 t 步检索，IG 定义为模型对 gold answer 的对数概率，在「真实检索上下文」与「随机文档反事实上下文」上的差值：\n\nIG_t = log π_θ_old(a* | C_t^real) − (1/N) Σ_j log π_θ_old(a* | C_t^rand,j)\n\n其中 C_t^real 是真实检索结果构成的上下文，C_t^rand,j 是从同 batch 其他问题里随机采样得到的反事实上下文（默认 N=3 条），a* 是 gold answer。每个 log 概率都做 token-level 长度归一化：log π_θ_old(a* | C) = (1/|a*|) Σ_k log π_θ_old(a*_k | C, a*_<k)。论文有意选择「随机文档」而非「空上下文」作为基线——因为空上下文存在长度与位置 bias，随机文档则匹配真实上下文的长度与结构特征，仅去掉 topical relevance，让 IG 真正反映「检索的信息贡献」。\n\n**与 GRPO 的集成方式**。GRPO 原本是 group-normalized 的整轨迹 advantage Â_i 共享给所有 token；IG-Search 引入 query token 的 per-token 调制：\n\nÃ_i,p = Â_i + α · IG̃_t / |Q_t|（当 token p ∈ search query Q_t）\nÃ_i,p = Â_i（其他 token）\n\n其中 α=0.3 是 IG 权重；除以 |Q_t| 防止 reward hacking（agent 用更长 query 套取奖励）；IG̃_t 是经过四步稳定化后的值。\n\n**四步稳定化机制**。(1) **Dead Zone Filtering**：|IG_t| < δ=0.5 时直接置零，过滤模型本就会答对的 question 上的虚假信号；(2) **Asymmetric Negative Scaling**：负 IG 乘以 λ=0.1，确保最优策略是「搜得好」而不是「干脆不搜」（消融显示 λ=1.0 时性能从 0.430 跌到 0.391，是单一最大降幅）；(3) **Soft Clipping**：|IG_t| > η=3.0 时用对数压缩 sign(IG_t) · (η + log(1 + |IG_t| − η))，限制极端值；(4) **Query Length Normalization**：除以 |Q_t| 防止 query 长度通胀。\n\n**训练设置**。Qwen2.5-3B（base 与 instruct 两个变体）+ Qwen2.5-7B 用于 scaling 实验；训练数据是 NQ + HotpotQA 的 train split；硬件为 8× NVIDIA H800，使用 veRL 框架；group size G=5，batch=512，lr=1e-6，总步数 200，最多 5 次 search call，rollout temperature=1.0；retriever 是 E5-base-v2，corpus 是 2018-12 的 Wikipedia，每次取 top-3 文档；相比 AutoRefine 仅增加约 6.4% 的单步 wall-clock 开销。\n\n## 3. 核心技术贡献\n\n**(1) 反事实信息增益作为稠密过程奖励**。把「这次检索到底带来了多少有用信息」严谨地形式化为模型对 gold answer 置信度的提升量，并通过随机文档基线消除长度 / 位置 bias。这是一种 retrieval-grounded process reward，相比 StepSearch 不需要 GPT-4o 标注，相比 GiGPO 不需要跨轨迹共享状态——大幅降低了 step-level reward 的工程门槛。\n\n**(2) 不对称负向缩放破解「躺平 bug」**。如果对负 IG 同样惩罚（λ=1），最优策略会退化为「不搜索」（query 越多潜在惩罚越大）。论文用 λ=0.1 把负向信号削弱 10 倍，使「搜得好」严格优于「不搜」，但仍保留对真正烂 query 的轻度惩罚。这是把 IG 从理论奖励变成可训练奖励的关键工程细节。\n\n**(3) Per-query-token advantage 调制**。把 step-level IG 信号精确分配到该步 query 的 token 上（而非散布到全轨迹或所有 token）。消融显示：施加到 query+think token 跌 0.8 分，施加到全 token 跌 1.7 分，验证了精确范围分配的必要性。\n\n**(4) all-failure 场景的稳定梯度**。Figure 9 展示当全 batch rollout 都失败（早期 58%）、trajectory-level advantage 归零时，IG 仍能区分 informative search（IG=1.58）与 uninformative search（IG=0.08）。整个训练中 mean |α·IG̃_t| 稳定在约 0.21，提供了 trajectory baseline 完全没有的持续信号。\n\n## 4. 实验结果分析\n\n**主结果表（Qwen2.5-3B-Base，Table 1）**。7 个 QA benchmark 的平均 EM：\n\n- IG-Search-Base：**0.430**\n- MR-Search（最强 trajectory baseline）：0.414（IG 提升 +1.6）\n- AutoRefine-Base：0.405（IG 提升 +2.5）\n- GiGPO（step-level 替代）：0.421（IG-Instruct 提升 +0.9）\n\n**多跳任务的优势更明显**。HotpotQA：0.436 vs 0.419（+1.7）；2WikiMultihopQA：0.415 vs 0.401（+1.4）；Musique：0.179 vs 0.165（+1.4）；Bamboogle：0.390 vs 0.344（+4.6，提升最大）。单跳：NQ 0.476 vs 0.477（基本持平），TriviaQA 0.637 vs 0.635（+0.2），PopQA 0.476 vs 0.460（+1.6）。趋势清晰：IG-Search 在「需要多次有效检索」的多跳问题上获益最大。\n\n**与 GPT-4o 标注的 StepSearch 对比**。IG-Search 在不依赖 GPT-4o 标注的情况下大幅领先：HotpotQA +10.7、2Wiki +7.6、Bamboogle +6.2，仅 Musique 微差（−0.2）。这说明 retrieval-grounded process reward 的内生信号已经足够强，外部 LLM 标注未必划算。\n\n**Scaling 表现**。1.5B / 3B / 7B / 14B 上对 AutoRefine 的提升分别是 +3.5 / +2.5 / +2.1 / +2.3，说明该方法在不同规模上稳定生效，并非小模型专属技巧。Qwen2.5-7B 平均 EM 达 0.479，超过 MR-Search 的 0.460。\n\n**消融实验**。完全移除 IG（退化为 trajectory baseline）：0.430→0.403（−2.7）；λ=1（对称负缩放）：→0.391（−3.9，最大单点降幅）；δ=0（无 dead zone）：→0.416（−1.4）；无 soft clipping：→0.420（−1.0）；无 query length norm：→0.408（−2.2）。最关键的是 asymmetric scaling 与 query length norm，它们直接决定了奖励能否被「合规优化」。反事实基线设计（Figure 3）也很关键：random+refine（默认）0.430、bottom-k 0.414（−1.6）、empty context 0.403（−2.7，多跳上 −7.0）——印证「同长度同结构、仅去 topical 相关性」是更纯净的对照。\n\n**搜索行为校准**。单跳问题平均 search 调用从 AutoRefine 的 2.0 降到 1.3，多跳问题保持 2.4——agent 学会了「按需搜索」，单跳更克制、多跳更深入。\n\n## 5. 局限与未来方向\n\n论文 Section 4 明确列出三条作者承认的局限：\n\n（1）**训练时需要 gold answer**。IG 的计算本质上需要 log π_θ(a*|C)，因此只适用于有标准答案的任务。对开放式生成、长文本、需要 expert judgment 的场景，IG 暂无答案无关的代理。「Developing answer-free proxies remains future work.」\n\n（2）**超参在跨任务上未充分验证**。α / λ / δ / η 是在 NQ + HotpotQA 上调出来的，没有验证在 numerical reasoning、temporal reasoning、long-form answer 上是否同样稳健，存在过拟合到 factoid QA 的风险。\n\n（3）**Offline 静态语料**。Wikipedia 2018-12 dump 缺乏时新性，无法处理时间敏感问题——这是整个 RAG 文献共同的限制，不是 IG-Search 独有。\n\n论文未明显讨论但值得注意的潜在风险是：随机文档 batch-内采样在小 batch 或同质 batch 下可能反事实多样性不足，这在数据分布偏窄的工业场景需要谨慎处理。\n\n## 6. 工业实践意义\n\n**对社区搜索 / UGC 搜索 Agent 的直接启示**。\n\n（1）**为多轮检索/Query 改写设计可计算的中间奖励**。社区搜索很多复杂 query 天然多跳（「上海哪家川菜馆周日营业且能带宠物」），现有的多轮搜索 agent 都受困于稀疏轨迹奖励。IG 思路给了一条不需要人工标注、不需要外部 reward model 的中间奖励路径——只要有「这个 query 最终被点击/被采纳的内容」作 gold answer 代理，就能为每一轮 query 改写动作打分。\n\n（2）**推理时零额外开销**。这是 IG-Search 最被低估的工程优势：所有 IG 计算只发生在训练阶段（offline forward pass），在线推理与原模型完全等价，无任何延迟增加。这与必须在 serving 时引入 reward model 或额外模块的方案完全不同，可以无痛接入现有重排 / 召回链路。\n\n（3）**asymmetric scaling 经验可直接复用**。任何「调用-奖励」型 RL 训练（推荐 Agent 调用 retriever、reranker、过滤器）都可能遭遇「躺平 bug」——模型学到「不调用就没风险」。论文给的 λ=0.1 不对称缩放是个简单但有效的工程方案，应作为默认配置。\n\n（4）**数据/算力门槛友好**。Qwen2.5-3B + 8× H800、200 训练步、6.4% 额外开销，对一线搜索/推荐团队来说完全在可承受范围。论文表 3 显示 14B 上仍有 +2.3 提升，意味着这套方法在生产级模型上同样适用。\n\n**部署考量**。训练阶段需要 retriever（E5-base-v2 或同级），corpus 与线上对齐；推理无额外组件。对延迟敏感的搜索场景（社区搜索 P99 通常需 <300ms），这种「训练改造 + 推理零成本」的范式是首选。\n\n**可借鉴的一句话**：把 RL 信号从「最终答案对不对」拉到「这次检索增加了多少答案置信度」，并通过反事实 + 不对称 + dead zone 三件套让信号工程上可用——这是 IG-Search 留给搜索 / 推荐 Agent 训练的核心方法论。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>论文针对当前 search-augmented reasoning（搜索增强推理）训练范式中轨迹级（trajectory-level）奖励的两个核心结构性缺陷展开。<strong>第一个缺陷是无法区分查询质量</strong>：当多条轨迹给出同一个最终答案、但中途的检索 query 质量差异很大时，trajectory-level reward 会对它们打出完全相同的分数。论文 Figure 1 展示了一个直观例子：一条轨迹生成精确 query 检索到含答案的文档，另一条只发出模糊 query 拿回毫不相关的内容，两者却获得相同的 reward 信号，造成搜索行为优化的噪声。<strong>第二个缺陷是「all-failure」场景下梯度消失</strong>：当 group 内所有轨迹都答错时，trajectory-level advantage 趋近于 0，几乎没有可用梯度——而这恰好是训练早期和困难多跳问题最需要监督的时刻。</p>\n<p>现有的 step-level 方案（StepSearch 用 GPT-4o 生成 sub-question 标注、GiGPO 依赖跨轨迹共享环境状态、IGPO/Tree-GRPO 引入树结构等）要么需要昂贵外部标注，要么对采样结构有强约束。论文的核心动机就是：能否只用 standard QA 监督（gold answer），仅靠模型自己的概率分布，就构造稠密的、可信的步骤级 reward？这是把 RL 引入复杂多跳搜索 agent 训练的「最后一公里」问题。</p>\n<h2>2. 方法详解</h2>\n<p><strong>核心 reward 公式（信息增益 IG）</strong>。对于第 t 步检索，IG 定义为模型对 gold answer 的对数概率，在「真实检索上下文」与「随机文档反事实上下文」上的差值：</p>\n<p>IG_t = log π_θ_old(a<em> | C_t^real) − (1/N) Σ_j log π_θ_old(a</em> | C_t^rand,j)</p>\n<p>其中 C_t^real 是真实检索结果构成的上下文，C_t^rand,j 是从同 batch 其他问题里随机采样得到的反事实上下文（默认 N=3 条），a<em> 是 gold answer。每个 log 概率都做 token-level 长度归一化：log π_θ_old(a</em> | C) = (1/|a<em>|) Σ_k log π_θ_old(a</em>_k | C, a*_&lt;k)。论文有意选择「随机文档」而非「空上下文」作为基线——因为空上下文存在长度与位置 bias，随机文档则匹配真实上下文的长度与结构特征，仅去掉 topical relevance，让 IG 真正反映「检索的信息贡献」。</p>\n<p><strong>与 GRPO 的集成方式</strong>。GRPO 原本是 group-normalized 的整轨迹 advantage Â_i 共享给所有 token；IG-Search 引入 query token 的 per-token 调制：</p>\n<p>Ã_i,p = Â_i + α · IG̃_t / |Q_t|（当 token p ∈ search query Q_t）<br>Ã_i,p = Â_i（其他 token）</p>\n<p>其中 α=0.3 是 IG 权重；除以 |Q_t| 防止 reward hacking（agent 用更长 query 套取奖励）；IG̃_t 是经过四步稳定化后的值。</p>\n<p><strong>四步稳定化机制</strong>。(1) <strong>Dead Zone Filtering</strong>：|IG_t| &lt; δ=0.5 时直接置零，过滤模型本就会答对的 question 上的虚假信号；(2) <strong>Asymmetric Negative Scaling</strong>：负 IG 乘以 λ=0.1，确保最优策略是「搜得好」而不是「干脆不搜」（消融显示 λ=1.0 时性能从 0.430 跌到 0.391，是单一最大降幅）；(3) <strong>Soft Clipping</strong>：|IG_t| &gt; η=3.0 时用对数压缩 sign(IG_t) · (η + log(1 + |IG_t| − η))，限制极端值；(4) <strong>Query Length Normalization</strong>：除以 |Q_t| 防止 query 长度通胀。</p>\n<p><strong>训练设置</strong>。Qwen2.5-3B（base 与 instruct 两个变体）+ Qwen2.5-7B 用于 scaling 实验；训练数据是 NQ + HotpotQA 的 train split；硬件为 8× NVIDIA H800，使用 veRL 框架；group size G=5，batch=512，lr=1e-6，总步数 200，最多 5 次 search call，rollout temperature=1.0；retriever 是 E5-base-v2，corpus 是 2018-12 的 Wikipedia，每次取 top-3 文档；相比 AutoRefine 仅增加约 6.4% 的单步 wall-clock 开销。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>(1) 反事实信息增益作为稠密过程奖励</strong>。把「这次检索到底带来了多少有用信息」严谨地形式化为模型对 gold answer 置信度的提升量，并通过随机文档基线消除长度 / 位置 bias。这是一种 retrieval-grounded process reward，相比 StepSearch 不需要 GPT-4o 标注，相比 GiGPO 不需要跨轨迹共享状态——大幅降低了 step-level reward 的工程门槛。</p>\n<p><strong>(2) 不对称负向缩放破解「躺平 bug」</strong>。如果对负 IG 同样惩罚（λ=1），最优策略会退化为「不搜索」（query 越多潜在惩罚越大）。论文用 λ=0.1 把负向信号削弱 10 倍，使「搜得好」严格优于「不搜」，但仍保留对真正烂 query 的轻度惩罚。这是把 IG 从理论奖励变成可训练奖励的关键工程细节。</p>\n<p><strong>(3) Per-query-token advantage 调制</strong>。把 step-level IG 信号精确分配到该步 query 的 token 上（而非散布到全轨迹或所有 token）。消融显示：施加到 query+think token 跌 0.8 分，施加到全 token 跌 1.7 分，验证了精确范围分配的必要性。</p>\n<p><strong>(4) all-failure 场景的稳定梯度</strong>。Figure 9 展示当全 batch rollout 都失败（早期 58%）、trajectory-level advantage 归零时，IG 仍能区分 informative search（IG=1.58）与 uninformative search（IG=0.08）。整个训练中 mean |α·IG̃_t| 稳定在约 0.21，提供了 trajectory baseline 完全没有的持续信号。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>主结果表（Qwen2.5-3B-Base，Table 1）</strong>。7 个 QA benchmark 的平均 EM：</p>\n<ul>\n<li>IG-Search-Base：<strong>0.430</strong></li>\n<li>MR-Search（最强 trajectory baseline）：0.414（IG 提升 +1.6）</li>\n<li>AutoRefine-Base：0.405（IG 提升 +2.5）</li>\n<li>GiGPO（step-level 替代）：0.421（IG-Instruct 提升 +0.9）</li>\n</ul>\n<p><strong>多跳任务的优势更明显</strong>。HotpotQA：0.436 vs 0.419（+1.7）；2WikiMultihopQA：0.415 vs 0.401（+1.4）；Musique：0.179 vs 0.165（+1.4）；Bamboogle：0.390 vs 0.344（+4.6，提升最大）。单跳：NQ 0.476 vs 0.477（基本持平），TriviaQA 0.637 vs 0.635（+0.2），PopQA 0.476 vs 0.460（+1.6）。趋势清晰：IG-Search 在「需要多次有效检索」的多跳问题上获益最大。</p>\n<p><strong>与 GPT-4o 标注的 StepSearch 对比</strong>。IG-Search 在不依赖 GPT-4o 标注的情况下大幅领先：HotpotQA +10.7、2Wiki +7.6、Bamboogle +6.2，仅 Musique 微差（−0.2）。这说明 retrieval-grounded process reward 的内生信号已经足够强，外部 LLM 标注未必划算。</p>\n<p><strong>Scaling 表现</strong>。1.5B / 3B / 7B / 14B 上对 AutoRefine 的提升分别是 +3.5 / +2.5 / +2.1 / +2.3，说明该方法在不同规模上稳定生效，并非小模型专属技巧。Qwen2.5-7B 平均 EM 达 0.479，超过 MR-Search 的 0.460。</p>\n<p><strong>消融实验</strong>。完全移除 IG（退化为 trajectory baseline）：0.430→0.403（−2.7）；λ=1（对称负缩放）：→0.391（−3.9，最大单点降幅）；δ=0（无 dead zone）：→0.416（−1.4）；无 soft clipping：→0.420（−1.0）；无 query length norm：→0.408（−2.2）。最关键的是 asymmetric scaling 与 query length norm，它们直接决定了奖励能否被「合规优化」。反事实基线设计（Figure 3）也很关键：random+refine（默认）0.430、bottom-k 0.414（−1.6）、empty context 0.403（−2.7，多跳上 −7.0）——印证「同长度同结构、仅去 topical 相关性」是更纯净的对照。</p>\n<p><strong>搜索行为校准</strong>。单跳问题平均 search 调用从 AutoRefine 的 2.0 降到 1.3，多跳问题保持 2.4——agent 学会了「按需搜索」，单跳更克制、多跳更深入。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文 Section 4 明确列出三条作者承认的局限：</p>\n<p>（1）<strong>训练时需要 gold answer</strong>。IG 的计算本质上需要 log π_θ(a*|C)，因此只适用于有标准答案的任务。对开放式生成、长文本、需要 expert judgment 的场景，IG 暂无答案无关的代理。「Developing answer-free proxies remains future work.」</p>\n<p>（2）<strong>超参在跨任务上未充分验证</strong>。α / λ / δ / η 是在 NQ + HotpotQA 上调出来的，没有验证在 numerical reasoning、temporal reasoning、long-form answer 上是否同样稳健，存在过拟合到 factoid QA 的风险。</p>\n<p>（3）<strong>Offline 静态语料</strong>。Wikipedia 2018-12 dump 缺乏时新性，无法处理时间敏感问题——这是整个 RAG 文献共同的限制，不是 IG-Search 独有。</p>\n<p>论文未明显讨论但值得注意的潜在风险是：随机文档 batch-内采样在小 batch 或同质 batch 下可能反事实多样性不足，这在数据分布偏窄的工业场景需要谨慎处理。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>对社区搜索 / UGC 搜索 Agent 的直接启示</strong>。</p>\n<p>（1）<strong>为多轮检索/Query 改写设计可计算的中间奖励</strong>。社区搜索很多复杂 query 天然多跳（「上海哪家川菜馆周日营业且能带宠物」），现有的多轮搜索 agent 都受困于稀疏轨迹奖励。IG 思路给了一条不需要人工标注、不需要外部 reward model 的中间奖励路径——只要有「这个 query 最终被点击/被采纳的内容」作 gold answer 代理，就能为每一轮 query 改写动作打分。</p>\n<p>（2）<strong>推理时零额外开销</strong>。这是 IG-Search 最被低估的工程优势：所有 IG 计算只发生在训练阶段（offline forward pass），在线推理与原模型完全等价，无任何延迟增加。这与必须在 serving 时引入 reward model 或额外模块的方案完全不同，可以无痛接入现有重排 / 召回链路。</p>\n<p>（3）<strong>asymmetric scaling 经验可直接复用</strong>。任何「调用-奖励」型 RL 训练（推荐 Agent 调用 retriever、reranker、过滤器）都可能遭遇「躺平 bug」——模型学到「不调用就没风险」。论文给的 λ=0.1 不对称缩放是个简单但有效的工程方案，应作为默认配置。</p>\n<p>（4）<strong>数据/算力门槛友好</strong>。Qwen2.5-3B + 8× H800、200 训练步、6.4% 额外开销，对一线搜索/推荐团队来说完全在可承受范围。论文表 3 显示 14B 上仍有 +2.3 提升，意味着这套方法在生产级模型上同样适用。</p>\n<p><strong>部署考量</strong>。训练阶段需要 retriever（E5-base-v2 或同级），corpus 与线上对齐；推理无额外组件。对延迟敏感的搜索场景（社区搜索 P99 通常需 &lt;300ms），这种「训练改造 + 推理零成本」的范式是首选。</p>\n<p><strong>可借鉴的一句话</strong>：把 RL 信号从「最终答案对不对」拉到「这次检索增加了多少答案置信度」，并通过反事实 + 不对称 + dead zone 三件套让信号工程上可用——这是 IG-Search 留给搜索 / 推荐 Agent 训练的核心方法论。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.17091",
+      "title": "GenericAgent: A Token-Efficient Self-Evolving LLM Agent via Contextual Information Density Maximization",
+      "url": "https://arxiv.org/abs/2604.17091",
+      "authors": "Jiaqing Liang, Jinyi Han, Weijia Li, Xinyi Wang, Zhoujia Zhang, Zishang Jiang, Ying Liao, Tingyun Li, Ying Huang, Hao Shen, Hanyu Wu, Fang Guo, Keyi Wang, Zhonghua Hong, Zhiyu Lu, Lipeng Ma, Sihang Jiang, Yanghua Xiao",
+      "company": [
+        "Fudan"
+      ],
+      "source": "web_search",
+      "published": "2026-04-18",
+      "total_score": 3.7,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "GenericAgent 提出以「上下文信息密度最大化」为单一原则构建通用自演化 LLM Agent。系统包含：精简的工具接口（默认隐藏冗余字段）、分层记忆（按需展开摘要 vs 全量）、把历史交互固化为可复用的过程/代码模板、以及在长时序运行中持续保持信息密度的上下文管理层。在多个 Agent 基准上同时提升任务完成率与工具效率，token 与交互轮数均显著降低。",
+      "key_insight": "把 Agent 的 context 视为有限带宽资源，通过密度优化而非简单扩窗解决长时序成本爆炸。对搜索/推荐 Agent 的实践意义：线上多轮 Agent（深度搜索、复杂推荐解释）经常因检索结果与中间推理塞爆 context 导致延迟与费用飙升，借鉴该思路构建分层记忆 + 经验沉淀为代码模板，可大幅降低生产环境的 token 成本，并让 Agent 在多轮任务中保持稳定。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.14170",
+      "title": "Stateful Evidence-Driven Retrieval-Augmented Generation with Iterative Reasoning",
+      "url": "https://arxiv.org/abs/2604.14170",
+      "authors": "Qi Dong, Ziheng Lin, Ning Ding",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-21",
+      "total_score": 3.65,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "本文将多跳问答建模为「证据渐进累积」过程：把每轮检索结果转换为带有相关性与置信度标记的结构化推理单元，存入持久化证据池；通过对证据池做 deficiency analysis 识别缺口与冲突，迭代生成新的检索 query 来补全证据。在多个多跳 QA 基准上稳定优于单轮 RAG 基线，且在显著的检索噪声下仍保持稳定表现。",
+      "key_insight": "把检索状态从「最近一次结果」升级为「跨轮可累积、带置信度的证据池」，是把 RAG 从单步问答升级为多跳推理的关键一步。对社区搜索的启示：复杂 query（如多约束的购物决策类提问）天然多跳，可借鉴该证据池设计，让搜索 Agent 在多轮检索间共享并校准证据，避免每轮独立检索带来的信息断层与重复召回。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.19837",
+      "title": "Forage V2: Knowledge Evolution and Transfer in Autonomous Agent Organizations",
+      "url": "https://arxiv.org/abs/2604.19837",
+      "authors": "Huaqing Xie",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-21",
+      "total_score": 3.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "Forage V2 把单次任务式的探索 Agent 升级为「学习型组织」：通过多轮次运行积累并转移知识，引入审计分离、契约协议、组织记忆三类制度性安全机制。实证显示 6 轮运行后知识条目从 0 增长到 54、denominator 估计趋稳；用强模型生成的知识喂给弱模型可使覆盖缺口降低 5.5 个百分点、成本减半；3 次独立运行收敛到相同的 denominator（266），验证组织知识能跨实例自校准评估。",
+      "key_insight": "提出「denominator blindness」概念——开放世界 Agent 系统性低估任务范围，并给出制度化解法（组织记忆 + 跨模型知识转移）。对搜索 Agent 的启示：当 Agent 自主决定检索深度时容易自满终止；可借鉴该工作把跨用户/跨任务的探索经验沉淀为组织级知识库，作为在线 Agent 的「外部校准器」，既降低成本，也让弱模型继承强模型的探索能力。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.06376",
+      "title": "MTA-Agent: An Open Recipe for Multimodal Deep Search Agents",
+      "url": "https://arxiv.org/abs/2604.06376",
+      "authors": "Xiangyu Peng, Can Qin, An Yan, Xinyi Yang, Zeyuan Chen, Ran Xu, Chien-Sheng Wu",
+      "company": [
+        "Salesforce"
+      ],
+      "source": "web_search",
+      "published": "2026-04-07",
+      "total_score": 3.35,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "MTA-Agent 提供了一个完整开源的多模态深度搜索 Agent 训练食谱：构建经过验证的多步视觉-语言数据集（21K 高质量样本），覆盖数据/训练/评估全流程。32B 模型在多模态搜索基准上击败 GPT-5（51.86%）、Gemini-2.5-Pro（50.98%）和 Gemini-3-Pro。通过缓存交互回放显著降低训练成本，平均推理步数从 2.27 提升到 4.28，证明深度多步推理对多模态搜索的关键作用。",
+      "key_insight": "公开了端到端可复现的多模态搜索 Agent 训练管线，是当前少数能让中等规模 32B 模型超越超大闭源模型的开放方案。对社区搜索的实践意义：UGC 内容天然多模态（帖子常含图片），该工作给出了「数据合成 → 多步轨迹训练 → 缓存回放降本」的清晰范式，可直接借鉴用于训练社区图文搜索 Agent，无需依赖闭源大模型。"
+    },
+    {
+      "rank": 6,
+      "id": "blog:google_cloud_next_2026_agents",
+      "title": "Google Cloud Next 2026: Agentic AI tooling, A2A protocol, and Workspace Studio",
+      "url": "https://thenextweb.com/news/google-cloud-next-ai-agents-agentic-era",
+      "authors": "Google Cloud",
+      "company": [
+        "Google"
+      ],
+      "source": "web_search",
+      "published": "2026-04-22",
+      "total_score": 3.1,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.15,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "Google 在 Cloud Next 2026 宣布企业级 Agent 工具集：Agent Builder 升级、开放的 A2A（agent-to-agent）协议、Workspace Studio。重点是把多 Agent 协作从研究原型推向生产环境，提供跨 Agent 的标准通信协议、任务编排框架，以及 Agent 与企业数据/工作流的集成。给出了多个企业级 Agentic 搜索的真实案例（如基于内部知识库的智能问答 Agent）。",
+      "key_insight": "A2A 协议把多 Agent 协作的接口标准化（类似 MCP 之于工具调用），为生产环境的多 Agent 系统提供了关键基础设施。对搜索系统的启示：复杂业务（如社区搜索 + 个性化推荐 + 内容审核）天然需要多 Agent 协作，与其自研编排，不如关注 A2A、MCP 等开放协议生态；尤其在多团队、多模型的企业环境，标准化通信比单点 Agent 能力更重要。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.19945",
+      "title": "Visual Reasoning through Tool-supervised Reinforcement Learning",
+      "url": "https://arxiv.org/abs/2604.19945",
+      "authors": "Qihua Dong, Gozde Sahin, Pei Wang, Zhaowei Cai, Robik Shrestha, Hao Yang, Davide Modolo",
+      "company": [
+        "Amazon"
+      ],
+      "source": "web_search",
+      "published": "2026-04-21",
+      "total_score": 3.15,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.2,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出「Tool-supervised RL」范式训练多模态模型的视觉推理能力：使用 zoom-in、rotate、flip、绘图等可解释的视觉工具作为可监督的中间动作。训练分两阶段——先用工具特定奖励优化工具调用能力，再在保持工具使用的同时优化最终答案准确率，避免不同目标互相冲突。该 curriculum 设计高效培养了多步视觉推理能力。",
+      "key_insight": "把工具调用本身作为可监督的中间目标（而非只看终端答案）是个值得借鉴的训练范式。对搜索 Agent 的启示：当 Agent 调用 query 改写、过滤器、二次召回等多个工具时，可对每类工具设计独立的中间奖励（例如「query 改写后召回提升」「过滤器命中率」），通过 curriculum 先让 Agent 学会正确使用每类工具，再做端到端联合优化，能显著提升训练稳定性。"
+    }
+  ],
+  "code_projects": []
+}

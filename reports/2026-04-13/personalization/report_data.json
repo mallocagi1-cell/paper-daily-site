@@ -1,0 +1,211 @@
+{
+  "date": "2026-04-13",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 9,
+    "papers_selected": 8,
+    "score_min": 3.05,
+    "score_max": 4.85
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2602.01865",
+      "title": "GRAB: An LLM-Inspired Sequence-First Click-Through Rate Prediction Modeling Paradigm",
+      "url": "https://arxiv.org/abs/2602.01865",
+      "authors": "Shaopeng Chen, Chuyue Xie, Huimin Ren, Shaozong Zhang, Han Zhang, Ruobing Cheng, Zhiqiang Cao, Zehao Ju, Yu Gao, Jie Ding, Xiaodong Chen, Xuewu Jiao, Shuanglong Li, Liu Lin",
+      "company": [
+        "Baidu"
+      ],
+      "source": "web_search",
+      "published": "2026-02-03",
+      "total_score": 4.85,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.85,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 3
+      },
+      "summary": "针对传统 DLRM 在用户行为序列建模上的不足，提出 GRAB——一种受 LLM 启发的 sequence-first CTR 预估范式。核心创新是 Causal Action-aware Multi-channel Attention (CamA) 机制，能同时捕捉时序动态和用户行为中的特定动作信号。在百度全量线上部署后，收入提升 3.05%、CTR 提升 3.49%，且推理成本与原有 DLRM 持平。模型展示出类似 LLM 的 scaling 特性：随着输入序列长度增加，表达能力呈单调近似线性增长。",
+      "key_insight": "GRAB 证明了将 LLM 的 sequence-first 思路迁移到 CTR 预估是可行且高效的，CamA 通过多通道注意力区分不同用户动作类型（点击/购买/浏览），避免了传统方法中异质行为信号混合的问题。对搜索/推荐系统的启示在于：用户行为序列建模可以借鉴 LLM 的 causal attention 范式，且线上推理成本可控，适合在 CTR 预估主链路直接替换传统模型。",
+      "deep_reading": {
+        "paper_id": "arxiv:2602.01865",
+        "title": "GRAB: An LLM-Inspired Sequence-First Click-Through Rate Prediction Modeling Paradigm",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n传统深度学习推荐模型（DLRM）在工业级 CTR 预估中广泛应用，但面临根本性瓶颈：依赖人工特征工程、\"强记忆弱推理\"导致泛化能力不足、扩展模型规模时收益递减。生成式推荐（GR）模型虽然展示了类似 LLM 的 scaling 潜力，但工业部署面临三个关键障碍：(1) 稀疏参数和稠密参数的优化目标存在内在冲突——稀疏参数需要多样、低相关的样本实现鲁棒\"记忆\"，稠密参数则需要长连贯上下文实现序列\"推理\"；(2) 现有 GR 模型忽略了异质行为语义（点击 vs 曝光 vs 购买）；(3) 序列打包造成的分布偏移——将用户完整历史打包为 mini-batch 导致严重的用户内相关性，违反 SGD 的 i.i.d. 假设，使稀疏 embedding 过拟合特定用户。\n\n## 2. 方法详解\n\n**三阶段架构设计**：GRAB 采用 Sparse Feature Layer → Dense Tokenizer → Autoregressive Sequence Modeling 的三阶段流水线。与 DLRM 将 embedding 压缩为定长向量不同，Dense Tokenizer 保留时序结构，将每个事件的 field embedding 聚合并投影到 ℝ^{d_model}，输出有序事件 token 序列。\n\n**序列打包与用户隔离因果掩码**：将多个用户的行为序列紧凑打包为单一张量 H ∈ ℝ^{1×L×d_model}，消除 padding 开销。用户隔离因果掩码确保跨用户无注意力泄露且保持时序因果性，形成块对角下三角注意力模式。\n\n**异质行为 Token 与可见性掩码**：在每个时间步设计两类 token——Partial Token（仅保留时变信息，丢弃 user_id 等静态字段防止重复引发过拟合）和 Full Token（保留完整信息用于候选评分）。异质可见性掩码限制 partial token 仅关注历史 partial token，full token 关注 partial 历史和自身但不互相关注，防止冗余静态信息传播。\n\n**Action-Aware Relative Attention Bias (RAB)**：注意力权重计算为 w_{i,j} = q_i^T·(k_j + Pos_{i,j} + Action_{i,j} + Time_{i,j})，包含三个可学习相对编码：位置距离、行为类型信号（点击/非点击）、时间距离（连续值分桶）。通过 codebook 方法将计算复杂度从 O(L²·d_model) 降至快速 gather 操作。双滑动窗口限制每 token 计算量。消融实验显示行为和时间信号比位置信号影响更大——历史序列对行为和时间信号更敏感，正标签（点击）获得 88% 的注意力权重。\n\n**Causal Action-aware Multi-channel Attention (CamA)**：核心创新。将不同来源 token 分配到 C 个独立因果自注意力栈，每个通道有独立可见性掩码，避免将所有 token 展平为单序列导致的 O((n+m)²) 成本。Target-Token Gated Mixing 仅在目标位置进行跨通道信息共享：h̃^(c,ℓ) = h^(c,ℓ) + Σ β^(i,ℓ) ⊙ h^(i,ℓ)，β 为可学习门控权重，实现选择性信息融合。\n\n**Sequence-Then-Sparse (STS) 训练策略**：两阶段解耦优化——第一阶段冻结稀疏 Embedding 表，优化 Dense Tokenizer + Causal Transformer，使 Transformer 聚焦事件间关系而非记忆特定 ID；第二阶段回退到非序列格式将每个样本视为独立曝光，仅优化稀疏 embedding，打破分布偏移。训练使用 Adam 优化器。\n\n## 3. 核心技术贡献\n\n(1) **Sequence-First 范式迁移**：将 LLM 的自回归序列建模范式引入 CTR 预估，GRAB 是首个在工业广告系统全量部署的 GR 模型，证明了 sequence-first 替代 feature-first 的可行性。相比最优基线 LONGER 提升 0.19% AUC（离线），线上 CTR +3.49%、收入 +3.05%。\n\n(2) **异质行为建模**：通过 Partial/Full Token 分离和 Action-Aware 注意力，首次在 GR 框架中显式建模不同行为类型的语义差异。消融显示仅用 partial token AUC 下降 0.028，验证异质设计的必要性。\n\n(3) **STS 训练解耦**：解决了 GR 模型中稀疏-稠密参数的优化冲突。STS 带来 0.0065 AUC 增益，证明分布偏移是阻碍 GR 模型工业化的关键障碍之一。\n\n(4) **多通道注意力**：CamA 将不同来源 token 分离计算后通过门控混合，相比单通道降低计算成本的同时保持效果。\n\n## 4. 实验结果分析\n\n**离线对比**：在百度广告数据集上，GRAB-standard (AUC 0.83772) vs DIN (0.83309)、SIM(Soft) (0.83520)、TWIN (0.83556)、HSTU (0.83590)、LONGER (0.83615)。GRAB 在所有序列长度上均超越基线，且随序列增长优势扩大。\n\n**Scaling 分析**：测试从 2 层/2 头/64d (6.51M) 到 4 层/4 头/512d (11.27M) 的多种配置，未观察到明显饱和趋势——增加模型容量稳定提升性能，尤其在长序列上更明显。\n\n**消融实验**关键发现：异质 token 设计是最重要组件（仅 partial token 下降 0.028）；相对注意力中行为信号 > 时间信号 > 位置信号；多通道注意力移除下降 0.0029；STS 训练策略贡献 0.0065。\n\n**线上 A/B 测试**：百度首页信息流广告，10% 主流量，约一个月：CTR +3.49%、CPM（千次曝光收入）+3.05%，推理成本与现有 DLRM 持平。\n\n## 5. 局限与未来方向\n\n论文在附录 F 中承认的局限：(1) 尚未验证 GRAB 在 CTR 以外推荐场景（如召回、粗排）的适用性；(2) 冷启动场景下极端稀疏性的处理仍待探索；(3) 稀疏-稠密参数平衡在不同数据集间的泛化性需要进一步研究。未来方向包括推荐系统 scaling law 的深入研究、跨域迁移学习、更复杂的稀疏特征交互机制、以及异构硬件平台的优化。\n\n## 6. 工业实践意义\n\n**直接可采纳**：(1) STS 训练策略——即使不采用完整 GRAB 架构，在现有序列模型训练中引入分阶段优化（先固定 embedding 训练序列模型、再固定模型优化 embedding）可有效缓解长序列训练中的分布偏移问题；(2) Action-Aware 注意力——在用户行为序列中区分行为类型（点击/曝光/停留）并给予不同注意力权重，88% vs 12% 的点击/非点击注意力分配比例是重要的参考信号。\n\n**部署考量**：推理成本与 DLRM 持平是工业化的关键——通过序列打包消除 padding、双滑动窗口限制计算量、codebook 优化注意力计算实现了这一目标。百度实践表明，在数十亿日请求量和严格延迟约束下，GR 模型可以替代传统 DLRM，关键是硬件-软件协同设计。\n\n**注意事项**：GRAB 的 scaling 特性在 6.5M-11.3M 参数范围验证，相比 LLM 的数十亿参数级别仍有数量级差距，扩展到更大规模是否仍保持线性增长需要进一步验证。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>传统深度学习推荐模型（DLRM）在工业级 CTR 预估中广泛应用，但面临根本性瓶颈：依赖人工特征工程、&quot;强记忆弱推理&quot;导致泛化能力不足、扩展模型规模时收益递减。生成式推荐（GR）模型虽然展示了类似 LLM 的 scaling 潜力，但工业部署面临三个关键障碍：(1) 稀疏参数和稠密参数的优化目标存在内在冲突——稀疏参数需要多样、低相关的样本实现鲁棒&quot;记忆&quot;，稠密参数则需要长连贯上下文实现序列&quot;推理&quot;；(2) 现有 GR 模型忽略了异质行为语义（点击 vs 曝光 vs 购买）；(3) 序列打包造成的分布偏移——将用户完整历史打包为 mini-batch 导致严重的用户内相关性，违反 SGD 的 i.i.d. 假设，使稀疏 embedding 过拟合特定用户。</p>\n<h2>2. 方法详解</h2>\n<p><strong>三阶段架构设计</strong>：GRAB 采用 Sparse Feature Layer → Dense Tokenizer → Autoregressive Sequence Modeling 的三阶段流水线。与 DLRM 将 embedding 压缩为定长向量不同，Dense Tokenizer 保留时序结构，将每个事件的 field embedding 聚合并投影到 ℝ^{d_model}，输出有序事件 token 序列。</p>\n<p><strong>序列打包与用户隔离因果掩码</strong>：将多个用户的行为序列紧凑打包为单一张量 H ∈ ℝ^{1×L×d_model}，消除 padding 开销。用户隔离因果掩码确保跨用户无注意力泄露且保持时序因果性，形成块对角下三角注意力模式。</p>\n<p><strong>异质行为 Token 与可见性掩码</strong>：在每个时间步设计两类 token——Partial Token（仅保留时变信息，丢弃 user_id 等静态字段防止重复引发过拟合）和 Full Token（保留完整信息用于候选评分）。异质可见性掩码限制 partial token 仅关注历史 partial token，full token 关注 partial 历史和自身但不互相关注，防止冗余静态信息传播。</p>\n<p><strong>Action-Aware Relative Attention Bias (RAB)</strong>：注意力权重计算为 w_{i,j} = q_i^T·(k_j + Pos_{i,j} + Action_{i,j} + Time_{i,j})，包含三个可学习相对编码：位置距离、行为类型信号（点击/非点击）、时间距离（连续值分桶）。通过 codebook 方法将计算复杂度从 O(L²·d_model) 降至快速 gather 操作。双滑动窗口限制每 token 计算量。消融实验显示行为和时间信号比位置信号影响更大——历史序列对行为和时间信号更敏感，正标签（点击）获得 88% 的注意力权重。</p>\n<p><strong>Causal Action-aware Multi-channel Attention (CamA)</strong>：核心创新。将不同来源 token 分配到 C 个独立因果自注意力栈，每个通道有独立可见性掩码，避免将所有 token 展平为单序列导致的 O((n+m)²) 成本。Target-Token Gated Mixing 仅在目标位置进行跨通道信息共享：h̃^(c,ℓ) = h^(c,ℓ) + Σ β^(i,ℓ) ⊙ h^(i,ℓ)，β 为可学习门控权重，实现选择性信息融合。</p>\n<p><strong>Sequence-Then-Sparse (STS) 训练策略</strong>：两阶段解耦优化——第一阶段冻结稀疏 Embedding 表，优化 Dense Tokenizer + Causal Transformer，使 Transformer 聚焦事件间关系而非记忆特定 ID；第二阶段回退到非序列格式将每个样本视为独立曝光，仅优化稀疏 embedding，打破分布偏移。训练使用 Adam 优化器。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>Sequence-First 范式迁移</strong>：将 LLM 的自回归序列建模范式引入 CTR 预估，GRAB 是首个在工业广告系统全量部署的 GR 模型，证明了 sequence-first 替代 feature-first 的可行性。相比最优基线 LONGER 提升 0.19% AUC（离线），线上 CTR +3.49%、收入 +3.05%。</p>\n<p>(2) <strong>异质行为建模</strong>：通过 Partial/Full Token 分离和 Action-Aware 注意力，首次在 GR 框架中显式建模不同行为类型的语义差异。消融显示仅用 partial token AUC 下降 0.028，验证异质设计的必要性。</p>\n<p>(3) <strong>STS 训练解耦</strong>：解决了 GR 模型中稀疏-稠密参数的优化冲突。STS 带来 0.0065 AUC 增益，证明分布偏移是阻碍 GR 模型工业化的关键障碍之一。</p>\n<p>(4) <strong>多通道注意力</strong>：CamA 将不同来源 token 分离计算后通过门控混合，相比单通道降低计算成本的同时保持效果。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>离线对比</strong>：在百度广告数据集上，GRAB-standard (AUC 0.83772) vs DIN (0.83309)、SIM(Soft) (0.83520)、TWIN (0.83556)、HSTU (0.83590)、LONGER (0.83615)。GRAB 在所有序列长度上均超越基线，且随序列增长优势扩大。</p>\n<p><strong>Scaling 分析</strong>：测试从 2 层/2 头/64d (6.51M) 到 4 层/4 头/512d (11.27M) 的多种配置，未观察到明显饱和趋势——增加模型容量稳定提升性能，尤其在长序列上更明显。</p>\n<p><strong>消融实验</strong>关键发现：异质 token 设计是最重要组件（仅 partial token 下降 0.028）；相对注意力中行为信号 &gt; 时间信号 &gt; 位置信号；多通道注意力移除下降 0.0029；STS 训练策略贡献 0.0065。</p>\n<p><strong>线上 A/B 测试</strong>：百度首页信息流广告，10% 主流量，约一个月：CTR +3.49%、CPM（千次曝光收入）+3.05%，推理成本与现有 DLRM 持平。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文在附录 F 中承认的局限：(1) 尚未验证 GRAB 在 CTR 以外推荐场景（如召回、粗排）的适用性；(2) 冷启动场景下极端稀疏性的处理仍待探索；(3) 稀疏-稠密参数平衡在不同数据集间的泛化性需要进一步研究。未来方向包括推荐系统 scaling law 的深入研究、跨域迁移学习、更复杂的稀疏特征交互机制、以及异构硬件平台的优化。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可采纳</strong>：(1) STS 训练策略——即使不采用完整 GRAB 架构，在现有序列模型训练中引入分阶段优化（先固定 embedding 训练序列模型、再固定模型优化 embedding）可有效缓解长序列训练中的分布偏移问题；(2) Action-Aware 注意力——在用户行为序列中区分行为类型（点击/曝光/停留）并给予不同注意力权重，88% vs 12% 的点击/非点击注意力分配比例是重要的参考信号。</p>\n<p><strong>部署考量</strong>：推理成本与 DLRM 持平是工业化的关键——通过序列打包消除 padding、双滑动窗口限制计算量、codebook 优化注意力计算实现了这一目标。百度实践表明，在数十亿日请求量和严格延迟约束下，GR 模型可以替代传统 DLRM，关键是硬件-软件协同设计。</p>\n<p><strong>注意事项</strong>：GRAB 的 scaling 特性在 6.5M-11.3M 参数范围验证，相比 LLM 的数十亿参数级别仍有数量级差距，扩展到更大规模是否仍保持线性增长需要进一步验证。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.08011",
+      "title": "Beyond Dense Connectivity: Explicit Sparsity for Scalable Recommendation",
+      "url": "https://arxiv.org/abs/2604.08011",
+      "authors": "Yantao Yu, Sen Qiao, Lei Shen, Bing Wang, Xiaoyi Zeng",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "web_search",
+      "published": "2026-04-10",
+      "total_score": 4.3,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "发现工业 CTR 模型中大部分学到的连接权重趋向于零、仅少数权重显著，揭示了稠密架构与稀疏推荐数据之间的结构性失配。提出 SSR (Explicit Sparsity for Scalable Recommendation)，采用 filter-then-fuse 机制：Static Random Filter 实现高效结构稀疏，Iterative Competitive Sparse (ICS) 实现自适应维度选择。在公开数据集和 AliExpress 十亿级数据集上验证，SSR 超越基线模型，且在模型规模增大时保持优于稠密模型的 scaling 特性。",
+      "key_insight": "SSR 揭示了一个重要发现：工业推荐模型的稠密连接多数是冗余的，稀疏化不仅不损失精度还能带来更好的 scaling 特性。filter-then-fuse 的两阶段稀疏策略提供了一种实用的模型瘦身方案：先用随机过滤快速筛除无效连接，再用竞争稀疏精选重要维度。对于需要持续扩大模型规模的排序系统，这一方法可显著降低计算开销同时保持甚至提升效果。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.08011",
+        "title": "Beyond Dense Connectivity: Explicit Sparsity for Scalable Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n工业 CTR 模型普遍采用稠密 MLP 架构（Wide&Deep、DLRM、AutoInt 等），但论文通过对工业级模型的权重分析发现了一个关键事实：92% 的权重被抑制到接近零（<10⁻³），80% 的权重能量集中在仅 4% 的维度上。这揭示了稠密架构与稀疏推荐数据之间存在根本性的结构失配。现有方法的问题在于：自注意力通过 softmax 保持严格正权重维持全连接图，后剪枝方法在稠密交互已发生后才移除冗余，而简单增大稠密模型规模往往收益递减甚至性能退化。\n\n## 2. 方法详解\n\n**SSR 框架：Filter-then-Fuse 范式**\n\nSSR 采用两阶段设计：先通过多视角稀疏过滤选择有效信号维度，再在过滤后的低维子空间内进行稠密融合。\n\n**阶段一：多视角稀疏过滤**。将输入 x ∈ ℝ^{d_in} 分解为 b 个并行视角，每个视角 i 通过过滤算子 ℱᵢ 提取纯化表征 hᵢ ∈ ℝ^{d_v}。提供两种实例化策略：\n\n- **SSR-S（静态随机过滤）**：使用二值选择矩阵 Mᵢ ∈ {0,1}^{d_in×d_v}，每列为 one-hot，从输入维度中均匀无放回采样 d_v 个维度。跨视角独立采样产生 Feature Bagging 效应。实现为零 FLOP 的并行 gather 操作，在计算前即完成硬维度缩减。\n\n- **SSR-D（迭代竞争稀疏 ICS）**：动态机制，使用可学习投影后通过 ICS 过滤。ICS 将稀疏化建模为离散时间非线性动力系统：初始化 x⁰ ← ReLU(z)，T 次迭代中每步计算全局抑制场 μ = Mean(x^t)，更新 x^{t+1} ← ReLU(x^t - αₜ·μ)（αₜ 为可学习消亡率），保证序列单调非增 |x^{t+1}|₁ ≤ |x^t|₁，最后通过可学习缩放 γ 恢复信号。T=5 为最优设置，达到约 91% 稀疏率。\n\n**阶段二：视角内稠密融合**。应用块对角权重矩阵 W_block = diag(V₁,...,Vₑ)，每个视角由独立参数 Vᵢ ∈ ℝ^{d_v×d_v} 变换，输出拼接并 LayerNorm。参数复杂度从 O((b·d_v)²) 降至 O(b·d_v²)，缩减因子为 1/b。\n\n**训练设置**：Embedding 维度 16，Adam 优化器，batch size 1024，早停策略。ICS 超参数：T=5，αₜ 初始化 0.1 每步可学习，γ 初始化全 1 每维度可学习。硬件为 NVIDIA A100 集群，TensorFlow 实现。\n\n## 3. 核心技术贡献\n\n(1) **范式转变：从隐式权重抑制到显式信号过滤**。SSR 在稠密交互之前就阻断噪声维度，而非依赖模型自行学习抑制无关连接。这从根本上改变了推荐模型的设计思路——不是让网络学会忽略 92% 的无用连接，而是在计算前就移除它们。\n\n(2) **生物启发的竞争稀疏机制 ICS**。模拟\"适者生存\"的全局抑制场竞争，相比 STE-based Top-k 方法消除了梯度不匹配问题且避免 O(N log N) 排序复杂度。ICS 是可微分的，允许端到端训练。消融显示 ICS 比 Top-k(STE) 高 0.18-0.29 AUC (×10⁻²)。\n\n(3) **可扩展架构设计**。多视角分解提供三个正交扩展维度（深度 L、宽度 b、子空间 d_v），实验证明视角宽度 b 是大规模数据上最优的扩展方向，b=64 时仍未饱和呈线性增长。\n\n(4) **静态+动态双模式**。SSR-S 适合对延迟极度敏感的场景（零 FLOP 过滤），SSR-D 适合追求极致精度的场景，两者可根据业务需求灵活选择。\n\n## 4. 实验结果分析\n\n**工业数据集（10亿+ 样本，300+ 特征字段）**：SSR-S 以 57M 参数、1.4G FLOPs 达到 Click AUC 0.6644，超越 RankMixer (101M, 3.2G FLOPs) 的 0.6621，参数少 44%、FLOPs 少 56%。SSR-D 以 100M 参数达到最优 0.6667，Pay AUC 0.8194 vs RankMixer 0.8122 (+0.72%)。\n\n**公开基准**：Avazu 上 SSR-D AUC 0.7835 vs RankMixer 0.7772 (+0.63%)；Alibaba 上 0.6844 vs 0.6801 (+0.43%)；Criteo 上 0.8096 vs 0.8092 (+0.03%)。\n\n**Scaling 分析**（关键发现）：在 5M-900M 参数范围内，SSR 保持更陡的性能增长曲线。稠密 MLP 出现过早饱和，SSR 持续上升且与基线的差距随规模增大而拉大。视角数 b 扩展在工业数据集上到 b=64 仍保持线性增长无饱和，而深度 L 扩展收益最低。\n\n**消融分析**：稀疏过滤是最重要组件（移除后 AUC 下降 0.37-0.50×10⁻²）；多视角策略贡献 0.15-0.22×10⁻²；ICS 比 Top-k 好 0.18-0.29×10⁻²；SSR-S 比 Dropout 好 0.32-0.45×10⁻²。ICS 训练动态显示第 1 层约 75% 稀疏率、第 2 层约 90% 稀疏率，视角间余弦相似度持续低位证明多视角学到互补子空间。\n\n**线上 A/B 测试**（AliExpress，2 周）：延迟 26ms (+1ms 可忽略)，CTR +2.1%、订单/用户 +3.2%、GMV +3.5%。\n\n## 5. 局限与未来方向\n\n论文未设独立局限性章节，但隐含的局限包括：(1) ICS 的 T 次迭代在训练时引入额外计算开销，虽然推理时开销可控；(2) 仅验证了 CTR 预估场景，在序列/会话推荐等其他任务上的适用性未探讨；(3) 特征 embedding 质量对稀疏过滤效果的影响���深入分析。未来方向包括设计与稀疏组合特性对齐的推荐基础模型、将显式过滤机制扩展到 CTR 以外的任务。\n\n## 6. 工业实践意义\n\n**直接可采纳**：(1) SSR-S 的零 FLOP 随机过滤——在现有 CTR 模型中添加 Feature Bagging 式的随机维度选择层，不增加推理延迟即可提升效果，实现成本极低。(2) Filter-then-Fuse 的架构设计原则——在特征交互之前先做稀疏选择，而非让网络自己学会忽略无用连接。(3) 视角扩展策略——扩模型时优先增加并行视角数 b 而非层数 L。\n\n**部署考量**：SSR-S 仅增加 1ms 延迟（25→26ms），适合在线服务严格延迟约束。AliExpress 的线上验证（CTR +2.1%、GMV +3.5%）证明了工业可行性。对于社区搜索的 UGC 排序场景，稀疏推荐数据（大量 UGC 长尾内容、稀疏用户交互）恰好是 SSR 方法论最适用的场景——稠密模型在这类数据上浪费了大量计算在无效连接上。\n\n**核心 takeaway**：92% 权重趋零的发现是一个强有力的实践论据，支持在所有推荐排序模型中审视稠密连接的必要性。即使不使用完整 SSR 框架，仅引入维度选择/稀疏化机制即可获得显著收益。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>工业 CTR 模型普遍采用稠密 MLP 架构（Wide&amp;Deep、DLRM、AutoInt 等），但论文通过对工业级模型的权重分析发现了一个关键事实：92% 的权重被抑制到接近零（&lt;10⁻³），80% 的权重能量集中在仅 4% 的维度上。这揭示了稠密架构与稀疏推荐数据之间存在根本性的结构失配。现有方法的问题在于：自注意力通过 softmax 保持严格正权重维持全连接图，后剪枝方法在稠密交互已发生后才移除冗余，而简单增大稠密模型规模往往收益递减甚至性能退化。</p>\n<h2>2. 方法详解</h2>\n<p><strong>SSR 框架：Filter-then-Fuse 范式</strong></p>\n<p>SSR 采用两阶段设计：先通过多视角稀疏过滤选择有效信号维度，再在过滤后的低维子空间内进行稠密融合。</p>\n<p><strong>阶段一：多视角稀疏过滤</strong>。将输入 x ∈ ℝ^{d_in} 分解为 b 个并行视角，每个视角 i 通过过滤算子 ℱᵢ 提取纯化表征 hᵢ ∈ ℝ^{d_v}。提供两种实例化策略：</p>\n<ul>\n<li><strong>SSR-S（静态随机过滤）</strong>：使用二值选择矩阵 Mᵢ ∈ {0,1}^{d_in×d_v}，每列为 one-hot，从输入维度中均匀无放回采样 d_v 个维度。跨视角独立采样产生 Feature Bagging 效应。实现为零 FLOP 的并行 gather 操作，在计算前即完成硬维度缩减。</li>\n</ul>\n<ul>\n<li><strong>SSR-D（迭代竞争稀疏 ICS）</strong>：动态机制，使用可学习投影后通过 ICS 过滤。ICS 将稀疏化建模为离散时间非线性动力系统：初始化 x⁰ ← ReLU(z)，T 次迭代中每步计算全局抑制场 μ = Mean(x^t)，更新 x^{t+1} ← ReLU(x^t - αₜ·μ)（αₜ 为可学习消亡率），保证序列单调非增 |x^{t+1}|₁ ≤ |x^t|₁，最后通过可学习缩放 γ 恢复信号。T=5 为最优设置，达到约 91% 稀疏率。</li>\n</ul>\n<p><strong>阶段二：视角内稠密融合</strong>。应用块对角权重矩阵 W_block = diag(V₁,...,Vₑ)，每个视角由独立参数 Vᵢ ∈ ℝ^{d_v×d_v} 变换，输出拼接并 LayerNorm。参数复杂度从 O((b·d_v)²) 降至 O(b·d_v²)，缩减因子为 1/b。</p>\n<p><strong>训练设置</strong>：Embedding 维度 16，Adam 优化器，batch size 1024，早停策略。ICS 超参数：T=5，αₜ 初始化 0.1 每步可学习，γ 初始化全 1 每维度可学习。硬件为 NVIDIA A100 集群，TensorFlow 实现。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>范式转变：从隐式权重抑制到显式信号过滤</strong>。SSR 在稠密交互之前就阻断噪声维度，而非依赖模型自行学习抑制无关连接。这从根本上改变了推荐模型的设计思路——不是让网络学会忽略 92% 的无用连接，而是在计算前就移除它们。</p>\n<p>(2) <strong>生物启发的竞争稀疏机制 ICS</strong>。模拟&quot;适者生存&quot;的全局抑制场竞争，相比 STE-based Top-k 方法消除了梯度不匹配问题且避免 O(N log N) 排序复杂度。ICS 是可微分的，允许端到端训练。消融显示 ICS 比 Top-k(STE) 高 0.18-0.29 AUC (×10⁻²)。</p>\n<p>(3) <strong>可扩展架构设计</strong>。多视角分解提供三个正交扩展维度（深度 L、宽度 b、子空间 d_v），实验证明视角宽度 b 是大规模数据上最优的扩展方向，b=64 时仍未饱和呈线性增长。</p>\n<p>(4) <strong>静态+动态双模式</strong>。SSR-S 适合对延迟极度敏感的场景（零 FLOP 过滤），SSR-D 适合追求极致精度的场景，两者可根据业务需求灵活选择。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>工业数据集（10亿+ 样本，300+ 特征字段）</strong>：SSR-S 以 57M 参数、1.4G FLOPs 达到 Click AUC 0.6644，超越 RankMixer (101M, 3.2G FLOPs) 的 0.6621，参数少 44%、FLOPs 少 56%。SSR-D 以 100M 参数达到最优 0.6667，Pay AUC 0.8194 vs RankMixer 0.8122 (+0.72%)。</p>\n<p><strong>公开基准</strong>：Avazu 上 SSR-D AUC 0.7835 vs RankMixer 0.7772 (+0.63%)；Alibaba 上 0.6844 vs 0.6801 (+0.43%)；Criteo 上 0.8096 vs 0.8092 (+0.03%)。</p>\n<p><strong>Scaling 分析</strong>（关键发现）：在 5M-900M 参数范围内，SSR 保持更陡的性能增长曲线。稠密 MLP 出现过早饱和，SSR 持续上升且与基线的差距随规模增大而拉大。视角数 b 扩展在工业数据集上到 b=64 仍保持线性增长无饱和，而深度 L 扩展收益最低。</p>\n<p><strong>消融分析</strong>：稀疏过滤是最重要组件（移除后 AUC 下降 0.37-0.50×10⁻²）；多视角策略贡献 0.15-0.22×10⁻²；ICS 比 Top-k 好 0.18-0.29×10⁻²；SSR-S 比 Dropout 好 0.32-0.45×10⁻²。ICS 训练动态显示第 1 层约 75% 稀疏率、第 2 层约 90% 稀疏率，视角间余弦相似度持续低位证明多视角学到互补子空间。</p>\n<p><strong>线上 A/B 测试</strong>（AliExpress，2 周）：延迟 26ms (+1ms 可忽略)，CTR +2.1%、订单/用户 +3.2%、GMV +3.5%。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文未设独立局限性章节，但隐含的局限包括：(1) ICS 的 T 次迭代在训练时引入额外计算开销，虽然推理时开销可控；(2) 仅验证了 CTR 预估场景，在序列/会话推荐等其他任务上的适用性未探讨；(3) 特征 embedding 质量对稀疏过滤效果的影响���深入分析。未来方向包括设计与稀疏组合特性对齐的推荐基础模型、将显式过滤机制扩展到 CTR 以外的任务。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可采纳</strong>：(1) SSR-S 的零 FLOP 随机过滤——在现有 CTR 模型中添加 Feature Bagging 式的随机维度选择层，不增加推理延迟即可提升效果，实现成本极低。(2) Filter-then-Fuse 的架构设计原则——在特征交互之前先做稀疏选择，而非让网络自己学会忽略无用连接。(3) 视角扩展策略——扩模型时优先增加并行视角数 b 而非层数 L。</p>\n<p><strong>部署考量</strong>：SSR-S 仅增加 1ms 延迟（25→26ms），适合在线服务严格延迟约束。AliExpress 的线上验证（CTR +2.1%、GMV +3.5%）证明了工业可行性。对于社区搜索的 UGC 排序场景，稀疏推荐数据（大量 UGC 长尾内容、稀疏用户交互）恰好是 SSR 方法论最适用的场景——稠密模型在这类数据上浪费了大量计算在无效连接上。</p>\n<p><strong>核心 takeaway</strong>：92% 权重趋零的发现是一个强有力的实践论据，支持在所有推荐排序模型中审视稠密连接的必要性。即使不使用完整 SSR 框架，仅引入维度选择/稀疏化机制即可获得显著收益。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.07851",
+      "title": "ReRec: Reasoning-Augmented LLM-based Recommendation Assistant via Reinforcement Fine-tuning",
+      "url": "https://arxiv.org/abs/2604.07851",
+      "authors": "Jiani Huang, Shijie Wang, Liangbo Ning, Wenqi Fan, Qing Li",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-10",
+      "total_score": 3.75,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.75,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "提出 ReRec——一种基于强化微调的推理增强型 LLM 推荐助手，已被 ACL 2026 接收。核心方法包含三个创新：(1) 双图增强奖励塑形，将 NDCG@K 等推荐指标与 Query Alignment/Preference Alignment 分数结合指导优化；(2) 推理感知优势估计，将 LLM 输出分解为推理段并惩罚错误步骤；(3) 在线课程调度器，动态评估查询难度以调整训练节奏。在多个推荐基准上超越现有方法。",
+      "key_insight": "ReRec 将推理链 (chain-of-thought) 与推荐系统深度结合，通过强化学习对推理过程施加细粒度监督（逐步骤惩罚而非仅关注最终结果）。这种范式对搜索/推荐的启示是：LLM 可以作为推荐理由生成器和排序辅助模块，但需要设计推荐领域特定的奖励信号（如 NDCG、对齐分数）来引导推理，而非简单依赖语言模型的通用能力。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.07992",
+      "title": "Context-Aware Disentanglement for Cross-Domain Sequential Recommendation: A Causal View",
+      "url": "https://arxiv.org/abs/2604.07992",
+      "authors": "Xingzi Wang, Qingtian Bian, Hui Fang",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-10",
+      "total_score": 3.6,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对跨域序列推荐中的三个关键挑战——用户交互序列中上下文变化导致虚假相关性、领域间梯度冲突、以及不切实际的用户重叠假设，提出 CoDiS 方法。核心方案包括：变分上下文调整减少混杂效应、专家隔离策略解决梯度冲突、变分对抗解耦分离领域特定偏好。在三个真实数据集上，CoDiS 一致超越 SOTA 跨域推荐基线。",
+      "key_insight": "CoDiS 从因果推断视角审视跨域推荐中的偏好迁移问题，核心洞察是上下文变化（如时间、场景）会制造虚假相关性，需要因果框架来区分真实偏好和混杂因素。专家隔离策略解决了多任务学习中常见的负迁移问题。对于运营多个业务域的推荐系统（如搜索+信息流+电商），该方法提供了一种在不要求用户完全重叠的前提下进行跨域知识迁移的可行思路。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.07351",
+      "title": "FedUTR: Federated Recommendation with Augmented Universal Textual Representation for Sparse Interaction Scenarios",
+      "url": "https://arxiv.org/abs/2604.07351",
+      "authors": "Kang Fu, Honglei Zhang, Zikai Zhang, Jundong Chen, Xin Zhou, Zhiqi Shen, Dusit Niyato, Yidong Li",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-10",
+      "total_score": 3.4,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.4,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对联邦推荐中用户交互数据稀疏导致 ID embedding 质量差的问题，提出 FedUTR。核心方法是将通用文本嵌入与个性化 ID 嵌入融合：Collaborative Information Fusion Module 合并文本知识与交互模式，Local Adaptation Module 保留客户端特定偏好，增强变体 FedUTR-SAR 实现稀疏感知的平衡调节。在四个真实数据集上相比同类方法最高提升 59%。",
+      "key_insight": "FedUTR 的核心贡献在于为联邦推荐提出了一种文本-ID 双通道表征策略：文本嵌入提供跨用户的通用物品语义知识，ID 嵌入捕捉个性化交互模式。这种思路在隐私保护场景下尤其有价值——当单个客户端数据不足时，文本表征可以弥补冷启动问题。对于社区搜索类应用，利用 UGC 文本内容作为物品表征的补充信号是可借鉴的方向。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.07739",
+      "title": "Efficient Dataset Selection for Continual Adaptation of Generative Recommenders",
+      "url": "https://arxiv.org/abs/2604.07739",
+      "authors": "Cathy Jiao, Juan Elenter, Praveen Ravichandran, Bernd Huber, Joseph Cauteruccio, Todd Wasson, Timothy Heath, Chenyan Xiong, Mounia Lalmas, Paul Bennett",
+      "company": [
+        "Spotify"
+      ],
+      "source": "web_search",
+      "published": "2026-04-10",
+      "total_score": 3.4,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.4,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "研究大规模流式推荐系统中时间分布偏移导致的模型性能退化问题，提出面向生成式推荐器的高效数据选择策略。核心发现是基于梯度的数据表征配合分布匹配方法能有效提升下游模型性能。在真实音乐和播客交互数据上验证，被 ICLR 2026 CAO Workshop 接收为 Oral 报告。",
+      "key_insight": "该工作从数据选择角度解决推荐系统的持续适应问题，而非聚焦模型架构改进。核心启示是：在大规模推荐系统中，频繁全量重训不可行时，通过梯度信号筛选高信息量的训练子集是一种 cost-effective 的模型更新策略。对于 UGC 搜索场景，内容和用户兴趣的快速迁移同样面临类似的时间偏移挑战，数据选择可作为模型持续优化的轻量方案。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.07629",
+      "title": "Behavior Latticing: Inferring User Motivations from Unstructured Interactions",
+      "url": "https://arxiv.org/abs/2604.07629",
+      "authors": "Dora Zhao, Michelle S. Lam, Diyi Yang, Michael S. Bernstein",
+      "company": [
+        "Stanford"
+      ],
+      "source": "web_search",
+      "published": "2026-04-10",
+      "total_score": 3.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出 Behavior Latticing 方法，从非结构化用户交互数据中推断底层动机。不同于传统方法仅优化表面行为指标，该方法通过连接分散的行为模式、合成用户动机洞察，使 AI 系统能理解用户的深层需求。实验证明 Behavior Latticing 生成的用户洞察在准确性和解释深度上显著优于现有方法，并在个人 AI 代理中验证了可行性。",
+      "key_insight": "Behavior Latticing 提出了一个从行为优化转向动机理解的新范式：不是预测用户下一步会点什么，而是理解用户为什么会有这些行为。这对搜索/推荐系统的长远启示在于，如果能准确建模用户动机（而非仅建模点击模式），可以在冷启动和兴趣探索场景提供更好的推荐。但当前研究偏 HCI 方向，工业落地尚需进一步验证。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.07572",
+      "title": "HiMARS: Hybrid Multi-Objective Algorithms for Recommender Systems",
+      "url": "https://arxiv.org/abs/2604.07572",
+      "authors": "Elaheh Lotfian, Alireza Kabgani",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-08",
+      "total_score": 3.05,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出四种混合多目标优化算法，融合 NNIA、AMOSA 和 NSGA-II 的思想，同时优化推荐列表的准确性和多样性。方法分三阶段：基于物品协同过滤生成初始推荐、求解双目标优化识别 Pareto 最优解、选择个性化推荐列表。实验表明所提算法在准确性和多样性两个维度均优于单一目标方法。",
+      "key_insight": "HiMARS 从进化算法角度解决推荐中准确性-多样性权衡问题，Pareto 最优解集合提供了一种不需要预设权重的多目标平衡方式。但工业推荐系统通常采用端到端的多目标学习（如 PLE、MMoE）而非后处理式的进化算法，该方法在延迟敏感的在线服务中可行性有限。研究价值在于提供了多目标优化的理论参照，适合离线分析而非实时排序。"
+    }
+  ]
+}

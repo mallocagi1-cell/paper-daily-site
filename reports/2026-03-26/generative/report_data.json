@@ -1,0 +1,114 @@
+{
+  "date": "2026-03-26",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 578,
+    "papers_selected": 4,
+    "score_min": 3.45,
+    "score_max": 4.25
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2601.19501",
+      "title": "Masked Diffusion Generative Recommendation",
+      "url": "https://arxiv.org/abs/2601.19501",
+      "authors": "Lingyu Mu, Hao Deng, Haibo Xing, Jinxin Hu, Yu Zhang, Xiaoyi Zeng, Jing Zhang",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-01-29",
+      "total_score": 4.25,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.4,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 3
+      },
+      "summary": "本文提出 MDGR（Masked Diffusion Generative Recommendation），摒弃传统自回归解码范式，采用 masked diffusion 进行生成式推荐。通过并行码本提供扩散基础结构、自适应掩码监督信号以及基于 warm-up 的两阶段并行解码策略，解决了自回归方法在全局特征依赖捕获、解码顺序假设和推理效率方面的限制。在公开数据集上相比十个基线模型提升达 10.78%，在大规模广告推荐平台的线上 A/B 测试中实现广告收入提升 1.20%、GMV 提升 3.69%、CTR 提升 2.36%。",
+      "key_insight": "MDGR 是生成式推荐从自回归到扩散模型的重要范式转变。其核心创新在于：用并行码本替代顺序依赖，使扩散过程可以同时考虑所有 token 位置的全局信息；自适应掩码策略允许不同用户拥有不同的解码路径。两阶段并行解码大幅降低推理延迟，使扩散模型在在线推荐场景中变得可行。这为搜索推荐系统探索非自回归生成范式提供了有力的实验证据。",
+      "deep_reading": {
+        "paper_id": "arxiv:2601.19501",
+        "title": "Masked Diffusion Generative Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n生成式推荐（Generative Recommendation, GR）将推荐建模为序列生成任务，通过自回归解码 Semantic ID 来生成推荐 item。然而，现有自回归方法存在三个根本性缺陷：（1）**全局依赖建模不足**——自回归解码仅依赖左侧上下文，无法联合捕获多维特征之间的全局依赖；（2）**固定解码顺序假设不合理**——所有用户统一采用从左到右的解码顺序，但实际中不同用户关注 item 属性的优先级不同；（3）**推理效率低下**——顺序生成的复杂度为 O(B·H·L³·d)，难以满足在线推荐的实时性要求。虽然单步并行解码可改善全局一致性，但忽略了局部属性间更细粒度的约束关系。这些问题在大规模工业场景（如 1800 万用户、2500 万 item、10 亿月交互量的东南亚电商平台）中尤为突出。\n\n## 2. 方法详解\n\nMDGR 从码本、训练、推理三个层面重塑生成式推荐管线：\n\n**并行码本（Parallel Codebook）**：采用基于 OPQ（Optimized Product Quantization）的并行码本替代传统残差量化（RQ-VAE）。将 item embedding 投影到 L=8 个独立子空间，每个子空间维护独立的码本（300 词表×256 维），通过最近邻量化得到 8 个独立的 token。关键优势在于各位置独立无层级约束，支持双向注意力和任意位置的掩码操作。\n\n**自适应掩码训练策略**：包含时间维度和样本维度两层自适应。时间维度采用课程学习噪声调度：归一化训练进度 τ=min(1, n/N)，通过余弦调度加幂变换计算难度标量 δ，训练初期少量掩码（简单任务），逐步增加掩码数量。γ=2.0 为最优课程速度超参。样本维度引入基于用户历史的掩码位置分配：统计目标 item 每个位置 token 在用户历史中的出现频率，对低频（罕见）token 赋予更高掩码权重 w=1/(f+ε)，使模型更多关注困难预测位置。此外，引入可学习的难度 embedding 表 D∈ℝ^(L×D)，根据掩码数量 k 索引并添加到所有 token embedding 上，使解码器感知当前噪声水平。\n\n**Warm-up 两阶段并行解码**：第一阶段（R_warm=4 步）每步解码一个位置，选择模型置信度最高的未填充位置，稳定关键语义锚点。第二阶段切换到并行解码，每步同时解码 m_par=2 个位置。结合 beam search（beam width=50），在每个位置保留 Top-B 候选 token，联合展开所有位置生成 B^m 个候选序列，按累计对数概率选择 Top-B。总步数 R=R_warm+(L-R_warm)/m_par ≈ 6 步，远少于自回归的 L=8 步。\n\n训练目标为掩码位置的交叉熵损失。模型架构使用 6 层 Transformer encoder（256 隐藏维、8 注意力头）编码用户历史，decoder 使用双向自注意力。item 内容 embedding 由预训练 Qwen3-8B 模型生成。训练使用 2 个参数服务器 + 10 个 worker，每个 worker 配备 1 块 Nvidia A100 GPU。\n\n## 3. 核心技术贡献\n\n**贡献一：将 masked diffusion 引入生成式推荐。** 不同于自回归和单步并行方法，MDGR 通过迭代掩码-去噪过程生成推荐，每步都能利用双向上下文。这从根本上解决了自回归方法的单向依赖限制，同时比单步并行保留了更多局部约束信息。相比 TIGER（自回归基线），MDGR 在工业数据集上 Recall@5 从 0.1647 提升至 0.1856（+12.7%）。\n\n**贡献二：推荐场景感知的课程学习噪声调度。** 与通用 masked diffusion 模型不同，MDGR 将用户行为历史中的 token 频率信息融入掩码分配，使训练监督信号聚焦于困难预测。消融实验显示：去除自适应掩码量采样（uniform）降低 1.35%，去除历史感知位置分配（random）降低 1.83%，两者同时去除降低 3.45%。\n\n**贡献三：Warm-up 两阶段解码策略。** 通过先稳定高置信度位置的语义锚点，再并行填充剩余位置，在速度和质量之间取得平衡。R_warm=4 配置在保持 Recall@10 仅微降 0.04% 的情况下提升 QPS 14.24%。\n\n**贡献四：OPQ 并行码本为扩散过程提供结构基础。** 相比残差量化（RQ-VAE），并行码本的各位置独立性天然适配双向掩码操作。消融显示 OPQ 比 RQ-VAE 高 1.46%、比 RQ-KMeans 高 1.40%。\n\n## 4. 实验结果分析\n\n**公开数据集对比（Amazon Electronics/Books）**：MDGR 在所有指标上超越 10 个基线。在 Electronics 数据集上，Recall@5 达 0.0394（vs RPG 0.0357, +10.4%），NDCG@10 达 0.0367（vs RPG 0.0339, +8.3%）。在 Books 数据集上同样保持 8-9% 的优势。值得注意的是，MDGR 不仅超越所有生成式方法（TIGER、Cobra、RPG），也全面超越判别式方法（SASRec、BERT4Rec 等）。\n\n**工业数据集（10 亿交互量）**：Recall@5 达 0.1856（vs RPG 0.1679, +10.5%），规模化场景下优势更显著。\n\n**消融分析**：并行码本 > 课程噪声 > 历史感知掩码 > 难度 embedding > 置信度引导解码，每个组件贡献 1-3.5%，说明各模块设计都有实质贡献。γ 超参敏感性分析显示 γ=2.0 最优，过小（0.5）课程过于激进，过大（3.0）学习过于保守。\n\n**在线 A/B 测试（2026.1.5-1.12，东南亚电商广告平台）**：对照组为 TIGER，实验组为 MDGR，各 20% 用户流量。广告收入 +1.20%、GMV +3.69%、CTR +2.36%，p<0.05。GMV 提升最为显著，说明 MDGR 生成的推荐不仅点击率更高，且转化质量也更好。\n\n**效率分析**：基线 QPS 2.212，R_warm=4+m_par=2 配置达 2.527 QPS（+14.24%）。极端配置（无 warm-up+m_par=2）可达 3.015 QPS（+36.3%），但 Recall@10 下降 4.15%。\n\n## 5. 局限与未来方向\n\n论文未设置专门的局限性章节，但从实验和分析中可识别以下限制：（1）**超参数敏感**——R_warm、m_par、γ 的选择对性能影响较大，需要针对具体场景调优；（2）**纯并行解码性能不佳**——去除 warm-up 后 Recall 下降 4.15%，说明扩散模型在推荐场景中仍需依赖「先锚定再扩展」的策略；（3）**beam width 依赖**——beam=50 的设置在生产中可能带来显存和延迟压力；（4）**码本构建依赖预训练 LLM**——使用 Qwen3-8B 生成 item embedding，引入额外依赖。作者也提到 DiffuGR、LLaDA-rec 等并发工作采用了类似的扩散思路但「适配性较弱」，未来如何设计更原生的推荐场景扩散模型仍是开放问题。\n\n## 6. 工业实践意义\n\n**可直接借鉴的设计**：（1）OPQ 并行码本是生成式推荐码本选择的强基线，相比 RQ-VAE 实现简单且效果更好；（2）基于用户历史频率的自适应掩码策略是「困难样本挖掘」在生成式推荐中的自然延伸，迁移成本低。（3）Warm-up 两阶段解码提供了「质量-速度」旋钮，可根据场景需求灵活调节。\n\n**线上指标分析**：GMV +3.69% 是三个指标中提升最大的，显著高于 CTR +2.36% 和收入 +1.20%。这说明 MDGR 的双向全局建模帮助模型更好理解用户的购买意图而非仅点击意图，对电商场景有独特价值。\n\n**部署考量**：（1）延迟方面，QPS 2.527 仍偏低，生产中可能需要结合模型蒸馏或量化进一步加速；（2）beam width=50 的显存占用在大 batch 场景中需要关注；（3）码本构建为离线一次性操作，但码本索引到 item 的映射需要维护更新策略。（4）分布式训练需 12 台 A100 机器，中型团队可承受。\n\n**对搜索排序的启示**：在 UGC 短文本搜索场景中，用户查询意图的多样性与 MDGR 解决的「不同用户关注不同属性顺序」问题高度类似。可以考虑将并行码本 + 掩码扩散的思路应用于查询-文档匹配的生成式检索，允许模型从不同维度同时建模匹配信号。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>生成式推荐（Generative Recommendation, GR）将推荐建模为序列生成任务，通过自回归解码 Semantic ID 来生成推荐 item。然而，现有自回归方法存在三个根本性缺陷：（1）<strong>全局依赖建模不足</strong>——自回归解码仅依赖左侧上下文，无法联合捕获多维特征之间的全局依赖；（2）<strong>固定解码顺序假设不合理</strong>——所有用户统一采用从左到右的解码顺序，但实际中不同用户关注 item 属性的优先级不同；（3）<strong>推理效率低下</strong>——顺序生成的复杂度为 O(B·H·L³·d)，难以满足在线推荐的实时性要求。虽然单步并行解码可改善全局一致性，但忽略了局部属性间更细粒度的约束关系。这些问题在大规模工业场景（如 1800 万用户、2500 万 item、10 亿月交互量的东南亚电商平台）中尤为突出。</p>\n<h2>2. 方法详解</h2>\n<p>MDGR 从码本、训练、推理三个层面重塑生成式推荐管线：</p>\n<p><strong>并行码本（Parallel Codebook）</strong>：采用基于 OPQ（Optimized Product Quantization）的并行码本替代传统残差量化（RQ-VAE）。将 item embedding 投影到 L=8 个独立子空间，每个子空间维护独立的码本（300 词表×256 维），通过最近邻量化得到 8 个独立的 token。关键优势在于各位置独立无层级约束，支持双向注意力和任意位置的掩码操作。</p>\n<p><strong>自适应掩码训练策略</strong>：包含时间维度和样本维度两层自适应。时间维度采用课程学习噪声调度：归一化训练进度 τ=min(1, n/N)，通过余弦调度加幂变换计算难度标量 δ，训练初期少量掩码（简单任务），逐步增加掩码数量。γ=2.0 为最优课程速度超参。样本维度引入基于用户历史的掩码位置分配：统计目标 item 每个位置 token 在用户历史中的出现频率，对低频（罕见）token 赋予更高掩码权重 w=1/(f+ε)，使模型更多关注困难预测位置。此外，引入可学习的难度 embedding 表 D∈ℝ^(L×D)，根据掩码数量 k 索引并添加到所有 token embedding 上，使解码器感知当前噪声水平。</p>\n<p><strong>Warm-up 两阶段并行解码</strong>：第一阶段（R_warm=4 步）每步解码一个位置，选择模型置信度最高的未填充位置，稳定关键语义锚点。第二阶段切换到并行解码，每步同时解码 m_par=2 个位置。结合 beam search（beam width=50），在每个位置保留 Top-B 候选 token，联合展开所有位置生成 B^m 个候选序列，按累计对数概率选择 Top-B。总步数 R=R_warm+(L-R_warm)/m_par ≈ 6 步，远少于自回归的 L=8 步。</p>\n<p>训练目标为掩码位置的交叉熵损失。模型架构使用 6 层 Transformer encoder（256 隐藏维、8 注意力头）编码用户历史，decoder 使用双向自注意力。item 内容 embedding 由预训练 Qwen3-8B 模型生成。训练使用 2 个参数服务器 + 10 个 worker，每个 worker 配备 1 块 Nvidia A100 GPU。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献一：将 masked diffusion 引入生成式推荐。</strong> 不同于自回归和单步并行方法，MDGR 通过迭代掩码-去噪过程生成推荐，每步都能利用双向上下文。这从根本上解决了自回归方法的单向依赖限制，同时比单步并行保留了更多局部约束信息。相比 TIGER（自回归基线），MDGR 在工业数据集上 Recall@5 从 0.1647 提升至 0.1856（+12.7%）。</p>\n<p><strong>贡献二：推荐场景感知的课程学习噪声调度。</strong> 与通用 masked diffusion 模型不同，MDGR 将用户行为历史中的 token 频率信息融入掩码分配，使训练监督信号聚焦于困难预测。消融实验显示：去除自适应掩码量采样（uniform）降低 1.35%，去除历史感知位置分配（random）降低 1.83%，两者同时去除降低 3.45%。</p>\n<p><strong>贡献三：Warm-up 两阶段解码策略。</strong> 通过先稳定高置信度位置的语义锚点，再并行填充剩余位置，在速度和质量之间取得平衡。R_warm=4 配置在保持 Recall@10 仅微降 0.04% 的情况下提升 QPS 14.24%。</p>\n<p><strong>贡献四：OPQ 并行码本为扩散过程提供结构基础。</strong> 相比残差量化（RQ-VAE），并行码本的各位置独立性天然适配双向掩码操作。消融显示 OPQ 比 RQ-VAE 高 1.46%、比 RQ-KMeans 高 1.40%。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>公开数据集对比（Amazon Electronics/Books）</strong>：MDGR 在所有指标上超越 10 个基线。在 Electronics 数据集上，Recall@5 达 0.0394（vs RPG 0.0357, +10.4%），NDCG@10 达 0.0367（vs RPG 0.0339, +8.3%）。在 Books 数据集上同样保持 8-9% 的优势。值得注意的是，MDGR 不仅超越所有生成式方法（TIGER、Cobra、RPG），也全面超越判别式方法（SASRec、BERT4Rec 等）。</p>\n<p><strong>工业数据集（10 亿交互量）</strong>：Recall@5 达 0.1856（vs RPG 0.1679, +10.5%），规模化场景下优势更显著。</p>\n<p><strong>消融分析</strong>：并行码本 &gt; 课程噪声 &gt; 历史感知掩码 &gt; 难度 embedding &gt; 置信度引导解码，每个组件贡献 1-3.5%，说明各模块设计都有实质贡献。γ 超参敏感性分析显示 γ=2.0 最优，过小（0.5）课程过于激进，过大（3.0）学习过于保守。</p>\n<p><strong>在线 A/B 测试（2026.1.5-1.12，东南亚电商广告平台）</strong>：对照组为 TIGER，实验组为 MDGR，各 20% 用户流量。广告收入 +1.20%、GMV +3.69%、CTR +2.36%，p&lt;0.05。GMV 提升最为显著，说明 MDGR 生成的推荐不仅点击率更高，且转化质量也更好。</p>\n<p><strong>效率分析</strong>：基线 QPS 2.212，R_warm=4+m_par=2 配置达 2.527 QPS（+14.24%）。极端配置（无 warm-up+m_par=2）可达 3.015 QPS（+36.3%），但 Recall@10 下降 4.15%。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文未设置专门的局限性章节，但从实验和分析中可识别以下限制：（1）<strong>超参数敏感</strong>——R_warm、m_par、γ 的选择对性能影响较大，需要针对具体场景调优；（2）<strong>纯并行解码性能不佳</strong>——去除 warm-up 后 Recall 下降 4.15%，说明扩散模型在推荐场景中仍需依赖「先锚定再扩展」的策略；（3）<strong>beam width 依赖</strong>——beam=50 的设置在生产中可能带来显存和延迟压力；（4）<strong>码本构建依赖预训练 LLM</strong>——使用 Qwen3-8B 生成 item embedding，引入额外依赖。作者也提到 DiffuGR、LLaDA-rec 等并发工作采用了类似的扩散思路但「适配性较弱」，未来如何设计更原生的推荐场景扩散模型仍是开放问题。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>可直接借鉴的设计</strong>：（1）OPQ 并行码本是生成式推荐码本选择的强基线，相比 RQ-VAE 实现简单且效果更好；（2）基于用户历史频率的自适应掩码策略是「困难样本挖掘」在生成式推荐中的自然延伸，迁移成本低。（3）Warm-up 两阶段解码提供了「质量-速度」旋钮，可根据场景需求灵活调节。</p>\n<p><strong>线上指标分析</strong>：GMV +3.69% 是三个指标中提升最大的，显著高于 CTR +2.36% 和收入 +1.20%。这说明 MDGR 的双向全局建模帮助模型更好理解用户的购买意图而非仅点击意图，对电商场景有独特价值。</p>\n<p><strong>部署考量</strong>：（1）延迟方面，QPS 2.527 仍偏低，生产中可能需要结合模型蒸馏或量化进一步加速；（2）beam width=50 的显存占用在大 batch 场景中需要关注；（3）码本构建为离线一次性操作，但码本索引到 item 的映射需要维护更新策略。（4）分布式训练需 12 台 A100 机器，中型团队可承受。</p>\n<p><strong>对搜索排序的启示</strong>：在 UGC 短文本搜索场景中，用户查询意图的多样性与 MDGR 解决的「不同用户关注不同属性顺序」问题高度类似。可以考虑将并行码本 + 掩码扩散的思路应用于查询-文档匹配的生成式检索，允许模型从不同维度同时建模匹配信号。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2603.22335",
+      "title": "Causal Direct Preference Optimization for Distributionally Robust Generative Recommendation",
+      "url": "https://arxiv.org/abs/2603.22335",
+      "authors": "Chu Zhao, Enneng Yang, Jianzhe Zhao, Guibing Guo",
+      "company": [
+        "Northeastern University"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 3.85,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文揭示 Direct Preference Optimization (DPO) 在生成式推荐中的关键缺陷：DPO 倾向于在对齐过程中放大环境混杂因素引起的虚假相关性，严重削弱 LLM 推荐器的泛化能力。提出 CausalDPO，通过因果不变性学习和后门调整消除混杂干扰，使用软聚类建模潜在环境分布并施加不变性约束。在多种分布偏移条件下，四个评估指标平均提升 17.17%。",
+      "key_insight": "CausalDPO 将因果推断引入生成式推荐的偏好对齐，解决了 DPO 的根本性缺陷——对数据分布的过度依赖导致分布外场景表现骤降。通过后门调整剥离环境混杂因素，模型学到的用户偏好更具因果不变性。这对搜索推荐系统有直接启示：当训练数据和线上数据存在分布差异时（如新品类、新地区），因果对齐策略可显著提升模型鲁棒性。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2603.23183",
+      "title": "Reasoning over Semantic IDs Enhances Generative Recommendation",
+      "url": "https://arxiv.org/abs/2603.23183",
+      "authors": "Yingzhi He, Yan Sun, Junfei Tan, Yuxin Chen, Xiaoyu Kong, Chunxu Shen, Xiang Wang, An Zhang, Tat-Seng Chua",
+      "company": [
+        "NUS"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-25",
+      "total_score": 3.85,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文提出 SIDReasoner，增强 LLM 对 Semantic ID 的推理能力以提升生成式推荐效果。核心方法包括：利用更强的教师模型合成丰富的 SID 中心语料进行多任务训练，强化 Semantic ID 与自然语言之间的对齐；然后通过结果驱动的强化优化引导推理过程，无需显式标注。在三个真实数据集上验证了方法的有效性，同时带来了可解释性提升和跨域泛化能力。",
+      "key_insight": "SIDReasoner 的关键洞察是：当前 Semantic ID 方法中 LLM 并未真正「理解」ID 序列的语义，仅是机械地生成 token。通过教师模型蒸馏的 SID 语料和强化学习优化，LLM 能够在生成推荐时进行有意义的推理。这为生成式推荐系统指明了重要方向：Semantic ID 不应只是离散化的 embedding，而应成为 LLM 可推理的语义载体，从而提升推荐的可解释性和泛化性。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2603.23184",
+      "title": "ImplicitRM: Unbiased Reward Modeling from Implicit Preference Data for LLM alignment",
+      "url": "https://arxiv.org/abs/2603.23184",
+      "authors": "Hao Wang, Haocheng Yang, Licheng Pan, Lei Shen, Xiaoxi Li, Yinuo Wang, Zhichao Chen, Yuan Lu, Haoxuan Li, Zhouchen Lin",
+      "company": [
+        "Peking University"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文提出 ImplicitRM，解决从隐式偏好数据（如点击、复制等行为信号）学习无偏奖励模型的挑战。识别了隐式反馈的两个根本问题：缺乏明确负例和用户偏好偏差对不同响应的差异化影响。通过分层模型将训练样本划分为四个潜在组，并推导出基于似然最大化的无偏学习目标，实现跨隐式偏好数据集的准确奖励建模。",
+      "key_insight": "ImplicitRM 架起了推荐系统中广泛使用的隐式反馈（点击、浏览）与 LLM 对齐（RLHF）之间的桥梁。其分层无偏学习框架可直接迁移到基于 LLM 的推荐系统中：利用海量用户行为日志构建奖励模型，无需昂贵的人工标注。对搜索推荐实践者的启示：现有的点击/转化数据可以作为 LLM 推荐对齐的信号源，但需注意偏差校正。"
+    }
+  ]
+}

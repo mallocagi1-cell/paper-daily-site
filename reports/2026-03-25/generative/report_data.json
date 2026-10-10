@@ -1,0 +1,178 @@
+{
+  "date": "2026-03-25",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 1044,
+    "papers_selected": 7,
+    "score_min": 3.05,
+    "score_max": 4.0
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2603.22231",
+      "title": "One Model, Two Markets: Bid-Aware Generative Recommendation",
+      "url": "https://arxiv.org/abs/2603.22231",
+      "authors": "Yanchen Jiang, Zhe Feng, Christopher P. Mah, Aranyak Mehta, Di Wang",
+      "company": [
+        "Google"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 4.0,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文针对生成式推荐系统（如 TIGER）仅关注语义检索、忽略商业变现的问题，提出 GEM-Rec 统一框架。该框架引入控制 token 将「是否展示广告」与「展示哪个商品」解耦，并设计 Bid-Aware Decoding 机制在推理阶段注入实时出价信号，引导生成偏向高价值商品。实验表明 GEM-Rec 在保持推荐质量的同时显著提升广告收入。",
+      "key_insight": "将广告竞价信号直接融入生成式推荐的解码过程是一种优雅的工程设计，避免了传统双塔架构中推荐与广告独立排序再混排的复杂度。控制 token 的解耦设计可迁移至搜索场景——例如在 UGC 搜索中区分自然结果与推广内容，实现统一生成式排序。这为搜推一体的商业化提供了可落地的技术路线。",
+      "deep_reading": {
+        "paper_id": "arxiv:2603.22231",
+        "title": "One Model, Two Markets: Bid-Aware Generative Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n生成式推荐系统（如 Google 的 TIGER）通过语义 ID 将推荐建模为序列生成任务，在有机内容检索上取得了显著成功。然而，现有架构仅优化用户偏好，完全忽略了商业变现——而真实平台必须同时满足用户满意度与平台收入两个目标。传统方案（如双塔架构）将推荐与广告作为两个独立系统分别排序再混排，引入了大量工程复杂度和次优的全局排序。\n\n核心挑战在于：有机内容和付费广告遵循根本不同的目标函数，历史日志代表的是已通过用户相关性和经济可行性双重过滤的「幸存者」分布。如何在统一的生成式框架中同时建模这两种不同目标，是本文要解决的关键问题。\n\n本文构建于 TIGER 等语义 ID 范式之上，但指出 OneRec (2025)、Yang et al. (2024) 等后续工作仍停留在偏好建模层面，未涉及经济机制设计。同时，已有的广告联合优化方法大多基于 RL 独立处理广告插入，而非将其集成到生成过程本身。\n\n## 2. 方法详解\n\n### 2.1 语义 ID 基础\n\n与 TIGER 一致，GEM-Rec 使用 Residual Quantized VAE (RQ-VAE) 将商品编码为层次化元组 (c₁, c₂, ..., c_D)，其中早期码表示粗粒度类别、后期码添加细节。RQ-VAE 在 Sentence-T5 嵌入上训练，码本大小 256，深度 3。\n\n### 2.2 统一序列构造：控制 Token\n\n核心创新在于在语义词汇表中添加显式控制 token。每个生成步骤由控制标志 f_t 和语义码序列拼接而成：\n\n[f_t] ⊕ [c_{t,1}, c_{t,2}, ..., c_{t,D}]\n\n其中 f_t ∈ {<ORG>, <AD>}。这一设计将「槽位分配决策」（是否展示广告）与「内容检索」（展示哪个商品）优雅地解耦。当 f_t = <ORG> 时进入「偏好模式」生成有机内容，f_t = <AD> 时进入「变现模式」生成付费广告。\n\n### 2.3 分解式生成目标\n\n生成概率被分解为：\n\nP(x_t|H_{<t}) = P(f_t|H_{<t}) · ∏P(c_{t,k}|H_{<t}, f_t, c_{t,<k})\n\n第一项学习「广告满意度建模」——在什么上下文中广告历史上是成功的；第二项处理「模式条件检索」——给定模式后选择哪个商品。这种分解使得模型可以从交互日志中直接学习有效的广告放置模式。\n\n### 2.4 Bid-Aware Decoding 机制\n\n推理阶段注入实时出价信号，分为两个层次：\n\n**槽位级调制**：z̃_{<AD>} = z_{<AD>} + λ · log(1 + b_max)。使用最大可用出价提升广告标志的 logit，使广告负载随市场需求弹性扩展。\n\n**商品级调制**：z̃_c = z_c + λ · log(1 + B(c))。使用前缀感知的出价聚合来调制 token logit，引导 beam search 朝向语义空间中的高价值库存集群。\n\nλ 是可调的平台控制参数，λ=0 时完全退化为原始 TIGER。\n\n### 2.5 训练设置\n\n架构：T5 encoder-decoder（6层，128维，6注意力头）。训练：100,000 步，batch size 256，AdamW 优化器，单张 A100 GPU。\n\n### 2.6 理论性质\n\n**分配单调性（Proposition 1）**：更高出价弱增加商品曝光，无需模型重训练。**结构一致性（Proposition 2）**：λ=0 时安全回退到纯有机排序；有机排名不受广告放置变化影响；可推广到纯有机语料。\n\n## 3. 核心技术贡献\n\n**贡献一：控制 Token 解耦机制。** 通过在生成序列中引入 <ORG>/<AD> 控制标志，将广告/有机决策与内容检索解耦。这是一种无需修改底层 Transformer 架构的轻量级设计，直接复用已有的生成式推荐训练范式。其优于传统混排方案的原因在于：模型可以端到端地学习广告放置的上下文依赖性，而非依赖后处理规则。\n\n**贡献二：推理时 Bid-Aware Decoding。** 在不修改模型权重的前提下，通过 logit 调制注入实时出价信号。这相比重新训练的方案，具有零延迟响应市场变化的优势——当高价值广告主突然加价时，系统可即时调整而无需等待模型更新。\n\n**贡献三：Pareto 前沿的可控性。** 通过单参数 λ 在推荐质量和广告收入之间提供平滑、可预测的权衡曲线，使平台运营者可以动态调整商业策略。\n\n**贡献四：理论保证。** 证明了分配单调性和结构一致性，为该框架在实际广告拍卖中的合规性提供了基础。\n\n## 4. 实验结果分析\n\n### 数据集与设置\n\n在 Steam、Amazon Beauty/Sports/Toys 四个数据集上评测。通过合成市场模拟构建广告数据：20% 商品指定为付费商品，出价服从对数正态分布，基线广告密度 3-6%。\n\n### 主要结果（Steam 数据集）\n\n| 方法 | 广告率 | 收入 | NDCG@10 | 有机NDCG@10 |\n|------|--------|------|---------|-------------|\n| TIGER 基线 | 0.0% | — | 0.1442 | 0.1487 |\n| GEM-Rec (λ=0) | 2.5% | 535 | 0.1411 | 0.1468 |\n| GEM-Rec (λ=1) | 4.7% | 1,173 | 0.1381 | 0.1467 |\n\n关键发现：即使在 λ=0（无出价调制）时，GEM-Rec 仅通过学习控制 token 就恢复了 2.5% 的基线广告密度。有机 NDCG 几乎持平（0.1487→0.1467），证明广告插入未显著损害用户体验。\n\n### 市场冲击实验\n\n当 5% 库存获得 10× 出价乘数时：\n- λ=0 时高价值份额仅 21.8%，收入为 1.0×\n- λ=0.5 时高价值份额达 81.5%，收入提升 9.0×，广告率仅 7.1%\n- λ=1.0 时高价值份额 97.4%，收入提升 28.2×\n\n这说明适度的 λ 调制（0.5）即可捕获绝大部分市场机会，同时保持保守的广告负载。\n\n### 消融实验\n\n更高基线广告密度（10-20%）训练使 Pareto 前沿更凸，反映更广泛的语义可行广告场景。跨数据集结果一致，100% 生成有效性（无幻觉无效标识符）。\n\n## 5. 局限与未来方向\n\n**作者自述局限：**\n1. **激励兼容性（DSIC）**：当前采用第一价格拍卖（工业标准），但缺乏占优策略激励兼容的实现。精确 DSIC 需要反事实推理和 beam search 近似下的阈值刻画，计算开销较大。\n2. **广告质量退化**：当系统优先经济价值时，不可避免地选择与用户有机意图语义距离更远的商品。这是变现与相关性之间的固有张力。\n3. **控制参数耦合**：当前单一 λ 同时控制槽位分配和商品选择，未来可引入独立参数 (λ_slot, λ_item) 实现更细粒度的平台控制。\n\n**未被作者提及的局限：** 实验仅在合成广告市场上进行，缺乏真实广告拍卖数据和在线 A/B 测试验证。T5 encoder-decoder 架构的规模（6层128维）远小于工业级生成式推荐模型。\n\n## 6. 工业实践意义\n\n**直接可采纳的设计：**\n- **控制 Token 范式**：对任何已部署 TIGER/HSTU 类系统的团队，只需在词汇表中添加 <ORG>/<AD> token 即可快速 PoC，无需重新设计架构。\n- **推理时调制**：λ 参数可在线动态调整，支持「大促期间提高广告密度、日常保守投放」的运营策略，且不需要重训模型。\n\n**搜索场景的迁移路径：**\n- 在 UGC 搜索中，可用控制 token 区分自然搜索结果与推广内容，实现搜索+广告的统一生成式排序\n- Bid-Aware Decoding 可扩展为「搜索广告 eCPM 调制」，在搜索结果页中动态插入竞价广告\n\n**部署考量：**\n- 推理延迟：Bid-Aware Decoding 仅在 logit 层做加法，几乎零额外延迟\n- 内存：需维护商品到出价的映射表和前缀聚合索引\n- 风险：需要监控广告质量退化指标（如语义匹配深度），设置安全阈值防止过度商业化",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>生成式推荐系统（如 Google 的 TIGER）通过语义 ID 将推荐建模为序列生成任务，在有机内容检索上取得了显著成功。然而，现有架构仅优化用户偏好，完全忽略了商业变现——而真实平台必须同时满足用户满意度与平台收入两个目标。传统方案（如双塔架构）将推荐与广告作为两个独立系统分别排序再混排，引入了大量工程复杂度和次优的全局排序。</p>\n<p>核心挑战在于：有机内容和付费广告遵循根本不同的目标函数，历史日志代表的是已通过用户相关性和经济可行性双重过滤的「幸存者」分布。如何在统一的生成式框架中同时建模这两种不同目标，是本文要解决的关键问题。</p>\n<p>本文构建于 TIGER 等语义 ID 范式之上，但指出 OneRec (2025)、Yang et al. (2024) 等后续工作仍停留在偏好建模层面，未涉及经济机制设计。同时，已有的广告联合优化方法大多基于 RL 独立处理广告插入，而非将其集成到生成过程本身。</p>\n<h2>2. 方法详解</h2>\n<h3>2.1 语义 ID 基础</h3>\n<p>与 TIGER 一致，GEM-Rec 使用 Residual Quantized VAE (RQ-VAE) 将商品编码为层次化元组 (c₁, c₂, ..., c_D)，其中早期码表示粗粒度类别、后期码添加细节。RQ-VAE 在 Sentence-T5 嵌入上训练，码本大小 256，深度 3。</p>\n<h3>2.2 统一序列构造：控制 Token</h3>\n<p>核心创新在于在语义词汇表中添加显式控制 token。每个生成步骤由控制标志 f_t 和语义码序列拼接而成：</p>\n<p>[f_t] ⊕ [c_{t,1}, c_{t,2}, ..., c_{t,D}]</p>\n<p>其中 f_t ∈ {&lt;ORG&gt;, &lt;AD&gt;}。这一设计将「槽位分配决策」（是否展示广告）与「内容检索」（展示哪个商品）优雅地解耦。当 f_t = &lt;ORG&gt; 时进入「偏好模式」生成有机内容，f_t = &lt;AD&gt; 时进入「变现模式」生成付费广告。</p>\n<h3>2.3 分解式生成目标</h3>\n<p>生成概率被分解为：</p>\n<p>P(x_t|H_{&lt;t}) = P(f_t|H_{&lt;t}) · ∏P(c_{t,k}|H_{&lt;t}, f_t, c_{t,&lt;k})</p>\n<p>第一项学习「广告满意度建模」——在什么上下文中广告历史上是成功的；第二项处理「模式条件检索」——给定模式后选择哪个商品。这种分解使得模型可以从交互日志中直接学习有效的广告放置模式。</p>\n<h3>2.4 Bid-Aware Decoding 机制</h3>\n<p>推理阶段注入实时出价信号，分为两个层次：</p>\n<p><strong>槽位级调制</strong>：z̃_{&lt;AD&gt;} = z_{&lt;AD&gt;} + λ · log(1 + b_max)。使用最大可用出价提升广告标志的 logit，使广告负载随市场需求弹性扩展。</p>\n<p><strong>商品级调制</strong>：z̃_c = z_c + λ · log(1 + B(c))。使用前缀感知的出价聚合来调制 token logit，引导 beam search 朝向语义空间中的高价值库存集群。</p>\n<p>λ 是可调的平台控制参数，λ=0 时完全退化为原始 TIGER。</p>\n<h3>2.5 训练设置</h3>\n<p>架构：T5 encoder-decoder（6层，128维，6注意力头）。训练：100,000 步，batch size 256，AdamW 优化器，单张 A100 GPU。</p>\n<h3>2.6 理论性质</h3>\n<p><strong>分配单调性（Proposition 1）</strong>：更高出价弱增加商品曝光，无需模型重训练。<strong>结构一致性（Proposition 2）</strong>：λ=0 时安全回退到纯有机排序；有机排名不受广告放置变化影响；可推广到纯有机语料。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献一：控制 Token 解耦机制。</strong> 通过在生成序列中引入 &lt;ORG&gt;/&lt;AD&gt; 控制标志，将广告/有机决策与内容检索解耦。这是一种无需修改底层 Transformer 架构的轻量级设计，直接复用已有的生成式推荐训练范式。其优于传统混排方案的原因在于：模型可以端到端地学习广告放置的上下文依赖性，而非依赖后处理规则。</p>\n<p><strong>贡献二：推理时 Bid-Aware Decoding。</strong> 在不修改模型权重的前提下，通过 logit 调制注入实时出价信号。这相比重新训练的方案，具有零延迟响应市场变化的优势——当高价值广告主突然加价时，系统可即时调整而无需等待模型更新。</p>\n<p><strong>贡献三：Pareto 前沿的可控性。</strong> 通过单参数 λ 在推荐质量和广告收入之间提供平滑、可预测的权衡曲线，使平台运营者可以动态调整商业策略。</p>\n<p><strong>贡献四：理论保证。</strong> 证明了分配单调性和结构一致性，为该框架在实际广告拍卖中的合规性提供了基础。</p>\n<h2>4. 实验结果分析</h2>\n<h3>数据集与设置</h3>\n<p>在 Steam、Amazon Beauty/Sports/Toys 四个数据集上评测。通过合成市场模拟构建广告数据：20% 商品指定为付费商品，出价服从对数正态分布，基线广告密度 3-6%。</p>\n<h3>主要结果（Steam 数据集）</h3>\n<table><thead><tr><th>方法</th><th>广告率</th><th>收入</th><th>NDCG@10</th><th>有机NDCG@10</th></tr></thead><tbody><tr><td>TIGER 基线</td><td>0.0%</td><td>—</td><td>0.1442</td><td>0.1487</td></tr><tr><td>GEM-Rec (λ=0)</td><td>2.5%</td><td>535</td><td>0.1411</td><td>0.1468</td></tr><tr><td>GEM-Rec (λ=1)</td><td>4.7%</td><td>1,173</td><td>0.1381</td><td>0.1467</td></tr></tbody></table>\n<p>关键发现：即使在 λ=0（无出价调制）时，GEM-Rec 仅通过学习控制 token 就恢复了 2.5% 的基线广告密度。有机 NDCG 几乎持平（0.1487→0.1467），证明广告插入未显著损害用户体验。</p>\n<h3>市场冲击实验</h3>\n<p>当 5% 库存获得 10× 出价乘数时：</p>\n<ul>\n<li>λ=0 时高价值份额仅 21.8%，收入为 1.0×</li>\n<li>λ=0.5 时高价值份额达 81.5%，收入提升 9.0×，广告率仅 7.1%</li>\n<li>λ=1.0 时高价值份额 97.4%，收入提升 28.2×</li>\n</ul>\n<p>这说明适度的 λ 调制（0.5）即可捕获绝大部分市场机会，同时保持保守的广告负载。</p>\n<h3>消融实验</h3>\n<p>更高基线广告密度（10-20%）训练使 Pareto 前沿更凸，反映更广泛的语义可行广告场景。跨数据集结果一致，100% 生成有效性（无幻觉无效标识符）。</p>\n<h2>5. 局限与未来方向</h2>\n<p><strong>作者自述局限：</strong></p>\n<ol>\n<li><strong>激励兼容性（DSIC）</strong>：当前采用第一价格拍卖（工业标准），但缺乏占优策略激励兼容的实现。精确 DSIC 需要反事实推理和 beam search 近似下的阈值刻画，计算开销较大。</li>\n<li><strong>广告质量退化</strong>：当系统优先经济价值时，不可避免地选择与用户有机意图语义距离更远的商品。这是变现与相关性之间的固有张力。</li>\n<li><strong>控制参数耦合</strong>：当前单一 λ 同时控制槽位分配和商品选择，未来可引入独立参数 (λ_slot, λ_item) 实现更细粒度的平台控制。</li>\n</ol>\n<p><strong>未被作者提及的局限：</strong> 实验仅在合成广告市场上进行，缺乏真实广告拍卖数据和在线 A/B 测试验证。T5 encoder-decoder 架构的规模（6层128维）远小于工业级生成式推荐模型。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可采纳的设计：</strong></p>\n<ul>\n<li><strong>控制 Token 范式</strong>：对任何已部署 TIGER/HSTU 类系统的团队，只需在词汇表中添加 &lt;ORG&gt;/&lt;AD&gt; token 即可快速 PoC，无需重新设计架构。</li>\n<li><strong>推理时调制</strong>：λ 参数可在线动态调整，支持「大促期间提高广告密度、日常保守投放」的运营策略，且不需要重训模型。</li>\n</ul>\n<p><strong>搜索场景的迁移路径：</strong></p>\n<ul>\n<li>在 UGC 搜索中，可用控制 token 区分自然搜索结果与推广内容，实现搜索+广告的统一生成式排序</li>\n<li>Bid-Aware Decoding 可扩展为「搜索广告 eCPM 调制」，在搜索结果页中动态插入竞价广告</li>\n</ul>\n<p><strong>部署考量：</strong></p>\n<ul>\n<li>推理延迟：Bid-Aware Decoding 仅在 logit 层做加法，几乎零额外延迟</li>\n<li>内存：需维护商品到出价的映射表和前缀聚合索引</li>\n<li>风险：需要监控广告质量退化指标（如语义匹配深度），设置安全阈值防止过度商业化</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2407.05033",
+      "title": "Collaborative User Prompt for Personalized Generative Recommendation",
+      "url": "https://arxiv.org/abs/2407.05033",
+      "authors": "Jerome Ramos, Bin Wu, Aldo Lipani",
+      "company": [
+        "UCL"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 3.9,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "针对现有生成式推荐方法依赖离散 ID prompt 或任务特定 soft prompt、忽略用户间协同信号的问题，本文提出基于注意力机制的组合式框架。通过融合相似用户的嵌入表示构建个性化 soft prompt，动态强调共享兴趣的同时保留个体偏好。在三个真实数据集上的实验验证了该方法的有效性。",
+      "key_insight": "将协同过滤信号注入 LLM prompt 是弥合传统推荐与生成式推荐之间差距的关键一步。注意力融合机制可以直接应用于 UGC 搜索场景——为具有相似搜索行为的用户群构建 prompt，提升长尾 query 的个性化召回效果。该框架对冷启动用户也有潜在价值，可通过相似用户的 prompt 进行迁移。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2603.20513",
+      "title": "ReBOL: Retrieval via Bayesian Optimization with Batched LLM Relevance Observations and Query Reformulation",
+      "url": "https://arxiv.org/abs/2603.20513",
+      "authors": "Anton Korikov, Scott Sanner",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 3.75,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "提出 ReBOL 框架，用 LLM 查询改写初始化多模态贝叶斯优化后验，再迭代获取文档批次进行 LLM 相关性评分和后验更新，从而突破传统 top-k 向量检索的召回上限。在 5 个 BEIR 数据集上使用 Gemini-2.5-Flash-Lite 和 GPT-5.2 评测，ReBOL 在召回率和 nDCG 上持续优于 LLM 重排基线。",
+      "key_insight": "将 LLM 相关性判断与贝叶斯优化结合是一种新颖的检索范式——不再局限于向量相似度 top-k，而是让 LLM 主动「探索」文档空间。对 UGC 搜索场景，这种方法特别适合处理复杂/模糊查询，通过多轮 LLM 评估逐步收敛到最相关的结果。但计算成本较高，更适合离线评估或高价值查询的精细化检索。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2603.21024",
+      "title": "Query, Decompose, Compress: Structured Query Expansion for Efficient Multi-Hop Retrieval",
+      "url": "https://arxiv.org/abs/2603.21024",
+      "authors": "JungMin Yun, YoungBin Kim",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对 LLM 查询扩展在复杂多跳检索中引入噪声的问题，提出 DeCoR 框架。包含两个核心组件：Query Decomposition 将复杂查询分解为显式推理步骤，Query-aware Document Compression 从候选文档中提取与查询相关的精简证据。该结构化设计确保扩展后的查询表示既聚焦又完整。",
+      "key_insight": "DeCoR 的分解-压缩两阶段设计对 UGC 搜索中的复杂查询处理有直接启发：用户的搜索意图常隐含多个子需求，先分解再针对性检索可显著提升多意图查询的召回。Document Compression 组件可用于搜索结果摘要生成，为用户提供更精准的结果预览。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2603.21862",
+      "title": "Holistic Scaling Laws for Optimal Mixture-of-Experts Architecture Optimization",
+      "url": "https://arxiv.org/abs/2603.21862",
+      "authors": "Weilin Wan, Jingtao Han, Weizhong Zhang, Cheng Jin",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 3.45,
+      "preference_bonus": 0.3,
+      "adjusted_score": 3.75,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "提出 MoE 架构全局优化的可复用框架，首先证明 FLOPs/token 不足以公平比较 MoE 模型，需联合约束 FLOPs、活跃参数和总参数三者。然后将 16 维架构搜索空间降维为两步低维优化问题，实现在有限实验预算下找到最优 MoE 配置。",
+      "key_insight": "MoE 架构的 scaling law 对生成式推荐系统的模型设计有重要参考价值——Meta HSTU 等大规模推荐模型已验证 scaling law 在推荐领域的适用性，本文提供的三约束框架（FLOPs、活跃参数、总参数）可直接用于优化推荐 MoE 模型的专家数量和容量配置，在固定推理预算下最大化模型效果。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2603.20213",
+      "title": "AgenticGEO: A Self-Evolving Agentic System for Generative Engine Optimization",
+      "url": "https://arxiv.org/abs/2603.20213",
+      "authors": "Jiaqi Yuan, Jialu Wang, Zihan Wang, Qingyun Sun, Ruijie Wang, Jianxin Li",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 3.45,
+      "preference_bonus": 0.2,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对生成式搜索引擎（如 Perplexity、AI Overview）的优化问题，提出 AgenticGEO 自进化框架。将优化建模为内容条件控制问题，通过 agent 框架自适应调整内容策略以最大化在 LLM 生成摘要中的可见度和引用率。克服了现有方法依赖静态启发式或单次 prompt 优化的局限。",
+      "key_insight": "生成式搜索引擎正在重塑 SEO 的范式——从传统的关键词排名优化转向在 LLM 生成内容中的「引用率」优化。对 UGC 搜索平台而言，理解 GEO 机制有助于：(1) 设计更好的内容质量信号来指导生成式搜索结果；(2) 防范低质内容通过 GEO 策略操纵排名。这是生成式搜索生态的重要研究方向。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2603.21582",
+      "title": "Overview of TREC 2025 Biomedical Generative Retrieval (BioGen) Track",
+      "url": "https://arxiv.org/abs/2603.21582",
+      "authors": "Deepak Gupta, Dina Demner-Fushman, William Hersh, Steven Bedrick, Kirk Roberts",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-24",
+      "total_score": 3.05,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.15,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "TREC 2025 生物医学生成式检索评测赛道概述，关注 LLM 在高风险领域生成检索结果时的幻觉问题。评测框架涵盖生成内容的事实准确性、来源可验证性和完整性，为生成式检索系统提供了标准化评估方法论。",
+      "key_insight": "生成式检索的评估方法论对搜索系统至关重要——传统指标（nDCG、MAP）无法衡量生成内容的事实准确性。BioGen Track 提出的评估框架（可验证性+完整性+准确性）可迁移至 UGC 搜索场景，用于评估 LLM 生成的搜索摘要是否忠实反映原始 UGC 内容。"
+    }
+  ]
+}

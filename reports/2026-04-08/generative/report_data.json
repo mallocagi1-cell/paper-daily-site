@@ -1,0 +1,242 @@
+{
+  "date": "2026-04-08",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 863,
+    "papers_selected": 10,
+    "score_min": 3.7,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2510.11122",
+      "title": "Learning to Trust: Dynamic Utilization of Retrieval-Augmented Generation for E-commerce Search Relevance",
+      "url": "https://arxiv.org/abs/2510.11122",
+      "authors": "E-commerce Search Team",
+      "company": [],
+      "source": "arxiv",
+      "published": "2025-10-15",
+      "total_score": 4.3,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.5,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "该论文提出 DyKnow-RAG 框架，解决大语言模型在电商搜索相关性判断中如何动态利用外部检索知识的问题。基于 Group Relative Policy Optimization (GRPO) 的强化学习方法，设计了双组 rollout 策略（纯参数组 vs. 带外部上下文组）和后验驱动的组间优势缩放机制，让 LLM 学会在一次推理中同时评估相关性和上下文可信度。方法解决了生产环境中外部上下文噪声大、延迟预算严格、需单次推理完成评估三大挑战。",
+      "key_insight": "核心创新在于用强化学习教会 LLM \"学会信任\"外部知识——通过 GRPO 双组对比训练，模型能动态判断何时依赖参数知识、何时利用检索增强信息。这种 RL + RAG 融合范式对搜索相关性系统具有直接参考价值：在不增加推理延迟的前提下，利用外部知识提升长尾 query 的相关性判断。对 UGC 搜索场景中快速变化内容的相关性匹配有重要启示。",
+      "deep_reading": {
+        "paper_id": "arxiv:2510.11122",
+        "title": "Learning to Trust: Dynamic Utilization of Retrieval-Augmented Generation for E-commerce Search Relevance",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n电商搜索相关性判断是搜索系统的核心能力，直接影响 nDCG 和 CTR 等关键指标。虽然大语言模型（LLM）在语言理解和推理方面表现出色，但在处理长尾 query、快速变化的商品信息和知识密集型查询（如问答类、知识类、否定表达、替代品查询）时，仅依赖参数化知识往往力不从心。检索增强生成（RAG）是自然的解决方案，但将 RAG 引入工业级搜索系统面临三大特有挑战：\n\n1. **外部上下文噪声严重**：电商场景中检索到的商品描述充斥营销话术、标签堆砌和情感性语言，需要模型具备鲁棒的信息甄别能力；\n2. **极端延迟约束**：生产环境要求毫秒级响应，禁止多阶段处理或迭代精炼；\n3. **单次推理统一评估**：模型必须在一次推理中同时完成相关性评估和上下文可信度判断。\n\n现有 RAG 方案（如 Self-RAG、Adaptive-RAG）在学术场景中有效，但无法扩展到日均数十亿请求的生产环境。论文明确指出：直接将 RAG 接入 SFT 模型反而导致 Macro-F1 下降（从 58.14 降至 57.06），证明了盲目信任噪声上下文的危害。\n\n## 2. 方法详解\n\nDyKnow-RAG 的核心思想是通过强化学习教会 LLM 学会信任——动态判断何时依赖内部参数知识、何时利用外部检索信息。\n\n**整体架构**由三个阶段组成：\n- **阶段一**：监督初始化 + 偏好对齐（SFT + DPO），建立基础相关性判断能力\n- **阶段二**：不确定性优先过滤（p_θ < 0.7 阈值筛选约 50% 错误率的样本），聚焦于模型不确定的 hard cases\n- **阶段三**：双组强化学习（核心创新）\n\n**双组 Rollout 策略**是方法的关键设计。对每个训练样本，系统生成两组各 16 条 rollout：\n- Group 0（纯参数组）：仅输入 query 和 item 信息 (q, i)\n- Group 1（带上下文组）：额外输入检索到的上下文 (q, i, c*)\n\n通过对比两组的表现差异，系统能精确量化外部知识对特定样本的价值。\n\n**后验驱动的组间优势缩放**机制实现了动态信任：\n- 组内优势计算：A_j^(g) = (R_j^(g) - μ_g) / s_g（标准 GRPO）\n- 组间优势使用两组的联合统计量（μ*, s*）跨组计算\n- 分段缩放函数 T(Ã_j) 的参数依赖于准确率差距：β = 4σ(4(acc_with - acc_para))，α = 0.1/β\n\n当带上下文组的准确率显著高于纯参数组时，β 增大，放大上下文利用的优势信号；反之则抑制对噪声上下文的依赖。\n\n**结构化思维链模板**要求模型输出三部分：[相关性等级] + [信任决策] + [推理过程]，使信任决策可解释。\n\n**优化目标**：J(θ) = ℓ^(0)(θ) + ℓ^(1)(θ) + ℓ̂(θ) - λ_KL D_KL[π_θ || π_ref]，其中 ℓ̂(θ) 是对齐项，在带上下文的 prompt 下评估纯参数序列并应用后验缩放。\n\n**训练配置**：基座模型 TBStar（微调 LLM），SFT 阶段 2 epochs、学习率 1e-6、batch size 1024；GRPO 阶段 rollout group size G=16，KL 惩罚 β=0.02。奖励信号为二值正确性（解析结果与标注一致为 1，否则为 0）。\n\n## 3. 核心技术贡献\n\n1. **双组对比 RL 训练范式**：首次将 GRPO 扩展为双组架构，通过纯参数 vs. 带上下文的对比，让模型学习上下文的条件价值，而非无条件依赖或忽略。这比固定门控（α=2, β=0.05 配置下 Macro-F1 仅 59.31）和人工标注门控（60.15）都更有效。\n\n2. **后验驱动的自适应信任机制**：准确率差距驱动的 sigmoid 缩放函数自动调节信任程度，无需人工设定信任阈值。实验显示模型在移除上下文后仍保持 74.80% 准确率（vs. 完整 75.19%），说明模型学到的是鲁棒的判断策略而非对上下文的简单依赖。\n\n3. **首个工业级动态 RAG 部署**：在日均数十亿请求的淘宝搜索系统中验证了方案的可行性，p99 延迟 < 400ms，无额外推理开销。\n\n## 4. 实验结果分析\n\n**离线评估**基于专家标注的 Gold 基准测试集，覆盖 4 个相关性等级（L4: 60%, L3: 7%, L2: 27%, L1: 6%），聚焦知识密集型品类。\n\n| 模型 | Macro-F1 | Accuracy |\n|------|----------|----------|\n| SFT-only | 58.14 | 71.88 |\n| RAG SFT | 57.06 | 71.92 |\n| RAG GRPO | 58.33 | 72.55 |\n| DyKnow-RAG (SFT) | 60.33 | 73.26 |\n| DyKnow-RAG (DPO) | **60.45** | **75.19** |\n\n关键发现：直接 RAG-SFT 的 Macro-F1 反而低于纯 SFT（57.06 vs. 58.14），证实了噪声上下文的负面影响。DyKnow-RAG 最终版相比 SFT-only 提升 2.31 Macro-F1 和 3.31 Accuracy。\n\n**在线 A/B 测试**在淘宝搜索上进行，4% 流量持续 7 天，覆盖数亿用户和数十亿请求：\n- 问答类 query：GSB 提升 +10.37%，查询好率 +5.76 pt，商品好率 +2.45 pt\n- 知识类 query：GSB +7.75%，查询好率 +2.91 pt\n- 否定表达：GSB +3.25%\n- 替代品查询：GSB +3.60%\n- 业务指标：GMV +0.1%，IPV +2.35%，PV +2.13%\n\n**消融实验**证实后验驱动的 RL 策略优于固定门控（Macro-F1 60.45 vs. 59.31）和人工标注门控（60.45 vs. 60.15）。模型在推理时不输入上下文仍保持 74.80% 准确率，证明学到了内化的知识利用策略。\n\n## 5. 局限与未来方向\n\n论文未显式列出局限，但可识别以下约束：\n- 需要高质量人工标注构建 Gold 基准集，标注成本较高\n- 二值奖励信号可能过度简化了相关性判断的细微差别（4 级标注被简化为对/错）\n- 方法针对电商搜索领域设计，向其他搜索场景的迁移性未验证\n- 未讨论对极端稀有或新兴 query 类型的表现\n- 不确定性过滤的阈值 0.7 是预设值，对不同领域可能需要调整\n\n## 6. 工业实践意义\n\n**直接可落地的方案**：DyKnow-RAG 已于 2025 年 9 月部署在淘宝搜索，是首个大规模动态 RAG 工业部署案例。p99 延迟 < 400ms 且无额外推理开销，证明了方案的工程可行性。\n\n**对 UGC 搜索的直接启示**：\n- UGC 内容同样存在噪声大、更新快的特点，DyKnow-RAG 的动态信任机制可直接迁移\n- 双组对比训练不需要额外标注上下文质量，仅需标准的相关性标注即可训练\n- 结构化输出模板（等级 + 信任决策 + 推理）提供了可解释的判断过程\n\n**部署建议**：\n- 基于 GRPO 的 RL 训练需要较大的 rollout group size（16），训练资源需求较高\n- 检索模块的质量直接影响效果——论文使用 BM25 + 商品特征检索\n- 二值奖励信号虽简单但在工业场景中足够有效，无需复杂的奖励模型\n- 不确定性过滤可有效减少 RL 训练的样本量（约 50% 过滤率），降低训练成本\n\n**与其他方案的对比价值**：相比 Self-RAG 等需要特殊 token 或多阶段推理的方案，DyKnow-RAG 的单次推理设计更适合延迟敏感的搜索场景。GMV +0.1% 和 IPV +2.35% 的业务指标证明了方案的商业价值。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>电商搜索相关性判断是搜索系统的核心能力，直接影响 nDCG 和 CTR 等关键指标。虽然大语言模型（LLM）在语言理解和推理方面表现出色，但在处理长尾 query、快速变化的商品信息和知识密集型查询（如问答类、知识类、否定表达、替代品查询）时，仅依赖参数化知识往往力不从心。检索增强生成（RAG）是自然的解决方案，但将 RAG 引入工业级搜索系统面临三大特有挑战：</p>\n<ol>\n<li><strong>外部上下文噪声严重</strong>：电商场景中检索到的商品描述充斥营销话术、标签堆砌和情感性语言，需要模型具备鲁棒的信息甄别能力；</li>\n<li><strong>极端延迟约束</strong>：生产环境要求毫秒级响应，禁止多阶段处理或迭代精炼；</li>\n<li><strong>单次推理统一评估</strong>：模型必须在一次推理中同时完成相关性评估和上下文可信度判断。</li>\n</ol>\n<p>现有 RAG 方案（如 Self-RAG、Adaptive-RAG）在学术场景中有效，但无法扩展到日均数十亿请求的生产环境。论文明确指出：直接将 RAG 接入 SFT 模型反而导致 Macro-F1 下降（从 58.14 降至 57.06），证明了盲目信任噪声上下文的危害。</p>\n<h2>2. 方法详解</h2>\n<p>DyKnow-RAG 的核心思想是通过强化学习教会 LLM 学会信任——动态判断何时依赖内部参数知识、何时利用外部检索信息。</p>\n<p><strong>整体架构</strong>由三个阶段组成：</p>\n<ul>\n<li><strong>阶段一</strong>：监督初始化 + 偏好对齐（SFT + DPO），建立基础相关性判断能力</li>\n<li><strong>阶段二</strong>：不确定性优先过滤（p_θ &lt; 0.7 阈值筛选约 50% 错误率的样本），聚焦于模型不确定的 hard cases</li>\n<li><strong>阶段三</strong>：双组强化学习（核心创新）</li>\n</ul>\n<p><strong>双组 Rollout 策略</strong>是方法的关键设计。对每个训练样本，系统生成两组各 16 条 rollout：</p>\n<ul>\n<li>Group 0（纯参数组）：仅输入 query 和 item 信息 (q, i)</li>\n<li>Group 1（带上下文组）：额外输入检索到的上下文 (q, i, c*)</li>\n</ul>\n<p>通过对比两组的表现差异，系统能精确量化外部知识对特定样本的价值。</p>\n<p><strong>后验驱动的组间优势缩放</strong>机制实现了动态信任：</p>\n<ul>\n<li>组内优势计算：A_j^(g) = (R_j^(g) - μ_g) / s_g（标准 GRPO）</li>\n<li>组间优势使用两组的联合统计量（μ<em>, s</em>）跨组计算</li>\n<li>分段缩放函数 T(Ã_j) 的参数依赖于准确率差距：β = 4σ(4(acc_with - acc_para))，α = 0.1/β</li>\n</ul>\n<p>当带上下文组的准确率显著高于纯参数组时，β 增大，放大上下文利用的优势信号；反之则抑制对噪声上下文的依赖。</p>\n<p><strong>结构化思维链模板</strong>要求模型输出三部分：[相关性等级] + [信任决策] + [推理过程]，使信任决策可解释。</p>\n<p><strong>优化目标</strong>：J(θ) = ℓ^(0)(θ) + ℓ^(1)(θ) + ℓ̂(θ) - λ_KL D_KL[π_θ || π_ref]，其中 ℓ̂(θ) 是对齐项，在带上下文的 prompt 下评估纯参数序列并应用后验缩放。</p>\n<p><strong>训练配置</strong>：基座模型 TBStar（微调 LLM），SFT 阶段 2 epochs、学习率 1e-6、batch size 1024；GRPO 阶段 rollout group size G=16，KL 惩罚 β=0.02。奖励信号为二值正确性（解析结果与标注一致为 1，否则为 0）。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>双组对比 RL 训练范式</strong>：首次将 GRPO 扩展为双组架构，通过纯参数 vs. 带上下文的对比，让模型学习上下文的条件价值，而非无条件依赖或忽略。这比固定门控（α=2, β=0.05 配置下 Macro-F1 仅 59.31）和人工标注门控（60.15）都更有效。</li>\n</ol>\n<ol>\n<li><strong>后验驱动的自适应信任机制</strong>：准确率差距驱动的 sigmoid 缩放函数自动调节信任程度，无需人工设定信任阈值。实验显示模型在移除上下文后仍保持 74.80% 准确率（vs. 完整 75.19%），说明模型学到的是鲁棒的判断策略而非对上下文的简单依赖。</li>\n</ol>\n<ol>\n<li><strong>首个工业级动态 RAG 部署</strong>：在日均数十亿请求的淘宝搜索系统中验证了方案的可行性，p99 延迟 &lt; 400ms，无额外推理开销。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<p><strong>离线评估</strong>基于专家标注的 Gold 基准测试集，覆盖 4 个相关性等级（L4: 60%, L3: 7%, L2: 27%, L1: 6%），聚焦知识密集型品类。</p>\n<table><thead><tr><th>模型</th><th>Macro-F1</th><th>Accuracy</th></tr></thead><tbody><tr><td>SFT-only</td><td>58.14</td><td>71.88</td></tr><tr><td>RAG SFT</td><td>57.06</td><td>71.92</td></tr><tr><td>RAG GRPO</td><td>58.33</td><td>72.55</td></tr><tr><td>DyKnow-RAG (SFT)</td><td>60.33</td><td>73.26</td></tr><tr><td>DyKnow-RAG (DPO)</td><td><strong>60.45</strong></td><td><strong>75.19</strong></td></tr></tbody></table>\n<p>关键发现：直接 RAG-SFT 的 Macro-F1 反而低于纯 SFT（57.06 vs. 58.14），证实了噪声上下文的负面影响。DyKnow-RAG 最终版相比 SFT-only 提升 2.31 Macro-F1 和 3.31 Accuracy。</p>\n<p><strong>在线 A/B 测试</strong>在淘宝搜索上进行，4% 流量持续 7 天，覆盖数亿用户和数十亿请求：</p>\n<ul>\n<li>问答类 query：GSB 提升 +10.37%，查询好率 +5.76 pt，商品好率 +2.45 pt</li>\n<li>知识类 query：GSB +7.75%，查询好率 +2.91 pt</li>\n<li>否定表达：GSB +3.25%</li>\n<li>替代品查询：GSB +3.60%</li>\n<li>业务指标：GMV +0.1%，IPV +2.35%，PV +2.13%</li>\n</ul>\n<p><strong>消融实验</strong>证实后验驱动的 RL 策略优于固定门控（Macro-F1 60.45 vs. 59.31）和人工标注门控（60.45 vs. 60.15）。模型在推理时不输入上下文仍保持 74.80% 准确率，证明学到了内化的知识利用策略。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文未显式列出局限，但可识别以下约束：</p>\n<ul>\n<li>需要高质量人工标注构建 Gold 基准集，标注成本较高</li>\n<li>二值奖励信号可能过度简化了相关性判断的细微差别（4 级标注被简化为对/错）</li>\n<li>方法针对电商搜索领域设计，向其他搜索场景的迁移性未验证</li>\n<li>未讨论对极端稀有或新兴 query 类型的表现</li>\n<li>不确定性过滤的阈值 0.7 是预设值，对不同领域可能需要调整</li>\n</ul>\n<h2>6. 工业实践意义</h2>\n<p><strong>直接可落地的方案</strong>：DyKnow-RAG 已于 2025 年 9 月部署在淘宝搜索，是首个大规模动态 RAG 工业部署案例。p99 延迟 &lt; 400ms 且无额外推理开销，证明了方案的工程可行性。</p>\n<p><strong>对 UGC 搜索的直接启示</strong>：</p>\n<ul>\n<li>UGC 内容同样存在噪声大、更新快的特点，DyKnow-RAG 的动态信任机制可直接迁移</li>\n<li>双组对比训练不需要额外标注上下文质量，仅需标准的相关性标注即可训练</li>\n<li>结构化输出模板（等级 + 信任决策 + 推理）提供了可解释的判断过程</li>\n</ul>\n<p><strong>部署建议</strong>：</p>\n<ul>\n<li>基于 GRPO 的 RL 训练需要较大的 rollout group size（16），训练资源需求较高</li>\n<li>检索模块的质量直接影响效果——论文使用 BM25 + 商品特征检索</li>\n<li>二值奖励信号虽简单但在工业场景中足够有效，无需复杂的奖励模型</li>\n<li>不确定性过滤可有效减少 RL 训练的样本量（约 50% 过滤率），降低训练成本</li>\n</ul>\n<p><strong>与其他方案的对比价值</strong>：相比 Self-RAG 等需要特殊 token 或多阶段推理的方案，DyKnow-RAG 的单次推理设计更适合延迟敏感的搜索场景。GMV +0.1% 和 IPV +2.35% 的业务指标证明了方案的商业价值。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.03676",
+      "title": "Are LLM-Based Retrievers Worth Their Cost? An Empirical Study of Efficiency, Robustness, and Reasoning Overhead",
+      "url": "https://arxiv.org/abs/2604.03676",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 4.2,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.35,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "该论文系统评估了 LLM-based 检索器在效率、鲁棒性和推理开销方面的实际表现。在 BRIGHT 基准上复现 12 个任务和 14 个检索器，扩展评估指标包括冷启动索引成本、查询延迟分布与吞吐量、语料规模缩放、query 扰动鲁棒性和置信度预测 (AUROC)。同时量化了\"推理开销\"——对比标准查询与 5 种推理增强变体的精度增益与延迟代价。发现部分推理专精检索器在保持吞吐竞争力的同时实现了强效果，而多个大型 LLM bi-encoder 以高延迟换取有限增益。",
+      "key_insight": "这项大规模实证研究为\"是否值得用 LLM 做检索\"提供了量化决策依据：推理增强对 sub-1B 编码器几乎无延迟代价，但大模型 bi-encoder 的延迟代价往往不值得。对搜索系统的实践启示是：在选择 LLM 检索器时需综合评估准确率、延迟和推理开销三者的权衡，而非仅追求效果。这种成本-效益分析框架对工业界的 LLM 检索落地决策至关重要。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.03925",
+      "title": "AdaptFuse: Training-Free Sequential Preference Learning via Externalized Bayesian Inference",
+      "url": "https://arxiv.org/abs/2604.03925",
+      "authors": "Cheol Woo Kum et al.",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 4.1,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "该论文提出 AdaptFuse，一种无需训练的框架，通过外部化贝叶斯推理实现 LLM 多轮交互中的偏好累积学习。框架由两个模块组成：符号模块维护离散假设集上的贝叶斯后验，冻结 LLM 通过多样本 Dirichlet 聚合贡献语义推理。两个信号通过熵自适应融合组合——随证据累积自动从 LLM 依赖转向符号后验。在航班推荐、酒店推荐和网购三个场景上，在 Gemma 2 9B、Llama 3 8B 和 Qwen 2.5 7B 上验证有效。",
+      "key_insight": "将贝叶斯推理从 LLM 中外部化是解决 LLM 在多轮推荐中偏好累积困难的巧妙方案。无需微调即可在多个开源 LLM 上工作，适合隐私敏感场景。熵自适应融合机制——在信息不足时依赖 LLM 语义理解，信息充足时切换到符号推理——为对话式推荐系统提供了一种可解释且高效的偏好学习范式。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.04457",
+      "title": "Retrieval Augmented Conversational Recommendation with Reinforcement Learning",
+      "url": "https://arxiv.org/abs/2604.04457",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 4.0,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该论文提出 RAR，一种两阶段检索增强对话推荐框架。针对现有 LLM-based 对话推荐系统依赖预训练知识、缺乏外部检索机制、无统一语料库等问题，构建了包含 30 万+ 电影及丰富元数据（标题、演员、剧情简介）的大规模电影语料库。RAR 通过对齐检索与生成过程来增强推荐性能和事实准确性，使用强化学习优化两阶段流程的端到端表现。",
+      "key_insight": "RAR 的核心贡献在于将 RAG 范式引入对话推荐系统，并通过 RL 对齐检索和生成阶段。这解决了 LLM 在推荐新物品时的知识过时问题——通过外部检索获取最新信息。对生成式推荐实践的启示：纯 LLM 知识无法覆盖不断更新的物品库，RAG + RL 的组合提供了一条实用的对话式推荐落地路径。30 万电影语料库也为后续研究提供了有价值的数据资源。"
+    },
+    {
+      "rank": 5,
+      "id": "web:nvidia-recsys-examples-2026",
+      "title": "NVIDIA recsys-examples: Efficient Training and Inference for Generative Recommender Systems",
+      "url": "https://developer.nvidia.cn/blog/nvidia-recsys-generative-recommenders-1/",
+      "authors": "NVIDIA",
+      "company": [
+        "NVIDIA"
+      ],
+      "source": "web_search",
+      "published": "2026-03-15",
+      "total_score": 3.9,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "NVIDIA 发布开源 recsys-examples 项目，为生成式推荐系统提供工业级训练和推理最佳实践。基于 HSTU (Hierarchical Sequential Transduction Units) 架构，覆盖了从数据预处理、分布式训练到部署优化的完整工程链路。提供 GPU 加速的高效实现，支持大规模序列推荐模型的训练。",
+      "key_insight": "这是生成式推荐系统从学术走向工业部署的重要里程碑。NVIDIA 的开源实现降低了 HSTU 等前沿生成式推荐架构的落地门槛，特别是在大规模训练和推理效率优化方面提供了成熟方案。对搜索推荐团队而言，可直接基于此项目构建和验证生成式推荐模型的 PoC，显著缩短从论文到原型的时间。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2511.06254",
+      "title": "LLaDA-Rec: Discrete Diffusion for Parallel Semantic ID Generation in Generative Recommendation",
+      "url": "https://arxiv.org/abs/2511.06254",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2025-11-10",
+      "total_score": 3.8,
+      "preference_bonus": 0.4,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "该论文提出 LLaDA-Rec，首次将离散扩散模型应用于生成式推荐中的语义 ID 并行生成。传统自回归解码在生成式推荐中存在三大局限：(1) 难以联合捕获多维特征间的全局依赖；(2) 假设所有用户以相同顺序关注物品属性；(3) 推理时效率低。LLaDA-Rec 通过离散扩散过程实现并行生成，克服了这些局限。",
+      "key_insight": "用离散扩散替代自回归解码是生成式推荐的重要范式创新。自回归模型的固定生成顺序假设不符合推荐场景——不同用户关注物品属性的顺序不同。扩散模型的并行生成能力不仅提升了推理效率，更重要的是能通过双向上下文捕获语义 ID 各维度之间的全局依赖。这指明了生成式推荐的一个新方向：从自回归走向扩散。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.04734",
+      "title": "Beyond Hard Negatives: The Importance of Score Distribution in Knowledge Distillation for Dense Retrieval",
+      "url": "https://arxiv.org/abs/2604.04734",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "该论文揭示了知识蒸馏训练密集检索模型时，仅关注难负例 (hard negatives) 的局限：学生模型无法学习教师模型的完整偏好结构，影响泛化能力。提出分层采样 (Stratified Sampling) 策略，均匀覆盖教师打分的整个分布频谱。实验在领域内和领域外基准上证明，保持教师分数方差和熵的分层采样显著优于 top-K 和随机采样。",
+      "key_insight": "这项工作纠正了知识蒸馏领域的一个常见偏见——过度强调难负例。分层采样思想简洁而有效：让学生模型看到教师在整个相关性频谱上的判断，而非只看最难区分的样本。对搜索系统的 cross-encoder → bi-encoder 蒸馏流程有直接指导意义，特别是当追求跨域泛化时，这种分布保持的训练策略比精心挖掘难负例更鲁棒。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.03642",
+      "title": "LLM-based Listwise Reranking under the Effect of Positional Bias",
+      "url": "https://arxiv.org/abs/2604.03642",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.75,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该论文分析了 LLM-based 列表级段落重排序中的位置偏差问题——靠近输入末尾的段落更难被排到前面。提出两个偏差来源假设：(1) LLM 固有的架构偏差；(2) 相关文档的位置分布不均衡。DebiasFirst 方法在微调时整合位置校准（逆倾向评分 IPS 重新加权损失函数）和位置感知数据增强（确保每个段落在输入列表各位置均匀出现），显著提升了排序效果和公平性。",
+      "key_insight": "位置偏差是 LLM 重排序系统的实际痛点。DebiasFirst 提供了两个实用工具：IPS 加权和位置增强。IPS 加权将经典推荐去偏方法引入 LLM 排序场景，位置增强则从数据层面消除偏差源。对使用 LLM 做搜索重排序的系统有直接参考价值——部署时需要同时处理架构偏差和训练数据偏差。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2604.04144",
+      "title": "Many Preferences, Few Policies: Towards Scalable Language Model Personalization",
+      "url": "https://arxiv.org/abs/2604.04144",
+      "authors": "Cheol Woo Kum, Jai Moondra, Roozbeh Nahavandi, Andrew Perrault, Milind Tambe, Swati Gupta",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.7,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该论文解决 LLM 大规模个性化的核心矛盾：理想状态是每用户一个定制 LLM，但资源限制使其不可行。提出 PALM (Portfolio of Aligned LLMs) 算法，将用户偏好建模为多维权重向量（安全性、幽默感、简洁性等），在多维度奖励函数上生成一个小规模 LLM 组合，保证对任意权重向量都存在近似最优的 LLM。首次提供了 LLM 组合大小和近似质量的理论保证。",
+      "key_insight": "PALM 的\"少量策略覆盖多样偏好\"思路对推荐系统个性化有深层启示：不需要为每个用户训练独立模型，而是构建一个覆盖偏好空间的模型组合。这种组合优化方法可直接迁移到 LLM-as-recommender 场景——用少量对齐策略覆盖不同用户群体的推荐偏好，在个性化效果和计算成本之间取得最优平衡。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2604.04215",
+      "title": "DARE: Diffusion Large Language Models Alignment and Reinforcement Executor",
+      "url": "https://arxiv.org/abs/2604.04215",
+      "authors": "Jingyi Yang, Yuxian Jiang, Xuhao Hu, Shuang Cheng, Biqing Qi, Jing Shao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-07",
+      "total_score": 3.7,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "该论文提出 DARE，一个统一的扩散大语言模型 (dLLM) 后训练与评估开源框架。当前 dLLM 生态系统碎片化严重，各模型族的后训练流水线（RL 目标、rollout 实现、评估脚本）分散在各论文独立代码库中。DARE 基于 verl 和 OpenCompass 构建，统一了监督微调 (SFT)、参数高效微调和多种 RL 对齐算法，降低了 dLLM 研究的工程门槛。",
+      "key_insight": "扩散语言模型作为自回归模型的替代范式正在快速发展，而 DARE 填补了 dLLM 后训练基础设施的空白。对生成式推荐而言，dLLM 的并行生成特性（如 LLaDA-Rec 所示）天然适合推荐场景的语义 ID 生成，DARE 提供的统一后训练工具链将加速 dLLM 在推荐系统中的应用研究。这是从自回归到扩散范式迁移的重要基建。"
+    }
+  ]
+}

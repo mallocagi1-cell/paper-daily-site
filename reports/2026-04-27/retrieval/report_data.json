@@ -1,0 +1,173 @@
+{
+  "date": "2026-04-27",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 43,
+    "papers_selected": 7,
+    "score_min": 3.0,
+    "score_max": 4.45
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.21511",
+      "title": "From Tokens to Concepts: Leveraging SAE for SPLADE",
+      "url": "https://arxiv.org/abs/2604.21511",
+      "authors": "Yuxuan Zong, Mathias Vast, Basile Van Cooten, Laure Soulier, Benjamin Piwowarski",
+      "company": [
+        "Sorbonne Université",
+        "ISIR"
+      ],
+      "source": "web_search",
+      "published": "2026-04-23",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 4.45,
+      "summary": "SPLADE 用 BERT 词表作为稀疏表征基底，存在多义/同义词膨胀的问题。作者用稀疏自编码器(SAE)从 LLM 隐层中提炼出\"概念维度\"，再以这些概念替换 SPLADE 的 vocab 投影头，得到 SAE-SPLADE。在 in-domain (MS MARCO) 与 out-of-domain (BEIR) 上检索效果与原版 SPLADE 持平，但 posting list 更短、推理更高效。论文已被 SIGIR 2025 收录。",
+      "key_insight": "把稀疏检索的基底从词替换为概念，是稀疏召回的范式升级：UGC 短文本里同义、错别字、缩写极多，词级 SPLADE 容易膨胀到上万个非零维度，概念维度天然合并这些变体。落地启示：可在生产 SPLADE 之上叠加 SAE 投影头复用倒排索引，几乎零额外推理开销，是社区搜索召回端的优良候选方案。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.21511",
+        "title": "From Tokens to Concepts: Leveraging SAE for SPLADE",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nSPLADE 等学习稀疏检索 (LSR) 模型把文档/查询投影到 BERT 词表（约 30K 维），用 sparse 激活作为倒排索引基底。这一设计在效率与效果上虽然双优，但作者指出三个核心痛点：(1) 词表维度同时承担\"词形对齐\"与\"语义对齐\"，导致 polysemy（一个 token 多义，\"bank\"既指银行又指河岸）和 synonymy（多个 token 同义，\"fry/boil/roast\"应共享相同信号）无法充分建模；(2) BERT 词表规模固定，无法灵活扩展到更细的语义单元；(3) 多语种场景下不同语言激活的 token 完全不重叠，难以做跨语言对齐。论文实证显示，单纯的 SPLADE 在 mMARCO 多语种任务上不同语言的 latent overlap 仅 8.6/163，远低于人类语义直觉。该工作借鉴 LLM 可解释性领域的稀疏自编码器 (Sparse Autoencoder, SAE) 思想，把\"概念维度\"（而非 BERT 词）当作 SPLADE 的稀疏基底，希望同时解决多义/同义/多语种三个问题，并降低倒排成本。\n\n## 2. 方法详解\n\n整体两阶段：第一阶段 SAE 预训练：在 frozen DistilBERT 上对 contextualized token embeddings 训练一个 TopK-SAE 编码器，把 768 维隐层映射到 M=2^16 的稀疏 latent 空间，其中只保留 top-k=8 个非零激活；损失为重构损失 + sparsity 损失 (L_SAE = L_rsct + α_sp · L_sparsity)。第二阶段 IR 微调：把 SPLADE 的 MLM head 替换为已训练好的 SAE encoder，输出公式为 z(h)=φ(W_enc·h + b_enc) 取 top-k 后做 logSaturation 得到稀疏向量；再用 SPLADE 标准的对比学习+ FLOPs 正则联合训练，最终 loss 为 L_SAE-SPLADE = λ_KL·L_KL + λ_MSE·L_MSE + λ_flops-d·L_flops-d + λ_flops-q·L_flops-q (λ值分别 1, 0.05, 0.04, 0.06)。训练设置：base encoder 选 DistilBERT (推理速度比 BERT 快 2x)；训练数据 MS MARCO v1 (8.8M passages)；文档/查询截断 256/32；优化器 AdamW；SAE 阶段 lr 5e-5、batch 768、160k steps；IR 阶段 lr 2e-5、batch 32、240k steps、每 query 8 hard negatives；硬件单张 A100，全流程约 2.5 天。关键设计选择：作者通过 ablation 选了 layer 6 的 contextualized embedding 作为 SAE 输入（earlier 层语义不充分、deeper 层过度任务化）；SAE 与 SPLADE 不能联合端到端训练——他们尝试过 joint，但发现重构损失与 IR loss 目标冲突，效果反而下降。\n\n## 3. 核心技术贡献\n\n(1) 首次把 SAE 概念基底引入 LSR 端到端 pipeline。技术机制：SAE 训练在大规模无监督文本上学到的稀疏概念维度本身就是 polysemy/synonymy 解耦的——qualitative 分析显示同一个 latent 会聚合 fry/boil/roast 等同义动词，\"bank\" 这种多义 token 会激活两个不同 latent。这是单一词表方案无法做到的。(2) 提出 SAE+TopK 取代 FLOPs 正则的稀疏控制思路。原 SPLADE 主要靠 FLOPs 正则压稀疏；作者实证：reducing k 比 increasing FLOPs reg 在 effectiveness/efficiency 权衡上更优——k=4 时 QD-FLOPs 仅 0.33 vs SPLADE 1.47，效果近似。(3) 多语种 latent overlap 显著提升。SAE-SPLADE 在 7 语种 mMARCO 上 latent overlap 11.5/163 vs SPLADE 8.6/163（+34%），证明概念基底天然跨语言。(4) 提出 E² (Efficiency-Effectiveness) 联合指标：E² = MRR - μ₁·QD-FLOPs - μ₂·softplus_β(QD-FLOPs-τ)，把 effectiveness 与索引代价合并打分，便于在工业上做模型选型。\n\n## 4. 实验结果分析\n\n主结果（Table 3，DistilBERT base）：\n\n| Model | MS MARCO MRR@10 | TREC-DL nDCG@10 | LoTTE Success@5 | QD-FLOPs | Avg Doc Len |\n|-------|-----------------|-----------------|-----------------|----------|-------------|\n| SPLADE | 37.7 | 72.0 | 68.9 | 1.47 | 118 |\n| SAE-SPLADE k=4 | 37.1 | 71.5 | 68.2 | **0.33** | 66 |\n| SAE-SPLADE k=8 | 37.6 | 72.1 | 68.8 | 0.67 | 109 |\n| SAE-SPLADE k=16 | **38.2** | **72.3** | **69.4** | 1.37 | 191 |\n\n核心发现：在同等 QD-FLOPs 下 SAE-SPLADE 优于 SPLADE，最显著的是 k=4 时仅花原版 22% 的索引代价仍保住 98% 效果。多语种结果（mMARCO 7 语言平均）：SAE-SPLADE k=8 MRR 24.4 vs SPLADE 24.2，QD-FLOPs 2.49 vs 3.38（-26%）。MIRACL nDCG@10：47.5 vs 47.2。Ablation 揭示：(a) 词表来源对比 MLM/SAE/Random：SAE QD-FLOPs 0.66 vs Random 1.16 vs MLM 0.67，SAE 拿到了 MLM 的 effectiveness 与最优 efficiency；(b) SAE 层选择：layer 6 最优；(c) SAE 变体（TopK / Hierarchical TopK / Matryoshka TopK）效果差异微弱，说明基本 TopK 已够用；(d) vocabulary size M=2^15/2^16/2^17 几乎无差，2^16 性价比最高。值得注意的失败/惊讶结果：joint training (SAE 与 SPLADE 一起端到端) 反而比 two-stage 差，作者归因于 reconstruction loss 与 IR loss 的目标冲突；scaling DistilBERT→BERT 时 SPLADE 提升 1.2+ NDCG，而 SAE-SPLADE 只提升 0.5——这是 SAE 表达力的天花板。与 SPLADEv3 比较：SAE-SPLADE k=16 QD-FLOPs 1.37 vs SPLADEv3 1.40 持平，但 TREC-DL 落后 2.5 个点 (72.3 vs 74.8)。\n\n## 5. 局限与未来方向\n\n作者明确列出的局限：(1) 多语种仍落后专门优化的多语种模型（如 MILCO）；(2) SAE 训练目标本身不针对 IR，与 IR 任务存在 misalignment；(3) latent 之间存在语义冗余——qualitative 分析显示部分 latent 覆盖相同语义；(4) SAE 与 SPLADE 不能 joint 端到端训练，限制了进一步优化；(5) 部分高级 SAE 变体（如 Hierarchical/Matryoshka TopK）对 IR 没有带来明显增益，说明 SAE 设计本身需要为 IR 重新调整。隐含但未细说的局限：依赖 layer 6 这种经验选层；M=2^16 是粗粒度调优；对长文档（>256 token）的处理仍是简单截断。未来方向：把 SAE 训练目标改造为 IR-aware（如把 contrastive signal 引入 SAE 预训练）、设计可联合训练的统一 loss、对多语种场景做语言自适应的 latent 共享。\n\n## 6. 工业实践意义\n\n对社区/UGC 搜索的具体启示：(1) 倒排索引存储与查询代价显著下降。Index 大小 3 GiB (MS MARCO v1) vs ColBERT dense 20 GiB，BMP 索引下查询延迟 <10ms（PLAID 58ms），意味着同等机器可以承载 5-7x 的 corpus 规模——对帖子库这种十亿级文档非常有吸引力。(2) k 值是一个清晰的延迟旋钮：线上可部署 k=4 (低延迟模式) 与 k=16 (高质量模式) 两套索引，按 query 难度路由。(3) 多义/同义场景显著受益：UGC 场景充斥着同义口语、错别字、缩写，BERT 词表 SPLADE 容易爆出几万维稀疏激活，SAE 概念基底可以把这些聚合到几十个 latent，倒排 posting list 大幅瘦身。(4) 多语种支持：对中英混写、表情符号、缩写社区帖天然友好，SAE-SPLADE 多语种 latent overlap +34% 意味着用一个模型同时跑多语种语义召回是可行的。(5) 部署建议：先在 frozen 现有 BERT/DistilBERT 上预训练 SAE（约 35 小时），再 hot-swap SPLADE 的 vocabulary head（不改主干），可在不重训练 backbone 的前提下完成迁移；线上推理只需替换稀疏头，不增加 GPU 推理预算。(6) 风险点：joint training 不可行意味着 SAE 训练数据应贴近实际 corpus 分布，否则 latent 与业务语义脱节；线上要监控 latent 激活分布，做长尾激活的退化告警。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>SPLADE 等学习稀疏检索 (LSR) 模型把文档/查询投影到 BERT 词表（约 30K 维），用 sparse 激活作为倒排索引基底。这一设计在效率与效果上虽然双优，但作者指出三个核心痛点：(1) 词表维度同时承担&quot;词形对齐&quot;与&quot;语义对齐&quot;，导致 polysemy（一个 token 多义，&quot;bank&quot;既指银行又指河岸）和 synonymy（多个 token 同义，&quot;fry/boil/roast&quot;应共享相同信号）无法充分建模；(2) BERT 词表规模固定，无法灵活扩展到更细的语义单元；(3) 多语种场景下不同语言激活的 token 完全不重叠，难以做跨语言对齐。论文实证显示，单纯的 SPLADE 在 mMARCO 多语种任务上不同语言的 latent overlap 仅 8.6/163，远低于人类语义直觉。该工作借鉴 LLM 可解释性领域的稀疏自编码器 (Sparse Autoencoder, SAE) 思想，把&quot;概念维度&quot;（而非 BERT 词）当作 SPLADE 的稀疏基底，希望同时解决多义/同义/多语种三个问题，并降低倒排成本。</p>\n<h2>2. 方法详解</h2>\n<p>整体两阶段：第一阶段 SAE 预训练：在 frozen DistilBERT 上对 contextualized token embeddings 训练一个 TopK-SAE 编码器，把 768 维隐层映射到 M=2^16 的稀疏 latent 空间，其中只保留 top-k=8 个非零激活；损失为重构损失 + sparsity 损失 (L_SAE = L_rsct + α_sp · L_sparsity)。第二阶段 IR 微调：把 SPLADE 的 MLM head 替换为已训练好的 SAE encoder，输出公式为 z(h)=φ(W_enc·h + b_enc) 取 top-k 后做 logSaturation 得到稀疏向量；再用 SPLADE 标准的对比学习+ FLOPs 正则联合训练，最终 loss 为 L_SAE-SPLADE = λ_KL·L_KL + λ_MSE·L_MSE + λ_flops-d·L_flops-d + λ_flops-q·L_flops-q (λ值分别 1, 0.05, 0.04, 0.06)。训练设置：base encoder 选 DistilBERT (推理速度比 BERT 快 2x)；训练数据 MS MARCO v1 (8.8M passages)；文档/查询截断 256/32；优化器 AdamW；SAE 阶段 lr 5e-5、batch 768、160k steps；IR 阶段 lr 2e-5、batch 32、240k steps、每 query 8 hard negatives；硬件单张 A100，全流程约 2.5 天。关键设计选择：作者通过 ablation 选了 layer 6 的 contextualized embedding 作为 SAE 输入（earlier 层语义不充分、deeper 层过度任务化）；SAE 与 SPLADE 不能联合端到端训练——他们尝试过 joint，但发现重构损失与 IR loss 目标冲突，效果反而下降。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 首次把 SAE 概念基底引入 LSR 端到端 pipeline。技术机制：SAE 训练在大规模无监督文本上学到的稀疏概念维度本身就是 polysemy/synonymy 解耦的——qualitative 分析显示同一个 latent 会聚合 fry/boil/roast 等同义动词，&quot;bank&quot; 这种多义 token 会激活两个不同 latent。这是单一词表方案无法做到的。(2) 提出 SAE+TopK 取代 FLOPs 正则的稀疏控制思路。原 SPLADE 主要靠 FLOPs 正则压稀疏；作者实证：reducing k 比 increasing FLOPs reg 在 effectiveness/efficiency 权衡上更优——k=4 时 QD-FLOPs 仅 0.33 vs SPLADE 1.47，效果近似。(3) 多语种 latent overlap 显著提升。SAE-SPLADE 在 7 语种 mMARCO 上 latent overlap 11.5/163 vs SPLADE 8.6/163（+34%），证明概念基底天然跨语言。(4) 提出 E² (Efficiency-Effectiveness) 联合指标：E² = MRR - μ₁·QD-FLOPs - μ₂·softplus_β(QD-FLOPs-τ)，把 effectiveness 与索引代价合并打分，便于在工业上做模型选型。</p>\n<h2>4. 实验结果分析</h2>\n<p>主结果（Table 3，DistilBERT base）：</p>\n<table><thead><tr><th>Model</th><th>MS MARCO MRR@10</th><th>TREC-DL nDCG@10</th><th>LoTTE Success@5</th><th>QD-FLOPs</th><th>Avg Doc Len</th></tr></thead><tbody><tr><td>SPLADE</td><td>37.7</td><td>72.0</td><td>68.9</td><td>1.47</td><td>118</td></tr><tr><td>SAE-SPLADE k=4</td><td>37.1</td><td>71.5</td><td>68.2</td><td><strong>0.33</strong></td><td>66</td></tr><tr><td>SAE-SPLADE k=8</td><td>37.6</td><td>72.1</td><td>68.8</td><td>0.67</td><td>109</td></tr><tr><td>SAE-SPLADE k=16</td><td><strong>38.2</strong></td><td><strong>72.3</strong></td><td><strong>69.4</strong></td><td>1.37</td><td>191</td></tr></tbody></table>\n<p>核心发现：在同等 QD-FLOPs 下 SAE-SPLADE 优于 SPLADE，最显著的是 k=4 时仅花原版 22% 的索引代价仍保住 98% 效果。多语种结果（mMARCO 7 语言平均）：SAE-SPLADE k=8 MRR 24.4 vs SPLADE 24.2，QD-FLOPs 2.49 vs 3.38（-26%）。MIRACL nDCG@10：47.5 vs 47.2。Ablation 揭示：(a) 词表来源对比 MLM/SAE/Random：SAE QD-FLOPs 0.66 vs Random 1.16 vs MLM 0.67，SAE 拿到了 MLM 的 effectiveness 与最优 efficiency；(b) SAE 层选择：layer 6 最优；(c) SAE 变体（TopK / Hierarchical TopK / Matryoshka TopK）效果差异微弱，说明基本 TopK 已够用；(d) vocabulary size M=2^15/2^16/2^17 几乎无差，2^16 性价比最高。值得注意的失败/惊讶结果：joint training (SAE 与 SPLADE 一起端到端) 反而比 two-stage 差，作者归因于 reconstruction loss 与 IR loss 的目标冲突；scaling DistilBERT→BERT 时 SPLADE 提升 1.2+ NDCG，而 SAE-SPLADE 只提升 0.5——这是 SAE 表达力的天花板。与 SPLADEv3 比较：SAE-SPLADE k=16 QD-FLOPs 1.37 vs SPLADEv3 1.40 持平，但 TREC-DL 落后 2.5 个点 (72.3 vs 74.8)。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出的局限：(1) 多语种仍落后专门优化的多语种模型（如 MILCO）；(2) SAE 训练目标本身不针对 IR，与 IR 任务存在 misalignment；(3) latent 之间存在语义冗余——qualitative 分析显示部分 latent 覆盖相同语义；(4) SAE 与 SPLADE 不能 joint 端到端训练，限制了进一步优化；(5) 部分高级 SAE 变体（如 Hierarchical/Matryoshka TopK）对 IR 没有带来明显增益，说明 SAE 设计本身需要为 IR 重新调整。隐含但未细说的局限：依赖 layer 6 这种经验选层；M=2^16 是粗粒度调优；对长文档（&gt;256 token）的处理仍是简单截断。未来方向：把 SAE 训练目标改造为 IR-aware（如把 contrastive signal 引入 SAE 预训练）、设计可联合训练的统一 loss、对多语种场景做语言自适应的 latent 共享。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区/UGC 搜索的具体启示：(1) 倒排索引存储与查询代价显著下降。Index 大小 3 GiB (MS MARCO v1) vs ColBERT dense 20 GiB，BMP 索引下查询延迟 &lt;10ms（PLAID 58ms），意味着同等机器可以承载 5-7x 的 corpus 规模——对帖子库这种十亿级文档非常有吸引力。(2) k 值是一个清晰的延迟旋钮：线上可部署 k=4 (低延迟模式) 与 k=16 (高质量模式) 两套索引，按 query 难度路由。(3) 多义/同义场景显著受益：UGC 场景充斥着同义口语、错别字、缩写，BERT 词表 SPLADE 容易爆出几万维稀疏激活，SAE 概念基底可以把这些聚合到几十个 latent，倒排 posting list 大幅瘦身。(4) 多语种支持：对中英混写、表情符号、缩写社区帖天然友好，SAE-SPLADE 多语种 latent overlap +34% 意味着用一个模型同时跑多语种语义召回是可行的。(5) 部署建议：先在 frozen 现有 BERT/DistilBERT 上预训练 SAE（约 35 小时），再 hot-swap SPLADE 的 vocabulary head（不改主干），可在不重训练 backbone 的前提下完成迁移；线上推理只需替换稀疏头，不增加 GPU 推理预算。(6) 风险点：joint training 不可行意味着 SAE 训练数据应贴近实际 corpus 分布，否则 latent 与业务语义脱节；线上要监控 latent 激活分布，做长尾激活的退化告警。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.20860",
+      "title": "RealRoute: Dynamic Query Routing System via Retrieve-then-Verify Paradigm",
+      "url": "https://arxiv.org/abs/2604.20860",
+      "authors": "Jiahe Liu, Qinkai Yu, Jingcheng Niu, Xi Zhu, Zirui He, Zhen Xiang, Fan Yang, Jinman Zhao",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-04-23",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.9,
+      "summary": "传统 RAG 中的 query routing 多为预测式分类器：先决定该走哪个数据源再去检索。RealRoute 反其道而行：先在所有源上做并行 source-agnostic 检索，再用一个动态 verifier 在检索结果上交叉验证，从而决定哪些源真正贡献了相关证据。在 multi-hop RAG 推理任务上显著优于预测式 baseline，且开放源码并提供可视化界面。",
+      "key_insight": "对多渠道社区搜索（帖子/问答/评论库分库召回）而言，retrieve-then-verify 比传统的硬分类路由更稳：把\"我应该走哪条链路\"延迟到证据出现之后再决定，相当于把先验决策替换为后验验证。落地代价是要并行触发多源召回并多算一次 verifier，可在 long-tail / hard query 上选择性开启，而不是全量铺开。"
+    },
+    {
+      "rank": 3,
+      "id": "dblp:journals/corr/abs-2601-05259",
+      "title": "A Technical Report on the Second Place Solution for the CIKM 2025 AnalytiCup Competition",
+      "url": "https://arxiv.org/abs/2601.05259",
+      "authors": "Haotao Xie, Ruilin Chen, Yicheng Wu, Zhan Zhao, Yuanyuan Liu",
+      "company": [],
+      "source": "conference_papers",
+      "published": "2025-10-25",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "total_score": 3.8,
+      "summary": "CIKM 2025 AnalytiCup 多语言电商类目相关性赛题的亚军方案：用单个 Qwen2.5-14B 微调模型 + Chain-of-Thought 任务分解，依次执行翻译、意图理解、类目对齐、相关性判断四步。Public 0.8902 / Private 0.8889。结构简单但稳定，省去复杂 ensemble。",
+      "key_insight": "该方案验证了\"提示工程 + CoT 任务分解\"对相关性判定的有效性：把单步打分拆成可解释、可调试的 4 步小任务，效果接近模型集成且推理代价低。社区短文本搜索可直接借鉴：把\"query→post 相关性\"分解为\"query 改写→意图槽位提取→候选语义对齐→最终评分\"，用一个 14B 模型即可在工业延迟下完成。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2510.20567",
+      "title": "Beyond Retrieval-Ranking: A Multi-Agent Cognitive Decision Framework for E-Commerce Search",
+      "url": "https://arxiv.org/abs/2510.20567",
+      "authors": "Zhouwei Zhai, Mengxiang Chen, Haoyun Xia, Jin Li, Renquan Zhou, Min Yang",
+      "company": [
+        "JD.com"
+      ],
+      "source": "web_search",
+      "published": "2025-10-23",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "total_score": 3.4,
+      "summary": "把电商搜索从 retrieve-rank 升级为多 agent 认知决策框架：query 理解 agent、候选生成 agent、对比 agent 与决策 agent 协同。针对带否定、多约束、推理需求的复杂 query 表现尤为突出，并在京东主搜进行了线上 A/B 验证，准确率与用户满意度均有提升。",
+      "key_insight": "多 agent 认知框架的真实价值不在\"换架构\"，而在把搜索系统从被动匹配升级为主动决策——能处理用户没显式表达的约束。对社区搜索而言，类似\"反向意图(\"求避雷\")、多条件帖子筛选\"等 query 也存在；但落地代价高（多次 LLM 调用、长延迟），更现实是在长尾难 query 走 agentic 链路、其他场景维持原有 pipeline。"
+    },
+    {
+      "rank": 5,
+      "id": "dblp:conf/wsdm/0001LZR26",
+      "title": "Combining Structural and Textual Knowledge for Knowledge Graph Link Prediction via Large Language Models",
+      "url": "https://doi.org/10.1145/3773966.3777934",
+      "authors": "Shijie Luo, Xinyuan Lu, Qinpei Zhao, Weixiong Rao",
+      "company": [
+        "Tongji University"
+      ],
+      "source": "conference_papers",
+      "published": "2026-01-01",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.3,
+      "summary": "WSDM 2026 论文。对 KG Link Prediction 任务，作者把结构子图（局部关系子图）与文本描述同时喂给 LLM，再用 LLM 进行候选关系打分。相比纯结构方法（TransE/RotatE）和纯文本方法，混合方案在多个 KG 基准上 hits@10 显著提升。",
+      "key_insight": "对社区搜索的可借鉴点：UGC 库内部本身有大量 entity-link 结构（用户、话题、地点、商品），把结构特征（共现图、tag-tag 图）和文本一起喂给 LLM 进行候选打分，可补足单一向量召回在 entity-centric query 下的短板。要点是别让 LLM 看完整图——只送 1-2 跳子图，否则上下文成本会爆。"
+    },
+    {
+      "rank": 6,
+      "id": "s2:f573e1ce59dd3a4de7c471107907307bf3e73d10",
+      "title": "PEIR: Modeling Performance in Neural Information Retrieval",
+      "url": "https://link.springer.com/chapter/10.1007/978-3-031-88711-6_18",
+      "authors": "Pooya Khandel, Andrew Yates, Ana-Lucia Varbanescu, Maarten de Rijke, Andy Pimentel",
+      "company": [
+        "University of Amsterdam"
+      ],
+      "source": "semantic_scholar",
+      "published": "2025-04-01",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "total_score": 3.2,
+      "summary": "ECIR 2025 论文。Learned Sparse Retrieval (LSR) 的效率评测严重依赖硬件，结果难复现。PEIR 借鉴 HPC 领域的性能建模方法，对 BlockMax-MaxScore 等查询求值算法构造硬件无关的性能模型，用 FLOPs/内存读写量作为 proxy。优点：(i) 标准化 efficiency 比较；(ii) 减少硬件依赖；(iii) 嵌入到 IR benchmark 中代价小。",
+      "key_insight": "对工程实践的启示：稀疏/稠密检索引擎的离线选型不应仅看实测 QPS，而要建立硬件无关的成本模型（FLOPs / cache miss），否则换一台机器全部要重跑。社区搜索做检索算法选型时，可在公司内沉淀类似 PEIR 的成本估算工具，加快新模型的上线评估。"
+    },
+    {
+      "rank": 7,
+      "id": "dblp:conf/cikm/ChenAS17",
+      "title": "An Empirical Analysis of Pruning Techniques: Performance, Retrievability and Bias",
+      "url": "https://dl.acm.org/doi/10.1145/3132847.3133151",
+      "authors": "Ruey-Cheng Chen, Leif Azzopardi, Falk Scholer",
+      "company": [
+        "RMIT University",
+        "University of Strathclyde"
+      ],
+      "source": "conference_papers",
+      "published": "2017-11-01",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 1
+      },
+      "total_score": 3.0,
+      "summary": "CIKM 2017 经典工作。对倒排索引 pruning（截断长 posting list）三类常用方法做全面实证：在 effectiveness、retrievability（每个文档被检出的概率）、bias（系统倾向偏好哪类文档）三个维度做权衡分析，揭示 pruning 在性能与公平之间存在系统性偏差。",
+      "key_insight": "经典文献提醒：所有 pruning / 召回截断都不是中立优化——它会系统性地把某些文档（如长文、低频词文档）排除在结果池外。社区搜索做召回截断时，应额外监控\"被检出概率分布\"的偏移，避免长尾内容被工程优化\"压死\"。这是当代向量 ANN 也一样会遇到的问题。"
+    }
+  ],
+  "code_projects": []
+}

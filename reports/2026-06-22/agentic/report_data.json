@@ -1,0 +1,346 @@
+{
+  "date": "2026-06-22",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 18,
+    "papers_selected": 10,
+    "score_min": 3.45,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "id": "hf:2606.19602",
+      "title": "Configurable Clinical Information Extraction with Agentic RAG: What Works, What Breaks, and Why",
+      "url": "https://huggingface.co/papers/2606.19602",
+      "authors": "Osman Alperen Çinar-Koraş, Marie Bauer, Sameh Khattab, Merlin Engelke, Moon Kim, Stephan Settelmeier",
+      "company": [
+        "University Medicine Essen"
+      ],
+      "source": "huggingface",
+      "published": "2026-06-19",
+      "total_score": 4.1,
+      "base_score": 3.85,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文部署 ACIE（Agentic Clinical Information Extraction），一套在德国 University Medicine Essen 本地落地的 agentic RAG 系统，针对患者上下文跨数百份异构文档、文档级元数据缺失的场景。标准 RAG 在时间推理、跨文档依赖、元数据缺失上失效；ACIE 让 agent 在完整患者上下文上推理，并把每个答案锚定到来源段落供医生核验。在淋巴瘤登记回顾研究里，核医学医生对 7,326 条抽取逐条核验，整体接受率 96.5%，各类型接受率介于 80%–99%。",
+      "key_insight": "把“元数据缺口”量化为架构决策的起点，是这篇落地论文最实用的地方：文档级元数据缺失时靠 agent 主动推理补齐检索与分诊信号，而不是依赖预先标注。答案强制回链来源段落、逐条可核验的设计，对社区搜索里 UGC 内容的可信问答有直接借鉴——把检索证据显式回链，让人工抽检能落地。96.5% 的真人接受率来自真实临床部署，证据强度高于纯离线基准。",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:2606.19602",
+        "title": "Configurable Clinical Information Extraction with Agentic RAG: What Works, What Breaks, and Why",
+        "status": "completed",
+        "content": "## ACIE：Agentic Clinical Information Extraction 深度解读\n\n### 1. 问题与动机\n\n论文要解决的是真实医院里\"标准 RAG 在患者档案上失效\"的问题。患者上下文跨数百份异构文档、上千个结构化数据点，但 AI 检索与分诊所需的文档级元数据几乎不存在。作者在一个欧洲 FHIR 仓库（1.7M 患者、约 19.7 亿 FHIR resources、8400 万份临床文档）上量化了\"元数据缺口\"，数字相当刺眼：只有 0.52% 文档带唯一标识、27.8% 有关系链接、作者信息仅 1.9% 填充；56.5% 文档的时间戳完全落在其就诊周期之外；FHIR 元数据与正文抽取日期只有 58.8% 同日一致；文档摘要/abstract 字段 0% 填充；内容去重每患者中位删除 33.5%（最高 54.6%）；OCR 拒识中位 10.3%（最高 52%）。就诊-文档链接也碎：13.7% 的 encounter 完全不挂任何文档，单个 encounter 中位只覆盖患者 47.5% 的文档。结论是：靠预先标注的元数据做静态过滤/检索在这种数据上不可行，必须让 agent 主动推理来补齐检索、时间推理与跨文档依赖。\n\n### 2. 方法详解\n\nACIE 是一条本地部署的 agentic RAG 流水线。数据经 FHIR server 汇入，非机读文档用 PaddleOCR-VL 1.5 做 OCR；每份文档按两种粒度切块——粗粒度检索块与细粒度引用段落（citation passages），前者用于召回、后者用于把答案精确回链到出处。检索用\"长度惩罚检索分\"对抗稠密检索偏好短片段的系统性偏差：s = sim(q,c)·p(ℓ)，其中 p(ℓ)=min(ℓ/τ,1)·(2/3)+1/3，τ=40，即长度低于 40 的片段相似度按比例打折、超过则不惩罚。\n\n核心是一个 tool-calling agent 循环：对每个抽取目标，agent 在患者上下文里检索，可用工具包括语义相似检索、按 query 列出文档（\"query-relevant summaries\"在线生成——把最高分块拼到 ≥200 词再返回，让 agent 先扫摘要再决定看哪份）、细看某份文档全文、直接查结构化数据资源。agent 迭代到证据足够后返回答案，并把每个值归因到具体源段落。时间推理与跨文档依赖没有独立模块，而是靠 agent 多轮迭代隐式处理（\"冲突值需要时间推理来消解\"，例如同一指标在不同时间点取值不同）。一个值得记的工程细节：输出用 markdown 序列化而非 JSON，因为 JSON 在某些患者元数据结构上会触发 malformed tool call。answer 级别的来源回链是硬性安全要求——临床医生逐条对照引用段落 accept/reject，系统也允许\"弃权\"（该字段正确答案本就为空时返回空）。\n\n### 3. 核心技术贡献\n\n(1) 真人核验评测：与一项独立的淋巴瘤登记回顾研究对齐，核医学医生对 74 个字段、99 名患者、共 7,326 条判断逐条 accept/reject，这种\"逐值对照源段落\"的评测范式比纯自动指标更贴近部署可信度。(2) 元数据缺口的系统量化：在 1 万患者样本、19.7 亿 resources 上把缺口拆成可操作数字（每患者去重后文档中位 52 份、结构化 resource 中位 406、encounter 中位 18），并把每个架构决策回溯到具体的数据质量失败（用 agentic 检索替代静态过滤、用 query 相关摘要、用 markdown 序列化、用长度惩罚检索）。(3) 把\"为什么标准 RAG 不行\"讲成数据证据驱动的设计推导，而不是泛泛而谈。\n\n### 4. 实验结果分析\n\n评测规模：99 名淋巴瘤患者、7,326 个抽取值、74 个字段（45 类别、9 数值、8 布尔、6 日期、3 自由文本、3 表格）。整体 blended 接受率 96.5%（7,073/7,326）；当系统给出值时的精确率 96.4%（4,440 字段）；当系统选择不给值（弃权）时的可靠性 96.8%（2,886 字段）；剔除 9 个表单配置问题后归因于抽取本身的接受率 96.7%。\n\n按字段类型（Table 3）：类别 98.6%、数值 98.3%、布尔 98.6%、自由文本 96.0%、日期 84.3%、表格 79.8%——日期与表格是明显短板。拒绝共 253 条（Table 4）：需修正的\"值不对\"221 条（87.4%）、漏抽 9 条、完全错 7 条、缺引用 3 条、幻觉 0 条（0.0%）。错误高度集中：74 个字段里 10 个就贡献了 253 条拒绝中的 182 条，最多的是死亡/末次随访日期（44 条）与治疗时间线（40 条），正好对应日期/表格这两类难字段。逐患者接受率均值 96.5%、中位 97.3%、区间 82.4–100%，99 人里 78 人 ≥95%、7 人零拒绝。需要注意：作者明确没有和非 agentic 或商用基线对比，也没有消融实验，所以这些数字反映的是绝对可用性而非相对增益——这是阅读这篇\"部署报告\"型论文时要保持的克制。\n\n### 5. 局限与未来方向\n\n作者自陈的局限很坦诚：单一回顾性研究、单病种、单医院、单语言、仅 99 患者，泛化性未验证；每个字段只由一名专家评判，inter-rater reliability 未测；回顾性设置比临床实时（point-of-care）更宽松。尤其重要的一条：96.5% 的\"头条接受率\"里有 39.4% 的字段正确答案本就该是空（弃权），这抬高了表观数字，真正对\"产出值\"的精确率是 96.4%，且日期 84.3%、表格 79.8% 明显更低。此外\"零幻觉\"是同一批 reviewer 在 source-grounded 审阅下判定的、并非独立裁定；抽取质量上限受本地模型限制；数据质量统计来自单一医院 FHIR 仓库，别处比率可能不同。未来方向自然指向：多中心/多病种验证、独立幻觉裁定、点对点实时评测，以及对日期/表格这类弱项的专门改进。\n\n### 6. 工业实践意义\n\n对搜索/推荐与 RAG 工程最直接的借鉴有三点。其一，当语料元数据脏/缺时（社区 UGC 也是典型场景：缺规范标签、时间戳不可靠、重复内容多、56.5% 时间戳对不上就诊周期这类问题在 UGC 里同样普遍），与其修元数据再做静态过滤，不如上 tool-calling agent 让它在\"语义检索→看文档摘要→看全文→查结构化数据\"之间迭代补齐线索；先返回 ≥200 词的 query 相关摘要再决定细看哪份，是控成本的实用 pattern。其二，answer 强制回链到细粒度引用段落、并做逐值人工抽检，是把\"可信生成\"真正落地的产品形态，比只给一段总结更可审计；长度惩罚检索分（τ=40）这种小改动也能直接缓解稠密检索偏好短片段的问题，值得在自家召回里试。其三，把错误集中度当作迭代抓手：10/74 字段贡献了 72% 的错误，意味着部署后应优先盯死少数难字段（日期、表格、时间线），而不是均匀投入。部署细节很务实：全程本地化、Kubernetes 部署、患者数据不出院网；抽取用 Qwen 3.6 35B-A3B（MoE）跑在 4×H100，OCR（PaddleOCR-VL 1.5）单卡 H100；研究医生反馈每患者完成速度约快 3 倍。论文未给单条延迟指标，这是落到在线低延迟搜索场景时要自行补测的关键缺口。整体上 ACIE 证明：在脏数据的真实检索场景里，agentic RAG + 强制源回链 + 真人逐值核验，能把可信度做到 96%+ 的可交付水平。",
+        "content_html": "<h2>ACIE：Agentic Clinical Information Extraction 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>论文要解决的是真实医院里&quot;标准 RAG 在患者档案上失效&quot;的问题。患者上下文跨数百份异构文档、上千个结构化数据点，但 AI 检索与分诊所需的文档级元数据几乎不存在。作者在一个欧洲 FHIR 仓库（1.7M 患者、约 19.7 亿 FHIR resources、8400 万份临床文档）上量化了&quot;元数据缺口&quot;，数字相当刺眼：只有 0.52% 文档带唯一标识、27.8% 有关系链接、作者信息仅 1.9% 填充；56.5% 文档的时间戳完全落在其就诊周期之外；FHIR 元数据与正文抽取日期只有 58.8% 同日一致；文档摘要/abstract 字段 0% 填充；内容去重每患者中位删除 33.5%（最高 54.6%）；OCR 拒识中位 10.3%（最高 52%）。就诊-文档链接也碎：13.7% 的 encounter 完全不挂任何文档，单个 encounter 中位只覆盖患者 47.5% 的文档。结论是：靠预先标注的元数据做静态过滤/检索在这种数据上不可行，必须让 agent 主动推理来补齐检索、时间推理与跨文档依赖。</p>\n<h3>2. 方法详解</h3>\n<p>ACIE 是一条本地部署的 agentic RAG 流水线。数据经 FHIR server 汇入，非机读文档用 PaddleOCR-VL 1.5 做 OCR；每份文档按两种粒度切块——粗粒度检索块与细粒度引用段落（citation passages），前者用于召回、后者用于把答案精确回链到出处。检索用&quot;长度惩罚检索分&quot;对抗稠密检索偏好短片段的系统性偏差：s = sim(q,c)·p(ℓ)，其中 p(ℓ)=min(ℓ/τ,1)·(2/3)+1/3，τ=40，即长度低于 40 的片段相似度按比例打折、超过则不惩罚。</p>\n<p>核心是一个 tool-calling agent 循环：对每个抽取目标，agent 在患者上下文里检索，可用工具包括语义相似检索、按 query 列出文档（&quot;query-relevant summaries&quot;在线生成——把最高分块拼到 ≥200 词再返回，让 agent 先扫摘要再决定看哪份）、细看某份文档全文、直接查结构化数据资源。agent 迭代到证据足够后返回答案，并把每个值归因到具体源段落。时间推理与跨文档依赖没有独立模块，而是靠 agent 多轮迭代隐式处理（&quot;冲突值需要时间推理来消解&quot;，例如同一指标在不同时间点取值不同）。一个值得记的工程细节：输出用 markdown 序列化而非 JSON，因为 JSON 在某些患者元数据结构上会触发 malformed tool call。answer 级别的来源回链是硬性安全要求——临床医生逐条对照引用段落 accept/reject，系统也允许&quot;弃权&quot;（该字段正确答案本就为空时返回空）。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) 真人核验评测：与一项独立的淋巴瘤登记回顾研究对齐，核医学医生对 74 个字段、99 名患者、共 7,326 条判断逐条 accept/reject，这种&quot;逐值对照源段落&quot;的评测范式比纯自动指标更贴近部署可信度。(2) 元数据缺口的系统量化：在 1 万患者样本、19.7 亿 resources 上把缺口拆成可操作数字（每患者去重后文档中位 52 份、结构化 resource 中位 406、encounter 中位 18），并把每个架构决策回溯到具体的数据质量失败（用 agentic 检索替代静态过滤、用 query 相关摘要、用 markdown 序列化、用长度惩罚检索）。(3) 把&quot;为什么标准 RAG 不行&quot;讲成数据证据驱动的设计推导，而不是泛泛而谈。</p>\n<h3>4. 实验结果分析</h3>\n<p>评测规模：99 名淋巴瘤患者、7,326 个抽取值、74 个字段（45 类别、9 数值、8 布尔、6 日期、3 自由文本、3 表格）。整体 blended 接受率 96.5%（7,073/7,326）；当系统给出值时的精确率 96.4%（4,440 字段）；当系统选择不给值（弃权）时的可靠性 96.8%（2,886 字段）；剔除 9 个表单配置问题后归因于抽取本身的接受率 96.7%。</p>\n<p>按字段类型（Table 3）：类别 98.6%、数值 98.3%、布尔 98.6%、自由文本 96.0%、日期 84.3%、表格 79.8%——日期与表格是明显短板。拒绝共 253 条（Table 4）：需修正的&quot;值不对&quot;221 条（87.4%）、漏抽 9 条、完全错 7 条、缺引用 3 条、幻觉 0 条（0.0%）。错误高度集中：74 个字段里 10 个就贡献了 253 条拒绝中的 182 条，最多的是死亡/末次随访日期（44 条）与治疗时间线（40 条），正好对应日期/表格这两类难字段。逐患者接受率均值 96.5%、中位 97.3%、区间 82.4–100%，99 人里 78 人 ≥95%、7 人零拒绝。需要注意：作者明确没有和非 agentic 或商用基线对比，也没有消融实验，所以这些数字反映的是绝对可用性而非相对增益——这是阅读这篇&quot;部署报告&quot;型论文时要保持的克制。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者自陈的局限很坦诚：单一回顾性研究、单病种、单医院、单语言、仅 99 患者，泛化性未验证；每个字段只由一名专家评判，inter-rater reliability 未测；回顾性设置比临床实时（point-of-care）更宽松。尤其重要的一条：96.5% 的&quot;头条接受率&quot;里有 39.4% 的字段正确答案本就该是空（弃权），这抬高了表观数字，真正对&quot;产出值&quot;的精确率是 96.4%，且日期 84.3%、表格 79.8% 明显更低。此外&quot;零幻觉&quot;是同一批 reviewer 在 source-grounded 审阅下判定的、并非独立裁定；抽取质量上限受本地模型限制；数据质量统计来自单一医院 FHIR 仓库，别处比率可能不同。未来方向自然指向：多中心/多病种验证、独立幻觉裁定、点对点实时评测，以及对日期/表格这类弱项的专门改进。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐与 RAG 工程最直接的借鉴有三点。其一，当语料元数据脏/缺时（社区 UGC 也是典型场景：缺规范标签、时间戳不可靠、重复内容多、56.5% 时间戳对不上就诊周期这类问题在 UGC 里同样普遍），与其修元数据再做静态过滤，不如上 tool-calling agent 让它在&quot;语义检索→看文档摘要→看全文→查结构化数据&quot;之间迭代补齐线索；先返回 ≥200 词的 query 相关摘要再决定细看哪份，是控成本的实用 pattern。其二，answer 强制回链到细粒度引用段落、并做逐值人工抽检，是把&quot;可信生成&quot;真正落地的产品形态，比只给一段总结更可审计；长度惩罚检索分（τ=40）这种小改动也能直接缓解稠密检索偏好短片段的问题，值得在自家召回里试。其三，把错误集中度当作迭代抓手：10/74 字段贡献了 72% 的错误，意味着部署后应优先盯死少数难字段（日期、表格、时间线），而不是均匀投入。部署细节很务实：全程本地化、Kubernetes 部署、患者数据不出院网；抽取用 Qwen 3.6 35B-A3B（MoE）跑在 4×H100，OCR（PaddleOCR-VL 1.5）单卡 H100；研究医生反馈每患者完成速度约快 3 倍。论文未给单条延迟指标，这是落到在线低延迟搜索场景时要自行补测的关键缺口。整体上 ACIE 证明：在脏数据的真实检索场景里，agentic RAG + 强制源回链 + 真人逐值核验，能把可信度做到 96%+ 的可交付水平。</p>"
+      }
+    },
+    {
+      "id": "hf:2606.18910",
+      "title": "REVES: REvision and VErification--Augmented Training for Test-Time Scaling",
+      "url": "https://huggingface.co/papers/2606.18910",
+      "authors": "Yuanxin Liu, Ruida Zhou, Xinyan Zhao, Amr Sharaf, Hongzhou Lin, Arijit Biswas",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-18",
+      "total_score": 3.85,
+      "base_score": 3.7,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "REVES 提出“修订+验证”增强的训练框架用于 test-time scaling。标准后训练只优化单次目标，与多步推理动态不匹配；已有多轮 RL 直接在多步轨迹上优化，浪费了中间步里“差一点对”（near-miss）的可学信号。REVES 两阶段交替：在线数据/prompt 增强 + 策略优化，把成功恢复轨迹里的中间步拆成解耦的修订 prompt 与验证 prompt。在 LiveCodeBench 上以公开测试用例为反馈，比 RL 基线 +6.5 分、比标准多轮训练 +4.0 分；circle packing 上用 4B 小模型匹配 SOTA、rollout 远少于更大的进化搜索系统。代码已开源。",
+      "key_insight": "核心是把“改对答案”和“识别错误”两种能力解耦成独立训练信号，从恢复轨迹挖掘 near-miss 中间步，避免长程多轮采样的算力开销。对搜索/推理系统的启示：test-time 反复修订时，验证器与修订器可分开训练、各喂针对性数据，比端到端多轮 RL 更省 rollout。4B 模型即可复现、代码开源，落地门槛低。",
+      "rank": 2
+    },
+    {
+      "id": "hf:2606.19236",
+      "title": "STARE: Surprisal-Guided Token-Level Advantage Reweighting for Policy Entropy Stability",
+      "url": "https://huggingface.co/papers/2606.19236",
+      "authors": "Haipeng Luo, Qingfeng Sun, Songli Wu, Can Xu, Wenfeng Deng, Han Hu",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-18",
+      "total_score": 3.85,
+      "base_score": 3.7,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "STARE 针对 GRPO 类可验证奖励 RL 在 LLM 后训练中常见的策略熵坍缩。作者对 GRPO 下 token 级熵动态做一阶梯度分析，发现 token 级信用分配错配：每 token 熵变可分解为轨迹级 advantage 与下一 token 分布熵敏感度的乘积，形成 advantage-surprisal 四象限结构与近临界性。STARE 用 batch 内 surprisal 分位数挑出熵关键 token 子集、选择性重加权其有效 advantage，并加目标熵闭环 gate 稳定调控。在 1.5B–32B、Short/Long CoT 与 Multi-Turn Tool Use 三类任务上稳定训练数千步；AIME24/25 比 DAPO 等基线平均准确率 +4%–8%，反思 token 与回复长度同步增长。代码已开源。",
+      "key_insight": "把熵坍缩归因到 token 级信用分配错配、而不是简单加熵正则，这一诊断角度有价值。用 surprisal 分位数挑熵关键 token + 目标熵 gate 的做法，给搜索/推理类 agentic RL 训练提供了稳定数千步的实操方案，尤其覆盖 Multi-Turn Tool Use。1.5B–32B 全尺度验证、代码开源，自建 RL 训练 pipeline 的团队可直接接入 GRPO。",
+      "rank": 3
+    },
+    {
+      "id": "hf:2606.17053",
+      "title": "Context-Aware RL for Agentic and Multimodal LLMs",
+      "url": "https://huggingface.co/papers/2606.17053",
+      "authors": "Peiyang Xu, Bangzheng Li, Sijia Liu, Karthik R. Narasimhan, Pramod Viswanath, Prateek Mittal",
+      "company": [
+        "Princeton"
+      ],
+      "source": "huggingface",
+      "published": "2026-06-19",
+      "total_score": 3.7,
+      "base_score": 3.55,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文提出 ContextRL，针对 LLM 在长/复杂上下文里难以定位关键证据（如工具轨迹里某一行、图像里某个细节）的失败模式。不是只监督最终答案，而是给模型一个 query、一个 answer 和两段高度相似的上下文，奖励它选出支持该 query-answer 对的那段，逼出细粒度 grounding。对编码 agent 用轨迹作上下文（条件过滤构造 1k 对），对多模态用图像作上下文（生成式编辑+相似检索构造 7K 对）。5 个长程基准上比标准 GRPO 平均 +2.2%，12 个 VQA 上 +1.8%。把同样对比上下文当普通样本的数据增强基线几乎无提升，说明增益来自上下文选择目标本身。",
+      "key_insight": "用“从两段相似上下文里选对的那段”作为辅助 RL 目标来强化证据 grounding，是可迁移到检索/RAG 的思路：对搜索 agent 可把工具轨迹或候选文档构造成对比对，奖励模型锁定真正支撑答案的证据。消融证明增益来自目标而非额外数据，这一对照设计值得借鉴——避免把方法收益误归因到数据扩充。",
+      "rank": 4
+    },
+    {
+      "id": "hf:2606.19605",
+      "title": "FAPO: Fully Autonomous Prompt Optimization of Multi-Step LLM Pipelines",
+      "url": "https://huggingface.co/papers/2606.19605",
+      "authors": "Paul Kassianik, Baturay Saglam, Huaibo Zhao, Blaine Nelson, Supriti Vijay, Aman Priyanshu",
+      "company": [
+        "Cisco"
+      ],
+      "source": "huggingface",
+      "published": "2026-06-19",
+      "total_score": 3.65,
+      "base_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "FAPO（Fully Autonomous Prompt Optimization）让 Claude Code 在标准化代码库里自动优化多步 LLM pipeline。多步 pipeline 的失败常来自检索、推理、格式化各步之间的交互，纯 prompt 优化会漏掉链路瓶颈。FAPO 评估 pipeline、检查中间步、诊断失败、提出有界改动并反复验证；先试 prompt 编辑，只有归因发现结构性瓶颈、prompt 优化不够时才改链路结构。在 6 个基准、3 个任务模型上，15/18 对比胜过基线 GEPA、平均 +14.1pp；升级到结构改动的 6 个 HoVer/IFBench 对比全胜、平均 +33.8pp；安全任务 CTIBench-RCM 上也有 +2.0~+7.1pp 提升。",
+      "key_insight": "把 prompt 优化升级为“先改 prompt、归因到结构瓶颈再改链路结构”的自治优化 agent，是多步 RAG/搜索 pipeline 调优的实用范式。亮点是用归因决定何时从 prompt 层跳到结构层，而不是一上来就重写链路。依赖 Claude Code 这类编码 agent 作执行器，已有 agent pipeline 的团队可复用其评估-诊断-验证循环来自动找瓶颈。",
+      "rank": 5
+    },
+    {
+      "id": "hf:2606.18021",
+      "title": "LegalHalluLens: Typed Hallucination Auditing and Calibrated Multi-Agent Debate for Trustworthy Legal AI",
+      "url": "https://huggingface.co/papers/2606.18021",
+      "authors": "Lalit Yadav, Akshaj Gurugubelli",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-19",
+      "total_score": 3.65,
+      "base_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LegalHalluLens 是面向法律 AI 的幻觉审计框架，含三部分：在 CUAD 上按数值/时间/义务-权利/事实四类法律动机类别构建分型幻觉画像；提出 Risk Direction Index (RDI) 把“遗漏 vs 编造”偏向压成一个可跨部署比较的标量；以及一条按幅度与方向校准的分型多 agent 辩论流水线。在 510 份合同、249,252 个条款级实例上，测得义务/数值类与时间类幻觉之间约 38–40pp 的模型内差距（被聚合指标掩盖），并显示两个同为 52% 幻觉率的系统可有相反的 RDI。辩论流水线把编造性误检降低 45%，用 4B active 参数即匹配商用 API。",
+      "key_insight": "聚合幻觉率会掩盖错误在哪类、朝哪个方向；分型画像 + RDI 把它拆成可操作信号，再用测得的失败模式校准多 agent 辩论（Skeptic 质询 + 非对称 gate），比泛化调参的辩论更有效。对搜索/问答里的可信生成有借鉴：先按类别量化幻觉方向、再针对性上多 agent 校验，而不是一刀切。4B backbone 即达商用 API 水平，部署成本可控。",
+      "rank": 6
+    },
+    {
+      "id": "hf:2606.19808",
+      "title": "Think Again or Think Longer? Selective Verification for Budget-Aware Reasoning",
+      "url": "https://huggingface.co/papers/2606.19808",
+      "authors": "Sajib Acharjee Dip, Dawei Zhou, Liqing Zhang",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-18",
+      "total_score": 3.6,
+      "base_score": 3.45,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "SEVRA（Selective Verification for Reasoning Allocation）把 test-time 推理当作部署期算力分配问题：额外推理不一定有用，可能修好失败、也可能在已对的答案上浪费算力或引入有害改动。它是 serving 层控制器，用 serving 可见的尝试状态训练“可恢复性感知”门控，决定保留冻结 solver 的初始答案还是触发主动验证。用冻结 Qwen3-4B，在 MATH 上达 76.3%（始终验证 75.5%），生成后 token 降 26.8%，有害翻转从 2.2% 降到 1.0%；迁移到 GSM 只验证 3.0% 样本，准确率 93.4%→94.5%，验证 token 省 91.2%。作者也诚实指出：调大初始解算预算（8192 token）能用更少总 token 达到相近准确率。",
+      "key_insight": "把“是否再推理”建模为 serving 期分配决策、而非再训一个验证器，给在线推理成本控制提供了实用旋钮。最值得借鉴的是其诚实结论：先调初始解算预算，再在需要显式检查、有界重试、可审计或回归风险控制时才用选择性恢复。门控基于 serving 可见状态、用冻结 solver，落地改造小，适合搜索问答的延迟/成本敏感链路。",
+      "rank": 7
+    },
+    {
+      "id": "hf:2606.20529",
+      "title": "LedgerAgent: Structured State for Policy-Adherent Tool-Calling Agents",
+      "url": "https://huggingface.co/papers/2606.20529",
+      "authors": "Md Nayem Uddin, Amir Saeidi, Eduardo Blanco, Chitta Baral",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-19",
+      "total_score": 3.55,
+      "base_score": 3.45,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LedgerAgent 面向客服域里需跨轮维护任务状态、调用工具并遵守域策略的 tool-calling agent。标准 agent 不单独表示任务状态，把观测、工具返回、策略指令都堆在 prompt 里，让 agent 每次重新从 prompt 重建状态，导致两类失败：取对了事实却在后续基于过期/缺失/错误信息决策；语法合法的工具调用仍违反依赖当前状态的域策略。LedgerAgent 是推理期方法，把观测到的任务状态维护在独立 ledger 并渲染进 prompt，同时在执行改变环境的工具调用前用 ledger 校验状态相关策略约束、拦截违规。在 4 个客服域、开源+闭源混合模型上，平均 passk 优于标准 prompt 式 tool-calling，在更严格的多次一致性指标上提升最大。",
+      "key_insight": "把隐式的状态管理外化成显式 ledger、并在工具调用前做状态相关的策略校验，是给多轮 tool-calling agent 加可靠性的低成本设计。对社区搜索里的对话式/工具调用 agent 有直接借鉴：用独立状态账本避免“取对事实又用错”，并把策略约束做成执行前的硬 gate。纯推理期方法、不需重训，开源闭源模型都适用，落地门槛低。",
+      "rank": 8
+    },
+    {
+      "id": "hf:2606.19047",
+      "title": "RODS: Reward-Driven Online Data Synthesis for Multi-Turn Tool-Use Agents",
+      "url": "https://huggingface.co/papers/2606.19047",
+      "authors": "Ruishan Fang, Siyuan Lu, Chenyi Zhuang, Tao Lin",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-18",
+      "total_score": 3.45,
+      "base_score": 3.35,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "RODS（Reward-driven Online Data Synthesis）解决多轮 tool-use RL 中静态数据集“有信息量样本快速枯竭”的瓶颈。作者发现 GRPO 的梯度信号集中在 rollout 奖励方差最大的任务上（Popoviciu 上界的后果），即处于 agent 能力边界、成败各半的样本贡献了过大的策略梯度；随训练推进边界不断移动，静态数据里的有效样本逐渐耗尽。RODS 把进度奖励方差当作零成本边界探测器（无需训练 rollout 之外的额外推理），持续识别边界样本，按其结构复杂度（API 拓扑、依赖深度）经技能对齐重采样合成新多轮变体，并维护与策略共演化的动态回放缓冲。从 400 条人工种子、约 800 活跃池出发，以约 1/20 的轨迹量达到 17K 离线 pipeline 的相当性能。",
+      "key_insight": "用奖励方差做“能力边界探测器”来在线合成训练数据，是数据高效 agentic RL 的巧思——复用训练已算的 rollout、零额外推理成本。对自建多轮 tool-use agent 的团队有借鉴：与其堆大规模离线轨迹，不如围绕能力边界动态合成结构匹配的新样本，约 20x 省轨迹。需具备多轮工具环境与 RL 训练设施，工程量中等。",
+      "rank": 9
+    },
+    {
+      "id": "hf:2606.15872",
+      "title": "SciOrch: Learning to Orchestrate Expert LLMs for Solving Frontier Multimodal Scientific Reasoning Tasks",
+      "url": "https://huggingface.co/papers/2606.15872",
+      "authors": "Jingru Guo, Xiangyuan Xue, Lian Zhang, Wanghan Xu, Siki Chen, Philip Torr",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-18",
+      "total_score": 3.45,
+      "base_score": 3.35,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "SciOrch 训练一个轻量 8B 模型来编排多个前沿商用 LLM 解科学推理题。观察到不同前沿模型在不同题型上各有所长、单模型评测会掩盖这种互补性。编排器把每题分解、通过 API 把子问题分派给选定的商用模型、再合成最终答案。训练这种编排器比常规 agentic RL 更难：每个动作触发昂贵且高延迟的 API 调用，标准在线 rollout 不可行；作者用基于 MCTS 的方法生成多样编排轨迹、抽取每节点单轮样本、再用 GRPO 式训练优化。在 SGI-Reasoning 与 Scientists' First Exam 共 240 题上达 56.66% 平均准确率，比最强单一商用模型高 3.74%、比最强多 agent 基线高 3.33%，且 API 成本不到典型多 agent 方法的一半。",
+      "key_insight": "用一个 8B 小模型做“路由+分解+合成”的编排器、把昂贵 API 动作交给前沿模型，是成本可控的多模型协同范式。针对 API 动作贵、在线 rollout 不可行的难点，用 MCTS 离线生成轨迹 + 单轮样本 + GRPO 训练，是可迁移的训练技巧。对搜索系统里混用多模型/多专家的场景有借鉴：训练轻量编排器按题型路由，比堆多 agent 更省成本（不到一半 API 开销）。",
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:lucasfishh/vanta",
+      "title": "vanta: Autonomous LLM squads compete in a tactical strategy game with on-chain Solana stakes.",
+      "url": "https://github.com/lucasfishh/vanta",
+      "source": "github",
+      "description": "Autonomous LLM squads compete in a tactical strategy game with on-chain Solana stakes.",
+      "language": "TypeScript",
+      "stars": 78,
+      "created_at": "2026-06-19"
+    },
+    {
+      "rank": 2,
+      "id": "github:fivetaku/llm-wiki",
+      "title": "llm-wiki: raw 소스를 Claude Code가 위키로 합성·유지하는 영구 마크다운 지식베이스 템플릿 (LLM Wiki, Karpathy 패턴)",
+      "url": "https://github.com/fivetaku/llm-wiki",
+      "source": "github",
+      "description": "raw 소스를 Claude Code가 위키로 합성·유지하는 영구 마크다운 지식베이스 템플릿 (LLM Wiki, Karpathy 패턴)",
+      "language": "Shell",
+      "stars": 62,
+      "created_at": "2026-06-19"
+    },
+    {
+      "rank": 3,
+      "id": "github:lidge-jun/opencodex",
+      "title": "opencodex: Universal provider proxy for OpenAI Codex — use any LLM with Codex CLI, App, and SDK",
+      "url": "https://github.com/lidge-jun/opencodex",
+      "source": "github",
+      "description": "Universal provider proxy for OpenAI Codex — use any LLM with Codex CLI, App, and SDK",
+      "language": "TypeScript",
+      "stars": 58,
+      "created_at": "2026-06-18"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:Alibaba-DAMO-Academy/ClinHallu",
+      "title": "Alibaba-DAMO-Academy/ClinHallu",
+      "url": "https://huggingface.co/datasets/Alibaba-DAMO-Academy/ClinHallu",
+      "source": "huggingface",
+      "description": "CLINHALLU Benchmark CLINHALLU is a benchmark for diagnosing stage-wise hallucinations in medical MLLM reasoning. Paper: CLINHALLU: A Benchmark for Diagnosing Stage-Wise Hallucinations in Medical MLLM ReasoningGitHub: alibaba-damo-academy/ClinHallu Benchmark Results Accuracy and s; tags: size_categories:10K<n<100K, format:json, modality:text, library:datasets, library:pandas, library:polars, library:mlcroissant, arxiv:2606.14697",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-06-03"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5.2",
+      "title": "zai-org/GLM-5.2",
+      "url": "https://huggingface.co/zai-org/GLM-5.2",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 1795,
+      "created_at": "2026-06-16"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:moonshotai/Kimi-K2.7-Code",
+      "title": "moonshotai/Kimi-K2.7-Code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.7-Code",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, image-feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "model",
+      "stars": 944,
+      "created_at": "2026-06-11"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: diffusers, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2606.10804, license:mit",
+      "language": "model",
+      "stars": 247,
+      "created_at": "2026-06-09"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/GLM-5.2-FP8",
+      "title": "zai-org/GLM-5.2-FP8",
+      "url": "https://huggingface.co/zai-org/GLM-5.2-FP8",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "language": "model",
+      "stars": 119,
+      "created_at": "2026-06-16"
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+{
+  "date": "2026-04-29",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 80,
+    "papers_selected": 10,
+    "score_min": 3.05,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.23336",
+      "title": "Efficient Rationale-based Retrieval: On-policy Distillation from Generative Rerankers based on JEPA",
+      "url": "https://arxiv.org/abs/2604.23336",
+      "authors": "Teng Chen, Sheng Xu, Feixiang Guo, Xiaoyu Wang, Qingqing Gu, Hongyan Li, Luo Ji",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 4.3,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对 rationale-based 检索需要对 query-document 联合编码导致计算成本过高的问题，提出 Rabtriever：先训练一个把 document 放在 query 之前、用 log p 生成相关性分数的 LLM 生成式重排器作为教师，再通过基于 JEPA（联合嵌入预测架构）的 on-policy 蒸馏，把教师能力压缩到独立编码 query 与 document 的双塔模型，从而保留对查询-文档的深度理解但显著降低线上推理成本。在多个检索基准上 Rabtriever 接近 cross-encoder 重排器的效果，同时具备双塔模型的延迟优势。",
+      "key_insight": "把昂贵的 LLM 生成式重排器作为教师、用 JEPA 表征对齐做策略内蒸馏到双编码器，是社区 UGC 搜索的高 ROI 路径——线上仍跑廉价的双塔召回，但语义理解水平接近重排器。值得借鉴的设计点：(1) 让教师按 'doc 在前 + query 在后 + 生成相关性' 的范式打分，可以充分利用 LLM 长上下文与因果注意力的判别能力；(2) on-policy 而非 offline 蒸馏避免学生分布漂移。社区短文本搜索的 query-doc 语义鸿沟很大，这套方案可以直接落到现有 Faiss/HNSW 召回栈上。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.23336",
+        "title": "Efficient Rationale-based Retrieval: On-policy Distillation from Generative Rerankers based on JEPA",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n本文针对的是 'rationale-based retrieval'（理由型检索）这一新兴任务：与传统基于事实匹配的检索（如 MS MARCO 风格 QA）不同，理由型检索需要找到一段在语义上能够支撑/共情/对齐查询的文档（典型场景包括情感咨询 ESConv、心理问答 PsyQA、机器人指令对齐 SayCan）。这类任务对 query-document 之间细粒度的因果与共情判别要求很高，传统双塔（独立编码）模型在这类基准上的表现远落后于 LLM-based cross-encoder 重排器：例如在 ESConv 上最强的 LLM 重排器 LaHoRe 的 R@1 = 34.4 / MRR = 54.8，而最强的双塔基线 LlaMA2Vec 仅有 R@1 = 23.9 / MRR = 45.5——绝对差距 ≈10 个 R@1 点。\n\n但 LLM 重排器的代价是工业不可承受的：单 query 响应时间 ~980ms（vs 双塔 ~93ms）、且时间复杂度对文档长度二次增长。这使得 LaHoRe 类方案只能停留在小规模 reranking 后处理阶段，不能进入真正的检索/召回主干。本文动机就是要 '保留 LLM 重排器对 query-document 的深度理解，但获得双塔检索器的延迟特性'。\n\n## 2. 方法详解\n\n### 2.1 教师：LLM 生成式重排器\n\n首先训练一个 LLM 生成式重排器作为蒸馏教师。关键 prompt 模版如下（注意 doc 在前、query 在后）：\n\n```\nDocument: {D}\nQuery: {Q}\nCan Query be appropriately replied with Document?\nIf the answer is true, choose <T>; otherwise, choose <F>.\n```\n\n相关性得分由 'true/false' 两个 token 的对数概率归一化而来：score = log P(<T>) / (log P(<T>) + log P(<F>))。这种 'doc-first / query-last' 安排有一个非平凡的好处：因为 LLM 是 causal attention，document embedding 在 doc-only 编码与 doc+query 联合编码下数学上完全相同（论文 Eq.8），意味着所有 doc embedding 可以离线一次性预计算并缓存。教师在 SFT 阶段用所有 (q,d) 正负对 + cross-entropy 训练。\n\n### 2.2 学生：Rabtriever（JEPA-style 双编码器）\n\n核心设计是把传统双塔的 'cosine + dot product' 评分头替换为一个轻量级的 JEPA 预测器，并用 on-policy 蒸馏对齐到教师。\n\n架构：\n- backbone 用与教师同款的 Qwen2-7B-Instruct，所有 transformer 参数全部冻结\n- query 与 document 独立编码，分别取最后一层 token embedding eQ、eD\n- 在 LLM 输出和 scoring head 之间插入 JEPA 预测器：\n  ```\n  eQ_student = MLP_θ(eQ) ⊙ eD[-1]\n  ```\n  其中 MLP 是 2 层带 ReLU 的小网络（仅 θ 可训练），eD[-1] 是文档的最后一个 token 嵌入，作为 JEPA 中的 latent control variable z；⊙ 是逐元素相乘\n- 把 eQ_student 送回原 (frozen) scoring head 得到 score\n\n损失函数（Eq.13）由两部分组成：\n```\nF = F_MSE(eQ_student, eQ_teacher) + w · KL_rev(P_student || P_teacher)\n```\n- F_MSE：JEPA 风格的能量函数，要求学生 'predicted query embedding' 在 latent 空间逼近教师的真实 query embedding\n- KL_rev：反向 KL 散度，把学生输出 logits 拉向教师输出 logits；w = 0.25\n- 反向 KL（而非常用的正向 KL）是关键设计：reverse KL 鼓励学生的概率质量集中在 'true/false' 这两个真正决定相关性的 token 上，避免正向 KL 'mean-seeking' 引入大量噪声 token 的拉力\n\n### 2.3 训练设置\n\n| 项目 | 值 |\n|------|----|\n| backbone | Qwen2-7B-Instruct（冻结） |\n| 硬件 | 8×A100 |\n| 训练时间 | < 10 小时 |\n| 学习率 | 1e-6 |\n| batch size | 16 |\n| 文档最大长度 | 32 tokens（左 pad） |\n| 总窗口 | 4096 tokens |\n| KL 损失权重 w | 0.25 |\n| 推理框架 | vLLM + prefix cache |\n\n这是典型的 'on-policy' 蒸馏：student 在 mini-batch 上前向 → 同 batch 用教师 inference 得到目标 → 学生反传更新 MLP（其余参数冻结）。整套流程对算力非常友好。\n\n## 3. 核心技术贡献\n\n1. **'doc-first' 因果对称 prompt：** 把 document 放在 query 之前，配合 LLM 的 causal attention 使 doc embedding 在联合编码与独立编码下严格相等。这是把 '联合编码教师' 蒸馏到 '独立编码学生' 的理论保证，避免了传统蒸馏中 student-teacher 输入分布不一致带来的偏差。\n\n2. **JEPA 风格的预测器插件：** 把 'query embedding 的语义对齐' 形式化为 JEPA 中的 latent prediction 任务。MLP_θ(eQ) ⊙ eD[-1] 这一逐元素乘是低秩、低算力的对齐器，在仅训练 2 层 MLP 的前提下就能让冻结的 7B backbone 输出贴近教师；这比 LoRA 之类参数化方法成本更低。\n\n3. **Reverse KL + MSE 复合损失：** 论文消融显示去掉 reverse KL 让 R@1 从 32.8 跌到 24.1，去掉 F_MSE 让 R@1 跌到 ~0；用正向 KL 替换反向 KL 也明显劣化（28.4 vs 32.8）。这套损失组合是 Rabtriever 性能的真正引擎。\n\n4. **线性时间复杂度推理：** 通过文档 embedding 离线缓存 + 在线只编 query + 单 MLP 评分，整体推理复杂度降为 O(L_Q²) + n·O(1)（n 为候选文档数），打破了重排器 n·O(L_D + L_Q)² 的二次瓶颈，端到端延迟从 980ms 降到 95ms（10× 加速）。\n\n## 4. 实验结果分析\n\n### 4.1 Rationale-based 检索（核心指标）\n\nESConv（共情对话检索）：\n| 模型 | R@1 | R@3 | MRR | RT(ms) |\n|------|-----|-----|-----|--------|\n| LaHoRe（教师） | 34.4 | 67.1 | 54.8 | 980 |\n| **Rabtriever** | **32.8** | **66.4** | **54.7** | **95** |\n| LlaMA2Vec（最强双塔基线） | 23.9 | 55.6 | 45.5 | 93 |\n\n→ 学生几乎完全 close 了 '教师 vs 双塔基线' 之间 8.9 个 R@1 点的差距，同时延迟与双塔相当。MRR 几乎与教师持平（54.7 vs 54.8）。\n\nPsyQA、SayCan 上的结论一致：Rabtriever 在 R@3、MRR 上接近教师，在 R@1 上保留教师 90%+ 性能，明显优于所有双塔基线。\n\n### 4.2 消融实验（Table 3，PsyQA / SayCan）\n\n| 变体 | R@1 | 说明 |\n|------|-----|------|\n| 完整 Rabtriever | 32.8 / 67.3 | baseline |\n| w/o MLP·eD 相乘 | 2.0 / 9.6 | 灾难性失败 |\n| w/o F_MSE | 0.0 / 23.1 | F_MSE 是收敛核心 |\n| w/o KL_rev | 24.1 / 21.2 | KL 也很关键 |\n| 用正向 KL 替换 | 28.4 / 46.8 | 反向 KL 必要 |\n\n→ 每个组件都不可省，但其中 F_MSE 与 MLP-multiplication 是必杀，KL_rev 是 fine-tuning。\n\n### 4.3 跨域泛化\n\n- MS MARCO（in-domain QA 检索）：MRR@10 = 49.30（教师 52.4，最佳双塔基线 ~46）——保留教师 94% 性能\n- BEIR 13 个子任务零样本平均：Rabtriever nDCG@10 = 58.2（教师 65.8，GritLM 59.2）——略逊于教师，但与 GritLM 这种 SOTA 双塔接近\n- 在 BEIR 13 个子任务里 Rabtriever 拿到 2 个 SOTA、4 个第二，证明知识蒸馏后的能力具备一定的零样本迁移性，但确实在 OOD 上有 7.6 点 nDCG 差距\n\n### 4.4 复杂度与可扩展性（Figure 4 / 5）\n\n- Figure 4：Rabtriever 时间随文档长度线性增长，教师二次增长——文档变长时 gap 越来越大\n- Figure 5：把 backbone 从 7B 缩到 1.5B 甚至 0.5B，Rabtriever 仍能达到与 7B LlaMA2Vec 相当的水平——这意味着 'JEPA 蒸馏' 可以独立放大或缩小学生规模，部署灵活\n\n## 5. 局限与未来方向\n\n论文 Appendix C 自陈了几个限制：\n\n1. **零样本 OOD 性能下降：** BEIR 上 Rabtriever 比教师低 7.6 nDCG 点，且只在 2/13 任务拿到 SOTA。蒸馏明显损失了一部分跨域泛化能力。\n2. **数据集覆盖窄：** 主要实验只在 3 个 rationale-based 数据集上做（共情、心理、机器人指令），尚未在大规模 web 检索（如 ClueWeb22）上验证。\n3. **JEPA 缺乏理论保证：** 该 energy function 在检索蒸馏场景下没有形式化收敛证明，目前是经验性 work。\n4. **Predictor 简单：** MLP + element-wise mul 表达能力有限；更复杂的 cross-attention 预测器是否能进一步缩小与教师差距未知。\n\n论文未明确提及但显然存在的限制：(a) 教师 prompt 设计强依赖于 'true/false' 单 token 分类，对于细粒度多档相关度评分（如 0-4 graded）需要重新设计；(b) on-policy 蒸馏需要在线跑教师 inference，训练阶段比 offline KD 慢约 30-40%。\n\n## 6. 工业实践意义\n\n**对社区 UGC 搜索的核心启示：**\n\n1. **'Generative reranker → Bi-encoder' 的蒸馏范式可以直接落地。** 社区搜索的 query-doc 语义鸿沟（口语 query vs 长帖正文）和论文中的 ESConv/PsyQA 同质化程度很高。先用一个 7B-13B 的 LLM 当教师对小批量 (q, d) 标记相关性，再蒸馏到双塔，几乎是把 cross-encoder 的判别力 '免费' 注入 ANN 召回栈。\n\n2. **'Doc-first prompt + reverse KL' 是值得复用的 trick：** 这两个看似细节的设计带来巨大差距。任何想做 LLM 蒸馏的团队都应：(a) 把可缓存的 entity 放在 prompt 前面，确保 causal attention 对其表征独立；(b) 用 reverse KL 而非正向 KL 训练 binary 决策。\n\n3. **延迟数据可以直接对账上线：** 95ms ≈ 双塔 baseline，且文档可全离线编。社区搜索动辄千万-亿级文档库，正好用上 doc embedding 离线全量预计算的优势。建议先在 'session 内相关问题推荐' 这种千级别召回场景试点。\n\n4. **OOD 退化要警惕：** BEIR 上 7.6 nDCG 点的差距提醒我们，蒸馏出来的双塔不能完全替代 cross-encoder 重排——线上仍需把它放在 retriever 位置（召回 1000 -> 100），重排阶段保留一个更轻量的 cross-encoder 才稳妥。\n\n5. **基础设施要求温和：** 8×A100 < 10 小时即可完成蒸馏，对中型团队完全可行；推理 vLLM + prefix cache 已是工业标配。这是少数 'paper-to-prod' 距离极短的工作。\n\n部署清单：(a) 准备一个可信的 LLM 重排器作为教师（Qwen2-7B 或类似规模即可，无需巨型）；(b) 离线给百万级 (q, d) 对打教师分；(c) 训 MLP predictor + 双塔；(d) 文档 embedding 全量预计算；(e) 线上以双塔形式服务，召回阶段直接用蒸馏后的分数，而不需要再过 cross-encoder。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>本文针对的是 &#x27;rationale-based retrieval&#x27;（理由型检索）这一新兴任务：与传统基于事实匹配的检索（如 MS MARCO 风格 QA）不同，理由型检索需要找到一段在语义上能够支撑/共情/对齐查询的文档（典型场景包括情感咨询 ESConv、心理问答 PsyQA、机器人指令对齐 SayCan）。这类任务对 query-document 之间细粒度的因果与共情判别要求很高，传统双塔（独立编码）模型在这类基准上的表现远落后于 LLM-based cross-encoder 重排器：例如在 ESConv 上最强的 LLM 重排器 LaHoRe 的 R@1 = 34.4 / MRR = 54.8，而最强的双塔基线 LlaMA2Vec 仅有 R@1 = 23.9 / MRR = 45.5——绝对差距 ≈10 个 R@1 点。</p>\n<p>但 LLM 重排器的代价是工业不可承受的：单 query 响应时间 ~980ms（vs 双塔 ~93ms）、且时间复杂度对文档长度二次增长。这使得 LaHoRe 类方案只能停留在小规模 reranking 后处理阶段，不能进入真正的检索/召回主干。本文动机就是要 &#x27;保留 LLM 重排器对 query-document 的深度理解，但获得双塔检索器的延迟特性&#x27;。</p>\n<h2>2. 方法详解</h2>\n<h3>2.1 教师：LLM 生成式重排器</h3>\n<p>首先训练一个 LLM 生成式重排器作为蒸馏教师。关键 prompt 模版如下（注意 doc 在前、query 在后）：</p>\n<pre><code>Document: {D}\nQuery: {Q}\nCan Query be appropriately replied with Document?\nIf the answer is true, choose &lt;T&gt;; otherwise, choose &lt;F&gt;.</code></pre>\n<p>相关性得分由 &#x27;true/false&#x27; 两个 token 的对数概率归一化而来：score = log P(&lt;T&gt;) / (log P(&lt;T&gt;) + log P(&lt;F&gt;))。这种 &#x27;doc-first / query-last&#x27; 安排有一个非平凡的好处：因为 LLM 是 causal attention，document embedding 在 doc-only 编码与 doc+query 联合编码下数学上完全相同（论文 Eq.8），意味着所有 doc embedding 可以离线一次性预计算并缓存。教师在 SFT 阶段用所有 (q,d) 正负对 + cross-entropy 训练。</p>\n<h3>2.2 学生：Rabtriever（JEPA-style 双编码器）</h3>\n<p>核心设计是把传统双塔的 &#x27;cosine + dot product&#x27; 评分头替换为一个轻量级的 JEPA 预测器，并用 on-policy 蒸馏对齐到教师。</p>\n<p>架构：</p>\n<ul>\n<li>backbone 用与教师同款的 Qwen2-7B-Instruct，所有 transformer 参数全部冻结</li>\n<li>query 与 document 独立编码，分别取最后一层 token embedding eQ、eD</li>\n<li>在 LLM 输出和 scoring head 之间插入 JEPA 预测器：</li>\n</ul>\n<p>  ```<br>  eQ_student = MLP_θ(eQ) ⊙ eD[-1]<br>  ```<br>  其中 MLP 是 2 层带 ReLU 的小网络（仅 θ 可训练），eD[-1] 是文档的最后一个 token 嵌入，作为 JEPA 中的 latent control variable z；⊙ 是逐元素相乘</p>\n<ul>\n<li>把 eQ_student 送回原 (frozen) scoring head 得到 score</li>\n</ul>\n<p>损失函数（Eq.13）由两部分组成：</p>\n<pre><code>F = F_MSE(eQ_student, eQ_teacher) + w · KL_rev(P_student || P_teacher)</code></pre>\n<ul>\n<li>F_MSE：JEPA 风格的能量函数，要求学生 &#x27;predicted query embedding&#x27; 在 latent 空间逼近教师的真实 query embedding</li>\n<li>KL_rev：反向 KL 散度，把学生输出 logits 拉向教师输出 logits；w = 0.25</li>\n<li>反向 KL（而非常用的正向 KL）是关键设计：reverse KL 鼓励学生的概率质量集中在 &#x27;true/false&#x27; 这两个真正决定相关性的 token 上，避免正向 KL &#x27;mean-seeking&#x27; 引入大量噪声 token 的拉力</li>\n</ul>\n<h3>2.3 训练设置</h3>\n<table><thead><tr><th>项目</th><th>值</th></tr></thead><tbody><tr><td>backbone</td><td>Qwen2-7B-Instruct（冻结）</td></tr><tr><td>硬件</td><td>8×A100</td></tr><tr><td>训练时间</td><td>&lt; 10 小时</td></tr><tr><td>学习率</td><td>1e-6</td></tr><tr><td>batch size</td><td>16</td></tr><tr><td>文档最大长度</td><td>32 tokens（左 pad）</td></tr><tr><td>总窗口</td><td>4096 tokens</td></tr><tr><td>KL 损失权重 w</td><td>0.25</td></tr><tr><td>推理框架</td><td>vLLM + prefix cache</td></tr></tbody></table>\n<p>这是典型的 &#x27;on-policy&#x27; 蒸馏：student 在 mini-batch 上前向 → 同 batch 用教师 inference 得到目标 → 学生反传更新 MLP（其余参数冻结）。整套流程对算力非常友好。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>&#x27;doc-first&#x27; 因果对称 prompt：</strong> 把 document 放在 query 之前，配合 LLM 的 causal attention 使 doc embedding 在联合编码与独立编码下严格相等。这是把 &#x27;联合编码教师&#x27; 蒸馏到 &#x27;独立编码学生&#x27; 的理论保证，避免了传统蒸馏中 student-teacher 输入分布不一致带来的偏差。</li>\n</ol>\n<ol>\n<li><strong>JEPA 风格的预测器插件：</strong> 把 &#x27;query embedding 的语义对齐&#x27; 形式化为 JEPA 中的 latent prediction 任务。MLP_θ(eQ) ⊙ eD[-1] 这一逐元素乘是低秩、低算力的对齐器，在仅训练 2 层 MLP 的前提下就能让冻结的 7B backbone 输出贴近教师；这比 LoRA 之类参数化方法成本更低。</li>\n</ol>\n<ol>\n<li><strong>Reverse KL + MSE 复合损失：</strong> 论文消融显示去掉 reverse KL 让 R@1 从 32.8 跌到 24.1，去掉 F_MSE 让 R@1 跌到 ~0；用正向 KL 替换反向 KL 也明显劣化（28.4 vs 32.8）。这套损失组合是 Rabtriever 性能的真正引擎。</li>\n</ol>\n<ol>\n<li><strong>线性时间复杂度推理：</strong> 通过文档 embedding 离线缓存 + 在线只编 query + 单 MLP 评分，整体推理复杂度降为 O(L_Q²) + n·O(1)（n 为候选文档数），打破了重排器 n·O(L_D + L_Q)² 的二次瓶颈，端到端延迟从 980ms 降到 95ms（10× 加速）。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<h3>4.1 Rationale-based 检索（核心指标）</h3>\n<p>ESConv（共情对话检索）：</p>\n<table><thead><tr><th>模型</th><th>R@1</th><th>R@3</th><th>MRR</th><th>RT(ms)</th></tr></thead><tbody><tr><td>LaHoRe（教师）</td><td>34.4</td><td>67.1</td><td>54.8</td><td>980</td></tr><tr><td><strong>Rabtriever</strong></td><td><strong>32.8</strong></td><td><strong>66.4</strong></td><td><strong>54.7</strong></td><td><strong>95</strong></td></tr><tr><td>LlaMA2Vec（最强双塔基线）</td><td>23.9</td><td>55.6</td><td>45.5</td><td>93</td></tr></tbody></table>\n<p>→ 学生几乎完全 close 了 &#x27;教师 vs 双塔基线&#x27; 之间 8.9 个 R@1 点的差距，同时延迟与双塔相当。MRR 几乎与教师持平（54.7 vs 54.8）。</p>\n<p>PsyQA、SayCan 上的结论一致：Rabtriever 在 R@3、MRR 上接近教师，在 R@1 上保留教师 90%+ 性能，明显优于所有双塔基线。</p>\n<h3>4.2 消融实验（Table 3，PsyQA / SayCan）</h3>\n<table><thead><tr><th>变体</th><th>R@1</th><th>说明</th></tr></thead><tbody><tr><td>完整 Rabtriever</td><td>32.8 / 67.3</td><td>baseline</td></tr><tr><td>w/o MLP·eD 相乘</td><td>2.0 / 9.6</td><td>灾难性失败</td></tr><tr><td>w/o F_MSE</td><td>0.0 / 23.1</td><td>F_MSE 是收敛核心</td></tr><tr><td>w/o KL_rev</td><td>24.1 / 21.2</td><td>KL 也很关键</td></tr><tr><td>用正向 KL 替换</td><td>28.4 / 46.8</td><td>反向 KL 必要</td></tr></tbody></table>\n<p>→ 每个组件都不可省，但其中 F_MSE 与 MLP-multiplication 是必杀，KL_rev 是 fine-tuning。</p>\n<h3>4.3 跨域泛化</h3>\n<ul>\n<li>MS MARCO（in-domain QA 检索）：MRR@10 = 49.30（教师 52.4，最佳双塔基线 ~46）——保留教师 94% 性能</li>\n<li>BEIR 13 个子任务零样本平均：Rabtriever nDCG@10 = 58.2（教师 65.8，GritLM 59.2）——略逊于教师，但与 GritLM 这种 SOTA 双塔接近</li>\n<li>在 BEIR 13 个子任务里 Rabtriever 拿到 2 个 SOTA、4 个第二，证明知识蒸馏后的能力具备一定的零样本迁移性，但确实在 OOD 上有 7.6 点 nDCG 差距</li>\n</ul>\n<h3>4.4 复杂度与可扩展性（Figure 4 / 5）</h3>\n<ul>\n<li>Figure 4：Rabtriever 时间随文档长度线性增长，教师二次增长——文档变长时 gap 越来越大</li>\n<li>Figure 5：把 backbone 从 7B 缩到 1.5B 甚至 0.5B，Rabtriever 仍能达到与 7B LlaMA2Vec 相当的水平——这意味着 &#x27;JEPA 蒸馏&#x27; 可以独立放大或缩小学生规模，部署灵活</li>\n</ul>\n<h2>5. 局限与未来方向</h2>\n<p>论文 Appendix C 自陈了几个限制：</p>\n<ol>\n<li><strong>零样本 OOD 性能下降：</strong> BEIR 上 Rabtriever 比教师低 7.6 nDCG 点，且只在 2/13 任务拿到 SOTA。蒸馏明显损失了一部分跨域泛化能力。</li>\n<li><strong>数据集覆盖窄：</strong> 主要实验只在 3 个 rationale-based 数据集上做（共情、心理、机器人指令），尚未在大规模 web 检索（如 ClueWeb22）上验证。</li>\n<li><strong>JEPA 缺乏理论保证：</strong> 该 energy function 在检索蒸馏场景下没有形式化收敛证明，目前是经验性 work。</li>\n<li><strong>Predictor 简单：</strong> MLP + element-wise mul 表达能力有限；更复杂的 cross-attention 预测器是否能进一步缩小与教师差距未知。</li>\n</ol>\n<p>论文未明确提及但显然存在的限制：(a) 教师 prompt 设计强依赖于 &#x27;true/false&#x27; 单 token 分类，对于细粒度多档相关度评分（如 0-4 graded）需要重新设计；(b) on-policy 蒸馏需要在线跑教师 inference，训练阶段比 offline KD 慢约 30-40%。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>对社区 UGC 搜索的核心启示：</strong></p>\n<ol>\n<li><strong>&#x27;Generative reranker → Bi-encoder&#x27; 的蒸馏范式可以直接落地。</strong> 社区搜索的 query-doc 语义鸿沟（口语 query vs 长帖正文）和论文中的 ESConv/PsyQA 同质化程度很高。先用一个 7B-13B 的 LLM 当教师对小批量 (q, d) 标记相关性，再蒸馏到双塔，几乎是把 cross-encoder 的判别力 &#x27;免费&#x27; 注入 ANN 召回栈。</li>\n</ol>\n<ol>\n<li><strong>&#x27;Doc-first prompt + reverse KL&#x27; 是值得复用的 trick：</strong> 这两个看似细节的设计带来巨大差距。任何想做 LLM 蒸馏的团队都应：(a) 把可缓存的 entity 放在 prompt 前面，确保 causal attention 对其表征独立；(b) 用 reverse KL 而非正向 KL 训练 binary 决策。</li>\n</ol>\n<ol>\n<li><strong>延迟数据可以直接对账上线：</strong> 95ms ≈ 双塔 baseline，且文档可全离线编。社区搜索动辄千万-亿级文档库，正好用上 doc embedding 离线全量预计算的优势。建议先在 &#x27;session 内相关问题推荐&#x27; 这种千级别召回场景试点。</li>\n</ol>\n<ol>\n<li><strong>OOD 退化要警惕：</strong> BEIR 上 7.6 nDCG 点的差距提醒我们，蒸馏出来的双塔不能完全替代 cross-encoder 重排——线上仍需把它放在 retriever 位置（召回 1000 -&gt; 100），重排阶段保留一个更轻量的 cross-encoder 才稳妥。</li>\n</ol>\n<ol>\n<li><strong>基础设施要求温和：</strong> 8×A100 &lt; 10 小时即可完成蒸馏，对中型团队完全可行；推理 vLLM + prefix cache 已是工业标配。这是少数 &#x27;paper-to-prod&#x27; 距离极短的工作。</li>\n</ol>\n<p>部署清单：(a) 准备一个可信的 LLM 重排器作为教师（Qwen2-7B 或类似规模即可，无需巨型）；(b) 离线给百万级 (q, d) 对打教师分；(c) 训 MLP predictor + 双塔；(d) 文档 embedding 全量预计算；(e) 线上以双塔形式服务，召回阶段直接用蒸馏后的分数，而不需要再过 cross-encoder。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.22849",
+      "title": "R$^3$AG: Retriever Routing for Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2604.22849",
+      "authors": "Anonymous (arXiv 2604.22849)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对 RAG 中 'one-size-fits-all' 检索范式的瓶颈，提出 R$^3$AG 路由框架：把检索器能力解耦为 '检索质量' 和 '生成有用性' 两个可学习维度，根据 query 动态选择最适合的检索器。与之前只看语义相关性的路由不同，R$^3$AG 显式建模检索结果对下游生成器最终回答正确性的贡献。在多个 RAG benchmark 上相比 BM25/Dense/Hybrid 的最佳单一检索器和现有路由方法都有显著提升。",
+      "key_insight": "传统检索质量指标（nDCG、Recall）和下游任务收益并不完全等价——一篇高相关度文档可能因为表述方式问题反而干扰生成器。社区搜索若引入 RAG/生成式回答，需要把 '召回是否有助于最终回答' 作为新的优化目标。可借鉴的设计：(1) 用 'retrieval quality + generation utility' 双维度评分把召回器能力剖面化；(2) Query 级路由可以在 BM25/Dense/LLM 召回之间动态切换，对长尾 query 用更重的语义召回，对头部 query 用 BM25 + 缓存。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.22759",
+      "title": "Beyond Static: Related Questions Retrieval Through Conversations in Community Question Answering",
+      "url": "https://arxiv.org/abs/2604.22759",
+      "authors": "Anonymous (arXiv 2604.22759)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对 Stack Overflow 这类社区问答平台 (cQA) 的相关问题检索任务，作者提出 TeCQR：通过 tag 增强的澄清问题构建用户-系统多轮对话，把静态匹配转化为对话式细粒度匹配。框架还包含一个噪声容忍模块，用问题与 tag 之间的语义相似度对噪声 tag 进行加权过滤。在公开 cQA 基准上 TeCQR 相比传统的双塔与 cross-encoder 静态匹配模型有稳定的 MRR/nDCG 提升，特别是在长尾查询和模糊查询上提升更明显。",
+      "key_insight": "完全对应社区 UGC 搜索场景：用户输入往往不完整、含糊，传统静态相关度匹配缺乏上下文。该工作的可借鉴点：(1) 用 tag 系统反向构造澄清问题，是冷启动构造对话式数据的低成本路径，社区平台的话题/标签体系都可以这样玩；(2) 显式的 noise-tolerance 模块对真实社区里 tag 噪声很高的现实非常关键——直接把 tag 当 query 的扩展会被噪声反噬。建议社区搜索引擎尝试把搜索框升级为 '理解-澄清-检索' 的轻量交互式流程。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.23388",
+      "title": "A Parametric Memory Head for Continual Generative Retrieval",
+      "url": "https://arxiv.org/abs/2604.23388",
+      "authors": "Kidist Amde Mekonnen, Yubao Tang, Maarten de Rijke",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "生成式检索 (GenIR) 把整个检索过程压缩到一个直接从 query 解码 docid 的神经模型中，但这种 'model-as-index' 范式难以适应文档集动态变化——传统的全量微调或 PEFT 都会触发灾难性遗忘。作者提出参数化记忆头 (Parametric Memory Head, PMH)：在主模型基础上增加一个独立的、可增量更新的记忆头，新文档只需训练记忆头即可被索引，主体参数保持冻结。实验显示 PMH 在多轮文档更新后比标准 fine-tune 与 LoRA 在历史文档保留率与新文档召回率上都有大幅提升。",
+      "key_insight": "生成式检索是 TIGER/HSTU 之后搜索/推荐范式革新的关键方向，但 'model 即索引' 必然遇到增量更新难题，这是工业落地的核心阻塞点。PMH 的思路具有极高借鉴价值：(1) 把 docid 编码能力从主干表征中分离到一个轻量级的可插拔头，工程上类似把倒排表从主模型剥离；(2) 这种 '冻主干 + 增量头' 模式天然适合 UGC 社区每天百万级新增帖子的场景。但要落地还需解决 docid 编码方式（语义 ID vs hash ID）与延迟约束。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.24608",
+      "title": "Learning to Route Queries to Heads for Attention-based Re-ranking with Large Language Models",
+      "url": "https://arxiv.org/abs/2604.24608",
+      "authors": "Yuxing Tian, Fengran Mo, Zhiqi Huang, Weixu Zhang, Jian-Yun Nie",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "把 LLM 当作零样本细粒度重排器时，现有方法要么聚合所有 attention head 的信号，要么用启发式规则静态选一组。但作者发现 informative 的 head 在不同 query/domain 下会变化，简单聚合多 head 还会因冗余/冲突反而掉点。本文提出 RouteHead：训练一个轻量路由器把每个 query 映射到最优 head 子集，相关性分数只从被选中的 head 聚合。由于缺乏 query-head 监督标签，作者通过离线搜索构造伪标签训练 router。在 BEIR 等多个 benchmark 上 RouteHead 相对所有 head 平均与人工选 head 的基线分别有 3-7 nDCG 点提升。",
+      "key_insight": "LLM 作零样本重排的本质是 attention 信号的 'informational geometry'——head 的判别力随 query 漂移。这篇启发了几个工程实践：(1) 真实社区搜索的 query 多样性极强 (代码、生活、情感)，不应共用一组 head；(2) 用离线 grid search + 蒸馏 router 的范式，可以在不增加 LLM 推理成本的前提下显著提升 attention-based 重排质量；(3) 这种 'meta 层稀疏路由' 思路可以推广到 prompt 选择、专家模型选择，是把 LLM 系统化的重要基本功。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.23321",
+      "title": "MMEB-V3: Measuring the Performance Gaps of Omni-Modality Embedding Models",
+      "url": "https://arxiv.org/abs/2604.23321",
+      "authors": "Haohang Huang, Xuan Lu, Mingyi Su, Xuan Zhang, Ziyan Jiang, Ping Nie, Kai Zou, Tomas Pfister, Wenhu Chen, Wei Zhang, Xiaoyu Shen, Rui Meng",
+      "company": [
+        "Google",
+        "Waterloo"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "多模态 embedding 的现有 benchmark 大多只覆盖部分模态，难以系统评估全模态表征能力。作者提出 MMEB-V3：覆盖 text/image/video/audio + agent 场景的全模态 embedding benchmark，并构造了 OmniSET（语义等价的跨模态实例对），用以解耦 '语义相似度' 与 '模态偏置'。在 30+ 主流 embedding 模型的系统评测中发现三个关键现象：(1) 模型在跨模态检索时常常误召回同模态结果；(2) 模型对模态偏置的敏感度差异巨大；(3) 当前没有任何模型在所有模态对上达到一致水平。",
+      "key_insight": "对社区搜索这种以文本为主、但越来越含图片/视频/音频的场景，全模态 embedding 的选型是关键工程决策。该 benchmark 可以直接拿来体系化测试候选模型，避免 '某模态强但其他模态崩塌' 的隐患。值得借鉴的方法学：(1) OmniSET 的语义等价构造法可以套用到自家业务，做内部模型的模态鲁棒性测试；(2) 模型对模态的偏置必须先解耦再评估，否则离线 nDCG 与线上多模态混排表现不一致是常见 trap。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.23734",
+      "title": "Prism-Reranker: Beyond Relevance Scoring -- Jointly Producing Contributions and Evidence for Agentic Retrieval",
+      "url": "https://arxiv.org/abs/2604.23734",
+      "authors": "Dun Zhang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.5,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "面向 RAG 与自主 agent 的下游消费者，传统重排器只输出标量相关性分数，迫使 agent 把整篇文档塞进 LLM 上下文，浪费大量 token 在边角内容上。作者提出 Prism-Reranker：基于 Qwen3.5 训练 0.8B/2B/4B/9B 四种规格的重排器，除了 yes/no 相关性判断外，命中 yes 时还会输出 (i) contribution statement（这篇文档对 query 有什么贡献）和 (ii) evidence passage（剥离冗余、只保留 query 相关信号的自包含重写）。训练混合点态蒸馏（来自商业 reranker API）与有监督微调。",
+      "key_insight": "把重排器从 '打分器' 升级为 'contribution + evidence 提取器'，正是社区搜索向 'AI 总结答案' 演化的关键基建。具体启发：(1) 让重排同时产出证据片段，可以减少下游 LLM 的 prompt token 60%+，显著降低 RAG/智能搜索成本；(2) 蒸馏自商业 reranker API 的范式可以快速冷启动 evidence rewrite 能力；(3) 0.8B 起步的多档规格便于在社区搜索的不同 traffic 等级（首页、长尾、深度页）灵活部署。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.24564",
+      "title": "MEG-RAG: Quantifying Multi-modal Evidence Grounding for Evidence Selection in RAG",
+      "url": "https://arxiv.org/abs/2604.24564",
+      "authors": "Xihang Wang, Zihan Wang, Chengkai Huang, Quan Z. Sheng, Lina Yao",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "多模态 RAG (MRAG) 现有评估指标多依赖启发式 position-based confidence，难以判断检索结果是否真正支撑答案语义核心。作者提出 MEG（Multi-modal Evidence Grounding）指标：聚焦答案中的高 IDF 信息词 anchor，量化检索证据对 anchor 的支撑度。基于 MEG 训练一个多模态重排器 MEG-RAG，让重排目标显式对齐到证据-语义锚点。在 OK-VQA、InfoSeek 等多模态 QA benchmark 上 MEG-RAG 比 vanilla MRAG 在最终 QA 准确率上提升 3-5 个百分点。",
+      "key_insight": "评估指标驱动训练目标——这篇用 MEG 指标作为重排器的监督信号，是把 'evidence supports answer' 作为新优化目标的一种实现。借鉴价值：(1) 高 IDF anchor 词的语义支撑度是一个比 cosine similarity 更稳健的相关性代理；(2) 对社区里图文混合的 UGC 搜索，多模态重排目标若不考虑模态间证据支撑，往往是 '看起来匹配但实际无信息' 的假相关——MEG 思路可以给图文混搜带来更稳定的指标。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2604.23783",
+      "title": "S2G-RAG: Structured Sufficiency and Gap Judging for Iterative Retrieval-Augmented QA",
+      "url": "https://arxiv.org/abs/2604.23783",
+      "authors": "Anonymous (arXiv 2604.23783)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "迭代式 RAG 的核心难题是控制 'next retrieval query' 与 '何时停止'，否则证据链不全或冗余文本干扰后续推理。作者提出 S2G-RAG：用一个显式 controller S2G-Judge，每轮判断当前证据 memory 是否够支持回答；不够则输出结构化的 'gap items'（缺失信息描述），并据此构造下一轮的检索 query。框架还维护一个 sentence-level Evidence Context，从历史检索中抽取 compact 子集减少噪声累积。在 HotpotQA、2WikiMQA、MuSiQue 等多跳 QA benchmark 上稳定优于 IRCoT、Self-Ask 等迭代基线。",
+      "key_insight": "把 '检索充分性' 显式当作一个判别任务，而非隐式靠生成器自主停止，是迭代检索系统稳定性的关键。社区里的多步骤问答（'我家路由器闪红灯怎么办' → 需要先确认型号）很合适这种范式。可借鉴：(1) gap items 的结构化输出比自由文本更可控，便于映射到下一跳 query 模板；(2) 句级 Evidence Context 缓存避免 'context bloat'，对社区移动端 RAG 的延迟与成本都关键。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2604.23396",
+      "title": "Lost in Decoding? Reproducing and Stress-Testing the Look-Ahead Prior in Generative Retrieval",
+      "url": "https://arxiv.org/abs/2604.23396",
+      "authors": "Kidist Amde Mekonnen, Yongkang Li, Yubao Tang, Simon Lupart, Maarten de Rijke",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-28",
+      "total_score": 3.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "生成式检索常用 trie-constrained beam search 解码 docid，但在有限 beam 下相关 prefix 容易被早期剪枝。PAG (Planning Ahead in Generative Retrieval) 通过 simultaneous decoding 计算文档级 look-ahead prior 缓解此问题。本文系统重现 PAG 并对其解码行为做压力测试：在原作者放出的 checkpoint 上验证主要结论，但发现 (1) 看似稳健的提升对 beam size 异常敏感；(2) look-ahead 的收益在长 docid 与高度倾斜分布上明显衰减；(3) 部分提升其实来自 doc-level normalization 而非 'planning' 本身。",
+      "key_insight": "极少数论文愿意做这种严肃的可复现性研究，但它对工业团队意义重大——盲目复用 GenIR 论文 trick 容易踩坑。该工作给生成式检索的工程师三个警示：(1) Beam size 是 GenIR 系统的隐性超参，必须像 batch size 一样在 ablation 中显式扫；(2) 'look-ahead' 类方法的收益和 docid 长度强相关，TIGER 风格语义 ID 与 hash ID 的表现不可类比；(3) 当看到 'X% nDCG 提升' 时，先去查论文是否做了 doc-level normalization 控制。"
+    }
+  ],
+  "code_projects": []
+}

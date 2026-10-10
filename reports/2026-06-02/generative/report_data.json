@@ -1,0 +1,206 @@
+{
+  "date": "2026-06-02",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 49,
+    "papers_selected": 4,
+    "score_min": 3.0,
+    "score_max": 4.0
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2602.13581",
+      "title": "Climber-Pilot: A Non-Myopic Generative Recommendation Model Towards Better Instruction-Following",
+      "url": "https://arxiv.org/abs/2602.13581",
+      "authors": "Da Guo, Shijia Wang, Qiang Xiao, Yintao Ren, Weisheng Li, Songpei Xu, Ming Yue, Bin Huang, Guanlin Wu, Chuanjiang Luo",
+      "company": [
+        "NetEase"
+      ],
+      "source": "arxiv",
+      "published": "2026-02-18",
+      "total_score": 4.0,
+      "preference_bonus": 0.4,
+      "adjusted_score": 4.4,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "面向工业级生成式检索推荐，论文指出生成式检索因单步推理 + 严格延迟约束而存在“短视”问题：把多样的用户意图坍缩为局部最优、难以捕捉长程多物品消费模式；同时难以遵循类目控制、策略约束等显式检索指令。Climber-Pilot 提出两点：TAMIP（时间感知多物品预测）通过时间感知掩码把长程多物品的前瞻能力蒸馏进模型参数，缓解短视的同时保留单步推理效率；CGSA（条件引导稀疏注意力）用稀疏注意力把业务约束直接注入生成过程，不引入额外推理步骤。在网易云音乐的离线实验与线上 A/B 中核心业务指标提升 4.24%。",
+      "key_insight": "生成式检索的两大落地痛点——短视与指令遵循——被分别用“训练期蒸馏长程前瞻”和“生成期稀疏注意力注入约束”解决，关键在于二者都不增加线上推理步数。对受延迟约束的生成式推荐/检索团队，TAMIP 的时间感知掩码提供了在单步解码下注入长程目标的训练技巧；CGSA 则为“类目/策略硬约束如何不依赖后置过滤”给出了可借鉴的结构。4.24% 的线上提升来自真实音乐流媒体场景，说明该范式在工业体量下可用。",
+      "deep_reading": {
+        "paper_id": "arxiv:2602.13581",
+        "title": "Climber-Pilot: A Non-Myopic Generative Recommendation Model Towards Better Instruction-Following",
+        "status": "completed",
+        "content": "## Climber-Pilot 深度解读\n\n### 1. 问题与动机\n\n工业生成式检索（generative retrieval）以 next-item prediction（NIP）为目标、在严格延迟约束下做单步推理，论文指出它存在两个结构性缺陷。\n\n**近视（myopia）**：单步 NIP 让模型把多样的用户意图坍缩为局部最优的单点预测，无法建模长程、多物品的消费模式。作者用 10 步预测实验佐证——纯 NIP 在预测步数增加时性能\"显著下滑\"。\n\n**消费滞后（consumption lag）/曝光偏差**：同一次检索请求内的多个物品之间没有请求内因果依赖（因果只存在于跨请求之间），但交互日志把同批曝光的 co-exposed 物品机械地串成稠密序列，制造出虚假的时序模式。这是把批量曝光日志直接喂给自回归模型的隐患。\n\n**指令遵循缺失**：真实检索系统要遵守类目级控制、策略约束等显式指令，而已有的条件化或后置过滤要么损相关性、要么损效率。线上实测条件合规率（condition compliance）平均仅约 40%。\n\n### 2. 方法详解\n\nClimber-Pilot 是统一的生成式检索框架，骨干为 3 层 Transformer（工业场景 d=128，Amazon 公开集 d=32），ID embedding 与类目特征拼接输入。两大核心模块：\n\n**Time-Aware Multi-Item Prediction（TAMIP，时间感知多物品预测）**：在共享用户表示上接 K 个并行投影分支（实验 K=2），每个分支 k 用一层独立参数的 Transformer 预测第 i_{n+k} 个物品，从而在训练期注入\"长程预见\"，但推理期仍是单步、不增加在线复杂度。关键是 **Time-Aware Masking**：对目标时间戳前一个\"安全间隔\"Δτ 内的历史交互做 -∞ 掩码，\n\n```\nM_temp(i,j) = -∞  if τ_j ∈ [τ_{n+1}-Δτ, τ_{n+1}];  否则 0\n```\n\nΔτ 经验上取线上日志平均服务时间间隔，在其生产系统里是 **15 分钟**。这样可屏蔽同批曝光制造的虚假时序依赖。损失为每分支的 sampled softmax。\n\n**Condition-Guided Sparse Attention（CGSA，条件引导稀疏注意力）**：把指令 c（如音乐曲风）变成稀疏注意力掩码——只允许注意到 C(item_j)=c 的物品（其余 -∞），且仅作用于最后的 TAMIP 分支，前 L 层保留预训练注意力以保效率。SFT 目标是在截断的上下文窗口（S_{n-K+1}…S_n）上做带条件的多分支 TAMIP 损失，强制模型对服务期变长度历史鲁棒。指令可预计算缓存，单次推理支持 P 个条件。\n\n**训练设置**：预训练 450 亿（45B）交互、8×A100；预训练 lr 5e-4，SFT lr 1e-5，batch 256。\n\n### 3. 核心技术贡献\n\n1. **诊断 myopia + consumption lag**：首次把单步 NIP 的\"近视\"识别为生成式检索的根本限制，并指出批量曝光的消费滞后会放大它——这是对\"日志即序列\"惯例的反思。\n2. **训练期蒸馏式 TAMIP**：用多分支并行预测把长程预见\"蒸馏\"进单步模型，在线推理不增复杂度，回避了多步 beam search 的延迟。\n3. **注意力级条件化 CGSA**：把指令遵循做成注意力掩码而非后置过滤或 AdaLN 式条件注入，兼顾相关性与合规率。\n4. **大规模线上验证**：在网易云音乐部署并 A/B。\n\n### 4. 实验结果分析\n\n**离线 Hit Rate（工业数据集预训练）**：Climber-Pilot HR@10=4.02% / HR@20=6.40% / HR@50=10.95%，对比 HSTU HR@10=3.24%、PinRec 3.07%——HR@10 相对提升约 24%。Amazon-Beauty 上 HR@50=12.12% 略胜 PinRec 12.08%（公开小数据集差距收窄）。\n\n**TAMIP 消融**：NIP 随预测步数\"明显下滑\"，MIP 仅\"温和下降\"，TAMIP 在 10 步内\"长期稳定\"。Δτ 敏感性：取 15 分钟时 HR@50 从 10.11% 升到 10.95%（相对约 +8%）；<7.5 分钟几乎无效，30 分钟反而跌到 9.89%（低于 MIP）。说明安全间隔需对齐真实服务节奏。\n\n**指令遵循（SFT）**：CGSA HR@50=18.53%、条件合规 CC@50=78.58%，对比 AdaLN-Zero（HR@50=15.84%，CC=75.49%）相关性与合规双优；PinRec 虽 CC=81.69% 但 HR 明显更低，说明其靠牺牲相关性换合规。\n\n**线上 A/B（网易云音乐）**：通用推荐下完整版 Like Rate +4.24%、总收听时长 +3.25%；推理延迟 7.26ms vs 基线 6.94ms（<5% 开销）。曲风定向推荐下 Like Rate +4.10%，条件合规率从约 40% 提升到 77.9%。多样性按活跃度分层提升：高活用户曲风/语种多样性 +2.56%/+2.63%，低活用户仅 +0.28%/+0.09%（长尾用户增益有限）。\n\n### 5. 局限与未来方向\n\n作者未设独立局限章节，可归纳的约束：K=2 是效率/效果折中，分支增多收益与成本未充分探讨；Δτ 强依赖具体系统的服务间隔，需按业务重调；CGSA 的 SFT 依赖按条件标注的数据集；全部线上结论来自音乐推荐单一领域，跨域（电商、短视频、UGC 搜索）迁移性待验证；低活用户增益微弱说明对稀疏历史用户改善有限。\n\n### 6. 工业实践意义\n\n- **可借鉴**：把\"长程预见\"放到训练期、推理期保持单步，是延迟敏感的召回链路上做生成式推荐的务实路径——<5% 延迟开销换 HR@10 约 24% 相对提升，性价比高。\n- **Time-Aware Masking 直接可用**：凡是把同批曝光日志当序列训练的团队，都可能吃到 consumption lag 的虚假时序依赖；按平均服务间隔做时间掩码是低成本修正，但 Δτ 必须用自家日志的真实节奏标定（论文里 7.5 分钟与 30 分钟都明显变差）。\n- **指令遵循优于后置过滤**：CGSA 用注意力掩码原生融合类目/策略约束，合规率 40%→77.9% 且不牺牲相关性，比 UGC 搜索/推荐里常见的\"召回后再过滤\"更省候选、更不丢相关结果。\n- **部署考量**：3 层 d=128 小模型 + 45B 交互预训练、8×A100 量级，对中等规模团队可承受；指令表示可预计算缓存，单次推理支持多条件，利于多策略并发。\n- **注意长尾**：低活用户多样性几乎不动，对冷启动/稀疏历史用户仍需配合其他方案。\n\n\n### 7. 补充：数据集规模与适用边界\n\n离线评测覆盖 Amazon-Sports（18,357 用户/35,598 物品，平均序列长 8.32）、Amazon-Beauty（22,363/12,101，8.87）、Amazon-Toys（19,412/11,924，8.63）三个公开集与网易工业集（>4000 万用户、>600 万物品、平均序列长 >100）。公开集序列短、物品少，Climber-Pilot 与 PinRec 差距收窄；工业长序列场景下优势才显著放大——这提示该方法的收益主要来自长行为序列与高并发延迟约束，短序列轻量场景不必照搬。对 UGC 短文本搜索这类\"序列偏短、但 query 意图多样\"的场景，更值得借鉴的是 CGSA 的指令级注意力掩码（把 query 意图/类目约束作为软指令），而非 TAMIP 的长程多物品预测本身。",
+        "content_html": "<h2>Climber-Pilot 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>工业生成式检索（generative retrieval）以 next-item prediction（NIP）为目标、在严格延迟约束下做单步推理，论文指出它存在两个结构性缺陷。</p>\n<p><strong>近视（myopia）</strong>：单步 NIP 让模型把多样的用户意图坍缩为局部最优的单点预测，无法建模长程、多物品的消费模式。作者用 10 步预测实验佐证——纯 NIP 在预测步数增加时性能&quot;显著下滑&quot;。</p>\n<p><strong>消费滞后（consumption lag）/曝光偏差</strong>：同一次检索请求内的多个物品之间没有请求内因果依赖（因果只存在于跨请求之间），但交互日志把同批曝光的 co-exposed 物品机械地串成稠密序列，制造出虚假的时序模式。这是把批量曝光日志直接喂给自回归模型的隐患。</p>\n<p><strong>指令遵循缺失</strong>：真实检索系统要遵守类目级控制、策略约束等显式指令，而已有的条件化或后置过滤要么损相关性、要么损效率。线上实测条件合规率（condition compliance）平均仅约 40%。</p>\n<h3>2. 方法详解</h3>\n<p>Climber-Pilot 是统一的生成式检索框架，骨干为 3 层 Transformer（工业场景 d=128，Amazon 公开集 d=32），ID embedding 与类目特征拼接输入。两大核心模块：</p>\n<p><strong>Time-Aware Multi-Item Prediction（TAMIP，时间感知多物品预测）</strong>：在共享用户表示上接 K 个并行投影分支（实验 K=2），每个分支 k 用一层独立参数的 Transformer 预测第 i_{n+k} 个物品，从而在训练期注入&quot;长程预见&quot;，但推理期仍是单步、不增加在线复杂度。关键是 <strong>Time-Aware Masking</strong>：对目标时间戳前一个&quot;安全间隔&quot;Δτ 内的历史交互做 -∞ 掩码，</p>\n<pre><code>M_temp(i,j) = -∞  if τ_j ∈ [τ_{n+1}-Δτ, τ_{n+1}];  否则 0</code></pre>\n<p>Δτ 经验上取线上日志平均服务时间间隔，在其生产系统里是 <strong>15 分钟</strong>。这样可屏蔽同批曝光制造的虚假时序依赖。损失为每分支的 sampled softmax。</p>\n<p><strong>Condition-Guided Sparse Attention（CGSA，条件引导稀疏注意力）</strong>：把指令 c（如音乐曲风）变成稀疏注意力掩码——只允许注意到 C(item_j)=c 的物品（其余 -∞），且仅作用于最后的 TAMIP 分支，前 L 层保留预训练注意力以保效率。SFT 目标是在截断的上下文窗口（S_{n-K+1}…S_n）上做带条件的多分支 TAMIP 损失，强制模型对服务期变长度历史鲁棒。指令可预计算缓存，单次推理支持 P 个条件。</p>\n<p><strong>训练设置</strong>：预训练 450 亿（45B）交互、8×A100；预训练 lr 5e-4，SFT lr 1e-5，batch 256。</p>\n<h3>3. 核心技术贡献</h3>\n<ol>\n<li><strong>诊断 myopia + consumption lag</strong>：首次把单步 NIP 的&quot;近视&quot;识别为生成式检索的根本限制，并指出批量曝光的消费滞后会放大它——这是对&quot;日志即序列&quot;惯例的反思。</li>\n<li><strong>训练期蒸馏式 TAMIP</strong>：用多分支并行预测把长程预见&quot;蒸馏&quot;进单步模型，在线推理不增复杂度，回避了多步 beam search 的延迟。</li>\n<li><strong>注意力级条件化 CGSA</strong>：把指令遵循做成注意力掩码而非后置过滤或 AdaLN 式条件注入，兼顾相关性与合规率。</li>\n<li><strong>大规模线上验证</strong>：在网易云音乐部署并 A/B。</li>\n</ol>\n<h3>4. 实验结果分析</h3>\n<p><strong>离线 Hit Rate（工业数据集预训练）</strong>：Climber-Pilot HR@10=4.02% / HR@20=6.40% / HR@50=10.95%，对比 HSTU HR@10=3.24%、PinRec 3.07%——HR@10 相对提升约 24%。Amazon-Beauty 上 HR@50=12.12% 略胜 PinRec 12.08%（公开小数据集差距收窄）。</p>\n<p><strong>TAMIP 消融</strong>：NIP 随预测步数&quot;明显下滑&quot;，MIP 仅&quot;温和下降&quot;，TAMIP 在 10 步内&quot;长期稳定&quot;。Δτ 敏感性：取 15 分钟时 HR@50 从 10.11% 升到 10.95%（相对约 +8%）；&lt;7.5 分钟几乎无效，30 分钟反而跌到 9.89%（低于 MIP）。说明安全间隔需对齐真实服务节奏。</p>\n<p><strong>指令遵循（SFT）</strong>：CGSA HR@50=18.53%、条件合规 CC@50=78.58%，对比 AdaLN-Zero（HR@50=15.84%，CC=75.49%）相关性与合规双优；PinRec 虽 CC=81.69% 但 HR 明显更低，说明其靠牺牲相关性换合规。</p>\n<p><strong>线上 A/B（网易云音乐）</strong>：通用推荐下完整版 Like Rate +4.24%、总收听时长 +3.25%；推理延迟 7.26ms vs 基线 6.94ms（&lt;5% 开销）。曲风定向推荐下 Like Rate +4.10%，条件合规率从约 40% 提升到 77.9%。多样性按活跃度分层提升：高活用户曲风/语种多样性 +2.56%/+2.63%，低活用户仅 +0.28%/+0.09%（长尾用户增益有限）。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者未设独立局限章节，可归纳的约束：K=2 是效率/效果折中，分支增多收益与成本未充分探讨；Δτ 强依赖具体系统的服务间隔，需按业务重调；CGSA 的 SFT 依赖按条件标注的数据集；全部线上结论来自音乐推荐单一领域，跨域（电商、短视频、UGC 搜索）迁移性待验证；低活用户增益微弱说明对稀疏历史用户改善有限。</p>\n<h3>6. 工业实践意义</h3>\n<ul>\n<li><strong>可借鉴</strong>：把&quot;长程预见&quot;放到训练期、推理期保持单步，是延迟敏感的召回链路上做生成式推荐的务实路径——&lt;5% 延迟开销换 HR@10 约 24% 相对提升，性价比高。</li>\n<li><strong>Time-Aware Masking 直接可用</strong>：凡是把同批曝光日志当序列训练的团队，都可能吃到 consumption lag 的虚假时序依赖；按平均服务间隔做时间掩码是低成本修正，但 Δτ 必须用自家日志的真实节奏标定（论文里 7.5 分钟与 30 分钟都明显变差）。</li>\n<li><strong>指令遵循优于后置过滤</strong>：CGSA 用注意力掩码原生融合类目/策略约束，合规率 40%→77.9% 且不牺牲相关性，比 UGC 搜索/推荐里常见的&quot;召回后再过滤&quot;更省候选、更不丢相关结果。</li>\n<li><strong>部署考量</strong>：3 层 d=128 小模型 + 45B 交互预训练、8×A100 量级，对中等规模团队可承受；指令表示可预计算缓存，单次推理支持多条件，利于多策略并发。</li>\n<li><strong>注意长尾</strong>：低活用户多样性几乎不动，对冷启动/稀疏历史用户仍需配合其他方案。</li>\n</ul>\n<h3>7. 补充：数据集规模与适用边界</h3>\n<p>离线评测覆盖 Amazon-Sports（18,357 用户/35,598 物品，平均序列长 8.32）、Amazon-Beauty（22,363/12,101，8.87）、Amazon-Toys（19,412/11,924，8.63）三个公开集与网易工业集（&gt;4000 万用户、&gt;600 万物品、平均序列长 &gt;100）。公开集序列短、物品少，Climber-Pilot 与 PinRec 差距收窄；工业长序列场景下优势才显著放大——这提示该方法的收益主要来自长行为序列与高并发延迟约束，短序列轻量场景不必照搬。对 UGC 短文本搜索这类&quot;序列偏短、但 query 意图多样&quot;的场景，更值得借鉴的是 CGSA 的指令级注意力掩码（把 query 意图/类目约束作为软指令），而非 TAMIP 的长程多物品预测本身。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.30772",
+      "title": "FOSTER: First-order Dataset Distillation for Text-based Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2605.30772",
+      "authors": "Hung Vinh Tran, Tong Chen, Xinyi Gao, Junliang Yu, Julien Monteil, Hongzhi Yin",
+      "company": [
+        "University of Queensland"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 3.8,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "文本序列推荐通过引入物品文本上下文提升精度，但训练成本高，且基于语言模型的物品编码使数据蒸馏常用的双层优化代价过高。FOSTER 提出面向文本序列推荐的一阶数据集蒸馏，含三个组件：(1) 随机物品子集采样，替代每步全量语料 embedding 提取；(2) 带轨迹锚定参数重置的一阶优化，避免昂贵的双层梯度计算；(3) 显式鼓励合成序列中语义相似物品共现的正则项。在三个基准上一致优于已有数据集蒸馏与 coreset 选择基线，仅用 20 条合成交互序列即可逼近全量数据的训练效果。",
+      "key_insight": "把数据集蒸馏从图像迁移到“离散物品池 + LM 编码”的文本序列推荐，核心难点是双层优化成本，FOSTER 用一阶优化 + 子集采样将其压下来。对需要在 LM-based 推荐上反复迭代调参的团队，20 条合成序列逼近全量的结论意味着可大幅降低离线实验成本；“语义相似物品共现”正则是让合成数据保留协同信号的关键设计，值得在自建蒸馏数据时借鉴。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.30568",
+      "title": "Generating and Refining Dynamic Evaluation Rubrics for LLM-as-a-Judge",
+      "url": "https://arxiv.org/abs/2605.30568",
+      "authors": "Zijie Wang, Eduardo Blanco",
+      "company": [
+        "University of Arizona"
+      ],
+      "source": "arxiv",
+      "published": "2026-06-01",
+      "total_score": 3.8,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LLM-as-a-Judge 是人工评估的可扩展替代，但现有基于评分细则（rubric）的方法依赖人工标注的参考答案或专家细则。论文提出无需任何人工标注、自动生成细粒度评估细则的方法：训练-free 地在数据集级与样本级两种粒度生成 rubric，在四个基准上与现有方法持平；并进一步用元评审（meta-judge）奖励信号迭代微调一个 rubric 生成器，在成对与逐点评估上均超过所有基线，且微调后的 14B 生成器在 rubric 生成上超过了更大的闭源模型。",
+      "key_insight": "对要用 LLM 做搜索相关性/答案质量自动评估的团队，这套方法去掉了“人工写细则”的瓶颈：训练-free 变体可即取即用，样本级 rubric 能针对单条 query 动态生成评判维度。meta-judge 奖励微调让一个 14B 小模型在细则生成上胜过大闭源模型，提示评估器可以“自产细则、自我提升”，对构建 nDCG 标注与离线相关性评测流水线有直接参考价值。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2509.14221",
+      "title": "GEM-Bench: A Benchmark for Ad-Injected Response Generation within Generative Engine Marketing",
+      "url": "https://arxiv.org/abs/2509.14221",
+      "authors": "Silan Hu, Shiqi Zhang, Yimin Shi, Xiaokui Xiao",
+      "company": [
+        "NUS"
+      ],
+      "source": "arxiv",
+      "published": "2025-09-17",
+      "total_score": 3.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "生成式引擎营销（GEM）指在 LLM 聊天机器人等生成式引擎的回复中无缝植入广告来变现，其核心是广告植入回复的生成与评估，但现有基准并非为此设计。GEM-Bench 提出首个面向 GEM 广告植入回复生成的综合基准：含覆盖聊天与搜索两类场景的三个数据集、刻画用户满意度与互动多维度的指标本体，以及在可扩展多智能体框架中实现的若干基线。初步结果显示，简单 prompt 方法虽能获得不错的点击率等互动指标，却常常降低用户满意度；而“基于预生成的无广告回复再插入广告”的方法能缓解该问题，但带来额外开销。",
+      "key_insight": "GEM 把“生成式搜索/问答如何商业化”的问题显式化：互动（CTR）与满意度之间存在权衡，纯 prompt 注入广告会牺牲满意度。对探索生成式搜索答案 + 广告的团队，“先生成无广告回复再插广告”是兼顾满意度的可行折中（代价是额外推理开销）；其满意度 + 互动的多维指标本体提示评估生成式答案不能只看点击。可扩展的多智能体基线框架可作为搭建自有 GEM 评测的起点。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:RenCTF/RenCTF-DEPRECATED",
+      "title": "RenCTF-DEPRECATED: RenCTF is a web application/hardware project intended to teach STEM-related topics through an interactive & team-based medium. RenCTF features a webapp that lets users compete in a virtual board game that syncs with hardware featuring an LED Matrix that plays gifs, displays the collective contributions of each team, and each user's rankings/stats!",
+      "url": "https://github.com/RenCTF/RenCTF-DEPRECATED",
+      "source": "github",
+      "description": "RenCTF is a web application/hardware project intended to teach STEM-related topics through an interactive & team-based medium. RenCTF features a webapp that lets users compete in a virtual board game that syncs with hardware featuring an LED Matrix that plays gifs, displays the collective contributions of each team, and each user's rankings/stats!",
+      "language": "JavaScript",
+      "stars": 60,
+      "created_at": "2024-04-13"
+    },
+    {
+      "rank": 2,
+      "id": "github:GhostPeony/clip-finder",
+      "title": "clip-finder: AI-powered YouTube search. Index any channel, playlist, or video and search through transcripts with natural language. Uses Gemini embeddings + ChromaDB for semantic search. Click any result to jump to the exact timestamp. React + FastAPI + LangChain. Self-hosted, BYOK (bring your own key).",
+      "url": "https://github.com/GhostPeony/clip-finder",
+      "source": "github",
+      "description": "AI-powered YouTube search. Index any channel, playlist, or video and search through transcripts with natural language. Uses Gemini embeddings + ChromaDB for semantic search. Click any result to jump to the exact timestamp. React + FastAPI + LangChain. Self-hosted, BYOK (bring your own key).",
+      "language": "Python",
+      "stars": 41,
+      "created_at": "2025-12-29"
+    },
+    {
+      "rank": 3,
+      "id": "github:shramanb113/ZENITH",
+      "title": "ZENITH: From scratch search engine in Go - no Elasticsearch, no Lucene, just LSM trees, and hybrid ranking",
+      "url": "https://github.com/shramanb113/ZENITH",
+      "source": "github",
+      "description": "From scratch search engine in Go - no Elasticsearch, no Lucene, just LSM trees, and hybrid ranking",
+      "language": "Go",
+      "stars": 29,
+      "created_at": "2026-02-01"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: gguf, llama.cpp, quantized, imatrix, moe, agent, tool-calling, reasoning",
+      "language": "model",
+      "stars": 80,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "pipeline: any-to-any; tags: Lance, safetensors, multimodal, image-generation, video-generation, image-editing, video-understanding, any-to-any",
+      "language": "model",
+      "stars": 1002,
+      "created_at": "2026-05-15"
+    },
+    {
+      "rank": 6,
+      "id": "hf_space:TencentARC/PhotoMaker-Style",
+      "title": "TencentARC/PhotoMaker-Style",
+      "url": "https://huggingface.co/spaces/TencentARC/PhotoMaker-Style",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 654,
+      "created_at": "2024-01-14"
+    },
+    {
+      "rank": 7,
+      "id": "hf_space:deepseek-ai/deepseek-vl2-small",
+      "title": "deepseek-ai/deepseek-vl2-small",
+      "url": "https://huggingface.co/spaces/deepseek-ai/deepseek-vl2-small",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 605,
+      "created_at": "2025-01-16"
+    },
+    {
+      "rank": 8,
+      "id": "hf_space:stepfun-ai/GOT_official_online_demo",
+      "title": "stepfun-ai/GOT_official_online_demo",
+      "url": "https://huggingface.co/spaces/stepfun-ai/GOT_official_online_demo",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 360,
+      "created_at": "2024-09-13"
+    }
+  ]
+}

@@ -1,0 +1,300 @@
+{
+  "date": "2026-06-15",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 12,
+    "papers_selected": 10,
+    "score_min": 3.55,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.13663",
+      "title": "HyperTool: Beyond Step-Wise Tool Calls for Tool-Augmented Agents",
+      "url": "https://arxiv.org/abs/2606.13663",
+      "authors": "Yaxin Du, Yifan Zhou, Yujie Ge, Jiajun Wang, Xianghe Pang, Shuo Tang, Tuney Zheng, Bryan Dai, Jian Yang, Siheng Chen",
+      "company": [
+        "SJTU"
+      ],
+      "source": "web_search",
+      "published": "2026-06-11",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "工具增强型 LLM agent 普遍用 step-wise 原子工具调用，每次调用、观测、取值都暴露在主推理轨迹里，造成执行粒度错配：本可确定性执行的工具子流程被展开成大量模型可见的低层决策，挤占上下文。HyperTool 提出统一的可执行 MCP 风格工具接口——模型用一段代码块按工具原始 schema 调用、处理返回值、在本地传递中间结果，把确定性子流程折叠进一次外层调用。在 MCP-Universe 上 Qwen3-32B 平均准确率从 15.69% 提升到 35.29%，Qwen3-8B 从 9.93% 提升到 33.33%，超过 GPT-OSS 与 Kimi-k2.5。",
+      "key_insight": "关键不是调更多工具，而是改变模型可见的工具执行单元：把确定性的工具编排沉到代码执行层、只把高层意图留在推理轨迹，既省 token 又减少模型管理低层 dataflow 的出错机会。对搜索/RAG agent 有直接借鉴——多跳检索、过滤、重排这类固定子流程可封装成一次 HyperTool 调用，主 agent 只决策检索什么。训练数据由跨工具组合任务合成并在真实 MCP 环境验证，落地路径清晰。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.13663",
+        "title": "HyperTool: Beyond Step-Wise Tool Calls for Tool-Augmented Agents",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nHyperTool 针对工具增强型 LLM agent 普遍采用的 step-wise 原子工具调用范式（ReAct 式）的两个结构性缺陷。第一是\"上下文膨胀\"（context inflation）：每次工具调用的完整观测都累积进主推理轨迹，即便后续只需要其中某几个字段。第二是\"推理碎片化\"（reasoning fragmentation）：模型为完成本可确定性执行的低层操作（取字段、过滤、计算、聚合），必须反复回到决策循环，把高层任务推理与过程性的状态传递交织在一起。论文用 MCP-Universe 上的实测佐证这一失败模式：Qwen3-8B 基座平均准确率仅 9.93%，即便做了 ReAct-SFT 也只有 20.92%，说明 step-wise 范式严重限制了多步工具组合能力。动机由此清晰——问题不在模型不会调工具，而在\"模型可见的工具执行单元\"粒度太细，把确定性子流程暴露成一连串需要 LLM 介入的决策。\n\n## 2. 方法详解\n\n核心是把原子工具调用 Call(τ, x) 替换为可执行代码块 Block(S_t)，其中 S_t 是一段在原语工具之上编写的有界可执行程序。模型写一段 Python 代码块，块内通过 call_tool(server_name, tool_name, {\"param\": \"value\"}) 按工具原始 MCP schema 调用已有工具；中间结果以局部 Python 变量保存在块内部，只有块级最终观测（赋给 result 变量）返回主轨迹。这样取字段、过滤、跨工具传值、聚合等确定性逻辑被折叠进一次外层调用，主轨迹只看到高层意图和最终结果。\n\n训练数据合成是关键工程，分三步：(1) 组合任务构造——用 teacher 模型 GLM-5.1 与真实 MCP 环境交互，收集多源事实、归纳出彼此独立且基于真实工具输出的约束，使任务必须跨工具组合才能解；(2) HyperTool 轨迹采集——遵循三条执行规则（Reasoning Precedence 先推理后执行、Blockwise Execution 块级执行、Internal Logic 内部逻辑），并用 Context Compression（对较旧工具响应做 LLM 摘要）保持 rollout 聚焦、用 Local Repair（失败块自动修复并校验意图保持）提升成功率；(3) 轨迹验证——先做执行正确性过滤（剔除语法错误、schema 不匹配、运行时错误），再用 LLM judge 做证据一致性检查（最终答案是否被返回证据支持、中间结果解释是否正确、跨块结论是否一致、任务约束是否满足），多数投票通过才保留。\n\n训练设置：基座 Qwen3-8B 与 Qwen3-32B；SFT 数据 10,422 条验证过的 HyperTool 轨迹（token 多在 5k–15k，长尾到 60k）；用 Ray + Megatron-LM 做长上下文训练，最大序列长 65,536；global batch 64、3 epoch、Adam(β1=0.9, β2=0.95)、峰值学习率 5e-5、cosine 衰减 + 10% warmup；8B 约 4 小时、32B 约 31 小时。注意全程是 SFT，未用 RL。\n\n## 3. 核心技术贡献\n\n(1) 把\"工具执行粒度过细\"明确识别为 step-wise 范式的核心瓶颈——指出原子调用暴露中间观测与工具依赖，既膨胀上下文又割裂推理，这是对 ReAct/CodeAct 一类方法的本质诊断。(2) 提出统一可执行工具接口 HyperTool：在保留原始 MCP 工具 schema 前提下，让原子调用与局部确定性多工具工作流都能用同一种代码块格式表达——相比 CodeAct 纯代码执行，它复用了 MCP 生态的工具定义，无需为工具重写接口。(3) 证明仅靠 SFT 验证轨迹即可获得稳定增益（Qwen3-8B 9.93%→33.33%），且 32B 版本无需面向代码生成的预训练即可追平商用 agent。机制上，增益来自\"任务容量与上下文开销解耦\"：块内编排让模型实际调用的原语工具数几乎翻倍（26.92→47.55），但模型可见调用数（26.92→20.76）和交互轮数（28.81→21.76）反而下降。\n\n## 4. 实验结果分析\n\n主结果在 MCP-Universe（4 个领域：Financial、Repository、Location、Web）。Qwen3-8B 经 HyperTool-SFT 平均准确率从 9.93% 升到 33.33%（avg score 28.75→48.42），Qwen3-32B 从 15.69% 升到 35.29%（avg score 31.99→53.18），后者超过 GPT-OSS（32.13% acc）并在 acc 上逼近 Kimi-k2.5（34.17%），但 avg score 53.18 仍低于 Kimi 的 56.96。与同基座 SFT 基线相比，HyperTool（33.33%）显著优于 ReAct-SFT(20.92%)、CodeAct(25.49%)、AgentFold(27.13%)、ReCode(19.60%)、BrowseMaster(20.91%)。\n\n消融很有说服力。执行接口消融：纯 HyperTool 33.33% > 原子+HyperTool 混合 26.85% > ReAct 20.92%，说明\"统一用块\"比\"混用\"更好。组件消融：去掉执行正确性过滤，准确率从 33.33% 崩到 18.06%；去掉证据一致性过滤降到 21.05%——数据质量过滤是命脉。去掉 Context Compression，Web Search 通过率从 70.0% 掉到 41.0%；去掉 Local Repair，Financial Analysis 成功率从 40.0% 砍半到 20.5%。效率上，在 253 条轨迹上 HyperTool 用更少 token 拿到更高准确率（全局 816k vs ReAct 955k token，acc 33.33% vs 20.92%）；Financial Analysis 领域准确率近乎翻倍（32.5%→62.5%）同时省下 78% 以上 token（916k→199k）。但 Web Search 是反例：HyperTool token 反而更多（861k→1379k），准确率仅微升（16%→18%），说明强探索型任务里块内编排的省 token 优势会被更深的探索抵消。\n\n## 5. 局限与未来方向\n\n作者明确指出两点局限：(1) 当前设计最适合\"局部确定性\"的工具子流程——检索、过滤、计算、聚合这类中间结果可在块内处理、无需频繁 model 级介入的场景；对需要模型反复介入判断的高交互任务（如开放式 Web 探索）优势有限，Web Search 领域实验已印证。(2) 训练数据的多样性和规模仍可扩展，更大、覆盖更多领域/工具生态/任务结构的轨迹集合有望提升对未见工作流的泛化。可补充的是：方法依赖 teacher（GLM-5.1）与 LLM judge 做数据合成和验证，质量上限与成本受 teacher 能力约束；全程 SFT 未用 RL，是否能用 on-policy RL 进一步压缩 Web 类任务的探索冗余值得探索。\n\n## 6. 工业实践意义\n\n对搜索/推荐从业者，HyperTool 最直接的启示是：搭建检索/RAG agent 时，把\"多跳检索→字段抽取→过滤→重排→聚合\"这类确定性子流程封装成一次代码块调用，主 agent 只决策\"检索什么/下一步查什么\"，能同时降低 token 成本与出错率。对应的工程收益很具体——在 Financial 这类结构化检索任务上准确率翻倍且 token 省 78%，对延迟和成本敏感的在线搜索服务意义重大。可借鉴的设计点有三：(1) 复用现有工具 schema（MCP 风格）而非重写，迁移成本低；(2) 数据合成里\"执行正确性过滤 + 证据一致性过滤\"是质量命脉，消融显示去掉任一项准确率近乎腰斩，自建 agent 训练数据时务必保留这两道闸；(3) Context Compression 和 Local Repair 是低成本高收益的轨迹处理技巧，可直接移植。需要注意的边界：强探索型任务（开放 Web 搜索）里块内编排省 token 的优势会被探索深度抵消，别指望对所有搜索场景一刀切收益；另外该法目前是 SFT 蒸馏 teacher，线上部署前要评估 teacher 能力上限和 8B/32B 模型的实际延迟（最大序列 65k、长尾轨迹达 60k token，长上下文推理成本需实测）。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>HyperTool 针对工具增强型 LLM agent 普遍采用的 step-wise 原子工具调用范式（ReAct 式）的两个结构性缺陷。第一是&quot;上下文膨胀&quot;（context inflation）：每次工具调用的完整观测都累积进主推理轨迹，即便后续只需要其中某几个字段。第二是&quot;推理碎片化&quot;（reasoning fragmentation）：模型为完成本可确定性执行的低层操作（取字段、过滤、计算、聚合），必须反复回到决策循环，把高层任务推理与过程性的状态传递交织在一起。论文用 MCP-Universe 上的实测佐证这一失败模式：Qwen3-8B 基座平均准确率仅 9.93%，即便做了 ReAct-SFT 也只有 20.92%，说明 step-wise 范式严重限制了多步工具组合能力。动机由此清晰——问题不在模型不会调工具，而在&quot;模型可见的工具执行单元&quot;粒度太细，把确定性子流程暴露成一连串需要 LLM 介入的决策。</p>\n<h2>2. 方法详解</h2>\n<p>核心是把原子工具调用 Call(τ, x) 替换为可执行代码块 Block(S_t)，其中 S_t 是一段在原语工具之上编写的有界可执行程序。模型写一段 Python 代码块，块内通过 call_tool(server_name, tool_name, {&quot;param&quot;: &quot;value&quot;}) 按工具原始 MCP schema 调用已有工具；中间结果以局部 Python 变量保存在块内部，只有块级最终观测（赋给 result 变量）返回主轨迹。这样取字段、过滤、跨工具传值、聚合等确定性逻辑被折叠进一次外层调用，主轨迹只看到高层意图和最终结果。</p>\n<p>训练数据合成是关键工程，分三步：(1) 组合任务构造——用 teacher 模型 GLM-5.1 与真实 MCP 环境交互，收集多源事实、归纳出彼此独立且基于真实工具输出的约束，使任务必须跨工具组合才能解；(2) HyperTool 轨迹采集——遵循三条执行规则（Reasoning Precedence 先推理后执行、Blockwise Execution 块级执行、Internal Logic 内部逻辑），并用 Context Compression（对较旧工具响应做 LLM 摘要）保持 rollout 聚焦、用 Local Repair（失败块自动修复并校验意图保持）提升成功率；(3) 轨迹验证——先做执行正确性过滤（剔除语法错误、schema 不匹配、运行时错误），再用 LLM judge 做证据一致性检查（最终答案是否被返回证据支持、中间结果解释是否正确、跨块结论是否一致、任务约束是否满足），多数投票通过才保留。</p>\n<p>训练设置：基座 Qwen3-8B 与 Qwen3-32B；SFT 数据 10,422 条验证过的 HyperTool 轨迹（token 多在 5k–15k，长尾到 60k）；用 Ray + Megatron-LM 做长上下文训练，最大序列长 65,536；global batch 64、3 epoch、Adam(β1=0.9, β2=0.95)、峰值学习率 5e-5、cosine 衰减 + 10% warmup；8B 约 4 小时、32B 约 31 小时。注意全程是 SFT，未用 RL。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 把&quot;工具执行粒度过细&quot;明确识别为 step-wise 范式的核心瓶颈——指出原子调用暴露中间观测与工具依赖，既膨胀上下文又割裂推理，这是对 ReAct/CodeAct 一类方法的本质诊断。(2) 提出统一可执行工具接口 HyperTool：在保留原始 MCP 工具 schema 前提下，让原子调用与局部确定性多工具工作流都能用同一种代码块格式表达——相比 CodeAct 纯代码执行，它复用了 MCP 生态的工具定义，无需为工具重写接口。(3) 证明仅靠 SFT 验证轨迹即可获得稳定增益（Qwen3-8B 9.93%→33.33%），且 32B 版本无需面向代码生成的预训练即可追平商用 agent。机制上，增益来自&quot;任务容量与上下文开销解耦&quot;：块内编排让模型实际调用的原语工具数几乎翻倍（26.92→47.55），但模型可见调用数（26.92→20.76）和交互轮数（28.81→21.76）反而下降。</p>\n<h2>4. 实验结果分析</h2>\n<p>主结果在 MCP-Universe（4 个领域：Financial、Repository、Location、Web）。Qwen3-8B 经 HyperTool-SFT 平均准确率从 9.93% 升到 33.33%（avg score 28.75→48.42），Qwen3-32B 从 15.69% 升到 35.29%（avg score 31.99→53.18），后者超过 GPT-OSS（32.13% acc）并在 acc 上逼近 Kimi-k2.5（34.17%），但 avg score 53.18 仍低于 Kimi 的 56.96。与同基座 SFT 基线相比，HyperTool（33.33%）显著优于 ReAct-SFT(20.92%)、CodeAct(25.49%)、AgentFold(27.13%)、ReCode(19.60%)、BrowseMaster(20.91%)。</p>\n<p>消融很有说服力。执行接口消融：纯 HyperTool 33.33% &gt; 原子+HyperTool 混合 26.85% &gt; ReAct 20.92%，说明&quot;统一用块&quot;比&quot;混用&quot;更好。组件消融：去掉执行正确性过滤，准确率从 33.33% 崩到 18.06%；去掉证据一致性过滤降到 21.05%——数据质量过滤是命脉。去掉 Context Compression，Web Search 通过率从 70.0% 掉到 41.0%；去掉 Local Repair，Financial Analysis 成功率从 40.0% 砍半到 20.5%。效率上，在 253 条轨迹上 HyperTool 用更少 token 拿到更高准确率（全局 816k vs ReAct 955k token，acc 33.33% vs 20.92%）；Financial Analysis 领域准确率近乎翻倍（32.5%→62.5%）同时省下 78% 以上 token（916k→199k）。但 Web Search 是反例：HyperTool token 反而更多（861k→1379k），准确率仅微升（16%→18%），说明强探索型任务里块内编排的省 token 优势会被更深的探索抵消。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出两点局限：(1) 当前设计最适合&quot;局部确定性&quot;的工具子流程——检索、过滤、计算、聚合这类中间结果可在块内处理、无需频繁 model 级介入的场景；对需要模型反复介入判断的高交互任务（如开放式 Web 探索）优势有限，Web Search 领域实验已印证。(2) 训练数据的多样性和规模仍可扩展，更大、覆盖更多领域/工具生态/任务结构的轨迹集合有望提升对未见工作流的泛化。可补充的是：方法依赖 teacher（GLM-5.1）与 LLM judge 做数据合成和验证，质量上限与成本受 teacher 能力约束；全程 SFT 未用 RL，是否能用 on-policy RL 进一步压缩 Web 类任务的探索冗余值得探索。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者，HyperTool 最直接的启示是：搭建检索/RAG agent 时，把&quot;多跳检索→字段抽取→过滤→重排→聚合&quot;这类确定性子流程封装成一次代码块调用，主 agent 只决策&quot;检索什么/下一步查什么&quot;，能同时降低 token 成本与出错率。对应的工程收益很具体——在 Financial 这类结构化检索任务上准确率翻倍且 token 省 78%，对延迟和成本敏感的在线搜索服务意义重大。可借鉴的设计点有三：(1) 复用现有工具 schema（MCP 风格）而非重写，迁移成本低；(2) 数据合成里&quot;执行正确性过滤 + 证据一致性过滤&quot;是质量命脉，消融显示去掉任一项准确率近乎腰斩，自建 agent 训练数据时务必保留这两道闸；(3) Context Compression 和 Local Repair 是低成本高收益的轨迹处理技巧，可直接移植。需要注意的边界：强探索型任务（开放 Web 搜索）里块内编排省 token 的优势会被探索深度抵消，别指望对所有搜索场景一刀切收益；另外该法目前是 SFT 蒸馏 teacher，线上部署前要评估 teacher 能力上限和 8B/32B 模型的实际延迟（最大序列 65k、长尾轨迹达 60k token，长上下文推理成本需实测）。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.12908",
+      "title": "SENTINEL: Failure-Driven Reinforcement Learning for Training Tool-Using Language Model Agents",
+      "url": "https://arxiv.org/abs/2606.12908",
+      "authors": "Ziyi Wang, Yuxuan Lu, Yimeng Zhang, Qun Liu, Chen Luo, Jiri Gesi, Hanqing Lu, Yisi Sang, Manling Li, Jing Huang, Dakuo Wang",
+      "company": [
+        "Amazon",
+        "Northeastern"
+      ],
+      "source": "web_search",
+      "published": "2026-06-11",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "用 RL 训练多轮工具调用 agent 时，训练任务分布在训练前就固定，会与策略不断演化的能力错配，大量 rollout 浪费在无信息量的任务上。SENTINEL 是 failure-driven RL 框架，把 Solver 的 rollout 失败转化为针对性训练任务，采用 Controller-Proposer-Solver 流程：Controller 分析失败轨迹归纳反复出现的错误模式，Proposer 生成专门压这些弱点的可执行任务，Solver 在这些任务上训练。在 Tau2-Bench Retail 用 Qwen3-4B-Thinking-2507，Pass@1 从 66.4 提升到 74.9，并在 Pass@k 各档优于在通用合成任务上做 RL。",
+      "key_insight": "模型自身的失败是高质量、可扩展的训练信号来源——与其预先固定任务集，不如让课程随策略弱点动态生成。Controller-Proposer-Solver 的诊断-出题-训练循环可迁移到搜索 agent 的 RL：从线上失败 query 与检索轨迹中归纳错误模式，自动生成针对性训练样本，比静态数据集更贴合当前模型瓶颈，也更省 rollout。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.10709",
+      "title": "Effective Reinforcement Learning for Agentic Search by Recycling Zero-Variance Queries During Training",
+      "url": "https://arxiv.org/abs/2606.10709",
+      "authors": "Joao Coelho, Joao Magalhaes, Bruno Martins, Chenyan Xiong",
+      "company": [
+        "CMU"
+      ],
+      "source": "web_search",
+      "published": "2026-06-09",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "GRPO 类算法训练 LLM 搜索 agent 时，只有 rollout 组同时含成功和失败的 query 才贡献梯度；全对(太易)和全错(太难)的零方差组白白消耗 rollout。作者发现 query 会随策略演化在零方差与有信号之间反复翻转，提出 query recycling：把零方差组放回可变池等待后续重采样，让有效训练分布随策略共同演化。一个 1.7B 模型在合成数据上训练，7 个多跳 QA 基准平均 Pass@1 达到 66.0，追平甚至超过用基准衍生监督训练的 7B 系统；训练后期回收 query 约占有效 batch 的 3/4。",
+      "key_insight": "零方差不是 query 的静态属性而是随策略变化的动态状态，丢弃或预过滤太易太难样本其实扔掉了后期会重新变有用的训练信号。对训练搜索 agent 的启示：维护动态难度池、按当前策略能力重采样，比固定课程更省算力，且 1.7B 小模型即可逼近 7B，对资源受限团队友好。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.09730",
+      "title": "SearchSwarm: Towards Delegation Intelligence in Agentic LLMs for Long-Horizon Deep Research",
+      "url": "https://arxiv.org/abs/2606.09730",
+      "authors": "Pu Ning, Quan Chen, Kun Tao, Xinyu Tang, Tianshu Wang, Qianggang Cao, Xinyu Kong, Zujie Wen, Zhiqiang Zhang, Jun Zhou",
+      "company": [
+        "Ant Group"
+      ],
+      "source": "web_search",
+      "published": "2026-06-08",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "长程任务的上下文需求可无界增长，但模型上下文窗口有限。SearchSwarm 针对 deep research 提出委派智能：主 agent 分解任务、把子任务派给子 agent，子 agent 执行后只回传摘要结果，节省主 agent 的上下文预算。难点在何时委派、委派什么、如何整合返回结果——这类数据在自然文本里稀缺。作者设计 harness 引导模型做高质量任务分解与委派、并约束子 agent 规范回传；harness 引导的轨迹天然编码正确委派决策，用作 SFT 数据把委派能力内化进权重。SearchSwarm-30B-A3B 在 BrowseComp 达 68.1、BrowseComp-ZH 达 73.3，为同规模最佳，并开源 harness、权重与数据。",
+      "key_insight": "多 agent deep research 的瓶颈不在能不能调子 agent，而在主 agent 的委派智能——靠 harness 把好的分解/委派轨迹蒸馏成 SFT 数据，是一条不依赖 RL 即可获得委派能力的可行路径。对构建中文深度搜索/研究产品尤其有参考价值（BrowseComp-ZH 73.3），且开源了完整训练栈，可直接复现。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.07299",
+      "title": "DuMate-DeepResearch: An Auditable Multi-Agent System with Recursive Search and Rubric-Grounded Reasoning",
+      "url": "https://arxiv.org/abs/2606.07299",
+      "authors": "Lingyong Yan, Can Xu, Yukun Zhao, Shuaiqiang Wang, Jianmin Wu, Dawei Yin, et al.",
+      "company": [
+        "Baidu"
+      ],
+      "source": "web_search",
+      "published": "2026-06-05",
+      "total_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "Deep Research 需要系统迭代地界定问题、获取证据、核验来源并合成长报告，但现有系统受限于欠定范围下的长程规划、单 agent 调度瓶颈、长文合成幻觉、过程不可审计四个问题。DuMate-DeepResearch 是基于百度千帆 Agent Foundry 的多 agent 框架，把负责理解/规划/调度的 Agent Core 与可扩展工具生态解耦，使每个决策和工具调用可追溯。它引入三机制：图式动态规划(由粗到细，通过反思/重规划/回溯/并行分支持续修正)、递归两层执行(把复杂子任务交给内层 Search Agent 自跑规划循环以隔离噪声检索)、基于 rubric 的测试时优化(动态生成任务专属质量标准作为证据合成与自适应停止依据)。在两个基准取得 SOTA：DeepResearch Bench 58.03%、DeepResearch Bench II 61.95%，信息召回与分析项排名第一。",
+      "key_insight": "工业级 deep research 的可落地要点是可审计与递归隔离——把噪声检索下沉到内层 Search Agent、主 agent 只看摘要，能稳定长程执行；rubric 测试时优化提供了自适应停止这一实用机制，避免无谓过度检索。对搭建企业级研究/搜索助手的团队，这套解耦+全程可追溯架构有直接参考价值。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.07074",
+      "title": "SlimSearcher: Training Efficiency-Aware Web Agents via Adaptive Reward Gating",
+      "url": "https://arxiv.org/abs/2606.07074",
+      "authors": "Zequn Xie, Junjie Wang, Dan Yang, Jie Feng, Yue Shen, Jian Wang, Jinjie Gu",
+      "company": [
+        "Ant Group"
+      ],
+      "source": "web_search",
+      "published": "2026-06-05",
+      "total_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "summary": "Deep research agent 在准确率导向训练下普遍采用蛮力策略——盲目依赖工具、生成冗长轨迹，造成大量无谓工具调用和 token 消耗。SlimSearcher 在 SFT 与 RL 两阶段推动准确率-成本的帕累托前沿：SFT 阶段用 Pareto-efficient 过滤蒸馏既成功又经济的轨迹；RL 阶段引入 Adaptive Reward Gating，在采样 cohort 内评估相对的工具/token 效率，并与严格的正确性 gate 级联，从而避开绝对惩罚带来的过短偏置并抑制 reward hacking。在 GAIA、BrowseComp、XBenchDeepSearch 等长程基准上，平均工具调用轮数减少 17%-58%，同时维持或提升准确率。",
+      "key_insight": "搜索 agent 的成本不是只能靠砍长度硬压——用组内相对效率奖励而非绝对惩罚，能在不牺牲准确率前提下减少 17%-58% 的工具调用。对线上 deep search 服务，这意味着同等效果下推理成本和延迟显著下降；Pareto 过滤 + 相对奖励 gating 的设计可直接用于约束自家搜索 agent 的检索轮数。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2606.12837",
+      "title": "LoHoSearch: Benchmarking Long-Horizon Search Agents Beyond the Human Difficulty Ceiling",
+      "url": "https://arxiv.org/abs/2606.12837",
+      "authors": "Jiarui Zhao, Rongzhi Zhang, Lingchuan Liu, Hao Yang, Xunliang Cai, Xi Su",
+      "company": [
+        "Meituan"
+      ],
+      "source": "web_search",
+      "published": "2026-06-11",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "BrowseComp 等搜索 agent 基准在过去一年迅速饱和(最强模型超 90%)，因为人工出题者缺乏对实体统计的全局视角，难以系统性扩大搜索空间与结构复杂度，形成难度天花板。LoHoSearch 含 544 道人工验证、覆盖 11 个领域的题目，由一条自动化流水线在覆盖 700 万+ 维基百科实体的知识图谱上构建——选取搜索空间大的关系、组装成结构复杂且 KG 可验证唯一答案的问题。评测显示最强模型仅 34.74% 准确率，现有上下文管理策略收益(最高 +6.8%)远小于在旧基准上的提升。",
+      "key_insight": "用知识图谱自动合成超越人类出题上限的长程搜索题，是解决基准饱和的可扩展思路。34.74% 的低分说明长程推理与上下文管理仍是搜索 agent 的真实短板，现有 context 管理技巧在更难题上几乎失效。对自建搜索 agent 评测体系的团队，KG 驱动的难度可控合成方法值得借鉴，可避免被刷榜假象误导。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2606.13120",
+      "title": "EvoBrowseComp: Benchmarking Search Agents on Evolving Knowledge",
+      "url": "https://arxiv.org/abs/2606.13120",
+      "authors": "Yunhan Wang, Jiaan Wang, Lianzhe Huang, Xianfeng Zeng, Fandong Meng",
+      "company": [
+        "Tencent"
+      ],
+      "source": "web_search",
+      "published": "2026-06-11",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "静态搜索 agent 基准(如 BrowseComp)易受测试集污染和参数化记忆影响，模型可能靠事实背诵而非真实检索拿高分。EvoBrowseComp 是会进化的基准，含 400 道英文 + 400 道中文无污染复杂题，通过实时网络爬取合成，采用三 agent 协作框架：QA 合成 agent 从实时网络检索新知识合成问答对、信息过滤 agent 按可信度与流行度过滤以阻断参数化捷径、高层引导 agent 把问题形式化成推理图以减少逻辑冗余和捷径。全自动合成使其可定期更新，防止数据污染并保持时效。",
+      "key_insight": "对抗刷榜靠背诵的根本办法是让基准持续进化——用实时网络 + 过滤 agent 主动剔除模型可凭记忆走的捷径。这套合成-过滤-图式约束的三 agent 流水线可复用于构建任意领域的抗污染评测集。对搜索/RAG 团队，启示是离线指标要警惕参数化泄漏，评测应优先考查真实检索能力而非记忆。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2606.13003",
+      "title": "The Illusion of Multi-Agent Advantage",
+      "url": "https://arxiv.org/abs/2606.13003",
+      "authors": "Prathyusha Jwalapuram, Hehai Lin, Chuyuan Li, Fangkai Jiao, Sudong Wang, Yifei Ming, Zixuan Ke, Chengwei Qin, Giuseppe Carenini, Shafiq Joty",
+      "company": [
+        "Salesforce",
+        "NTU"
+      ],
+      "source": "web_search",
+      "published": "2026-06-11",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "主流观点认为多 agent 系统(MAS)凭上下文隔离、并行处理、分布式决策优于单 agent，但支撑证据多来自孤立推理任务的基准。作者针对自动生成的 MAS 做系统评测，与 Chain-of-Thought + Self-Consistency(CoT-SC)对比：在传统推理数据集和交互式多步工作流(如 BrowseComp-Plus)上，自动 MAS 始终不如 CoT-SC，却贵达 10 倍。为排除任务结构干扰，作者构造带显式任务分解、上下文隔离、并行潜力的诊断合成数据集，结果显示专家手工设计的 MAS 在性能和成本效率上都稳超自动生成架构；对自动 MAS 的解构发现其堆砌的是表面复杂度，并不转化为功能效用。",
+      "key_insight": "多 agent 一定更好是个需要警惕的错觉——自动生成的 MAS 常是架构臃肿，10 倍成本换不来真实收益，现有评测因忽视边际算力成本而掩盖了这点。对搜索/推荐工程团队的实践启示：上多 agent 前先与 CoT-SC 等强单 agent 基线做成本-效果对比，任务确实具备可分解可并行结构时再用，且优先专家设计而非全自动编排。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2606.13598",
+      "title": "Reward Modeling for Multi-Agent Orchestration",
+      "url": "https://arxiv.org/abs/2606.13598",
+      "authors": "King Yeung Tsang, Zihao Zhao, Vishal Venkataramani, Haizhou Shi, Zixuan Ke, Semih Yavuz, Shafiq Joty, Hao Wang",
+      "company": [
+        "Rutgers",
+        "Salesforce"
+      ],
+      "source": "web_search",
+      "published": "2026-06-11",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LLM 多 agent 系统需要有效编排来协调各专长 agent，但训练编排器受限于监督稀缺和高算力成本。OrchRM(Orchestration Reward Modeling)是自监督框架，利用多 agent 执行的中间产物构造胜负对来训练 Bradley-Terry 奖励模型，直接在编排层操作而非依赖昂贵的子 agent rollout。OrchRM 把训练的 token 效率提升最高 10 倍，同时把 MAS 测试时扩展性能最高提升 8% 准确率，且收益可跨数学推理、网页问答、多跳推理多个领域迁移。",
+      "key_insight": "评估编排质量不必每次都把子 agent 跑完——用执行中间产物构造偏好对、在编排层训练奖励模型，能以低成本指导编排器并支撑测试时扩展。对需要协调多检索/工具模块的搜索系统，这提供了一条低成本评估并优化调度策略的思路，10 倍 token 效率对大规模在线编排尤其有意义。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Pro",
+      "title": "DeepSeek-V4-Pro: 新一代开源旗舰大模型",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+      "source": "huggingface",
+      "description": "DeepSeek 新一代 V4 旗舰开源大模型(text-generation, MIT 许可)，HF 近期热度高(4828 likes)。作为强推理基座，常被用作搜索/research agent 的底层模型。",
+      "language": "model",
+      "stars": 4828,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 2,
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen3-TTS: 通义千问文本转语音 Space",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "description": "阿里 Qwen3 文本转语音 Space(1952 likes)，多模态能力组件，与本赛道弱相关，作为热门开源项目收录。",
+      "language": "space",
+      "stars": 1952,
+      "created_at": "2026-01-21"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:deepseek-ai/DeepSeek-V4-Flash",
+      "title": "DeepSeek-V4-Flash: 轻量低延迟版本",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+      "source": "huggingface",
+      "description": "DeepSeek V4 的轻量 Flash 版本(1485 likes)，推理更快成本更低，适合对延迟敏感的 agent 在线部署。",
+      "language": "model",
+      "stars": 1485,
+      "created_at": "2026-04-22"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:moonshotai/Kimi-K2.7-Code",
+      "title": "Kimi-K2.7-Code: 月之暗面代码模型",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.7-Code",
+      "source": "huggingface",
+      "description": "月之暗面 Kimi K2.7 代码模型(image-text-to-text 多模态)，6 月 11 日新发布(607 likes)。面向 coding agent 场景，与 agentic 工具调用/代码执行任务相关。",
+      "language": "model",
+      "stars": 607,
+      "created_at": "2026-06-11"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "SCAIL-2: 智谱角色动画扩散模型",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "智谱(zai-org)发布的 image-to-video 角色动画扩散模型(关联 arxiv:2512.05905, 170 likes)，与 agentic 搜索关系较弱，列为开源动态参考。",
+      "language": "model",
+      "stars": 170,
+      "created_at": "2026-06-09"
+    }
+  ]
+}

@@ -1,0 +1,349 @@
+{
+  "date": "2026-08-28",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注语义匹配、query 理解、短文本召回、排序模型与 LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 71,
+    "papers_selected": 10,
+    "score_min": 3.85,
+    "score_max": 4.75
+  },
+  "coverage": {
+    "status": "gaps",
+    "core_paper": "Query Expansion Is More Than Generation: Improving Dense Retrieval through Better Integration",
+    "industry_practice": "Netflix Artwork Personalization via LLM Post-training",
+    "recent_paper": "Query Expansion Is More Than Generation: Improving Dense Retrieval through Better Integration",
+    "source_diversity": "gap: arxiv 100%",
+    "chinese_source": "未找到可通过硬去重且在90天内的中文来源"
+  },
+  "papers": [
+    {
+      "id": "arxiv:oai:arXiv.org:2608.25521",
+      "title": "Query Expansion Is More Than Generation: Improving Dense Retrieval through Better Integration",
+      "url": "https://arxiv.org/abs/2608.25521",
+      "authors": "Siyuan Sun, Mihai Surdeanu",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.65,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.85,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文指出，LLM 生成的扩展词让冻结稠密检索器退化，问题常不在生成文本本身，而在融合方式。AnchorQE 分别编码原查询与扩展，再依据小规模无标注测试流在线估计插值权重；只有当扩展既能带来强检索信号、又与原查询证据一致时才提高信任。",
+      "key_insight": "生成式查询改写不应直接拼接后送入编码器，否则容易稀释原始意图。更稳妥的工程路径是保留原查询向量作为锚点，把扩展视作可校准的辅助通道，并用无监督证据一致性控制权重；这对 UGC 短查询尤其适合，也不需要重训主检索模型。",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2608.25521",
+        "title": "Query Expansion Is More Than Generation: Improving Dense Retrieval through Better Integration",
+        "status": "completed",
+        "content": "# Query Expansion Is More Than Generation：深度解读\n\n## 1. 问题与动机\n\n论文研究一个经常被生成质量掩盖的问题：LLM 已经能零样本生成 HyDE 假想文档、Query2Doc 伪文档、Q2E 关键词或思维链提炼词，但把这些文本交给冻结的稠密检索器后，效果并不稳定。作者固定生成结果，只改变集成方式，发现传统方案在 TREC-DL 2020、LoTTE Search、LoTTE Forum 与 BEIR-14 上分别比无扩展稠密检索低 2.92～4.53 个点；即使对文本拼接方式在 6,980 条 MS MARCO 开发查询上搜索 72 种组合，仍在 16/20 个“扩展策略×基准组”中落后于原始查询。根因是扩展单独检索会丢掉原查询，直接拼接则让查询和扩展在分词、注意力、池化与截断中纠缠，系统无法明确限制生成内容把查询向量拉离原意图的程度。\n\n这一问题对短查询尤为重要：用户只给出几个词时，扩展既可能补足同义词和答案维度，也可能引入未经表达的具体事实。既有工作主要竞争“生成什么”和“采样多少次”，却把生成与融合同时改变，无法判断收益到底来自更好的扩展还是更合适的接入方式。本文因此把集成方法单独作为实验变量，并追问：能否在不训练、不改文档向量、不重建索引的前提下，让扩展贡献显式可控，同时保持一次标准向量检索请求。\n\n## 2. 方法详解\n\nAnchorQE 先分别编码并归一化原查询 q 与 N 个扩展 z_i。若 q 向量为 **q**，扩展向量为 **z_i**，各扩展的混合权重 π_i 非负且和为 1，则先计算扩展混合向量 **m**=Σπ_i**z_i**，再构造最终查询向量：\n\n`q_hat = normalize((1-α) q + α m)`，其中 `0≤α≤1`。\n\nα=0 时完全退回原检索器；α 增大时才逐步信任生成扩展。由于融合发生在归一化向量层，扩展长度不会隐式决定权重；多个扩展彼此分歧时，混合向量的模会自然变小，修正作用随之减弱。作者证明，在查询流与扩展流使用同一文档向量空间和原始点积时，该单向量排序与权重为 `(1-α, απ_1,…,απ_N)` 的 CombSUM 全语料排序完全等价，但只需一次索引请求，而传统融合需要 N+1 次请求。另一个角度上，当 α<0.5，最终向量偏离原查询的夹角最多为 `arcsin(α/(1-α))`；α=0.10 时上限仅 6.38°。若扩展与原查询对一对文档给出相反顺序，扩展侧的反向 margin 必须超过原查询 margin 的 9 倍才会在 α=0.10 时翻转排序。\n\nSC-AnchorQE 进一步解决新数据流上没有相关性标签、无法手调 α 的问题。它只使用流开头 B 条无标注查询，实验设置 B=8。对每条校准查询，分别用原查询与扩展做探测检索：一方面比较两者各自 top-1 文档的正截断相似度均值，得到扩展相对检索强度 `r_top1`；另一方面，在原查询 top-10 文档上比较扩展与原查询的平均相似度，得到证据一致性 `r_sup`。最终令 `α_stream=r_top1×r_sup`。乘积是合取门：扩展只有同时“自己检得强”且“同原查询证据一致”时才获较高信任。校准阶段每条查询需要两次探测请求，α 冻结后所有未来查询恢复为一次请求。\n\n实验的主生成器是关闭 thinking、贪心解码、最多生成 128 个 token 的 Qwen3-8B；迁移实验还用 Qwen3-1.7B 与 Llama-3.1-8B-Instruct。检索器包括 BGE-large-en-v1.5、GTE-large-en-v1.5 和 Qwen3-Embedding-0.6B，形成 3×3 共 9 个生成器—检索器组合。所有文档 embedding 和索引保持冻结。数据覆盖 TREC-DL 2019/2020、LoTTE 的 Search/Forum 五域以及 BEIR-14，共 18 个逻辑集合；TREC/BEIR 用 nDCG@10，LoTTE 用 Success@5。论文未进行梯度训练，因此没有优化器、batch size、训练步数或训练硬件配置；核心计算只有 LLM 离线/在线生成、向量编码和校准探测。\n\n## 3. 核心技术贡献\n\n第一，论文用固定扩展协议把“生成质量”和“接入方式”解耦。四类 LLM 扩展文本保存一次并在所有融合方法间复用，证明仅替换集成方式就能把主导结论从退化变为提升：固定 α=0.15 的 AnchorQE 在全部 20 个比较中超过无扩展基线及传统接法，相对传统接法最高提升 12.89%。这比再换一个生成 prompt 更有诊断价值。\n\n第二，AnchorQE 把显式信任控制、查询锚定与单请求服务统一起来。线性插值不是简单启发式：论文给出与同空间加权分数融合的排序等价证明，以及扩展影响的最坏夹角界。这让工程团队能把 α 解释为风险旋钮，并在不改文档侧索引的情况下上线。\n\n第三，SC-AnchorQE 只用 8 条无标注流前缀估计 α，无需开发集标签或观察未来效果。它将“扩展独立检索能力”和“与原查询证据一致性”相乘，避免只看高相似度而信任一个语义漂移的扩展。相对开发集调好的固定 α，在线估计在 17/20 个组均值上仍为正。\n\n第四，作者从服务成本验证理论优势。8 个扩展时，AnchorQE 的 nDCG@10 为 0.6591、Success@5 为 0.7705，索引侧延迟 0.19 ms/查询；九请求 Weighted CombSUM 为 0.6612/0.7705，却需 4.33 ms。两者 top-10 重合率达 0.9998，说明单向量方案用约二十分之一的索引延迟复现了线性融合排序。\n\n## 4. 实验结果分析\n\n主结果显示，传统接法并不稳健，而查询锚点的收益横跨扩展类型。以下摘录固定扩展、BGE 检索器下的关键结果：\n\n| 方法/策略 | T19 nDCG@10 | T20 nDCG@10 | LoTTE Search S@5 | LoTTE Forum S@5 | BEIR-14 nDCG@10 |\n|---|---:|---:|---:|---:|---:|\n| 无扩展 DR | 0.6765 | 0.7056 | 0.7780 | 0.7470 | 0.5387 |\n| HyDE 传统接法 | 0.6693 | 0.6931 | 0.7490 | 0.6916 | 0.4892 |\n| HyDE + AnchorQE(0.15) | 0.7154 | 0.7303 | 0.7913 | 0.7573 | 0.5486 |\n| Query2Doc 传统接法 | 0.7267 | 0.7128 | 0.7737 | 0.7166 | 0.5107 |\n| Query2Doc + AnchorQE(0.15) | 0.7300 | 0.7299 | 0.7924 | 0.7569 | 0.5472 |\n| CoT 词项传统接法 | 0.6766 | 0.6374 | 0.7275 | 0.7018 | 0.4816 |\n| CoT 词项 + AnchorQE(0.15) | 0.7248 | 0.7161 | 0.7863 | 0.7542 | 0.5437 |\n\nSC-AnchorQE 的无标注在线版本在全部 20 个“策略×基准组”中超过对应传统接法，最大相对增益是 CoT 词项在 BEIR-14 上的 13.03%。相对无扩展 DR，它在 19/20 个组比较中提升，18/20 的查询级置信区间为正；按 18 个集合等权汇总时，四种扩展策略的置信区间均排除零。统计检验规模也较充分：每个物理集合做 10,000 次成对 bootstrap，集合级做 100,000 次 cluster bootstrap，并用 20 种随机到达顺序检查前缀稳定性。\n\n跨模型结果中，9 个生成器—检索器组合、5 个报告组共 45 个比较，SC-AnchorQE 对 DR 基线有 44 个更优，对开发集固定 α 有 41 个更优；没有任何置信区间显著为负。收益在两个 8B 生成器上最强，1.7B 模型作为较弱扩展质量压力测试，说明融合可以缓解但不能彻底替代生成能力。\n\n消融方面，扩展使用查询编码器 E_q 或文档编码器 E_d 的差异很小：10 个比较中 E_q 赢 6 个，最大绝对差仅 0.0038，说明方法对角色前缀不敏感。校准前缀 B=8、16、32 时，五个报告组的最大跨度只有 0.0027。生成长度改为 64 token 或开放式 EOS 后，AnchorQE 仍在所有报告组超过传统融合与调优文本重编码。少数失败值得注意：BEIR 的 TREC-COVID 与 Touché 2020 上个别策略出现轻微负增益，且固定 α 相比 SC 版本在 Q2E/CoT 的集合级置信区间跨零，表明在线校准并非每种生成策略都稳定显著胜过已调优常数。\n\n## 5. 局限与未来方向\n\n作者明确指出，SC-AnchorQE 假设短前缀能代表随后相对稳定的查询流；一旦分布快速变化，流级 α 会陈旧，而且单一共享权重无法同时处理异常优质与严重误导的扩展。融合质量仍受生成质量上限约束，弱扩展缺失的信息不可能靠插值恢复。论文采用严格无前视模拟，而非真实时间流量，仍需更广泛部署研究。\n\n理论上的融合等价还依赖同一稠密空间、原始点积和精确全排序；混合稀疏/稠密检索、流间不同归一化、非线性融合或独立截断的 ANN 候选都不满足证明条件。校准期会增加探测请求，且论文延迟表只计算索引侧，不含 LLM 生成与编码；真实系统中生成仍是主要成本。作者未报告线上 A/B 测试。论文之外的明显问题是全局 α 对查询级风险区分不足，可探索带置信约束的 per-query α、漂移检测与周期性重校准。\n\n## 6. 工业实践意义\n\n对社区 UGC 短文本搜索，最值得直接采用的是“原查询向量不可丢”的接入原则。现有系统可保持文档 embedding、ANN 索引与召回 API 不变：异步或缓存生成 HyDE/关键词扩展，分别编码，再以较小 α 做归一化插值。首个灰度版本可从 α=0.10～0.15 开始；α=0.10 具有 6.38° 的最坏偏转上界，便于风险评审。系统应同时记录原查询 top-10、扩展 top-1、证据一致性、最终 α 与排序翻转率，以定位哪些 query 类别真正受益。\n\nSC 校准适合稳定业务分桶而非全站共享：可按语言、意图、内容域或流量入口维护独立 α，并在分布漂移后重新用短前缀估计。对于突发热点和新词，若扩展检索很强但与原结果证据不一致，乘积门会自动降权；对于原查询召回弱但扩展能找到一致证据的场景，α 才会提高。上线实验应至少观察 nDCG/Recall、CTR、零结果率、长尾内容覆盖、坏扩展率与 P95 延迟，并设置 α=0 的安全回退。\n\n成本上，单向量集成比每个扩展单独检索再融合更适合高 QPS：论文在 8 扩展条件下把 9 次请求压成 1 次，索引延迟从 4.33 ms 降到 0.19 ms，效果几乎相同。但不能据此忽略 LLM 生成费用；优先考虑离线生成热门查询扩展、使用小模型、限制 64/128 token、按高价值请求触发，或把生成结果缓存。应避免直接把长伪文档拼到短查询中，也不要仅因扩展自身 top-1 相似度高就提高权重；真正有效的控制信号是检索强度与原查询证据一致性同时成立。",
+        "content_html": "<h1>Query Expansion Is More Than Generation：深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>论文研究一个经常被生成质量掩盖的问题：LLM 已经能零样本生成 HyDE 假想文档、Query2Doc 伪文档、Q2E 关键词或思维链提炼词，但把这些文本交给冻结的稠密检索器后，效果并不稳定。作者固定生成结果，只改变集成方式，发现传统方案在 TREC-DL 2020、LoTTE Search、LoTTE Forum 与 BEIR-14 上分别比无扩展稠密检索低 2.92～4.53 个点；即使对文本拼接方式在 6,980 条 MS MARCO 开发查询上搜索 72 种组合，仍在 16/20 个“扩展策略×基准组”中落后于原始查询。根因是扩展单独检索会丢掉原查询，直接拼接则让查询和扩展在分词、注意力、池化与截断中纠缠，系统无法明确限制生成内容把查询向量拉离原意图的程度。</p>\n<p>这一问题对短查询尤为重要：用户只给出几个词时，扩展既可能补足同义词和答案维度，也可能引入未经表达的具体事实。既有工作主要竞争“生成什么”和“采样多少次”，却把生成与融合同时改变，无法判断收益到底来自更好的扩展还是更合适的接入方式。本文因此把集成方法单独作为实验变量，并追问：能否在不训练、不改文档向量、不重建索引的前提下，让扩展贡献显式可控，同时保持一次标准向量检索请求。</p>\n<h2>2. 方法详解</h2>\n<p>AnchorQE 先分别编码并归一化原查询 q 与 N 个扩展 z_i。若 q 向量为 <strong>q</strong>，扩展向量为 <strong>z_i</strong>，各扩展的混合权重 π_i 非负且和为 1，则先计算扩展混合向量 <strong>m</strong>=Σπ_i<strong>z_i</strong>，再构造最终查询向量：</p>\n<p><code>q_hat = normalize((1-α) q + α m)</code>，其中 <code>0≤α≤1</code>。</p>\n<p>α=0 时完全退回原检索器；α 增大时才逐步信任生成扩展。由于融合发生在归一化向量层，扩展长度不会隐式决定权重；多个扩展彼此分歧时，混合向量的模会自然变小，修正作用随之减弱。作者证明，在查询流与扩展流使用同一文档向量空间和原始点积时，该单向量排序与权重为 <code>(1-α, απ_1,…,απ_N)</code> 的 CombSUM 全语料排序完全等价，但只需一次索引请求，而传统融合需要 N+1 次请求。另一个角度上，当 α&lt;0.5，最终向量偏离原查询的夹角最多为 <code>arcsin(α/(1-α))</code>；α=0.10 时上限仅 6.38°。若扩展与原查询对一对文档给出相反顺序，扩展侧的反向 margin 必须超过原查询 margin 的 9 倍才会在 α=0.10 时翻转排序。</p>\n<p>SC-AnchorQE 进一步解决新数据流上没有相关性标签、无法手调 α 的问题。它只使用流开头 B 条无标注查询，实验设置 B=8。对每条校准查询，分别用原查询与扩展做探测检索：一方面比较两者各自 top-1 文档的正截断相似度均值，得到扩展相对检索强度 <code>r_top1</code>；另一方面，在原查询 top-10 文档上比较扩展与原查询的平均相似度，得到证据一致性 <code>r_sup</code>。最终令 <code>α_stream=r_top1×r_sup</code>。乘积是合取门：扩展只有同时“自己检得强”且“同原查询证据一致”时才获较高信任。校准阶段每条查询需要两次探测请求，α 冻结后所有未来查询恢复为一次请求。</p>\n<p>实验的主生成器是关闭 thinking、贪心解码、最多生成 128 个 token 的 Qwen3-8B；迁移实验还用 Qwen3-1.7B 与 Llama-3.1-8B-Instruct。检索器包括 BGE-large-en-v1.5、GTE-large-en-v1.5 和 Qwen3-Embedding-0.6B，形成 3×3 共 9 个生成器—检索器组合。所有文档 embedding 和索引保持冻结。数据覆盖 TREC-DL 2019/2020、LoTTE 的 Search/Forum 五域以及 BEIR-14，共 18 个逻辑集合；TREC/BEIR 用 nDCG@10，LoTTE 用 Success@5。论文未进行梯度训练，因此没有优化器、batch size、训练步数或训练硬件配置；核心计算只有 LLM 离线/在线生成、向量编码和校准探测。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，论文用固定扩展协议把“生成质量”和“接入方式”解耦。四类 LLM 扩展文本保存一次并在所有融合方法间复用，证明仅替换集成方式就能把主导结论从退化变为提升：固定 α=0.15 的 AnchorQE 在全部 20 个比较中超过无扩展基线及传统接法，相对传统接法最高提升 12.89%。这比再换一个生成 prompt 更有诊断价值。</p>\n<p>第二，AnchorQE 把显式信任控制、查询锚定与单请求服务统一起来。线性插值不是简单启发式：论文给出与同空间加权分数融合的排序等价证明，以及扩展影响的最坏夹角界。这让工程团队能把 α 解释为风险旋钮，并在不改文档侧索引的情况下上线。</p>\n<p>第三，SC-AnchorQE 只用 8 条无标注流前缀估计 α，无需开发集标签或观察未来效果。它将“扩展独立检索能力”和“与原查询证据一致性”相乘，避免只看高相似度而信任一个语义漂移的扩展。相对开发集调好的固定 α，在线估计在 17/20 个组均值上仍为正。</p>\n<p>第四，作者从服务成本验证理论优势。8 个扩展时，AnchorQE 的 nDCG@10 为 0.6591、Success@5 为 0.7705，索引侧延迟 0.19 ms/查询；九请求 Weighted CombSUM 为 0.6612/0.7705，却需 4.33 ms。两者 top-10 重合率达 0.9998，说明单向量方案用约二十分之一的索引延迟复现了线性融合排序。</p>\n<h2>4. 实验结果分析</h2>\n<p>主结果显示，传统接法并不稳健，而查询锚点的收益横跨扩展类型。以下摘录固定扩展、BGE 检索器下的关键结果：</p>\n<table><thead><tr><th>方法/策略</th><th>T19 nDCG@10</th><th>T20 nDCG@10</th><th>LoTTE Search S@5</th><th>LoTTE Forum S@5</th><th>BEIR-14 nDCG@10</th></tr></thead><tbody><tr><td>无扩展 DR</td><td>0.6765</td><td>0.7056</td><td>0.7780</td><td>0.7470</td><td>0.5387</td></tr><tr><td>HyDE 传统接法</td><td>0.6693</td><td>0.6931</td><td>0.7490</td><td>0.6916</td><td>0.4892</td></tr><tr><td>HyDE + AnchorQE(0.15)</td><td>0.7154</td><td>0.7303</td><td>0.7913</td><td>0.7573</td><td>0.5486</td></tr><tr><td>Query2Doc 传统接法</td><td>0.7267</td><td>0.7128</td><td>0.7737</td><td>0.7166</td><td>0.5107</td></tr><tr><td>Query2Doc + AnchorQE(0.15)</td><td>0.7300</td><td>0.7299</td><td>0.7924</td><td>0.7569</td><td>0.5472</td></tr><tr><td>CoT 词项传统接法</td><td>0.6766</td><td>0.6374</td><td>0.7275</td><td>0.7018</td><td>0.4816</td></tr><tr><td>CoT 词项 + AnchorQE(0.15)</td><td>0.7248</td><td>0.7161</td><td>0.7863</td><td>0.7542</td><td>0.5437</td></tr></tbody></table>\n<p>SC-AnchorQE 的无标注在线版本在全部 20 个“策略×基准组”中超过对应传统接法，最大相对增益是 CoT 词项在 BEIR-14 上的 13.03%。相对无扩展 DR，它在 19/20 个组比较中提升，18/20 的查询级置信区间为正；按 18 个集合等权汇总时，四种扩展策略的置信区间均排除零。统计检验规模也较充分：每个物理集合做 10,000 次成对 bootstrap，集合级做 100,000 次 cluster bootstrap，并用 20 种随机到达顺序检查前缀稳定性。</p>\n<p>跨模型结果中，9 个生成器—检索器组合、5 个报告组共 45 个比较，SC-AnchorQE 对 DR 基线有 44 个更优，对开发集固定 α 有 41 个更优；没有任何置信区间显著为负。收益在两个 8B 生成器上最强，1.7B 模型作为较弱扩展质量压力测试，说明融合可以缓解但不能彻底替代生成能力。</p>\n<p>消融方面，扩展使用查询编码器 E_q 或文档编码器 E_d 的差异很小：10 个比较中 E_q 赢 6 个，最大绝对差仅 0.0038，说明方法对角色前缀不敏感。校准前缀 B=8、16、32 时，五个报告组的最大跨度只有 0.0027。生成长度改为 64 token 或开放式 EOS 后，AnchorQE 仍在所有报告组超过传统融合与调优文本重编码。少数失败值得注意：BEIR 的 TREC-COVID 与 Touché 2020 上个别策略出现轻微负增益，且固定 α 相比 SC 版本在 Q2E/CoT 的集合级置信区间跨零，表明在线校准并非每种生成策略都稳定显著胜过已调优常数。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出，SC-AnchorQE 假设短前缀能代表随后相对稳定的查询流；一旦分布快速变化，流级 α 会陈旧，而且单一共享权重无法同时处理异常优质与严重误导的扩展。融合质量仍受生成质量上限约束，弱扩展缺失的信息不可能靠插值恢复。论文采用严格无前视模拟，而非真实时间流量，仍需更广泛部署研究。</p>\n<p>理论上的融合等价还依赖同一稠密空间、原始点积和精确全排序；混合稀疏/稠密检索、流间不同归一化、非线性融合或独立截断的 ANN 候选都不满足证明条件。校准期会增加探测请求，且论文延迟表只计算索引侧，不含 LLM 生成与编码；真实系统中生成仍是主要成本。作者未报告线上 A/B 测试。论文之外的明显问题是全局 α 对查询级风险区分不足，可探索带置信约束的 per-query α、漂移检测与周期性重校准。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 短文本搜索，最值得直接采用的是“原查询向量不可丢”的接入原则。现有系统可保持文档 embedding、ANN 索引与召回 API 不变：异步或缓存生成 HyDE/关键词扩展，分别编码，再以较小 α 做归一化插值。首个灰度版本可从 α=0.10～0.15 开始；α=0.10 具有 6.38° 的最坏偏转上界，便于风险评审。系统应同时记录原查询 top-10、扩展 top-1、证据一致性、最终 α 与排序翻转率，以定位哪些 query 类别真正受益。</p>\n<p>SC 校准适合稳定业务分桶而非全站共享：可按语言、意图、内容域或流量入口维护独立 α，并在分布漂移后重新用短前缀估计。对于突发热点和新词，若扩展检索很强但与原结果证据不一致，乘积门会自动降权；对于原查询召回弱但扩展能找到一致证据的场景，α 才会提高。上线实验应至少观察 nDCG/Recall、CTR、零结果率、长尾内容覆盖、坏扩展率与 P95 延迟，并设置 α=0 的安全回退。</p>\n<p>成本上，单向量集成比每个扩展单独检索再融合更适合高 QPS：论文在 8 扩展条件下把 9 次请求压成 1 次，索引延迟从 4.33 ms 降到 0.19 ms，效果几乎相同。但不能据此忽略 LLM 生成费用；优先考虑离线生成热门查询扩展、使用小模型、限制 64/128 token、按高价值请求触发，或把生成结果缓存。应避免直接把长伪文档拼到短查询中，也不要仅因扩展自身 top-1 相似度高就提高权重；真正有效的控制信号是检索强度与原查询证据一致性同时成立。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2608.25037",
+      "title": "Retrieve, Match, Escalate: Accurate and Scalable Product Linking with VLM-Distilled Cross-Encoders and Agentic VLMs",
+      "url": "https://arxiv.org/abs/2608.25037",
+      "authors": "Jian Wang, Steven Xu, Sanjyot Thete, Maryam Barouti, Tom Tang, Elaine Wu, Charu Sareen, Kyle MacDonald",
+      "company": [
+        "Amazon"
+      ],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.75,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.8,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "面向十亿级商家记录与千万级标准商品的链接任务，论文构建“召回—匹配—升级”级联：轻量文本交叉编码器自动处理高置信样本，仅把歧义案例交给可查看图片并执行网页搜索的多模态智能体。交叉编码器由数百万条双 VLM 共识标签蒸馏，兼顾规模、精度与成本。",
+      "key_insight": "对社区商品与内容搜索，关键不是让最强模型处理全部候选，而是按样本难度分配算力：召回保证覆盖，蒸馏模型承担主流量，昂贵 VLM 只兜底长尾歧义。该设计能把生成式推理能力放在最需要的位置，并保留可控的线上延迟预算。",
+      "rank": 2
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2608.25115",
+      "title": "Less can be More: Relieving RAG Bottlenecks via Evidence Frontloading and Pressure-Adaptive Budgeting",
+      "url": "https://arxiv.org/abs/2608.25115",
+      "authors": "Weibin Cai, Reza Zafarani",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.35,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.45,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文发现 RAG 的瓶颈会随查询并发和重排预算在上游重排与下游生成之间迁移；盲目压缩重排候选虽能提速，却可能丢失关键证据。PACE 无需训练，先把高价值证据前置，再根据系统压力动态调整预算，以较小候选集维持证据覆盖。",
+      "key_insight": "这项工作把生成式搜索优化从单模型指标提升到端到端资源调度：线上应同时观测重排队列、生成吞吐与证据召回，再动态决定每个请求的候选预算。对高并发 UGC 搜索，可优先保障多样证据覆盖，而不是固定 top-K 后统一交给大模型。",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2606.10621",
+      "title": "STORM: Stepwise Token Optimization with Reward-Guided Beam Search",
+      "url": "https://arxiv.org/abs/2606.10621",
+      "authors": "Arthur Satouf, Giulio D'Erasmo, Yuxuan Zong, Habiboulaye Amadou Boubacar, Pablo Piantanida, Benjamin Piwowarski",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.3,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.45,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "STORM 面向 BM25 的词汇失配，用检索奖励逐 token 训练查询扩展器。生成过程中每一步都在真实倒排索引上评价候选扩展并剪掉低奖励路径，把原本延迟到整句结束的序列级反馈转化为细粒度监督，从而减少流畅但无效甚至有害的扩展词。",
+      "key_insight": "它展示了生成式检索的实用结合点：保留稳定、透明且无需重建的 BM25 索引，只学习能够直接提升检索指标的扩展策略。对快速变化的社区语料，可把 nDCG、点击或长尾召回作为奖励，并审计每个扩展词的边际收益，降低黑盒改写风险。",
+      "rank": 4
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2608.25625",
+      "title": "RetrievalRouter: Joint Modality and Architecture Selection for Document Retrieval",
+      "url": "https://arxiv.org/abs/2608.25625",
+      "authors": "Emre Kuru, Mehmet Onur Keskin, Reza Farahbakhsh, Noel Crespi",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.35,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.4,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "针对文本/多模态、稠密/晚交互检索之间的精度与延迟冲突，RetrievalRouter 仅根据查询文本选择最合适的检索管线。作者在金融与科学文档基准上发现不存在始终占优的静态方案，并用单一可调参数给出从低成本到高精度的完整折中曲线。",
+      "key_insight": "生成式搜索的前置检索无需所有请求都走最昂贵模型。可先训练轻量路由器识别需要视觉理解、细粒度 token 交互或普通稠密召回的查询，再把成本集中到困难样本；对 UGC 搜索，这一思路也能用于短文本、图文帖子和长内容之间的动态路由。",
+      "rank": 5
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2510.22733",
+      "title": "E2Rank: Unifying Text Embedding and Listwise Reranking for Effective and Efficient Search",
+      "url": "https://arxiv.org/abs/2510.22733",
+      "authors": "Qi Liu, Yanzhao Zhang, Mingxin Li, Dingkun Long, Pengjun Xie, Jiaxin Mao",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.4,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "E2Rank 让单一文本嵌入模型同时承担召回与列表重排：将查询和 top-K 候选组成的 listwise prompt 视为伪相关反馈查询，再与预计算文档向量做余弦相似度，无需自回归解码。论文在 BEIR 达到领先结果，在推理型 BRIGHT 上保持竞争力，并显著降低 LLM 重排延迟。",
+      "key_insight": "核心启示是把列表上下文压缩进“增强查询表示”，而不是逐候选调用生成模型。这样可复用现有向量索引和文档 embedding，把生成式/listwise 信号转化为低成本相似度计算；适合 UGC 搜索的多阶段系统，但需验证 top-K 噪声是否会污染伪反馈。",
+      "rank": 6,
+      "deep_reading": {
+        "paper_id": "arxiv:2510.22733",
+        "title": "E2Rank: Your Text Embedding can Also be an Effective and Efficient Listwise Reranker",
+        "status": "completed",
+        "content": "# E2Rank 深度解读：用一个 embedding 模型同时做检索与 listwise 重排\n\n## 1. 问题与动机\n\n双塔 embedding 模型检索高效，但排序精度有天花板：query 与 doc 各自独立编码、仅靠最终向量的余弦相似度打分，缺乏 query-doc 与 doc-doc 的细粒度交互，因此重排能力不及 cross-encoder，更落后于近期 LLM listwise reranker（RankGPT、RankZephyr、RankQwen3 等）。但 LLM listwise reranker 要逐 token 解码、对每个 query 重新前向，延迟极高——论文实测 RankQwen3-8B 在 COVID 上每 query 需 16.93 秒。工业搜索既要高 nDCG 又要低延迟，二者历来难以兼得。本文动机直接：能否让\"同一个 embedding 模型\"既承担高效检索、又承担高质量 listwise 重排，从而省掉单独部署一个重排模型的显存、延迟与工程成本。\n\n## 2. 方法详解\n\n核心是把 listwise 重排改写成\"一次 embedding 计算 + 余弦相似度\"。统一打分函数为 s(q,d)=cos(e^q, e^d)。重排时构造 listwise prompt q̂=(I, d_1,…,d_k, q)：前置 instruction I、拼接 top-k 候选文档、末尾接原始 query；模型取最后一层 decoder 在 EOS 位置的 hidden state 作为增强 query 向量，即 e^q̂ = f(I,d_1,…,d_k,q)[-1]，再用 cos(e^q̂, e^d_i) 对每个候选 d_i 打分。由于候选文档已进入 prompt，e^q̂ 相当于被 top-K 文档信号增强过的 query，等价于传统检索里的 pseudo-relevance feedback（PRF）；但文档自身向量 e^d_i 仍是离线预编码、可复用，重排只需重算一个 query 向量并做 k 次点积，延迟远低于逐 token 解码。\n\n训练分两阶段，底座为 Qwen3（0.6B/4B/8B 三档）。Stage I：在 E5 公开数据（约 150 万样本）上用 InfoNCE 对比损失（温度 τ=0.03）训练基础检索能力，batch size 512、1 epoch。Stage II：从 E5/BGE-M3 检索数据采约 8.7 万条（每条 1 个 query、1 个正例、15 个负例），损失为 L = L_InfoNCE + λ·L_RankNet（λ=2.0），其中 RankNet 为 pairwise 排序损失（τ=0.1）；batch size 128、约 700 步、学习率 5e-6，硬件为 8 张 NVIDIA A100 80G。设计上把对比检索目标与 pairwise 排序目标联合优化，使同一向量空间既适合召回又适合重排。\n\n## 3. 核心技术贡献\n\n1）统一框架：以 cos 相似度作为检索与 listwise 重排的同一打分函数，单模型双用途——省去独立 cross-encoder/LLM reranker，文档向量离线复用。机制在于把 listwise prompt 当作 PRF 式增强 query embedding，不引入逐对 token 交互即获得 listwise 上下文收益。\n\n2）两阶段联合训练：Stage I 对比学习打基础，Stage II 用 InfoNCE+RankNet 联合损失注入排序能力。消融显示去掉 RankNet 会在 BEIR/BRIGHT 上出现\"最严重的性能崩塌\"，说明 pairwise 排序目标是重排能力的关键来源。\n\n3）双向互增益：排序训练不仅提升重排，还反过来改善 embedding 在 MTEB 上的表现（E2Rank-8B 65.03，略高于 LLM2Vec-Meta-LLaMA-3-8B 的 65.01），表明排序信号对底层检索表征同样有正向作用，而非以牺牲检索换重排。\n\n## 4. 实验结果分析\n\nBEIR 重排 nDCG@10 平均：E2Rank-8B 为 54.35，高于 RankQwen3-8B 的 53.39 与 RankGPT-4o 的 53.09，在公开 listwise reranker 中取得 SOTA。推理密集的 BRIGHT 平均分：E2Rank-8B 为 33.4，优于 RankQwen3-8B 的 32.0，但低于专门面向推理的 ReasonRank-7B（35.7）——说明在需要复杂推理的检索上，纯 embedding 路线仍不及推理增强型 reranker。MTEB（56 个数据集）平均 65.03，与强 LLM-embedding baseline 持平，验证排序训练没有牺牲检索表征。对比的 baseline 覆盖 RankGPT、RankQwen3、RankZephyr、ListT5、BGE、monoBERT、monoT5 等。\n\n效率是最大亮点：COVID 数据集、A100 上每 query 端到端延迟，E2Rank-8B 仅 3.40 秒（其中编码 2.76 秒 + 其余 0.64 秒），而 RankQwen3-8B 需 16.93 秒，约 5 倍加速；论文进一步指出 E2Rank-8B 比 RankQwen3-0.6B 还快——即在同等甚至更优排序质量下，8B 的 E2Rank 比 0.6B 的解码式 reranker 更快，凸显\"避免逐 token 解码\"的结构性优势。\n\n消融结论：去掉 Stage I，MTEB 退化明显（基础 query-doc 对齐受损）；去掉 RankNet，BEIR/BRIGHT 崩塌最重；去掉 listwise prompt 则失去文档上下文的 PRF 信号、重排能力大降。listwise prompt 的收益在约 20 篇文档后趋于饱和，提示重排候选数不必过大。\n\n## 5. 局限与未来方向\n\n作者明确指出：受算力限制，训练并未使用 Appendix B 的完整数据，每个数据集最多采样 1 万条，数据规模受限。训练标签依赖 LLM 标注，质量不稳定——图 5 显示 MS MARCO 上标注一致率仅勉强过半，作者把\"构建更高质量训练数据\"留作未来工作。此外 BRIGHT 上落后于 ReasonRank，说明该方法在推理密集检索上的上限低于显式推理式 reranker；listwise prompt 还受 LLM 上下文长度约束，候选文档数与单文档长度都有限（约 20 篇后饱和）。\n\n## 6. 工业实践意义\n\n对延迟敏感又要 nDCG 的搜索系统（含社区 UGC 短文本搜索）很有参考：可用一个 embedding 模型同时承担召回与重排，文档向量离线建库复用，重排只重算一个 query 向量加 k 次点积，省去单独 cross-encoder reranker 的部署、显存与延迟（实测较解码式 8B reranker 约 5 倍加速、3.40s vs 16.93s）。落地路径清晰：用现成 embedding 模型（如 Qwen3 系）在自有点击/相关性数据上跑 Stage II 的 InfoNCE+RankNet 联合损失（λ=2），即可把召回模型升级为兼具 listwise 重排能力的统一模型；重排候选控制在约 20 篇即可，过多收益饱和。需注意两点：训练标签质量直接影响效果，社区场景宜用真实点击/人工相关性而非纯 LLM 弱标注（论文已暴露 MS MARCO 标注一致率偏低的问题）；若业务涉及复杂推理型 query，单 embedding 路线可能不及推理式 reranker，可保留 LLM reranker 作兜底。部署上 listwise 编码的主要成本在 query 侧前向，可用较小档（0.6B/4B）进一步压低线上延迟。",
+        "content_html": "<h1>E2Rank 深度解读：用一个 embedding 模型同时做检索与 listwise 重排</h1>\n<h2>1. 问题与动机</h2>\n<p>双塔 embedding 模型检索高效，但排序精度有天花板：query 与 doc 各自独立编码、仅靠最终向量的余弦相似度打分，缺乏 query-doc 与 doc-doc 的细粒度交互，因此重排能力不及 cross-encoder，更落后于近期 LLM listwise reranker（RankGPT、RankZephyr、RankQwen3 等）。但 LLM listwise reranker 要逐 token 解码、对每个 query 重新前向，延迟极高——论文实测 RankQwen3-8B 在 COVID 上每 query 需 16.93 秒。工业搜索既要高 nDCG 又要低延迟，二者历来难以兼得。本文动机直接：能否让&quot;同一个 embedding 模型&quot;既承担高效检索、又承担高质量 listwise 重排，从而省掉单独部署一个重排模型的显存、延迟与工程成本。</p>\n<h2>2. 方法详解</h2>\n<p>核心是把 listwise 重排改写成&quot;一次 embedding 计算 + 余弦相似度&quot;。统一打分函数为 s(q,d)=cos(e^q, e^d)。重排时构造 listwise prompt q̂=(I, d_1,…,d_k, q)：前置 instruction I、拼接 top-k 候选文档、末尾接原始 query；模型取最后一层 decoder 在 EOS 位置的 hidden state 作为增强 query 向量，即 e^q̂ = f(I,d_1,…,d_k,q)[-1]，再用 cos(e^q̂, e^d_i) 对每个候选 d_i 打分。由于候选文档已进入 prompt，e^q̂ 相当于被 top-K 文档信号增强过的 query，等价于传统检索里的 pseudo-relevance feedback（PRF）；但文档自身向量 e^d_i 仍是离线预编码、可复用，重排只需重算一个 query 向量并做 k 次点积，延迟远低于逐 token 解码。</p>\n<p>训练分两阶段，底座为 Qwen3（0.6B/4B/8B 三档）。Stage I：在 E5 公开数据（约 150 万样本）上用 InfoNCE 对比损失（温度 τ=0.03）训练基础检索能力，batch size 512、1 epoch。Stage II：从 E5/BGE-M3 检索数据采约 8.7 万条（每条 1 个 query、1 个正例、15 个负例），损失为 L = L_InfoNCE + λ·L_RankNet（λ=2.0），其中 RankNet 为 pairwise 排序损失（τ=0.1）；batch size 128、约 700 步、学习率 5e-6，硬件为 8 张 NVIDIA A100 80G。设计上把对比检索目标与 pairwise 排序目标联合优化，使同一向量空间既适合召回又适合重排。</p>\n<h2>3. 核心技术贡献</h2>\n<p>1）统一框架：以 cos 相似度作为检索与 listwise 重排的同一打分函数，单模型双用途——省去独立 cross-encoder/LLM reranker，文档向量离线复用。机制在于把 listwise prompt 当作 PRF 式增强 query embedding，不引入逐对 token 交互即获得 listwise 上下文收益。</p>\n<p>2）两阶段联合训练：Stage I 对比学习打基础，Stage II 用 InfoNCE+RankNet 联合损失注入排序能力。消融显示去掉 RankNet 会在 BEIR/BRIGHT 上出现&quot;最严重的性能崩塌&quot;，说明 pairwise 排序目标是重排能力的关键来源。</p>\n<p>3）双向互增益：排序训练不仅提升重排，还反过来改善 embedding 在 MTEB 上的表现（E2Rank-8B 65.03，略高于 LLM2Vec-Meta-LLaMA-3-8B 的 65.01），表明排序信号对底层检索表征同样有正向作用，而非以牺牲检索换重排。</p>\n<h2>4. 实验结果分析</h2>\n<p>BEIR 重排 nDCG@10 平均：E2Rank-8B 为 54.35，高于 RankQwen3-8B 的 53.39 与 RankGPT-4o 的 53.09，在公开 listwise reranker 中取得 SOTA。推理密集的 BRIGHT 平均分：E2Rank-8B 为 33.4，优于 RankQwen3-8B 的 32.0，但低于专门面向推理的 ReasonRank-7B（35.7）——说明在需要复杂推理的检索上，纯 embedding 路线仍不及推理增强型 reranker。MTEB（56 个数据集）平均 65.03，与强 LLM-embedding baseline 持平，验证排序训练没有牺牲检索表征。对比的 baseline 覆盖 RankGPT、RankQwen3、RankZephyr、ListT5、BGE、monoBERT、monoT5 等。</p>\n<p>效率是最大亮点：COVID 数据集、A100 上每 query 端到端延迟，E2Rank-8B 仅 3.40 秒（其中编码 2.76 秒 + 其余 0.64 秒），而 RankQwen3-8B 需 16.93 秒，约 5 倍加速；论文进一步指出 E2Rank-8B 比 RankQwen3-0.6B 还快——即在同等甚至更优排序质量下，8B 的 E2Rank 比 0.6B 的解码式 reranker 更快，凸显&quot;避免逐 token 解码&quot;的结构性优势。</p>\n<p>消融结论：去掉 Stage I，MTEB 退化明显（基础 query-doc 对齐受损）；去掉 RankNet，BEIR/BRIGHT 崩塌最重；去掉 listwise prompt 则失去文档上下文的 PRF 信号、重排能力大降。listwise prompt 的收益在约 20 篇文档后趋于饱和，提示重排候选数不必过大。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出：受算力限制，训练并未使用 Appendix B 的完整数据，每个数据集最多采样 1 万条，数据规模受限。训练标签依赖 LLM 标注，质量不稳定——图 5 显示 MS MARCO 上标注一致率仅勉强过半，作者把&quot;构建更高质量训练数据&quot;留作未来工作。此外 BRIGHT 上落后于 ReasonRank，说明该方法在推理密集检索上的上限低于显式推理式 reranker；listwise prompt 还受 LLM 上下文长度约束，候选文档数与单文档长度都有限（约 20 篇后饱和）。</p>\n<h2>6. 工业实践意义</h2>\n<p>对延迟敏感又要 nDCG 的搜索系统（含社区 UGC 短文本搜索）很有参考：可用一个 embedding 模型同时承担召回与重排，文档向量离线建库复用，重排只重算一个 query 向量加 k 次点积，省去单独 cross-encoder reranker 的部署、显存与延迟（实测较解码式 8B reranker 约 5 倍加速、3.40s vs 16.93s）。落地路径清晰：用现成 embedding 模型（如 Qwen3 系）在自有点击/相关性数据上跑 Stage II 的 InfoNCE+RankNet 联合损失（λ=2），即可把召回模型升级为兼具 listwise 重排能力的统一模型；重排候选控制在约 20 篇即可，过多收益饱和。需注意两点：训练标签质量直接影响效果，社区场景宜用真实点击/人工相关性而非纯 LLM 弱标注（论文已暴露 MS MARCO 标注一致率偏低的问题）；若业务涉及复杂推理型 query，单 embedding 路线可能不及推理式 reranker，可保留 LLM reranker 作兜底。部署上 listwise 编码的主要成本在 query 侧前向，可用较小档（0.6B/4B）进一步压低线上延迟。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2608.25245",
+      "title": "The \"Curse of Knowledge\" in LLM Query Simulation: Concept Provenance for Tracing Answer-Side Intrusion",
+      "url": "https://arxiv.org/abs/2608.25245",
+      "authors": "Chenglong Ma, Xinye Wanyan, Danula Hettiachchi, Ziqi Xu, Jeffrey Chan",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "论文研究 LLM 模拟搜索查询时偷带答案侧知识的问题，并提出概念溯源框架，将查询概念划分为背景支持、人类核心、人类长尾和候选答案侧四类。在 100 个 UQV100 主题、8 个 LLM、5 种提示条件共 77,004 条查询上，答案侧概念占非通用概念 7.40%，影响 97 个主题。",
+      "key_insight": "用生成查询扩充搜索评测或训练数据时，仅检查多样性和检索效果会掩盖信息泄漏。实践中应保留“用户在搜索前能否知道该概念”的边界标签，并把答案侧侵入率作为质量门槛；否则离线指标会因模型提前看到答案语义而虚高，误导 UGC 召回优化。",
+      "rank": 7
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2601.02764",
+      "title": "Netflix Artwork Personalization via LLM Post-training",
+      "url": "https://arxiv.org/abs/2601.02764",
+      "authors": "Hyunji Nam, Sejoon Oh, Emma Kong, Yesu Feng, Moumita Bhattacharya",
+      "company": [
+        "Netflix"
+      ],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.1,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.3,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "Netflix 将个性化从“推荐哪个标题”推进到“为同一标题展示哪张海报”：利用 LLM 后训练理解用户偏好以及作品中不同主题、情绪和视觉侧重，再匹配最可能吸引该用户的 artwork。该任务直接建模同一内容的多种展示语义，论文以新版形式在本次窗口重新发布。",
+      "key_insight": "生成式推荐可以不替换现有召回排序，而先切入展示层个性化：保持内容候选不变，利用语言模型生成或判断用户偏好与素材语义的对应关系。对社区搜索可迁移为封面、摘要和结果卡片选择，但需通过离线偏好一致性和线上 CTR 联合约束，避免只优化视觉吸引力。",
+      "rank": 8
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2608.25318",
+      "title": "Rank-Deviation Quality: A Distance-Aware Metric for Multi-Answer Retrieval and Ranking Evaluation",
+      "url": "https://arxiv.org/abs/2608.25318",
+      "authors": "Xiaokun Zhou, Alessandro Moschitti, Danielle Class",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 4.1,
+      "preference_bonus": 0.0,
+      "adjusted_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "RDQ 为单答案到多答案查询提供统一的排序评价：命中参考列表的结果按输出位置权重计分，再乘以与参考次序的偏差惩罚，参考集外结果记零。参数可在“先召回有效答案”和“严格匹配参考顺序”之间调节，并支持列表、轮播等不同展示位置。",
+      "key_insight": "生成式推荐常有多个同样合理的答案，单一 gold 或严格相关等级容易惩罚有效多样性。RDQ 只需成对或列表式序标注，适合评估对话推荐、结果卡片和多答案搜索；上线前应依据界面曝光曲线校准位置权重，避免评价指标与真实用户可见性脱节。",
+      "rank": 9
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2608.25487",
+      "title": "ReliableRAG: Combating Misinformation in Retrieval-Augmented Generation via Reliability-Guided Reasoning Chains",
+      "url": "https://arxiv.org/abs/2608.25487",
+      "authors": "Jinpu Jiang, Xuan Wu, Wenhao Song, Bo Yang, You Zhou, Hongwei Ge, Heow Pueh Lee, Yanchun Liang, Chunguo Wu",
+      "company": [],
+      "source": "arxiv",
+      "published": "Thu, 27 Aug 2026 00:00:00 -0400",
+      "total_score": 3.85,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.9,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "ReliableRAG 针对新闻和社交媒体中的欺骗性错误信息，显式评估检索片段的细粒度可靠性，并用可靠性引导多跳推理链。其目标是解决语义上高度相关、事实却错误的证据：这类片段可能在任一步误导后续推理，传统相关性排序或隐式对齐难以及时识别。",
+      "key_insight": "UGC 搜索接入生成答案后，相关性与可信度必须分开建模。可在重排之后增加来源、时间、交叉证据和陈述一致性信号，让生成链优先消费高可靠片段，并保留冲突证据；但该方案引入额外推理开销，落地时应先用于高风险、多跳请求。",
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated",
+      "title": "keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated: GLM-5.3-Flash (Z.ai) NVFP4 (LibertAI) + NVFP4 KV, 1M context on 2x DGX Spark GB10 — vLLM TP2 recipe, walls ledger, benchmarks, needle to 1.04M; abliteration with blackforest_AI next",
+      "url": "https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated",
+      "source": "github",
+      "description": "GLM-5.3-Flash (Z.ai) NVFP4 (LibertAI) + NVFP4 KV, 1M context on 2x DGX Spark GB10 — vLLM TP2 recipe, walls ledger, benchmarks, needle to 1.04M; abliteration with blackforest_AI next",
+      "language": "Python",
+      "stars": 19,
+      "created_at": "2026-08-27"
+    },
+    {
+      "rank": 2,
+      "id": "github:0xSero/glm-5.3-flash-sglang-sm121",
+      "title": "glm-5.3-flash-sglang-sm121",
+      "url": "https://github.com/0xSero/glm-5.3-flash-sglang-sm121",
+      "source": "github",
+      "description": "",
+      "language": "Python",
+      "stars": 12,
+      "created_at": "2026-08-26"
+    },
+    {
+      "rank": 3,
+      "id": "github:tonyd2wild/GLM-5.3-Flash-NVFP4-1M-KV-4x-DGX-Spark",
+      "title": "GLM-5.3-Flash-NVFP4-1M-KV-4x-DGX-Spark: GLM-5.3-Flash (320B MoE) at TP4 across four DGX Sparks, same day as the model drop: 36 tok/s, 1.26M-token FP8 KV pool, 262K context, MTP spec decode. First TP4 glm5_next outside B200 hardware. Full patched-image recipe + the GB10 memory study.",
+      "url": "https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-1M-KV-4x-DGX-Spark",
+      "source": "github",
+      "description": "GLM-5.3-Flash (320B MoE) at TP4 across four DGX Sparks, same day as the model drop: 36 tok/s, 1.26M-token FP8 KV pool, 262K context, MTP spec decode. First TP4 glm5_next outside B200 hardware. Full patched-image recipe + the GB10 memory study.",
+      "language": "Python",
+      "stars": 12,
+      "created_at": "2026-08-27"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:Qwen/Qwen3.8-Flash-Next",
+      "title": "Qwen/Qwen3.8-Flash-Next",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen4_exp, image-text-to-text, conversational, license:other, eval-results, endpoints_compatible",
+      "language": "model",
+      "stars": 3930,
+      "created_at": "2026-08-24"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-5.3-Flash",
+      "title": "zai-org/GLM-5.3-Flash",
+      "url": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm5_next, image-text-to-text, text-generation, conversational, en, zh",
+      "language": "model",
+      "stars": 1304,
+      "created_at": "2026-08-25"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:Qwen/Qwen3.8-Flash-Next-FP8",
+      "title": "Qwen/Qwen3.8-Flash-Next-FP8",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen4_exp, image-text-to-text, conversational, base_model:Qwen/Qwen3.8-Flash-Next, base_model:quantized:Qwen/Qwen3.8-Flash-Next, license:other",
+      "language": "model",
+      "stars": 118,
+      "created_at": "2026-08-24"
+    },
+    {
+      "rank": 7,
+      "id": "hf_dataset:zai-org/terminal-bench-2-verified",
+      "title": "zai-org/terminal-bench-2-verified",
+      "url": "https://huggingface.co/datasets/zai-org/terminal-bench-2-verified",
+      "source": "huggingface",
+      "description": "Terminal-Bench 2.0 Verified: Instruction & Environment Fix Version 中文版本 2026.08.18 Update: Following the release of Terminal-Bench 2.1, we conducted another round of review on several tasks' grading and instructions, validating each fix end-to-end inside the actual task images. T; tags: license:apache-2.0, arxiv:2601.11868, arxiv:2602.15763, region:us",
+      "language": "dataset",
+      "stars": 80,
+      "created_at": "2026-02-05"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:zai-org/GLM-5.3-Flash-BF16",
+      "title": "zai-org/GLM-5.3-Flash-BF16",
+      "url": "https://huggingface.co/zai-org/GLM-5.3-Flash-BF16",
+      "source": "huggingface",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm5_next, image-text-to-text, text-generation, conversational, en, zh",
+      "language": "model",
+      "stars": 38,
+      "created_at": "2026-08-25"
+    }
+  ]
+}

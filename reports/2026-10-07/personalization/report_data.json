@@ -1,0 +1,373 @@
+{
+  "date": "2026-10-07",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "papers_scored": 27,
+    "papers_selected": 2,
+    "score_min": 3.45,
+    "score_max": 4.0
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.04302",
+      "title": "From Valid to Useful: Post-Verification Acquisition for Recursive Self-Improving Recommendation",
+      "authors": "Hasan, Tonmoy, Foust, Taylor, Tang, Shao, Neves, Leonardo, Gupta, Aman, Udagawa, Hiroto, Dias, Helder, Silva, Daniel, Ramanath, Rohan",
+      "abstract": "Sequential recommenders can generate synthetic interaction sequences and retrain on the augmented corpus in a recursive self-improvement loop. To limit error accumulation, current methods verify each generated sequence remains predictive of the user's real interactions and discard those that drift away from it. Verification does not, however, determine which verified sequences should train the next model. With every verified sequence used for training, source sequences yielding more verified sequences or longer continuations have more influence, although neither quantity indicates how much those sequences will help the next model. We formulate the decision of which verified sequences are used to train the next model as \\emph{post-verification acquisition} and introduce {\\bf Disagreement-Aware Recursive Self-Improving Recommendation (DA-RSIR)}. DA-RSIR caps each source sequence's contribution and ranks its verified sequences by how much the model's predictions disagree over their augmented interactions. It uses a score derived from Bayesian Active Learning by Disagreement (BALD) and estimated with Monte Carlo (MC) dropout. DA-RSIR requires no extra labels, teacher model, or quality scorer. Across four datasets, three recommender models, and two metrics, it improves on the retain-all approach in all $24$ comparisons and attains the highest mean in $23$ of $24$ overall; the aggregate improvement is statistically significant on both metrics. A single DA-RSIR round exceeds the retain-all approach's best gain over five recursive rounds. These findings establish post-verification acquisition as a separate control point in recursive self-improvement, separating which sequences pass verification from which verified sequences are used to train the next model.",
+      "url": "https://arxiv.org/abs/2610.04302",
+      "source": "web_search",
+      "published": "2026-10-03",
+      "discovered_at": "2026-10-07",
+      "source_type": "paper",
+      "company": [
+        "Nubank"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.08,
+      "summary": "序列推荐用模型生成的交互序列递归训练时，全部保留通过验证的数据会放大来源与长度偏差。DA-RSIR 用 MC dropout 估计目标物品的预测分歧，按来源分组并从低、中、高分歧区间选取代表序列。在四个数据集、三个模型和两个指标构成的 24 项比较中全部优于 retain-all；SASRec 在 Beauty 上的 NDCG@10 从 5.01 升至 5.17（表中乘以 100）。",
+      "key_insight": "合成序列通过保真验证，并不代表适合全部加入训练。方法把采纳决策独立出来，每个来源最多贡献 3B 条序列，再按分歧区间混合采样；社区 UGC 搜索可在用户行为序列增强中借鉴来源限额与采样设计，分别观察 nDCG 和 CTR。论文只报告离线 ID 推荐结果，短历史平均约 5–7 项，尚不能据此推断线上搜索收益。",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:2610.04302",
+        "title": "From Valid to Useful: Post-Verification Acquisition for Recursive Self-Improving Recommendation",
+        "status": "completed",
+        "content": "# DA-RSIR：把合成序列的保真验证与训练价值分开\n\n原文：https://arxiv.org/html/2610.04302 。以下方法与数字来自正文、实验表及附录。论文由 Nubank 作者团队完成，未报告线上 A/B；将其迁移到社区 UGC 搜索的建议属于实践推论。\n\n## 1. 问题与动机\n\n序列推荐的训练数据往往稀疏且不均衡。传统增强通过遮盖、重排或生成额外交互弥补这一缺口；递归自改进进一步让当前推荐器生成数据，再训练后继模型。原有 RSIR 为生成过程设置了保真门槛：续写后，来源序列中尚未使用的真实物品必须仍出现在模型预测的前列，否则停止生成。这能阻止明显漂移，却不能证明每条通过门槛的序列对后继模型同样有价值。\n\n作者指出，全部保留会把生成产量当作隐式样本权重：容易生成的来源贡献更多序列，长序列贡献更多下一物品训练目标。这两个量都不是下游收益。正文中，第一轮 RSIR 在十二个模型与数据集设置上都提高平均 Recall@10，却在其中四个设置降低 NDCG@10，说明召回与头部排序质量可能分离。DA-RSIR 因此保留原生成、验证流程，只增加验证后的数据采纳控制；它研究的是用户行为建模的训练语料选择，而非新的生成式推荐上线架构。\n\n## 2. 方法详解\n\n整个系统包含当前序列推荐器、候选生成与验证模块、目标特定分歧评分器、分组采样器及后继训练器。每个来源从首个物品启动，候选可以来自原序列或全物品目录；模型在 top-κ 中采样一个续写物品。保真检查关注续写之后是否至少还有一个未使用的来源物品处于 top-τ，不能误解为新采样物品自身必须满足 top-τ。失败后停止，保留最后通过验证的上下文，再删除长度不足及完全重复的序列。\n\n评分时冻结当前模型并关闭梯度，但保持 dropout 开启，进行 S 次随机前向。同一次前向在所有生成位置上使用一致的 dropout 配置，从而近似同一次参数抽样；计算 softmax 前屏蔽 padding 和前缀中已经出现的物品。对每个生成目标，计算其概率乘对数概率在各次前向中的平均，减去平均概率乘其对数。这是该目标对 MC BALD 总分的贡献，不是完整互信息。全序列对生成位置取平均，使分数不随长度简单累加；作者也承认长度影响未必完全消失。\n\n每个来源预先把 BM 次生成尝试分成 B 组，每组 M 次，组划分先于评分，避免按结果反向分组。候选在组内按平均分歧排序，再用最大分歧、平均对数似然及确定性键打破平局。若存活候选不超过三条，全保留；超过三条则取 h=max(1,floor(n/4))，把前 h 条、后 h 条和中间部分分成低、中、高三段，各均匀抽一条。最终完全去重，每个来源最多贡献 3B 条；来源限额限制序列条数，训练目标数仍会受到序列长度影响。\n\n后继模型有两种训练方式：DA-RSIR 从新随机初始化重新训练，DA-RSIR-FT 从当前参数继续微调。原始真实语料始终保留，历轮采纳的合成序列累积进入训练集，并可成为下一轮生成来源。下一物品目标使用 sampled softmax，每个训练位置抽取 256 个负物品。最终 B=2、M=10、S=10，每个来源尝试生成二十次、最多采纳六条。正文列出了超参数搜索范围，但没有给出足以逐项复现的优化器、学习率、batch size 和训练步数，不应补造这些配置。\n\n## 3. 核心技术贡献\n\n第一项贡献是明确区分候选是否合格与候选是否应参与后继训练。这个控制点不改变 RSIR 的验证，因而可以在相同候选库中比较采纳政策。它修正了“通过验证就全部训练”的隐式假设，为数据增强引入可独立分析的预算和策略。\n\n第二项贡献是用生成目标的预测分歧排序。完整 BALD 对整个目录求和，而本方法关注合成序列实际产生的目标，并对位置求平均；因此实现与解释都应保持目标特定的定义。高分表示模型参数抽样对该目标的概率赋值有分歧，不能直接等同于更高数据质量。组内比较还避免要求不同用户来源的绝对不确定性尺度完全校准。\n\n第三项贡献是覆盖低、中、高分歧并限制来源产量。单独选择最高分可能产生冗余，也可能偏向某种训练难度；跨区间抽样提供了稳定样本与有争议样本的组合。在固定采纳量控制下，该组合仍取得最好的两个平均指标，不过差距不大。附录还显示不分提案组的 B=1 已具有竞争力，额外分组收益依赖设置，不能把分组本身宣传成全部提升的来源。\n\n## 4. 实验结果分析\n\n实验使用 Amazon Toys、Beauty、Sports 和 Yelp，均做 5-core 处理；用户平均历史长度约 5.3–7.1，属于稀疏短历史设置。Toys 为 19,412 用户、11,876 物品、106,254 交互；Beauty 为 22,363 用户、12,066 物品、127,598 交互；Sports 为 35,598 用户、18,281 物品、187,694 交互；Yelp 为 30,431 用户、20,014 物品、216,733 交互。评估采用末条测试、倒数第二条验证，其余训练的 leave-one-out，测试对全目录排序，而非只对少数随机负样本排序。主要结果报告四个随机种子的均值与样本标准差。\n\n下面摘录第一轮 SASRec 结果，数值均为原指标乘以 100：\n\n| 数据集 | 方法 | NDCG@10 | Recall@10 |\n|---|---|---:|---:|\n| Beauty | Base | 5.08 | 8.59 |\n| Beauty | RSIR | 5.01 | 8.67 |\n| Beauty | RSIR-FT | 5.04 | 8.70 |\n| Beauty | DA-RSIR | 5.17 | 8.86 |\n| Beauty | DA-RSIR-FT | 5.17 | 8.81 |\n| Sports | Base | 2.73 | 4.69 |\n| Sports | RSIR | 2.85 | 5.02 |\n| Sports | DA-RSIR | 2.90 | 5.08 |\n| Yelp | Base | 1.96 | 3.84 |\n| Yelp | DA-RSIR | 2.21 | 4.29 |\n\nBeauty 上，相对 retain-all RSIR 的 NDCG 从 5.01 到 5.17，约增加 3.19%；相对最强基线则约增加 1.8%，这两个比较口径应区分。Yelp 上相对 Base 的 NDCG 增幅约 12.8%，不能把它写成相对最强基线的收益。总体上重新训练版本在四数据集、三模型、两指标的二十四项比较中均超过 retain-all，并在整体二十四项中二十三项取得最高均值，但并非所有数据集上的所有 DA 变体都胜过每一个外部基线。\n\n固定每组采三条的消融提供更关键的因果线索：Beauty/SASRec 的 Random-3 为 5.12/8.79，Low-3 为 5.09/8.74，Middle-3 为 5.14/8.81，High-3 为 5.11/8.84，DA-RSIR 为 5.17/8.86。随机限量也优于全部保留，说明采纳量控制贡献了部分收益；中段更有利于 NDCG，高段更有利于 Recall，混合策略兼顾两者。作者强调固定量政策之间差别相对种子方差较小，不能宣称已经证明混合策略在所有环境显著优于随机策略。\n\nMC 次数也不是越多越好。S=5 时重新训练版本为 5.06/8.70；S=10 时为 5.17/8.86；S=20 时为 5.09/8.72。五轮递归分析来自单种子，后期出现性能回落，因此不能把增加轮数当成稳定收益来源。第一轮语料序列数增加 44.1%–81.8%，交互数增加 30.2%–63.3%；用户与物品集合未扩展，收益来自现有域内轨迹增强。\n\n## 5. 局限与未来方向\n\n作者明确限定在 ID 序列推荐，不覆盖文本推荐；四个基准都是短历史稀疏数据，尚未验证长历史、会话推荐、百万级工业目录、非注意力模型或语言模型推荐器。评价只有离线排序指标，没有线上 A/B。每轮使用相同的分歧区间采纳规则，未来需要研究区间权重何时应改变，以及策略是否应随递归轮数自适应。\n\n还有两个解释上的边界应保留：来源条数限额未完全控制交互目标总量；目标特定分歧不等于完整 BALD，不能套用完整互信息的理论解释。实践上还需要验证推理成本、不同用户群收益及长尾内容分布是否变化。论文没有展示社区搜索的 query 条件化行为、曝光位置偏差或安全过滤下的效果，迁移时这些属于新增实验，而非已被论文证明的能力。\n\n## 6. 工业实践意义\n\n对于社区 UGC 搜索，最直接的可借鉴点是给行为数据增强增加采纳层。可以先在既有序列编码器上生成候选，保留当前的规则与保真检查，再把来源用户、生成尝试组、序列长度和目标特定分歧记录下来。第一轮实验应同时比较原始真实数据、全部保留、固定量随机、混合分歧采样，并保证后两者采纳条数和训练预算一致；这样才能判断收益究竟来自减少合成数据还是更好的数据构成。\n\n指标应同时观察候选召回与最终排序 nDCG，不宜只看 Recall。进入线上后再检验 CTR、长尾曝光和不同历史长度用户的收益；社区帖子语义变化快，还需要独立监测过期内容以及合成样本放大热门用户的风险。这些建议是根据方法推导的实验设计，论文没有提供对应线上数值。\n\n开销主要发生在离线生成、分歧评分和后继训练，评分需要十次随机前向；上线是否新增延迟取决于是否替换在线模型及其输入，不能仅据算法离线执行就承诺总体零成本。作者在八张 H100 的单节点上完成实验，四数据集合计 SASRec 的生成、重新训练、微调约为 25、35、34 分钟；CL4SRec 为 26、312、85 分钟；FEARec 为 32、117、88 分钟。这些是该实验环境中的合计阶段耗时，不是单次线上请求时延，也不代表每项实验用满全部 GPU。\n\n部署前可先从小规模离线数据验证来源限额和随机采样，再衡量 MC 评分是否值得。若随机限量已获得主要收益，分歧评分只带来种子方差范围内的小变化，就应优先选择更省算力的策略；若混合采样稳定改善头部质量，再扩大数据、提高行为真实性检查，并设置递归训练的停止条件。论文真正提供的是一个可检验的数据控制点，而非无需业务验证的上线结论。\n\n实施时还需注意数据切分的边界。验证与测试物品应保持隔离，不能把这些交互加入生成来源；论文所有对照使用相同预处理和划分，社区搜索复现也需要统一观察时间。训练来源可以在后续轮次包含以前采纳的合成序列，因此记录每条样本的真实来源与合成祖先有助于定位递归传播的错误。保真验证只检查与当前来源一致，并不是对真实用户未来行为的外部验证，这也是多轮结果可能回落的原因之一。\n\n评分的工程实现则需要避免把 dropout 关掉：如果误用完全确定的评估模式，多次前向无法形成有效参数分歧。另一方面，关闭梯度可以避免为评分保存反向图，屏蔽前缀已见物品则遵循论文的无重复生成设置。如果业务允许用户反复点击同一帖子，这个屏蔽规则就需要另做对照，不能直接视为适用于所有推荐任务。排序平局和抽样种子应绑定实验种子、轮次、来源、提案组及区间，确保候选库相同时能够重复得到选择结果。最后，应分别保存生成库、通过验证库与采纳库，而不是只留最终训练文件；这样才能判断样本是被验证规则拒绝，还是在采纳阶段落选，也能复用同一验证库进行公平的策略比较。",
+        "content_html": "<h1>DA-RSIR：把合成序列的保真验证与训练价值分开</h1>\n<p>原文：https://arxiv.org/html/2610.04302 。以下方法与数字来自正文、实验表及附录。论文由 Nubank 作者团队完成，未报告线上 A/B；将其迁移到社区 UGC 搜索的建议属于实践推论。</p>\n<h2>1. 问题与动机</h2>\n<p>序列推荐的训练数据往往稀疏且不均衡。传统增强通过遮盖、重排或生成额外交互弥补这一缺口；递归自改进进一步让当前推荐器生成数据，再训练后继模型。原有 RSIR 为生成过程设置了保真门槛：续写后，来源序列中尚未使用的真实物品必须仍出现在模型预测的前列，否则停止生成。这能阻止明显漂移，却不能证明每条通过门槛的序列对后继模型同样有价值。</p>\n<p>作者指出，全部保留会把生成产量当作隐式样本权重：容易生成的来源贡献更多序列，长序列贡献更多下一物品训练目标。这两个量都不是下游收益。正文中，第一轮 RSIR 在十二个模型与数据集设置上都提高平均 Recall@10，却在其中四个设置降低 NDCG@10，说明召回与头部排序质量可能分离。DA-RSIR 因此保留原生成、验证流程，只增加验证后的数据采纳控制；它研究的是用户行为建模的训练语料选择，而非新的生成式推荐上线架构。</p>\n<h2>2. 方法详解</h2>\n<p>整个系统包含当前序列推荐器、候选生成与验证模块、目标特定分歧评分器、分组采样器及后继训练器。每个来源从首个物品启动，候选可以来自原序列或全物品目录；模型在 top-κ 中采样一个续写物品。保真检查关注续写之后是否至少还有一个未使用的来源物品处于 top-τ，不能误解为新采样物品自身必须满足 top-τ。失败后停止，保留最后通过验证的上下文，再删除长度不足及完全重复的序列。</p>\n<p>评分时冻结当前模型并关闭梯度，但保持 dropout 开启，进行 S 次随机前向。同一次前向在所有生成位置上使用一致的 dropout 配置，从而近似同一次参数抽样；计算 softmax 前屏蔽 padding 和前缀中已经出现的物品。对每个生成目标，计算其概率乘对数概率在各次前向中的平均，减去平均概率乘其对数。这是该目标对 MC BALD 总分的贡献，不是完整互信息。全序列对生成位置取平均，使分数不随长度简单累加；作者也承认长度影响未必完全消失。</p>\n<p>每个来源预先把 BM 次生成尝试分成 B 组，每组 M 次，组划分先于评分，避免按结果反向分组。候选在组内按平均分歧排序，再用最大分歧、平均对数似然及确定性键打破平局。若存活候选不超过三条，全保留；超过三条则取 h=max(1,floor(n/4))，把前 h 条、后 h 条和中间部分分成低、中、高三段，各均匀抽一条。最终完全去重，每个来源最多贡献 3B 条；来源限额限制序列条数，训练目标数仍会受到序列长度影响。</p>\n<p>后继模型有两种训练方式：DA-RSIR 从新随机初始化重新训练，DA-RSIR-FT 从当前参数继续微调。原始真实语料始终保留，历轮采纳的合成序列累积进入训练集，并可成为下一轮生成来源。下一物品目标使用 sampled softmax，每个训练位置抽取 256 个负物品。最终 B=2、M=10、S=10，每个来源尝试生成二十次、最多采纳六条。正文列出了超参数搜索范围，但没有给出足以逐项复现的优化器、学习率、batch size 和训练步数，不应补造这些配置。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是明确区分候选是否合格与候选是否应参与后继训练。这个控制点不改变 RSIR 的验证，因而可以在相同候选库中比较采纳政策。它修正了“通过验证就全部训练”的隐式假设，为数据增强引入可独立分析的预算和策略。</p>\n<p>第二项贡献是用生成目标的预测分歧排序。完整 BALD 对整个目录求和，而本方法关注合成序列实际产生的目标，并对位置求平均；因此实现与解释都应保持目标特定的定义。高分表示模型参数抽样对该目标的概率赋值有分歧，不能直接等同于更高数据质量。组内比较还避免要求不同用户来源的绝对不确定性尺度完全校准。</p>\n<p>第三项贡献是覆盖低、中、高分歧并限制来源产量。单独选择最高分可能产生冗余，也可能偏向某种训练难度；跨区间抽样提供了稳定样本与有争议样本的组合。在固定采纳量控制下，该组合仍取得最好的两个平均指标，不过差距不大。附录还显示不分提案组的 B=1 已具有竞争力，额外分组收益依赖设置，不能把分组本身宣传成全部提升的来源。</p>\n<h2>4. 实验结果分析</h2>\n<p>实验使用 Amazon Toys、Beauty、Sports 和 Yelp，均做 5-core 处理；用户平均历史长度约 5.3–7.1，属于稀疏短历史设置。Toys 为 19,412 用户、11,876 物品、106,254 交互；Beauty 为 22,363 用户、12,066 物品、127,598 交互；Sports 为 35,598 用户、18,281 物品、187,694 交互；Yelp 为 30,431 用户、20,014 物品、216,733 交互。评估采用末条测试、倒数第二条验证，其余训练的 leave-one-out，测试对全目录排序，而非只对少数随机负样本排序。主要结果报告四个随机种子的均值与样本标准差。</p>\n<p>下面摘录第一轮 SASRec 结果，数值均为原指标乘以 100：</p>\n<table><thead><tr><th>数据集</th><th>方法</th><th>NDCG@10</th><th>Recall@10</th></tr></thead><tbody><tr><td>Beauty</td><td>Base</td><td>5.08</td><td>8.59</td></tr><tr><td>Beauty</td><td>RSIR</td><td>5.01</td><td>8.67</td></tr><tr><td>Beauty</td><td>RSIR-FT</td><td>5.04</td><td>8.70</td></tr><tr><td>Beauty</td><td>DA-RSIR</td><td>5.17</td><td>8.86</td></tr><tr><td>Beauty</td><td>DA-RSIR-FT</td><td>5.17</td><td>8.81</td></tr><tr><td>Sports</td><td>Base</td><td>2.73</td><td>4.69</td></tr><tr><td>Sports</td><td>RSIR</td><td>2.85</td><td>5.02</td></tr><tr><td>Sports</td><td>DA-RSIR</td><td>2.90</td><td>5.08</td></tr><tr><td>Yelp</td><td>Base</td><td>1.96</td><td>3.84</td></tr><tr><td>Yelp</td><td>DA-RSIR</td><td>2.21</td><td>4.29</td></tr></tbody></table>\n<p>Beauty 上，相对 retain-all RSIR 的 NDCG 从 5.01 到 5.17，约增加 3.19%；相对最强基线则约增加 1.8%，这两个比较口径应区分。Yelp 上相对 Base 的 NDCG 增幅约 12.8%，不能把它写成相对最强基线的收益。总体上重新训练版本在四数据集、三模型、两指标的二十四项比较中均超过 retain-all，并在整体二十四项中二十三项取得最高均值，但并非所有数据集上的所有 DA 变体都胜过每一个外部基线。</p>\n<p>固定每组采三条的消融提供更关键的因果线索：Beauty/SASRec 的 Random-3 为 5.12/8.79，Low-3 为 5.09/8.74，Middle-3 为 5.14/8.81，High-3 为 5.11/8.84，DA-RSIR 为 5.17/8.86。随机限量也优于全部保留，说明采纳量控制贡献了部分收益；中段更有利于 NDCG，高段更有利于 Recall，混合策略兼顾两者。作者强调固定量政策之间差别相对种子方差较小，不能宣称已经证明混合策略在所有环境显著优于随机策略。</p>\n<p>MC 次数也不是越多越好。S=5 时重新训练版本为 5.06/8.70；S=10 时为 5.17/8.86；S=20 时为 5.09/8.72。五轮递归分析来自单种子，后期出现性能回落，因此不能把增加轮数当成稳定收益来源。第一轮语料序列数增加 44.1%–81.8%，交互数增加 30.2%–63.3%；用户与物品集合未扩展，收益来自现有域内轨迹增强。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确限定在 ID 序列推荐，不覆盖文本推荐；四个基准都是短历史稀疏数据，尚未验证长历史、会话推荐、百万级工业目录、非注意力模型或语言模型推荐器。评价只有离线排序指标，没有线上 A/B。每轮使用相同的分歧区间采纳规则，未来需要研究区间权重何时应改变，以及策略是否应随递归轮数自适应。</p>\n<p>还有两个解释上的边界应保留：来源条数限额未完全控制交互目标总量；目标特定分歧不等于完整 BALD，不能套用完整互信息的理论解释。实践上还需要验证推理成本、不同用户群收益及长尾内容分布是否变化。论文没有展示社区搜索的 query 条件化行为、曝光位置偏差或安全过滤下的效果，迁移时这些属于新增实验，而非已被论文证明的能力。</p>\n<h2>6. 工业实践意义</h2>\n<p>对于社区 UGC 搜索，最直接的可借鉴点是给行为数据增强增加采纳层。可以先在既有序列编码器上生成候选，保留当前的规则与保真检查，再把来源用户、生成尝试组、序列长度和目标特定分歧记录下来。第一轮实验应同时比较原始真实数据、全部保留、固定量随机、混合分歧采样，并保证后两者采纳条数和训练预算一致；这样才能判断收益究竟来自减少合成数据还是更好的数据构成。</p>\n<p>指标应同时观察候选召回与最终排序 nDCG，不宜只看 Recall。进入线上后再检验 CTR、长尾曝光和不同历史长度用户的收益；社区帖子语义变化快，还需要独立监测过期内容以及合成样本放大热门用户的风险。这些建议是根据方法推导的实验设计，论文没有提供对应线上数值。</p>\n<p>开销主要发生在离线生成、分歧评分和后继训练，评分需要十次随机前向；上线是否新增延迟取决于是否替换在线模型及其输入，不能仅据算法离线执行就承诺总体零成本。作者在八张 H100 的单节点上完成实验，四数据集合计 SASRec 的生成、重新训练、微调约为 25、35、34 分钟；CL4SRec 为 26、312、85 分钟；FEARec 为 32、117、88 分钟。这些是该实验环境中的合计阶段耗时，不是单次线上请求时延，也不代表每项实验用满全部 GPU。</p>\n<p>部署前可先从小规模离线数据验证来源限额和随机采样，再衡量 MC 评分是否值得。若随机限量已获得主要收益，分歧评分只带来种子方差范围内的小变化，就应优先选择更省算力的策略；若混合采样稳定改善头部质量，再扩大数据、提高行为真实性检查，并设置递归训练的停止条件。论文真正提供的是一个可检验的数据控制点，而非无需业务验证的上线结论。</p>\n<p>实施时还需注意数据切分的边界。验证与测试物品应保持隔离，不能把这些交互加入生成来源；论文所有对照使用相同预处理和划分，社区搜索复现也需要统一观察时间。训练来源可以在后续轮次包含以前采纳的合成序列，因此记录每条样本的真实来源与合成祖先有助于定位递归传播的错误。保真验证只检查与当前来源一致，并不是对真实用户未来行为的外部验证，这也是多轮结果可能回落的原因之一。</p>\n<p>评分的工程实现则需要避免把 dropout 关掉：如果误用完全确定的评估模式，多次前向无法形成有效参数分歧。另一方面，关闭梯度可以避免为评分保存反向图，屏蔽前缀已见物品则遵循论文的无重复生成设置。如果业务允许用户反复点击同一帖子，这个屏蔽规则就需要另做对照，不能直接视为适用于所有推荐任务。排序平局和抽样种子应绑定实验种子、轮次、来源、提案组及区间，确保候选库相同时能够重复得到选择结果。最后，应分别保存生成库、通过验证库与采纳库，而不是只留最终训练文件；这样才能判断样本是被验证规则拒绝，还是在采纳阶段落选，也能复用同一验证库进行公平的策略比较。</p>"
+      }
+    },
+    {
+      "id": "hf:2610.05898",
+      "title": "Collaborative Personalized Preference Alignment for LLMs under Data Deficiency",
+      "authors": "Liyan Yang, Yige Yuan, Zhiqin Yang",
+      "abstract": "Real-world users often exhibit highly heterogeneous preferences over multiple objectives for LLM responses. A lightweight aligner can tailor these responses to individual preferences, but scarce user-specific feedback makes personalized training difficult. Learning shared initializations across users can support few-shot adaptation. However, heterogeneous preferences and competing objectives cause gradient conflicts across users and within each user, hindering effective initialization learning. This raises a central question: how can we collaboratively learn aligner initializations that support few-shot adaptation to diverse user preferences? To answer this question, we propose Approximate Pareto Optimality (APO). We first group users whose updates are compatible, so that their information can be combined with less interference. Within each group, we combine gradient descent with controlled ascent to coordinate competing objectives and move towards preference-specific points on the Par",
+      "url": "https://huggingface.co/papers/2610.05898",
+      "source": "huggingface",
+      "published": "2026-10-05",
+      "discovered_at": "2026-10-06",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "company": [
+        "CityU",
+        "University of Washington",
+        "HKUST"
+      ],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0.04,
+      "adjusted_score": 3.49,
+      "summary": "用户对大模型回答的多种质量目标存在不同偏好，少量个人反馈不足以稳定学习对齐器。APO 按偏好加权损失的瓶颈与调整向量聚类用户，联合受控梯度上升、下降和适应感知更新，减少用户间及目标间的冲突。论文在两个助手数据集上评估；15 个客户端各 20 条样本的初步实验中，协作初始化的 Pareto 超体积由 0.728 升至 0.820，增加 12.6%。",
+      "key_insight": "可迁移的设计是先按偏好冲突分组，再为稀疏反馈用户学习可快速适应的初始化，而非强制所有用户共享同一更新方向。社区搜索若同时优化点击、相关性与安全性，可将此机制作为多目标用户建模的实验参考，但不能直接照搬助手奖励。证据来自回答对齐任务和 3B 模型，未验证 CTR、nDCG 或排序延迟，因此业务相关与实用性评分保持谨慎。",
+      "metadata_note": "arXiv 全文确认 v1 日期；HF 爬虫日期为 2026-10-04",
+      "rank": 2
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:nuglifeleoji/Sentry",
+      "title": "Sentry: Learning to Recover from LLM Agent Failures at Test Time",
+      "authors": "nuglifeleoji",
+      "abstract": "Learning to Recover from LLM Agent Failures at Test Time",
+      "url": "https://github.com/nuglifeleoji/Sentry",
+      "source": "github",
+      "published": "2026-10-02",
+      "discovered_at": "2026-10-06",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "nuglifeleoji/Sentry",
+        "owner": "nuglifeleoji",
+        "description": "Learning to Recover from LLM Agent Failures at Test Time",
+        "created_at": "2026-10-02T00:54:32Z",
+        "updated_at": "2026-10-06",
+        "pushed_at": "2026-10-05",
+        "stargazers_count": 70,
+        "language": "",
+        "topics": []
+      },
+      "description": "Learning to Recover from LLM Agent Failures at Test Time",
+      "language": "",
+      "stars": 70,
+      "created_at": "2026-10-02",
+      "rank": 1
+    },
+    {
+      "id": "github:ManfredCh/Lyapunov",
+      "title": "Lyapunov: LLM-first, 3D-native robotics and simulation workspace.",
+      "authors": "ManfredCh",
+      "abstract": "LLM-first, 3D-native robotics and simulation workspace.",
+      "url": "https://github.com/ManfredCh/Lyapunov",
+      "source": "github",
+      "published": "2026-10-02",
+      "discovered_at": "2026-10-06",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "ManfredCh/Lyapunov",
+        "owner": "ManfredCh",
+        "description": "LLM-first, 3D-native robotics and simulation workspace.",
+        "created_at": "2026-10-02T15:45:56Z",
+        "updated_at": "2026-10-06",
+        "pushed_at": "2026-10-05",
+        "stargazers_count": 33,
+        "language": "TypeScript",
+        "topics": []
+      },
+      "description": "LLM-first, 3D-native robotics and simulation workspace.",
+      "language": "TypeScript",
+      "stars": 33,
+      "created_at": "2026-10-02",
+      "rank": 2
+    },
+    {
+      "id": "github:amos689/paper-preflight",
+      "title": "paper-preflight: Pre-submission integrity gate for LaTeX papers: every reference verified against real scholarly records. No LLM guessing.",
+      "authors": "amos689",
+      "abstract": "Pre-submission integrity gate for LaTeX papers: every reference verified against real scholarly records. No LLM guessing.",
+      "url": "https://github.com/amos689/paper-preflight",
+      "source": "github",
+      "published": "2026-10-03",
+      "discovered_at": "2026-10-06",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "amos689/paper-preflight",
+        "owner": "amos689",
+        "description": "Pre-submission integrity gate for LaTeX papers: every reference verified against real scholarly records. No LLM guessing.",
+        "created_at": "2026-10-03T03:43:54Z",
+        "updated_at": "2026-10-06",
+        "pushed_at": "2026-10-05",
+        "stargazers_count": 18,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "Pre-submission integrity gate for LaTeX papers: every reference verified against real scholarly records. No LLM guessing.",
+      "language": "Python",
+      "stars": 18,
+      "created_at": "2026-10-03",
+      "rank": 3
+    },
+    {
+      "id": "hf_dataset:zai-org/Vision2Web-Leaderboard",
+      "title": "zai-org/Vision2Web-Leaderboard",
+      "authors": "zai-org",
+      "description": "Vision2Web Leaderboard Submissions This repository accepts leaderboard submissions for Vision2Web, a benchmark for visual website development agents. Submissions should contain the inference outputs (i.e., the generated code/files) for each task. Evaluation is conducted by the ma; tags: task_categories:text-generation, language:en, license:apache-2.0, region:us, code",
+      "abstract": "Vision2Web Leaderboard Submissions This repository accepts leaderboard submissions for Vision2Web, a benchmark for visual website development agents. Submissions should contain the inference outputs (i.e., the generated code/files) for each task. Evaluation is conducted by the ma; tags: task_categories:text-generation, language:en, license:apache-2.0, region:us, code",
+      "url": "https://huggingface.co/datasets/zai-org/Vision2Web-Leaderboard",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_dataset",
+      "stars": 7,
+      "language": "dataset",
+      "created_at": "2026-03-29",
+      "updated_at": "2026-10-01",
+      "published": "2026-03-29",
+      "discovered_at": "2026-10-06",
+      "retrieval_meta": {
+        "repo_type": "dataset",
+        "repo_id": "zai-org/Vision2Web-Leaderboard",
+        "likes": 7,
+        "downloads": 113,
+        "pipeline_tag": "",
+        "tags": [
+          "task_categories:text-generation",
+          "language:en",
+          "license:apache-2.0",
+          "region:us",
+          "code"
+        ],
+        "created_at": "2026-03-29T15:50:28.000Z",
+        "last_modified": "2026-10-01T15:24:07.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4173,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-01",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-06",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 4173,
+        "downloads": 1160332,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-01T05:56:24.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 3034,
+      "language": "model",
+      "created_at": "2026-09-14",
+      "updated_at": "2026-09-30",
+      "published": "2026-09-14",
+      "discovered_at": "2026-10-06",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 3034,
+        "downloads": 102510,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "rgba",
+          "text-to-image",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-09-14T03:47:26.000Z",
+        "last_modified": "2026-09-30T02:14:09.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnWorld-Latent",
+      "title": "Alibaba-DAMO-Academy/RynnWorld-Latent",
+      "authors": "Alibaba-DAMO-Academy",
+      "description": "tags: safetensors, cosmos3_omni, custom_code, region:us",
+      "abstract": "tags: safetensors, cosmos3_omni, custom_code, region:us",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Latent",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 3,
+      "language": "model",
+      "created_at": "2026-10-05",
+      "updated_at": "2026-10-05",
+      "published": "2026-10-05",
+      "discovered_at": "2026-10-06",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Alibaba-DAMO-Academy/RynnWorld-Latent",
+        "likes": 3,
+        "downloads": 18,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "cosmos3_omni",
+          "custom_code",
+          "region:us"
+        ],
+        "created_at": "2026-10-05T09:48:58.000Z",
+        "last_modified": "2026-10-05T14:38:26.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnVLA-Latent-4B",
+      "title": "Alibaba-DAMO-Academy/RynnVLA-Latent-4B",
+      "authors": "Alibaba-DAMO-Academy",
+      "description": "tags: region:us",
+      "abstract": "tags: region:us",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnVLA-Latent-4B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2,
+      "language": "model",
+      "created_at": "2026-10-05",
+      "updated_at": "2026-10-05",
+      "published": "2026-10-05",
+      "discovered_at": "2026-10-06",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Alibaba-DAMO-Academy/RynnVLA-Latent-4B",
+        "likes": 2,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "region:us"
+        ],
+        "created_at": "2026-10-05T13:45:18.000Z",
+        "last_modified": "2026-10-05T13:45:18.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "status": "gaps",
+    "core": true,
+    "recency": true,
+    "source_diversity": true,
+    "industry_practice": false,
+    "chinese_source": false,
+    "warnings": [
+      "目标为最多 10 篇；硬去重和严格赛道筛选后仅 2 篇符合要求。",
+      "未找到未收录且有线上工程验证的个性化工业实践；Nubank 论文为工业机构离线研究。",
+      "本次没有合格的中文技术来源；历史美团文章已由去重过滤。",
+      "Semantic Scholar 429、OpenReview 400、DBLP 超时或非 JSON；会议来源抓取失败。",
+      "Web 补充按技能使用 90 天时效门槛，发现窗口为 3 天；部分入选论文超过 3 天但均在 7 天内。"
+    ]
+  },
+  "parameters": {
+    "top": 10,
+    "days": 3,
+    "min_score": 3.0
+  },
+  "warnings": [
+    "目标为最多 10 篇；硬去重和严格赛道筛选后仅 2 篇符合要求。",
+    "未找到未收录且有线上工程验证的个性化工业实践；Nubank 论文为工业机构离线研究。",
+    "本次没有合格的中文技术来源；历史美团文章已由去重过滤。",
+    "Semantic Scholar 429、OpenReview 400、DBLP 超时或非 JSON；会议来源抓取失败。",
+    "Web 补充按技能使用 90 天时效门槛，发现窗口为 3 天；部分入选论文超过 3 天但均在 7 天内。"
+  ]
+}

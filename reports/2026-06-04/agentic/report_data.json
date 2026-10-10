@@ -1,0 +1,277 @@
+{
+  "date": "2026-06-04",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 15,
+    "papers_selected": 9,
+    "score_min": 2.85,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.03565",
+      "title": "Skill Is Not Document: A Query-Conditional Benchmark and Two-Stage Retriever for LLM Agent Skill Routing",
+      "url": "https://arxiv.org/abs/2606.03565",
+      "authors": "(arXiv 2606.03565)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 4.1,
+      "adjusted_score": 4.1,
+      "preference_bonus": 0.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "LLM agent 完成复杂任务需组合多个 skill，skill 检索是 agent 的前置环节。论文指出 skill 检索与传统文档检索的本质差异在监督信号层面：top-K 联合正确性不仅取决于单个 query-skill 对的语义相关性，还取决于被一起检索出来的多个 skill 能否协作完成任务，这种 skill 兼容性无法从独立相关性推导。论文构建 query-conditional benchmark，并提出两阶段检索器：先按语义召回候选 skill，再建模 skill 间的联合兼容性做重排。",
+      "key_insight": "把检索单元能否协同纳入监督，是对纯语义相关性范式的修正。对社区搜索中多片段拼装答案的召回同样适用：召回的 N 条 UGC 能否互补覆盖 query 的多个子意图，而非各自都沾边。两阶段（语义召回 + 联合兼容重排）的拆分可直接映射到现有召回-精排链路。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.03565",
+        "title": "Skill Is Not Document: A Query-Conditional Benchmark and Two-Stage Retriever for LLM Agent Skill Routing",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nLLM agent 通过组合多个 skill 完成复杂任务，skill 检索是 agent 执行前的前置环节。论文指出一个被现有方法忽视的本质差异：skill 检索不同于文档检索，top-K 的联合正确性不仅取决于每个 query-skill 对的独立语义相关性，还取决于被一起召回的 skill 能否在该 query 下协同执行（skill compatibility），而这一点无法从独立相关性推导。作者给出量化证据：把 skill body 隐藏（只留描述）会让路由准确率掉 31–44 个百分点，说明 skill 之间高度相似、body 才是真正的路由信号；在近邻约束采样下，k=2 时同子簇组合仅 56.3% 被判定可执行，k=3 时同超域组合仅 36.5% 可接受，en2zh 跨语言 k=3 的 SKIP 率高达 80.9%。动机还来自工程现实：完整 skill 库加载约需 2120 万 token（单 skill 均值 2073、p99 达 9983 token），远超单次上下文窗口，且每个会话沙箱只能装必要 skill，全量安装会让冷启动延迟随库规模线性恶化。作者把联合命中近似为 Pr[S*⊆top-K|q] ≈ ∏Pr[s∈top-K|q]·C(q,S*)，其中 C(q,S*)<1 即表示存在相关但不该共同召回的冲突 skill。\n\n## 2. 方法详解\n\n论文提出两阶段检索器 R3。**Stage 1 R3-Embedding** 是 bi-encoder，基于 Qwen3-Embedding-0.6B 微调，共享编码器做 L2 归一化，用 InfoNCE 训练：L = -log[exp(e(q)·e(s+)/τ) / Σ exp(e(q)·e(c)/τ)]，候选池为 ground-truth skill 加 n 个 BM25 难负例，温度 τ>0。关键设计是**不在 embedding 阶段注入 SKIP 负例**——附录 B 的双边平衡分析说明：共享表征 e(s') 在 query q 下被\"推开\"（s' 是 SKIP），却在另一 query q̃ 下被\"拉近\"（s' 是正例），梯度相互抵消，使任一 query 的兼容性信号被稀释，实测增益仅约 0.6pp。**Stage 2 R3-Reranker** 是 cross-encoder，基于 Qwen3-Reranker-0.6B，用分级 ListNet 训练：标签 label(s)=3（真值 skill）/1（SKIP partner）/0（其它），y_s 由 softmax 归一化、p_s 由 cross-encoder 打分，L = -Σ y_s log p_s。输入为 R3-Embedding 的 top-20 加真值与补齐到 10 的 SKIP partner。由于 cross-encoder 对每个 query-skill 对独立打分、不存在共享表征的几何折中，SKIP 兼容性信号在此阶段才真正生效。\n\n## 3. 核心技术贡献\n\n**(1) 形式化 skill compatibility 并定位监督失效点**：把联合召回分解为相关性项与兼容性项 C(q,S*)，并通过双边平衡分析证明该信号在 bi-encoder 的共享表征里必然被稀释、只能在 cross-encoder 阶段建模，这是对\"召回阶段也注入负例就好\"直觉的纠偏。**(2) Reject-as-Resource (R3) 数据范式**：LLM 判定一组 skill 为 WRITE 则保存为正样本，判为 SKIP 不丢弃而是转为负监督，把传统会被扔掉的拒绝样本变成兼容性训练信号。**(3) 近邻硬约束采样**：用 BGE-M3 嵌入做 K-means（40 子簇并为 8 超域），k=2 强制同子簇、k=3 强制同超域（100% 合规），逼出\"语义都相关但不可共执行\"的困难组合，否则随机采样几乎采不到有意义的 SKIP。**(4) 分级标签**：SKIP partner 给中间分 1 而非 0，让 reranker 学会把冲突 skill 排在真值之下但仍高于完全无关项。\n\n## 4. 实验结果分析\n\n主表（R3-Skill 测试集，10246 个 skill）：仅 R3-Embedding 时 Hit@1=0.7024、NDCG@10=0.8064、Set-Compat=0.2218；加 R3-Reranker 后 Hit@1=0.7714（+6.9pp）、NDCG@10=0.8327（+2.63pp）、Set-Compat=0.3525（+13.07pp）；R@10 反而略降 1.14pp，说明重排牺牲少量纯召回换取大幅兼容性提升。Set-Compat（真值集合是否联合进入 top-m）增益最大，正好印证 SKIP 信号只在 cross-encoder 生效。baseline 对比悬殊：BM25 Hit@1 仅 0.0604，BGE-M3 base 0.3980，Qwen3-Embedding-0.6B base 0.4312，微调后 R3-Embedding 提到 0.7024。SKIP 消融最关键：embedding 阶段加 SKIP 反而 -0.31pp Hit@1、-0.60pp Set-Compat（有害），reranker 阶段加 SKIP 则 +4.83pp Hit@1、+3.37pp Set-Compat（有益），定量验证了双边平衡理论。跨语言看，en2zh（英文 skill+中文 query，最贴近真实部署）reranker 带来 +13.34pp Set-Compat，说明 dual-encoder 无法处理双语链式组合。泛化性上 R3-Embedding 迁到 SkillRet 官方测试 NDCG@10=77.94，与基线 78.03 基本持平，无灾难性遗忘。拒绝原因分布（15962 条可分类 SKIP）以 domain_mismatch 45.9%、forced_chaining 33.9% 为主。\n\n## 5. 局限与未来方向\n\n作者明确列出：(1) 中文 skill 极少（246 vs 94966 英文），反映生态不平衡；(2) 数据依赖 LLM 标注，虽用跨源 LLM（训练 DeepSeek-V4-Pro、测试 Qwen3-235B-A22B）加专家校验，但真值上限仍受 LLM 判断质量约束；(3) 未做按拒绝原因、几何距离、k∈{1,2,3} 的细粒度压力切片；(4) 测试校验仅内部团队完成，建议第三方盲检；(5) 离线指标与生产现实有差距——query 措辞漂移、业务指标（CTR、完成率）、用户画像排序、端到端链路均未覆盖；(6) reranker 池固定 top-20，扩到 50/100 对 Set-Compat 的影响未探究。这些局限大多诚实指向\"离线到线上\"的迁移风险。\n\n## 6. 工业实践意义\n\n对搜索/推荐从业者，最直接的可迁移设计是把\"召回单元能否协同\"显式建模，而非只追求单条相关。社区搜索里\"多片段拼装答案\"场景同构：召回的 N 条 UGC 应互补覆盖 query 的多个子意图，而非各自都沾边却重复或冲突——可借鉴 R3 把\"被拒绝的组合\"留作负监督，而不是只用点击正样本。架构层面，\"轻量 bi-encoder 召回 + 轻量 cross-encoder 重排兼容性\"的两段式与现有召回-精排链路天然对齐，且两个模型都只有 0.6B，重排只在 top-20 上跑，线上算力可控。一个值得直接采纳的结论是：兼容性/冲突类负信号不要塞进双塔召回（会因共享表征被稀释甚至反伤指标），应放到精排的 cross-encoder 用分级标签学习。需注意论文未给在线 A/B，离线 Set-Compat 增益能否转化为线上相关性/CTR 仍待验证；中文场景数据稀疏也提示直接套用前需自建中文 skill/UGC 兼容性样本。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>LLM agent 通过组合多个 skill 完成复杂任务，skill 检索是 agent 执行前的前置环节。论文指出一个被现有方法忽视的本质差异：skill 检索不同于文档检索，top-K 的联合正确性不仅取决于每个 query-skill 对的独立语义相关性，还取决于被一起召回的 skill 能否在该 query 下协同执行（skill compatibility），而这一点无法从独立相关性推导。作者给出量化证据：把 skill body 隐藏（只留描述）会让路由准确率掉 31–44 个百分点，说明 skill 之间高度相似、body 才是真正的路由信号；在近邻约束采样下，k=2 时同子簇组合仅 56.3% 被判定可执行，k=3 时同超域组合仅 36.5% 可接受，en2zh 跨语言 k=3 的 SKIP 率高达 80.9%。动机还来自工程现实：完整 skill 库加载约需 2120 万 token（单 skill 均值 2073、p99 达 9983 token），远超单次上下文窗口，且每个会话沙箱只能装必要 skill，全量安装会让冷启动延迟随库规模线性恶化。作者把联合命中近似为 Pr[S<em>⊆top-K|q] ≈ ∏Pr[s∈top-K|q]·C(q,S</em>)，其中 C(q,S*)&lt;1 即表示存在相关但不该共同召回的冲突 skill。</p>\n<h2>2. 方法详解</h2>\n<p>论文提出两阶段检索器 R3。<strong>Stage 1 R3-Embedding</strong> 是 bi-encoder，基于 Qwen3-Embedding-0.6B 微调，共享编码器做 L2 归一化，用 InfoNCE 训练：L = -log[exp(e(q)·e(s+)/τ) / Σ exp(e(q)·e(c)/τ)]，候选池为 ground-truth skill 加 n 个 BM25 难负例，温度 τ&gt;0。关键设计是<strong>不在 embedding 阶段注入 SKIP 负例</strong>——附录 B 的双边平衡分析说明：共享表征 e(s&#x27;) 在 query q 下被&quot;推开&quot;（s&#x27; 是 SKIP），却在另一 query q̃ 下被&quot;拉近&quot;（s&#x27; 是正例），梯度相互抵消，使任一 query 的兼容性信号被稀释，实测增益仅约 0.6pp。<strong>Stage 2 R3-Reranker</strong> 是 cross-encoder，基于 Qwen3-Reranker-0.6B，用分级 ListNet 训练：标签 label(s)=3（真值 skill）/1（SKIP partner）/0（其它），y_s 由 softmax 归一化、p_s 由 cross-encoder 打分，L = -Σ y_s log p_s。输入为 R3-Embedding 的 top-20 加真值与补齐到 10 的 SKIP partner。由于 cross-encoder 对每个 query-skill 对独立打分、不存在共享表征的几何折中，SKIP 兼容性信号在此阶段才真正生效。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>(1) 形式化 skill compatibility 并定位监督失效点</strong>：把联合召回分解为相关性项与兼容性项 C(q,S*)，并通过双边平衡分析证明该信号在 bi-encoder 的共享表征里必然被稀释、只能在 cross-encoder 阶段建模，这是对&quot;召回阶段也注入负例就好&quot;直觉的纠偏。<strong>(2) Reject-as-Resource (R3) 数据范式</strong>：LLM 判定一组 skill 为 WRITE 则保存为正样本，判为 SKIP 不丢弃而是转为负监督，把传统会被扔掉的拒绝样本变成兼容性训练信号。<strong>(3) 近邻硬约束采样</strong>：用 BGE-M3 嵌入做 K-means（40 子簇并为 8 超域），k=2 强制同子簇、k=3 强制同超域（100% 合规），逼出&quot;语义都相关但不可共执行&quot;的困难组合，否则随机采样几乎采不到有意义的 SKIP。<strong>(4) 分级标签</strong>：SKIP partner 给中间分 1 而非 0，让 reranker 学会把冲突 skill 排在真值之下但仍高于完全无关项。</p>\n<h2>4. 实验结果分析</h2>\n<p>主表（R3-Skill 测试集，10246 个 skill）：仅 R3-Embedding 时 Hit@1=0.7024、NDCG@10=0.8064、Set-Compat=0.2218；加 R3-Reranker 后 Hit@1=0.7714（+6.9pp）、NDCG@10=0.8327（+2.63pp）、Set-Compat=0.3525（+13.07pp）；R@10 反而略降 1.14pp，说明重排牺牲少量纯召回换取大幅兼容性提升。Set-Compat（真值集合是否联合进入 top-m）增益最大，正好印证 SKIP 信号只在 cross-encoder 生效。baseline 对比悬殊：BM25 Hit@1 仅 0.0604，BGE-M3 base 0.3980，Qwen3-Embedding-0.6B base 0.4312，微调后 R3-Embedding 提到 0.7024。SKIP 消融最关键：embedding 阶段加 SKIP 反而 -0.31pp Hit@1、-0.60pp Set-Compat（有害），reranker 阶段加 SKIP 则 +4.83pp Hit@1、+3.37pp Set-Compat（有益），定量验证了双边平衡理论。跨语言看，en2zh（英文 skill+中文 query，最贴近真实部署）reranker 带来 +13.34pp Set-Compat，说明 dual-encoder 无法处理双语链式组合。泛化性上 R3-Embedding 迁到 SkillRet 官方测试 NDCG@10=77.94，与基线 78.03 基本持平，无灾难性遗忘。拒绝原因分布（15962 条可分类 SKIP）以 domain_mismatch 45.9%、forced_chaining 33.9% 为主。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出：(1) 中文 skill 极少（246 vs 94966 英文），反映生态不平衡；(2) 数据依赖 LLM 标注，虽用跨源 LLM（训练 DeepSeek-V4-Pro、测试 Qwen3-235B-A22B）加专家校验，但真值上限仍受 LLM 判断质量约束；(3) 未做按拒绝原因、几何距离、k∈{1,2,3} 的细粒度压力切片；(4) 测试校验仅内部团队完成，建议第三方盲检；(5) 离线指标与生产现实有差距——query 措辞漂移、业务指标（CTR、完成率）、用户画像排序、端到端链路均未覆盖；(6) reranker 池固定 top-20，扩到 50/100 对 Set-Compat 的影响未探究。这些局限大多诚实指向&quot;离线到线上&quot;的迁移风险。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者，最直接的可迁移设计是把&quot;召回单元能否协同&quot;显式建模，而非只追求单条相关。社区搜索里&quot;多片段拼装答案&quot;场景同构：召回的 N 条 UGC 应互补覆盖 query 的多个子意图，而非各自都沾边却重复或冲突——可借鉴 R3 把&quot;被拒绝的组合&quot;留作负监督，而不是只用点击正样本。架构层面，&quot;轻量 bi-encoder 召回 + 轻量 cross-encoder 重排兼容性&quot;的两段式与现有召回-精排链路天然对齐，且两个模型都只有 0.6B，重排只在 top-20 上跑，线上算力可控。一个值得直接采纳的结论是：兼容性/冲突类负信号不要塞进双塔召回（会因共享表征被稀释甚至反伤指标），应放到精排的 cross-encoder 用分级标签学习。需注意论文未给在线 A/B，离线 Set-Compat 增益能否转化为线上相关性/CTR 仍待验证；中文场景数据稀疏也提示直接套用前需自建中文 skill/UGC 兼容性样本。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.03102",
+      "title": "Small RL Controller, Large Language Model: RL-Guided Adaptive Sampling for Test-Time Scaling",
+      "url": "https://huggingface.co/papers/2606.03102",
+      "authors": "(arXiv 2606.03102)",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-01",
+      "total_score": 3.8,
+      "adjusted_score": 3.9,
+      "preference_bonus": 0.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "test-time scaling 提升大模型推理但带来计算与延迟成本。已有自适应采样靠启发式规则或分布假设决定何时停止采样。论文把自适应采样形式化为 MDP，用 RL 训练一个轻量采样控制器，在每一轮决定停止采样还是再取样本，联合平衡答案正确性、延迟与计算成本；方法轻量，只依赖少量信号，可挂在已有大模型外部。",
+      "key_insight": "用一个小 RL 控制器去调度大模型的采样预算，是小模型管大模型的解耦思路。对搜索/推荐里的多路 LLM 打分或 rerank 可借鉴按难度动态分配推理预算——简单 query 单次出结果，难 query 才多采样投票，省线上算力而不牺牲难样本质量。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.02976",
+      "title": "Memory Retrieval for Changing Preferences",
+      "url": "https://arxiv.org/abs/2606.02976",
+      "authors": "(arXiv 2606.02976)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.75,
+      "adjusted_score": 3.85,
+      "preference_bonus": 0.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "长上下文对话系统需同时决定何时访问记忆与哪些历史片段相关。已有方法靠启发式检索信号或始终开启记忆，忽视了用户偏好会随时间变化甚至前后矛盾。论文提出统一框架，把个性化记忆检索定义为识别哪些历史 turn 提供了关于用户潜在偏好状态的证据，而非基于表层语义相似度，并量化每个历史 turn 对当前偏好判断的效用。",
+      "key_insight": "把记忆检索从语义相似重构为对当前偏好状态的证据价值，直击推荐中的兴趣漂移问题。对社区个性化搜索可借鉴：用户历史点击/搜索里，近期且与当前 session 偏好一致的行为才该被召回作为上下文，过期或矛盾的行为应被显式降权而非靠相似度兜底。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.02871",
+      "title": "Adaptive Latent Agentic Reasoning",
+      "url": "https://arxiv.org/abs/2606.02871",
+      "authors": "(arXiv 2606.02871)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.45,
+      "adjusted_score": 3.45,
+      "preference_bonus": 0.0,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "大型推理模型靠生成长 CoT 提升性能，但应用到 LLM agent 时低效——agent 在每个决策步都生成冗长文本推理，且在多轮间几乎均匀分配推理量，造成多轮 agentic 轨迹的大量浪费。论文提出 ALAR 双模式框架：routine turn 用紧凑的 latent reasoning，需要更深思考时才升级到显式 CoT，latent reasoning 通过 agent 自身的轨迹学习得到。",
+      "key_insight": "按需分配推理深度是 agent 提效的关键——多数 routine turn 不需要展开 token 级 CoT。对搜索 agent（多轮调工具、改写 query）可借鉴：常规检索轮用 latent 决策，仅在歧义/冲突时触发显式推理，能显著压缩多轮延迟，对线上多步检索 agent 的成本控制有实操价值。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.02908",
+      "title": "WRIT: Write-Read Intensive Trajectory Synthesis for Multi-Turn User-Facing Agents",
+      "url": "https://arxiv.org/abs/2606.02908",
+      "authors": "(arXiv 2606.02908)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.45,
+      "adjusted_score": 3.45,
+      "preference_bonus": 0.0,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "多轮面向用户的 agent 须从不完整请求推断意图、通过对话与工具收集缺失信息、执行有效动作；训练轨迹记录这一过程为 user message / agent response / tool call 交错序列。已有合成 pipeline 多靠把多个用户请求拼成更长任务来增加难度，产出 write-intensive（偏顺序执行）轨迹。论文主张当 agent 必须先收集并比较信息再决策时，单个 write 决策本身就可以很难，提出 write-read intensive 的轨迹合成。",
+      "key_insight": "区分 write-intensive（顺序执行难）与 read-intensive（决策前需聚合比较难）两类轨迹难度，对训练搜索 agent 的数据合成有指导意义：要让 agent 学会先多轮检索比对再回答，训练数据就必须包含 read-intensive 样本，而非单纯堆长任务，这对自建 agent 数据合成 pipeline 是直接可用的设计原则。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.01770",
+      "title": "Adaptive Auto-Harness: Sustained Self-Improvement for Agentic System Deployment on Open-Ended Task Streams",
+      "url": "https://huggingface.co/papers/2606.01770",
+      "authors": "(arXiv 2606.01770)",
+      "company": [],
+      "source": "huggingface",
+      "published": "2026-06-01",
+      "total_score": 3.45,
+      "adjusted_score": 3.45,
+      "preference_bonus": 0.0,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "A-Evolve、GEPA、Meta-Harness 等 auto-harness 系统通过从执行反馈优化 prompt、skill、工具、记忆与支撑设施来改进 LLM agent，但通常在固定离线 benchmark 上评测。真实部署面对开放式任务流：历史无限增长、异构任务需不同 harness、问题分布随时间漂移，导致单一频繁更新的 harness 变脆、准确率早期见顶后下滑。论文提出 Adaptive Auto-Harness，做 task-wise 自适应的持续 harness 构建。",
+      "key_insight": "指出 agent 自改进系统在开放任务流下会准确率见顶后衰退，是对当前 self-improving agent 评测范式的纠偏。对线上搜索 agent 的持续迭代有警示：按任务类型分桶维护多套 harness（prompt/工具/记忆），比单套全局 harness 更抗分布漂移，离线 benchmark 上的增益不能直接外推到长期线上。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2606.02859",
+      "title": "Economy of Minds: Emerging Multi-Agent Intelligence with Economic Interactions",
+      "url": "https://arxiv.org/abs/2606.02859",
+      "authors": "(arXiv 2606.02859)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 3.15,
+      "adjusted_score": 3.15,
+      "preference_bonus": 0.0,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 5,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "如何让一群 agent 在无中心控制下自组织、自适应成更强的集体智能？受哈耶克去中心化市场协调理论启发，论文构建 agent 经济体：agent 通过拍卖竞争行动权、交换支付、从环境奖励中积累财富。这些经济信号诱导去中心化的 credit assignment，无需全局编排或显式通信协议即可驱动规划；种群通过经济选择演化，高效 agent 积累财富并被变异繁衍。",
+      "key_insight": "用拍卖 + 财富积累实现多 agent 间的去中心化信用分配，绕开了显式通信协议设计。这对多 agent 检索/推荐编排提供另一条思路：不预设 agent 间调用图，而用市场化奖励让有效 agent 自然胜出，适合工具/召回源很多且组合不确定的场景。偏前沿研究，距离线上落地尚远，价值在思路启发。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2606.03307",
+      "title": "Generalizing Graph Foundation Models via Hyperbolic Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2606.03307",
+      "authors": "(arXiv 2606.03307)",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-06-03",
+      "total_score": 2.9,
+      "adjusted_score": 3.1,
+      "preference_bonus": 0.2,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "图基础模型 (GFM) 靠大规模预训练做跨域推理，但参数化知识难以应对分布漂移，泛化受限。RAG 被引入以在推理时注入外部知识，但已有 RAG 在欧氏空间运作存在几何局限：欧氏空间的多项式体积增长与图的树状层级结构本质不匹配。论文提出在双曲空间做 RAG，使检索表征与图的层级几何对齐，从而提升 GFM 在分布漂移下的泛化。",
+      "key_insight": "指出检索表征的几何空间应匹配数据的内在结构（层级到双曲），对带类目/标签树的社区内容召回有启发：在双曲空间嵌入话题-子话题-帖子层级，可能比欧氏 embedding 更紧凑地保留层级近邻关系。属偏前沿探索，落地需评估双曲算子的工程成本与现有向量检索基建的兼容性。"
+    },
+    {
+      "rank": 9,
+      "id": "blog:nvidia-hermes-nemoclaw-self-evolving-agents",
+      "title": "Deploy Self-Evolving Agents for Faster, More Secure Research with a Hermes Agent and NVIDIA NemoClaw",
+      "url": "https://developer.nvidia.com/blog/deploy-self-evolving-agents-for-faster-more-secure-research-with-a-hermes-agent-and-nvidia-nemoclaw/",
+      "authors": "NVIDIA Developer Blog",
+      "company": [
+        "NVIDIA"
+      ],
+      "source": "blog_rss",
+      "published": "2026-06-02",
+      "total_score": 2.85,
+      "adjusted_score": 2.85,
+      "preference_bonus": 0.0,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 3,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "summary": "NVIDIA 开发者博客介绍如何用 Hermes agent 与 NVIDIA NemoClaw 部署自进化 agent，用于加速研究：合成数据、信息摘要、辅助团队更快决策，并强调结合企业内部数据时的安全边界。属面向企业落地的 agentic AI 工程实践与产品方案介绍，覆盖部署架构与安全考量。",
+      "key_insight": "来自 NVIDIA 的工业侧 agentic 部署方案，关注点在自进化 agent + 内部数据安全的企业落地路径。对自建研究/检索 agent 的团队，可参考其在数据合成与安全边界上的产品化考量；博客以方案介绍为主，技术细节有限，需结合其官方文档进一步评估可迁移性。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance: 多模态 any-to-any 模型（图像/视频生成、编辑、理解）",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "ByteDance Research 发布的多模态统一模型，基于 Qwen2.5-VL-3B-Instruct 微调，支持图像生成、视频生成、图像编辑、视频理解等 any-to-any 任务。",
+      "language": "model",
+      "stars": 1021,
+      "created_at": "2026-05-15"
+    },
+    {
+      "rank": 2,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash",
+      "title": "stepfun-ai/Step-3.7-Flash: 视觉语言 MoE 模型",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash",
+      "source": "huggingface",
+      "description": "阶跃星辰 (StepFun) 发布的 vision-language MoE 模型，支持 image-text-to-text 与对话，Apache-2.0 许可，下载量约 1.8 万。",
+      "language": "model",
+      "stars": 228,
+      "created_at": "2026-05-23"
+    },
+    {
+      "rank": 3,
+      "id": "hf_model:stepfun-ai/Step-3.7-Flash-GGUF",
+      "title": "stepfun-ai/Step-3.7-Flash-GGUF: Step-3.7-Flash 的 GGUF 量化版（agent/tool-calling/reasoning）",
+      "url": "https://huggingface.co/stepfun-ai/Step-3.7-Flash-GGUF",
+      "source": "huggingface",
+      "description": "Step-3.7-Flash 的 llama.cpp GGUF 量化版本，标签含 agent、tool-calling、reasoning，便于本地部署 agent 工作流，下载量约 4.1 万。",
+      "language": "model",
+      "stars": 102,
+      "created_at": "2026-05-28"
+    },
+    {
+      "rank": 4,
+      "id": "hf_model:internlm/Intern-S2-Preview",
+      "title": "internlm/Intern-S2-Preview: 书生 InternLM 多模态预览模型",
+      "url": "https://huggingface.co/internlm/Intern-S2-Preview",
+      "source": "huggingface",
+      "description": "上海 AI Lab InternLM 团队发布的 image-text-to-text 多模态预览模型，Apache-2.0 许可，附带 eval-results。",
+      "language": "model",
+      "stars": 102,
+      "created_at": "2026-05-15"
+    },
+    {
+      "rank": 5,
+      "id": "hf_space:bytedance-research/Lance",
+      "title": "bytedance-research/Lance (Space): Lance 模型的 Gradio 在线 Demo",
+      "url": "https://huggingface.co/spaces/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "ByteDance Lance 多模态模型的 Gradio 交互式 Space，可在线体验图像/视频生成与编辑能力。",
+      "language": "space",
+      "stars": 97,
+      "created_at": "2026-05-22"
+    }
+  ]
+}

@@ -1,0 +1,237 @@
+{
+  "date": "2026-04-28",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 11,
+    "papers_selected": 10,
+    "score_min": 3.25,
+    "score_max": 4.2
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2604.22722",
+      "title": "Aligning Dense Retrievers with LLM Utility via Distillation",
+      "url": "https://arxiv.org/abs/2604.22722",
+      "authors": "Rajinder Sandhu, Di Mu, Cheng Chang, Md Shahriar Tasjid, Himanshu Rai, Maksims Volkovs, Ga Wu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "summary": "论文提出 Utility-Aligned Embeddings (UAE)，把稠密检索的目标从语义相似度转换为分布匹配——让 bi-encoder 通过 Utility-Modulated InfoNCE 直接拟合 LLM 视角下的 “效用分布”（基于困惑度下降衡量哪些 passage 真正帮助生成）。在 QASPER benchmark 上 Recall@1 较 BGE-Base 提升 30.59%，MAP +30.16%，Token-F1 +17.3%，同时推理速度比 LLM 重排序快 180×。整体把 LLM rerank 的能力蒸馏回了一阶召回。",
+      "key_insight": "对 RAG 与社区搜索来说，最大的启示是“召回的最优目标不是文本相似度，而是下游生成/排序的有效性”。当业务下游有 LLM 摘要或重排序模块时，可以用 perplexity 减小量作为软标签训练 dense encoder，相当于把昂贵的 listwise LLM rerank 蒸馏成单向量召回，用近乎零额外延迟得到接近 LLM rerank 的效果。这是“生成式效用回灌召回”的范式，对短文本 UGC 召回 nDCG 提升尤其有意义。",
+      "tldr": "把 LLM rerank 的效用蒸馏成 dense embedding，QASPER Recall@1 +30%，速度提升 180 倍。",
+      "deep_reading": {
+        "paper_id": "arxiv:2604.22722",
+        "title": "Aligning Dense Retrievers with LLM Utility via Distillation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n稠密检索（DPR、BGE 等）以\"语义相似度\"为目标函数，但在 RAG 场景下，\"语义相似\"并不等价于\"对生成有帮助\"——例如 BM25 召回字面命中的 chunk，dense 召回话题相关的 chunk，但真正能让 LLM 生成出正确答案的 chunk 往往是\"包含关键证据词且上下文支持充分\"的，这两者在 embedding 空间里并非高度对齐。论文用 QASPER（长文档科学 QA）做的诊断显示：BGE-Base Recall@1 仅 36.87，相对于昂贵的 LLM rerank（RankGPT、SePer 50+）有 30%+ 缺口。直接用大模型 rerank 可填补缺口，但 RankGPT/SePer 的延迟在 1600–3200ms，远高于 100ms 的\"即时\"阈值，无法上线。本文动机明确：把\"对 LLM 有用\"这一信号蒸馏回 dense bi-encoder，让一阶段召回拿到接近 rerank 的精度，又保持单向量检索的工程友好性。这是 \"Utility-Aligned Retrieval\" 这一范式的代表性工作。\n\n## 2. 方法详解\n\nUAE（Utility-Aligned Embeddings）的核心是一个两阶段蒸馏框架。\n\n**Stage 1：构造 perplexity-based 教师信号 + Reward Model 平滑。** 论文先定义\"效用\"为 LLM 在给定 query q 与候选 doc d 时生成 ground-truth answer a 的归一化概率：U(q,d,a) = exp(1/|a| · Σ log p_θ(x_t | x_<t, q, d))。但作者发现原始 utility 是\"重尾、高方差\"的，直接做回归会被异常值带偏。因此他们训练一个 reward model R_ψ（基于 deberta-v3-base + LoRA），用 margin ranking loss：L_Reward = max(0, δ − (R_ψ(q,d_i) − R_ψ(q,d_j)))，约束当 utility 排序明确时，reward 也保持同向。这一步把噪声大的连续值 U 变成有序、平滑的标量分数 R_ψ。\n\n**Stage 2：用 KL 散度把 R_ψ 蒸馏到 dense bi-encoder。** 教师分布 π*(d_i | q) = softmax(λ · R_ψ(q,d_i))，学生分布 π_ϕ(d_i | q) = softmax(⟨f_ϕ(q), f_ϕ(d_i)⟩ / τ)，目标函数 L_UAE ∝ −Σ π*(d_i|q) · log π_ϕ(d_i|q)。这是 distribution-matching 形式的 InfoNCE，与传统对比学习\"正样本=1，所有负样本=0\"的二元分布根本不同：UAE 保留了\"哪些负样本更接近正样本、哪些差得很远\"的有序结构，让 student 在 embedding 空间复现 utility 排序。\n\n**Utility-Gated Hard Negative Mining：** 训练采样时挑选同时满足\"语义上是 top-k\"和\"utility 显著低于正样本\"两个条件的负例，避免 false negative（语义近但其实有用的样本）污染梯度。\n\n**实现细节：** retriever 初始化为 BAAI/bge-base-en-v1.5，用 LoRA fine-tune；in-batch 编码协议保持训练成本与语料库规模解耦；生成器为 Llama-3-8B-Instruct，温度 0 贪心解码以保证 utility 标签的一致性。整个流程都用 LoRA，工程上易接入。\n\n## 3. 核心技术贡献\n\n**贡献 1：把 RAG 的检索目标从\"语义匹配\"重新定义为\"分布匹配\"。** 这是范式层面的换轨。以往蒸馏 LLM rerank 的工作多用 pointwise/pairwise 监督，UAE 用 KL on softmax distributions，能保留 ordinal information。消融显示在 QASPER 上 MAP 比 BGE-Base 提升 11.4 个绝对点（38.02 → 49.49），主要增益来自这种排序保留。\n\n**贡献 2：Reward Model 平滑解决 raw utility 的高方差问题。** 直接把 perplexity 当软标签训练 dense encoder，会被偶发的极端 token 概率主导。作者用 margin ranking 把 utility 转成排序标量，reward model 的 NDCG@1 达 0.86，远高于纯 semantic retriever（≤0.72），证明 reward 信号本身的质量是这套方案能成立的前提。\n\n**贡献 3：Utility-Gated Hard Negative Mining 抑制 false negative。** 在 RAG 中，\"语义近但 utility 也高\"的样本对训练有害——传统 hard negative mining 把它们当负样本会把 retriever 拉偏。UAE 显式用 utility 阈值过滤，与单纯按 semantic similarity 挑负例形成对比。\n\n**贡献 4：保持单向量检索的工程友好性。** UAE 输出仍是一对 query/doc 向量，可与 ANN（FAISS/HNSW）直接对接。延迟 9ms 与 BGE-Base 一致，但效果接近 SePer（1696ms）。这是论文宣称的\"180× faster than efficient LLM re-ranking\"的核心。\n\n## 4. 实验结果分析\n\n**QASPER 主表（长文档科学 QA）：**\n\n| 方法 | Recall@1 | MAP | Token F1 | Latency |\n|------|----------|-----|----------|---------|\n| BGE-Base | 36.87 | 38.02 | 23.9 | 8ms |\n| NV-Embed V2 | – | 38.67 | – | 52ms |\n| ColBERTv2 | 40.75 | – | – | – |\n| RankGPT | – | 46.13 | – | 1663ms |\n| SePer | – | 50.12 | – | 1696ms |\n| **UAE** | **48.15** | **49.49** | **27.0** | **9ms** |\n\nUAE 在 QASPER 上 Recall@1 较 BGE-Base 提升 30.59% 相对（11 个绝对点），MAP +11.47 点；与 SePer（rerank 范式中的 SoTA）的 MAP 差距仅 0.6 点，但延迟低 188 倍。\n\n**NewsQA（短文档新闻 QA）：**\n\n| 方法 | Recall@1 | MAP | Gen-F1 | ROUGE-L |\n|------|----------|-----|--------|---------|\n| BGE-Base | 34.15 | – | 38.6 | – |\n| RankGPT | 49.68 | – | 43.7 | – |\n| SePer | 60.61 | 66.17 | – | – |\n| **UAE** | **54.90** | 62.31 | **45.6** | **46.1** |\n\n短文档场景同样大幅领先 dense baseline（Recall@1 34.15 → 54.90，相对 +60%），且 Gen-F1 是表中最高，说明召回结果对下游生成的实际帮助超过了 RankGPT。\n\n**消融与组合实验：**\n- UAE 单独使用已接近 SePer，但叠加 SePer rerank 进一步提升：QASPER MAP 49.49 → 53.39，NewsQA MAP 62.31 → 73.15。说明 UAE 既可独立部署，也可作为 rerank 链路的更强一阶召回。\n- UAE + LLM Reranker：QASPER MAP 50.65，证明蒸馏后的 dense encoder 与下游 LLM rerank 互补。\n- Reward Model 单独评测：NDCG@1 0.86 vs semantic retrievers ≤0.72，验证 reward 信号质量是关键中间产物。\n\n**零样本跨领域（Figure 5）：** QASPER 训练的 UAE 在 NewsQA、SQuAD、HotpotQA、SciFact 上均保持或提升性能，没有出现负迁移，说明\"utility-aligned\"信号具备一定通用性，并非过拟合科学文献风格。\n\n**值得注意的现象：** UAE 在 NewsQA 上 ROUGE-L 比所有 baseline 都高，但 MAP 略低于 SePer。这暗示\"召回最优\"不必然等价于\"下游生成最优\"——UAE 召回的样本即使排序不是最严格，但语义对生成器更友好，最终 Gen-F1 反而最好。这一观察对工业实践很重要：评估 RAG 检索时不能只看 MAP/NDCG，还要看 end-to-end 生成质量。\n\n## 5. 局限与未来方向\n\n作者明确列出的局限：\n1. **Raw utility 的高方差**：必须依赖 reward model 平滑，否则训练不稳定；这意味着方案对 reward model 训练数据的质量敏感，迁移到新领域需要重新构造 utility 排序数据。\n2. **LLM-as-Judge 偏差**：作者承认 LLM 视角的\"utility\"未必等价于人类标注的\"relevance\"——这在 LLM-as-a-judge 文献里是已知问题。生产中若下游生成器换成另一个模型，需要重新做蒸馏。\n3. **评测覆盖度有限**：主表只在 QASPER + NewsQA 上做完整对比；zero-shot 部分覆盖了几个数据集但没做完整 benchmark，对长尾领域（医学、法律）效果未知。\n4. **绝对性能仍落后多阶段 pipeline**：QASPER MAP 49.49 vs SePer 50.12，UAE 单独略落后；只是延迟优势把它放到 Pareto 前沿。\n\n未明确指出但显而易见的局限：(a) 整套方案与具体生成器（Llama-3-8B）耦合，更换生成器需要重训 reward model 和 retriever；(b) 未讨论增量/在线更新如何处理，新文档进入语料后是否需要重算 utility？(c) UAE 的训练数据需要 (q, a, d) 三元组，对于工业自有数据的获取门槛比纯 query-document pair 高。\n\n## 6. 工业实践意义\n\n**对社区/UGC 短文本搜索的直接启示：**\n\n1. **重定义召回目标**：当下游有 LLM 摘要、生成式答案、RAG 助手时，dense encoder 的训练目标应该跟着下游变。不要再迷信\"全局通用 embedding\"——把\"是否帮助下游 LLM 生成出正确答案\"作为软标签，能让 nDCG/Recall 同时上去。这对短文本 UGC 尤其重要：UGC 常常字面差但语义近，靠 utility 而非 semantic similarity 来挑可以避开\"看似相关其实没用\"的召回。\n\n2. **工程接入门槛低**：UAE 整套都是 LoRA + bi-encoder，输出仍是单向量，可直接喂给现有 FAISS/HNSW，不破坏现有召回链路。延迟 9ms 与现有 BGE 持平，可在不增加 P99 的前提下灰度。\n\n3. **构造 utility 数据的实操方法**：(a) 选用业务下游生成器（如客服对话 LLM、社区问答 LLM）作为 teacher，对线上日志中的 (query, click_doc, generated_answer) 三元组计算 perplexity-based utility；(b) 训练 reward model 把噪声 utility 转为有序分数；(c) 用 KL 蒸馏到现有 BGE/E5。完整链路只需要 2 个 LoRA 头，单 A100 一周可走通 PoC。\n\n4. **对线上 A/B 的预期**：QASPER 上 Recall@1 +30%、Gen-F1 +14% 是干净 benchmark 的数字。UGC 场景由于 query 噪声、点击日志稀疏，预期相对增益打个 4–6 折，仍可显著（CTR +1–2pp、nDCG +2–4pp）量级。\n\n5. **风险与组合策略**：(a) 同一 retriever 可能对生成器换代敏感，建议每次大模型升级后 incremental fine-tune；(b) reward model 可作为独立排序层用于 cold-start 文档（无点击数据但有 utility 信号）；(c) 与 listwise rerank 不互斥，可叠加做 cascade（UAE 召回 → 轻量 cross-encoder rerank）。\n\n6. **延迟与成本**：相比 RankGPT/SePer 这类 LLM rerank，UAE 把延迟从 1600ms 降到 9ms，单 query 推理成本从 ~$0.001 降到几乎为 0（仅向量检索）；对每天数亿次的搜索流量来说，相当于一年节省数百万美元 GPU 推理成本。\n\n整体来看，UAE 是过去半年\"生成式效用回灌召回\"方向最完整的工程化样本，对任何 RAG/生成式搜索团队都值得在 30 天内做 PoC 验证。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>稠密检索（DPR、BGE 等）以&quot;语义相似度&quot;为目标函数，但在 RAG 场景下，&quot;语义相似&quot;并不等价于&quot;对生成有帮助&quot;——例如 BM25 召回字面命中的 chunk，dense 召回话题相关的 chunk，但真正能让 LLM 生成出正确答案的 chunk 往往是&quot;包含关键证据词且上下文支持充分&quot;的，这两者在 embedding 空间里并非高度对齐。论文用 QASPER（长文档科学 QA）做的诊断显示：BGE-Base Recall@1 仅 36.87，相对于昂贵的 LLM rerank（RankGPT、SePer 50+）有 30%+ 缺口。直接用大模型 rerank 可填补缺口，但 RankGPT/SePer 的延迟在 1600–3200ms，远高于 100ms 的&quot;即时&quot;阈值，无法上线。本文动机明确：把&quot;对 LLM 有用&quot;这一信号蒸馏回 dense bi-encoder，让一阶段召回拿到接近 rerank 的精度，又保持单向量检索的工程友好性。这是 &quot;Utility-Aligned Retrieval&quot; 这一范式的代表性工作。</p>\n<h2>2. 方法详解</h2>\n<p>UAE（Utility-Aligned Embeddings）的核心是一个两阶段蒸馏框架。</p>\n<p><strong>Stage 1：构造 perplexity-based 教师信号 + Reward Model 平滑。</strong> 论文先定义&quot;效用&quot;为 LLM 在给定 query q 与候选 doc d 时生成 ground-truth answer a 的归一化概率：U(q,d,a) = exp(1/|a| · Σ log p_θ(x_t | x_&lt;t, q, d))。但作者发现原始 utility 是&quot;重尾、高方差&quot;的，直接做回归会被异常值带偏。因此他们训练一个 reward model R_ψ（基于 deberta-v3-base + LoRA），用 margin ranking loss：L_Reward = max(0, δ − (R_ψ(q,d_i) − R_ψ(q,d_j)))，约束当 utility 排序明确时，reward 也保持同向。这一步把噪声大的连续值 U 变成有序、平滑的标量分数 R_ψ。</p>\n<p><strong>Stage 2：用 KL 散度把 R_ψ 蒸馏到 dense bi-encoder。</strong> 教师分布 π<em>(d_i | q) = softmax(λ · R_ψ(q,d_i))，学生分布 π_ϕ(d_i | q) = softmax(⟨f_ϕ(q), f_ϕ(d_i)⟩ / τ)，目标函数 L_UAE ∝ −Σ π</em>(d_i|q) · log π_ϕ(d_i|q)。这是 distribution-matching 形式的 InfoNCE，与传统对比学习&quot;正样本=1，所有负样本=0&quot;的二元分布根本不同：UAE 保留了&quot;哪些负样本更接近正样本、哪些差得很远&quot;的有序结构，让 student 在 embedding 空间复现 utility 排序。</p>\n<p><strong>Utility-Gated Hard Negative Mining：</strong> 训练采样时挑选同时满足&quot;语义上是 top-k&quot;和&quot;utility 显著低于正样本&quot;两个条件的负例，避免 false negative（语义近但其实有用的样本）污染梯度。</p>\n<p><strong>实现细节：</strong> retriever 初始化为 BAAI/bge-base-en-v1.5，用 LoRA fine-tune；in-batch 编码协议保持训练成本与语料库规模解耦；生成器为 Llama-3-8B-Instruct，温度 0 贪心解码以保证 utility 标签的一致性。整个流程都用 LoRA，工程上易接入。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：把 RAG 的检索目标从&quot;语义匹配&quot;重新定义为&quot;分布匹配&quot;。</strong> 这是范式层面的换轨。以往蒸馏 LLM rerank 的工作多用 pointwise/pairwise 监督，UAE 用 KL on softmax distributions，能保留 ordinal information。消融显示在 QASPER 上 MAP 比 BGE-Base 提升 11.4 个绝对点（38.02 → 49.49），主要增益来自这种排序保留。</p>\n<p><strong>贡献 2：Reward Model 平滑解决 raw utility 的高方差问题。</strong> 直接把 perplexity 当软标签训练 dense encoder，会被偶发的极端 token 概率主导。作者用 margin ranking 把 utility 转成排序标量，reward model 的 NDCG@1 达 0.86，远高于纯 semantic retriever（≤0.72），证明 reward 信号本身的质量是这套方案能成立的前提。</p>\n<p><strong>贡献 3：Utility-Gated Hard Negative Mining 抑制 false negative。</strong> 在 RAG 中，&quot;语义近但 utility 也高&quot;的样本对训练有害——传统 hard negative mining 把它们当负样本会把 retriever 拉偏。UAE 显式用 utility 阈值过滤，与单纯按 semantic similarity 挑负例形成对比。</p>\n<p><strong>贡献 4：保持单向量检索的工程友好性。</strong> UAE 输出仍是一对 query/doc 向量，可与 ANN（FAISS/HNSW）直接对接。延迟 9ms 与 BGE-Base 一致，但效果接近 SePer（1696ms）。这是论文宣称的&quot;180× faster than efficient LLM re-ranking&quot;的核心。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>QASPER 主表（长文档科学 QA）：</strong></p>\n<table><thead><tr><th>方法</th><th>Recall@1</th><th>MAP</th><th>Token F1</th><th>Latency</th></tr></thead><tbody><tr><td>BGE-Base</td><td>36.87</td><td>38.02</td><td>23.9</td><td>8ms</td></tr><tr><td>NV-Embed V2</td><td>–</td><td>38.67</td><td>–</td><td>52ms</td></tr><tr><td>ColBERTv2</td><td>40.75</td><td>–</td><td>–</td><td>–</td></tr><tr><td>RankGPT</td><td>–</td><td>46.13</td><td>–</td><td>1663ms</td></tr><tr><td>SePer</td><td>–</td><td>50.12</td><td>–</td><td>1696ms</td></tr><tr><td><strong>UAE</strong></td><td><strong>48.15</strong></td><td><strong>49.49</strong></td><td><strong>27.0</strong></td><td><strong>9ms</strong></td></tr></tbody></table>\n<p>UAE 在 QASPER 上 Recall@1 较 BGE-Base 提升 30.59% 相对（11 个绝对点），MAP +11.47 点；与 SePer（rerank 范式中的 SoTA）的 MAP 差距仅 0.6 点，但延迟低 188 倍。</p>\n<p><strong>NewsQA（短文档新闻 QA）：</strong></p>\n<table><thead><tr><th>方法</th><th>Recall@1</th><th>MAP</th><th>Gen-F1</th><th>ROUGE-L</th></tr></thead><tbody><tr><td>BGE-Base</td><td>34.15</td><td>–</td><td>38.6</td><td>–</td></tr><tr><td>RankGPT</td><td>49.68</td><td>–</td><td>43.7</td><td>–</td></tr><tr><td>SePer</td><td>60.61</td><td>66.17</td><td>–</td><td>–</td></tr><tr><td><strong>UAE</strong></td><td><strong>54.90</strong></td><td>62.31</td><td><strong>45.6</strong></td><td><strong>46.1</strong></td></tr></tbody></table>\n<p>短文档场景同样大幅领先 dense baseline（Recall@1 34.15 → 54.90，相对 +60%），且 Gen-F1 是表中最高，说明召回结果对下游生成的实际帮助超过了 RankGPT。</p>\n<p><strong>消融与组合实验：</strong></p>\n<ul>\n<li>UAE 单独使用已接近 SePer，但叠加 SePer rerank 进一步提升：QASPER MAP 49.49 → 53.39，NewsQA MAP 62.31 → 73.15。说明 UAE 既可独立部署，也可作为 rerank 链路的更强一阶召回。</li>\n<li>UAE + LLM Reranker：QASPER MAP 50.65，证明蒸馏后的 dense encoder 与下游 LLM rerank 互补。</li>\n<li>Reward Model 单独评测：NDCG@1 0.86 vs semantic retrievers ≤0.72，验证 reward 信号质量是关键中间产物。</li>\n</ul>\n<p><strong>零样本跨领域（Figure 5）：</strong> QASPER 训练的 UAE 在 NewsQA、SQuAD、HotpotQA、SciFact 上均保持或提升性能，没有出现负迁移，说明&quot;utility-aligned&quot;信号具备一定通用性，并非过拟合科学文献风格。</p>\n<p><strong>值得注意的现象：</strong> UAE 在 NewsQA 上 ROUGE-L 比所有 baseline 都高，但 MAP 略低于 SePer。这暗示&quot;召回最优&quot;不必然等价于&quot;下游生成最优&quot;——UAE 召回的样本即使排序不是最严格，但语义对生成器更友好，最终 Gen-F1 反而最好。这一观察对工业实践很重要：评估 RAG 检索时不能只看 MAP/NDCG，还要看 end-to-end 生成质量。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出的局限：</p>\n<ol>\n<li><strong>Raw utility 的高方差</strong>：必须依赖 reward model 平滑，否则训练不稳定；这意味着方案对 reward model 训练数据的质量敏感，迁移到新领域需要重新构造 utility 排序数据。</li>\n<li><strong>LLM-as-Judge 偏差</strong>：作者承认 LLM 视角的&quot;utility&quot;未必等价于人类标注的&quot;relevance&quot;——这在 LLM-as-a-judge 文献里是已知问题。生产中若下游生成器换成另一个模型，需要重新做蒸馏。</li>\n<li><strong>评测覆盖度有限</strong>：主表只在 QASPER + NewsQA 上做完整对比；zero-shot 部分覆盖了几个数据集但没做完整 benchmark，对长尾领域（医学、法律）效果未知。</li>\n<li><strong>绝对性能仍落后多阶段 pipeline</strong>：QASPER MAP 49.49 vs SePer 50.12，UAE 单独略落后；只是延迟优势把它放到 Pareto 前沿。</li>\n</ol>\n<p>未明确指出但显而易见的局限：(a) 整套方案与具体生成器（Llama-3-8B）耦合，更换生成器需要重训 reward model 和 retriever；(b) 未讨论增量/在线更新如何处理，新文档进入语料后是否需要重算 utility？(c) UAE 的训练数据需要 (q, a, d) 三元组，对于工业自有数据的获取门槛比纯 query-document pair 高。</p>\n<h2>6. 工业实践意义</h2>\n<p><strong>对社区/UGC 短文本搜索的直接启示：</strong></p>\n<ol>\n<li><strong>重定义召回目标</strong>：当下游有 LLM 摘要、生成式答案、RAG 助手时，dense encoder 的训练目标应该跟着下游变。不要再迷信&quot;全局通用 embedding&quot;——把&quot;是否帮助下游 LLM 生成出正确答案&quot;作为软标签，能让 nDCG/Recall 同时上去。这对短文本 UGC 尤其重要：UGC 常常字面差但语义近，靠 utility 而非 semantic similarity 来挑可以避开&quot;看似相关其实没用&quot;的召回。</li>\n</ol>\n<ol>\n<li><strong>工程接入门槛低</strong>：UAE 整套都是 LoRA + bi-encoder，输出仍是单向量，可直接喂给现有 FAISS/HNSW，不破坏现有召回链路。延迟 9ms 与现有 BGE 持平，可在不增加 P99 的前提下灰度。</li>\n</ol>\n<ol>\n<li><strong>构造 utility 数据的实操方法</strong>：(a) 选用业务下游生成器（如客服对话 LLM、社区问答 LLM）作为 teacher，对线上日志中的 (query, click_doc, generated_answer) 三元组计算 perplexity-based utility；(b) 训练 reward model 把噪声 utility 转为有序分数；(c) 用 KL 蒸馏到现有 BGE/E5。完整链路只需要 2 个 LoRA 头，单 A100 一周可走通 PoC。</li>\n</ol>\n<ol>\n<li><strong>对线上 A/B 的预期</strong>：QASPER 上 Recall@1 +30%、Gen-F1 +14% 是干净 benchmark 的数字。UGC 场景由于 query 噪声、点击日志稀疏，预期相对增益打个 4–6 折，仍可显著（CTR +1–2pp、nDCG +2–4pp）量级。</li>\n</ol>\n<ol>\n<li><strong>风险与组合策略</strong>：(a) 同一 retriever 可能对生成器换代敏感，建议每次大模型升级后 incremental fine-tune；(b) reward model 可作为独立排序层用于 cold-start 文档（无点击数据但有 utility 信号）；(c) 与 listwise rerank 不互斥，可叠加做 cascade（UAE 召回 → 轻量 cross-encoder rerank）。</li>\n</ol>\n<ol>\n<li><strong>延迟与成本</strong>：相比 RankGPT/SePer 这类 LLM rerank，UAE 把延迟从 1600ms 降到 9ms，单 query 推理成本从 ~$0.001 降到几乎为 0（仅向量检索）；对每天数亿次的搜索流量来说，相当于一年节省数百万美元 GPU 推理成本。</li>\n</ol>\n<p>整体来看，UAE 是过去半年&quot;生成式效用回灌召回&quot;方向最完整的工程化样本，对任何 RAG/生成式搜索团队都值得在 30 天内做 PoC 验证。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2604.22180",
+      "title": "ResRank: Unifying Retrieval and Listwise Reranking via End-to-End Joint Training with Residual Passage Compression",
+      "url": "https://arxiv.org/abs/2604.22180",
+      "authors": "Xiaojie Ke, Shuai Zhang, Liansheng Sun, Yongjin Wang, Hengjun Jiang, Xiangkun Liu, Cunxin Gu, Jian Xu, Guanjun Jiang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "ResRank 将 LLM 监听式重排序从“逐 token 自回归生成”改造成“一次余弦匹配”：用 Encoder-LLM 把每个候选文档压成单向量，再通过残差连接把 encoder embedding 与 reranker hidden state 融合，最终用一步余弦相似度替代解码。两阶段、多任务端到端训练。在 TREC DL 和 8 个 BEIR benchmark 上获得与原始 listwise LLM 重排序相当或更好的效果，但每个 passage 仅消耗 1 token、零生成 token，效率/效果折衷大幅改善。",
+      "key_insight": "对线上生产来说，listwise LLM rerank 的最大瓶颈是自回归延迟与“lost in the middle”，ResRank 用残差结构把 encoder 的语义压缩与 LLM 的判别能力同时端到端训练，把重排序变成单次相似度计算。在社区短文本场景中，可以借鉴“压缩成 1 token + 残差连接”的思路：召回与精排共用同一 backbone，避免传统两塔/cross-encoder 链路的训练目标错位，同时获得近似 listwise LLM 的精度。",
+      "tldr": "用 Encoder-LLM 把候选压成 1 token 向量再融合残差，listwise LLM rerank 只需一次余弦计算。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2604.22335",
+      "title": "Context-Fidelity Boosting: Enhancing Faithful Generation through Watermark-Inspired Decoding",
+      "url": "https://arxiv.org/abs/2604.22335",
+      "authors": "Weixu Zhang, Fanghua Ye, Qiang Gao, Jian Li, Haolun Wu, Yuxing Tian, Sijing Duan, Nan Du, Xiaolong Li, Xue Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "ACL 2026 论文 CFB 借鉴文本水印思路，提出三层渐进式 logits 偏置策略增强 RAG/QA 的上下文忠实度：1) Static boosting 对 context 中出现的 token 加固定偏置；2) Context-aware boosting 基于 “有/无 context 的分布散度” 调整偏置幅度；3) Token-aware boosting 利用 attention 与语义相似度对 token 级偏置自适应再分配。无需任何模型重训或结构改动，即插即用，在摘要与问答任务上一致提升 faithfulness 指标。",
+      "key_insight": "对 UGC 社区生成式答案/摘要场景，hallucination 是上线最大风险。CFB 给出了不需要重训 LLM 的“纯解码侧解法”：通过对召回上下文中真实 token 的 logit 加权重，让模型生成时偏向 RAG 命中的事实片段。三层 boosting 形成层次化引导信号，且全部基于现有 attention/分布信号，工程接入只需要 logits 钩子，可作为现有 RAG 答案生成模块的零成本补丁。",
+      "tldr": "三层 logits 偏置（静态→上下文→token级）让 LLM 生成时偏向 RAG 命中的真实证据，无需重训。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2604.22261",
+      "title": "Bridging the Long-Tail Gap: Robust Retrieval-Augmented Relation Completion via Multi-Stage Paraphrase Infusion",
+      "url": "https://arxiv.org/abs/2604.22261",
+      "authors": "Fahmida Alam, Mihai Surdeanu, Ellen Riloff",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "RC-RAG 针对 RAG 在“长尾关系/低频实体”上召回与生成同时崩塌的问题，提出在三个阶段系统化注入关系释义（paraphrase）：检索时用 paraphrase 扩展词汇覆盖，摘要时生成 relation-aware 总结，生成时用 paraphrase 引导推理。在 5 个 LLM × 2 个 benchmark 上一致优于 RAG baseline；长尾设置下相对独立 LLM 的 Exact Match 最高提升 40.6 个点，相对最强基线也高出 13.8–16.0 EM。",
+      "key_insight": "社区/UGC 搜索的核心痛点之一是“长尾实体的召回与改写”：用户口语化、缩写、网络黑话频繁。RC-RAG 验证了一个非常实用的范式：不动模型权重，只在 retrieval/summarize/generate 三处插入 paraphrase 信号，就能补齐长尾覆盖。计算开销低、可与现有 query rewriting 模块叠加，对 head/tail query 同时友好，是工程性价比极高的“长尾兜底”方案。",
+      "tldr": "在 RAG 三阶段都注入 relation paraphrase，长尾 EM 较 LLM baseline 提升 40.6 点。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2604.22266",
+      "title": "Large Language Models Decide Early and Explain Later",
+      "url": "https://arxiv.org/abs/2604.22266",
+      "authors": "Ayan Datta, Zhixue Zhao, Bhuvanesh Verma, Radhika Mamidi, Mounika Marreddy, Alexander Mehler",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 3.8,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文提出 “forced answer completion” 实验范式，强制让模型在 chain-of-thought 各步暂停并直接回答，探测最终答案到底何时被锁定。结果：仅有 32% 的 query 中模型答案在生成过程中真正发生变化，平均会在答案稳定后再产生约 760 个无效推理 token。基于探针的早停启发式可以在精度仅下降约 2% 的前提下平均节省 ~500 推理 token/查询。",
+      "key_insight": "对在线 LLM 服务（包括生成式搜索答案、生成式排序解释）来说，这个发现的工程意义远比理论意义大：CoT 输出中的大半 token 是“事后解释”，对最终结果几乎无贡献。可以用一个轻量探针在解码过程中实时检测“答案稳定性”，触发 early stop，把首响延迟和单 query 成本降一半左右。在召回-生成混合管线中相当于给推理侧的 KV cache/算力松绑，是生成式推荐/搜索落地非常直接的成本优化点。",
+      "tldr": "LLM 推理早就决定了答案，后面 760 个 token 多为冗余；探针式早停可省 500 token/query，仅损 2% 精度。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2604.22193",
+      "title": "How Large Language Models Balance Internal Knowledge with User and Document Assertions",
+      "url": "https://arxiv.org/abs/2604.22193",
+      "authors": "Shuowei Li, Haoxin Li, Wenda Chu, Yi Fang",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 3.6,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "ACL 2026 Findings。首次系统研究三源知识冲突：参数化知识 vs 用户输入断言 vs 检索文档断言，构建评测套件覆盖 27 个模型 × 3 个家族 × 2 个数据集。核心发现：模型对“文档断言”的依赖显著强于“用户断言”，且这一偏好被指令微调进一步强化；多数模型难以辨别外部信息的有用与有害；在含三源交互样本上做微调可显著提升模型对来源的甄别能力。",
+      "key_insight": "RAG 落地中常见的 trust 问题：当用户在 query 中夹带矛盾信息（“我已经买了 X，再推 Y”）、检索结果又提供第三方说法时，LLM 该信谁？本文给出实证：当前主流模型几乎默认以“文档为先”，post-training 还会进一步加深这种偏置。对生成式搜索、对话推荐、客服 RAG 等场景的启示——必须显式用三源数据做对齐微调，否则会出现“被低质检索结果带偏”或“忽视用户最新偏好”这两类系统性错误。",
+      "tldr": "27 个 LLM 实验显示模型默认偏信 RAG 文档而非用户输入，post-training 还会加深这种偏置。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2604.22282",
+      "title": "STEM: Structure-Tracing Evidence Mining for Knowledge Graphs-Driven Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2604.22282",
+      "authors": "Peng Yu, En Xu, Bin Chen, Haibiao Chen, Yinfei Xu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "ACL 2026 Main。STEM 把多跳推理重构成 schema-guided graph search：1) Semantic-to-Structural Projection 把 query 拆成关系断言并构造自适应查询子图；2) Triple-Dependent GNN 为每个三元组生成全局指导子图增强结构感知；3) Globally-Aware Retrieval 做节点锚定与子图抽取得到证据推理图。在多个多跳问答 benchmark 上达到 SoTA，显著提升答案准确率与“证据完整度”。",
+      "key_insight": "对带有结构化知识的搜索/推荐（商品图、问答图、社交图）很有借鉴价值：传统 dense 检索召回的是“语义最近”的片段，但多跳问题真正需要的是“路径完整”的证据。STEM 把检索目标从“相关 chunk”转向“覆盖完整推理路径的子图”，这意味着在工程上需要把 KG 索引、GNN 探索、向量检索三层并联，而不是堆叠 RAG。对社区 QA、商品问答这类需要因果/关系推理的场景是清晰的方向。",
+      "tldr": "把多跳 RAG 重构为 KG 子图搜索，schema 投影 + Triple-GNN 显著提升 evidence 完整度与多跳准确率。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2604.22294",
+      "title": "Contexts are Never Long Enough: Structured Reasoning for Scalable Question Answering over Long Document Sets",
+      "url": "https://arxiv.org/abs/2604.22294",
+      "authors": "Harshit Joshi, Priyank Shethia, Jadelynn Dao, Monica S. Lam",
+      "company": [
+        "Stanford"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-24",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "SLIDERS 解决的是 “文档集大到任何 LLM context 都装不下” 的 QA 场景：把信息从原文中抽到关系型数据库，再通过 SQL + 数据调和（基于 provenance / 抽取理由 / 元数据修复重复或不一致记录）来回答问题。在三个长文本基准上全面超越基线，平均比 GPT-4.1 高 6.6 个点；在两个新构造的 3.9M 与 36M token 基准上分别超过次优 ~19/~32 个点。",
+      "key_insight": "把 RAG 从“向量检索 + 拼接 context”推向“先结构化再 SQL”，避开了 long context 的硬上限。对社区/UGC 搜索的间接启示：当用户问 “过去一周关于 X 的所有评测”、“某品牌共有多少差评” 这类“跨文档聚合” 问题时，向量检索几乎无法解决，但 SLIDERS 的“抽取→数据库→SQL”范式更契合。可以与现有 RAG 互补，作为“聚合型” query 的专用通道。",
+      "tldr": "把长文档集抽成数据库再 SQL 推理，处理 36M token 也能稳定 QA，比 GPT-4.1 平均高 6.6 个点。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:2512.13511",
+      "title": "Adapting MLLMs for Nuanced Video Retrieval",
+      "url": "https://arxiv.org/abs/2512.13511",
+      "authors": "Piyush Bagad, Andrew Zisserman",
+      "company": [
+        "Oxford"
+      ],
+      "source": "arxiv",
+      "published": "2025-12-15",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "把生成式 MLLM 改造成视频检索 embedding 模型：以预训练多模态生成模型为底座，用对比学习（hard negative 精心采样）只在文本侧 fine-tune，无需视频-文本配对数据。结果在 nuanced video retrieval 三大维度（时间区分如 “开门 vs 关门”、否定词处理、文本+视频组合检索）上一致刷新 SoTA，并发现“纯文本对比训练”会拉近文本/视频 embedding 空间。",
+      "key_insight": "短视频/UGC 社区是当下搜索增长最大的场景，视频检索却长期被“粗粒度全局相似”所限。本文揭示一个反直觉但极具落地价值的事实：你不必有大量视频-文本对，只用文本对比就能把生成式 MLLM 转成精细化视频 embedding。对工程团队意味着可用现成 MLLM（Qwen-VL / LLaVA 等）+ 文本对比 finetune 快速搭建 nuanced 视频召回，且天然支持 query 中带否定/时序约束的复杂检索。",
+      "tldr": "把生成式 MLLM 改造成视频检索 embedding，仅用文本对比 finetune 就刷新 nuanced video retrieval SoTA。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:2604.22074",
+      "title": "Outcome Rewards Do Not Guarantee Verifiable or Causally Important Reasoning",
+      "url": "https://arxiv.org/abs/2604.22074",
+      "authors": "Qinan Yu, Alexa Tartaglini, Peter Hase, Carlos Guestrin, Christopher Potts",
+      "company": [
+        "Stanford"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-23",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文系统检验了 RLVR（reinforcement learning from verifiable rewards）训练的推理模型：提出 Causal Importance of Reasoning (CIR) 与 Sufficiency of Reasoning (SR) 两个指标，衡量模型回答时是否真的依赖了所生成的 reasoning。结论：RLVR 提升了任务准确率，却未一致提升 CIR/SR——很多情况下 CoT 仅是装饰；适量的 SFT 预热 + 显式 CIR/SR 辅助奖励能让模型在准确率不掉的同时真正“依赖推理”。",
+      "key_insight": "对生成式搜索/推荐里的 reasoning 模块（如 query 解析、推荐解释、复杂工具调用）有警示意义：单看 outcome 准确率有可能训出“嘴上推理、心里抄答案”的模型，落地后 reasoning trace 既无法用于解释也无法做安全审计。要么在训练时混合 process reward / 因果约束，要么在评测时强制做 forced-answer 实验，避免被任务指标欺骗。",
+      "tldr": "outcome 奖励训出来的 reasoning 模型其推理链 32–40% 时是装饰性的，需引入 CIR/SR 因果指标。"
+    }
+  ],
+  "code_projects": []
+}

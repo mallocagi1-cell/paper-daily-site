@@ -1,0 +1,525 @@
+{
+  "date": "2026-09-24",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "papers_scored": 88,
+    "papers_selected": 10,
+    "score_min": 3.0,
+    "score_max": 4.0
+  },
+  "papers": [
+    {
+      "id": "arxiv:oai:arXiv.org:2609.23354",
+      "title": "From Ranked Documents to Reliable Contexts: An Answer-Oriented Context Construct Framework for AI Search",
+      "authors": "Yunfei Zhong, Yinqiong Cai, Lixin Su, Haosheng Qian, Lixin Zou, Yixing Fan, Sheng Xu, Jiafeng Guo, Daiting Shi, Jingzhou He",
+      "abstract": "arXiv:2609.23354v2 Announce Type: replace \nAbstract: Traditional Web search follows a human-facing paradigm in which users inspect ranked documents and synthesize information themselves. In AI Search, retrieved documents instead serve as inputs to a generation model, shifting the retrieval objective from ranking documents by Search Satisfaction to constructing reliable context for correct answer generation. We formulate this shift as answer-oriented context construction through a three-stage framework: (1) Answer Support identifies candidate documents that contribute information to answer generation; (2) Content Trustworthiness assesses whether this information provides a reliable basis for correct answers from source, temporal, and factual perspectives; and (3) Context Organization selects, consolidates, and structures retained information under a finite context budget for consistent and robust generation. We further develop an industrial workflow spanning prior and posterior optimiza",
+      "url": "https://arxiv.org/abs/2609.23354",
+      "source": "arxiv",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "company": [
+        "Baidu",
+        "ICT CAS",
+        "Wuhan University"
+      ],
+      "summary": "论文把 AI 搜索的检索目标扩展为答案支持、内容可信和上下文组织三个阶段，并给出百度工业实现。文档压缩为可离线缓存的瓶颈表示，在线按查询评分；答案支持排序升级使答案通过率增加 4.8 个百分点，抽取式内容精简的人评净收益为 8.9%。各组件增益对应独立基线，不应相加。",
+      "key_insight": "对社区 UGC 搜索，可分别标注“主题相关”和“能支撑答案”，用主题匹配但缺少有效信息的帖子构造难负例。问答入口还应保留原始出处，按问题要点组织互补证据；内容时间与发布时间需要分开判断。论文未披露完整训练规模和延迟数据，应先验证短文本场景收益，再投入压缩排序器。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05,
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2609.23354",
+        "title": "From Ranked Documents to Reliable Contexts: An Answer-Oriented Context Construct Framework for AI Search",
+        "status": "completed",
+        "content": "# From Ranked Documents to Reliable Contexts：面向答案的检索实践\n\n原文：https://arxiv.org/html/2609.23354 。以下根据正文第 II–VIII 节整理，实验数字取自表 II；业务试验建议为分析意见。\n\n## 1. 问题与动机\n\n传统网页搜索把排序列表交给用户，用户再完成比较、核实与综合。论文研究的变化是：文档变成生成模型的输入，用户看到的是最终答案。主题相关的页面可能完全没有答案所需信息；一个表面词汇不相似的页面，却可能提供推导必需的条件。原有相关性、权威性、新鲜度与页面质量四类信号，因而不足以保证上下文可用。\n\n作者以截止时间查询解释这种差别：只找会议日程能提供 AoE 截止时间，却不一定提供北京时区转换所需知识。检索器需要判断文档是否补足推理前提。另一个问题是内容重新发布后看似很新，实际描述的事件状态已经过期；仅看发布时间会把这种文章排到前面。第三个问题发生在集合层面：十篇分别相关的页面仍可能重复同一观点，挤掉其他必要条件。\n\n对社区场景，这个问题主要对应搜索问答或 AI 总结入口。传统帖子列表仍需测量 nDCG 和 CTR；答案入口则要新增证据充分性与最终答案评价，不能假定两个目标天然一致。\n\n## 2. 方法详解\n\n系统先做 Answer Support 排序，再检查 Content Trustworthiness，最后执行 Context Organization。三阶段分别回答：是否有用、是否可靠、如何供模型使用。\n\n答案支持排序器将文档标题和正文压缩到 M 个可学习瓶颈 token，M 远小于原文长度。训练时限制注意力：瓶颈 token 可以聚合文档信息，查询侧只能访问瓶颈表示，不能直接看到原始文档 token。训练标签也发生变化，正例包括直接答案和必要推导前提，难负例是主题相近但不能帮助回答的文档。由于文档压缩与查询无关，瓶颈表示及可复用 KV 状态可离线缓存；在线只计算查询与压缩表示的交互。这是正文中比“换成大模型”更具体、可迁移的工程设计。\n\n可信度由来源、时间、事实三个二值判断构成，聚合取最小值，任何适用维度失败即过滤，保留下来的文档仍维持答案支持排序。来源评估使用网站类别，并对个人作者进一步检查领域匹配和作者画像：当前实现采用 29 个领域分类，个人来源需要完全匹配且画像核验通过。它不是单纯按粉丝量排序，画像还包含身份、专业背景、内容历史和发布行为。\n\n时间模块区分内容描述的时间与页面发布时间。内容时间定位器通过推理、检索和回答动作收集证据，并以日期距离和搜索行为奖励训练 actor–critic PPO 策略；正文只说明日级定位，未完整实现有效区间与版本谱系。另一个模块按查询估计过期边界，对不确定结果做反思或人工复核，保存到查询字典。二者结合判断内容是否仍适用。\n\n事实模块把与回答有关的可验证陈述拆开，生成核验查询，寻找有出处的证据，再标成支持、矛盾或未解决。当前严格实现要求相关声明全部获得支持；“未找到反例”不会被当作成立。这个规则解释了它为何可能减少错误，也意味着证据覆盖不足会损伤召回。\n\n上下文组织有分阶段和联合两种实现。抽取式模块用查询条件下的 BIO 标注保留原文片段；生成式模块按索引选择内容单元，处理分散段落和表格关系。跨文档组织器合并适用条件一致的重复内容，保留不同实体、时间、版本与来源的差异，然后按问题的信息需求分组、分配预算、安排位置。联合模型对文档输出 full、partial 或 discard，再预测保留块的顺序，使局部抽取考虑集合互补性。\n\n后验优化目前是代理评估模拟器。它从答案的需求满足、事实正确与覆盖情况定位缺口，按预算补检索和重生成，保存轨迹中最好的答案。对通过评估的答案，再把各文档贡献标为 0–4 五档，通过随机打乱来源顺序和重复判断降低位置影响。正文并未披露完整骨干参数量、瓶颈数量、训练集规模、批大小、优化器配置、训练步数和硬件，因此只能复现结构原则，不能宣称配方已完整公开。\n\n## 3. 核心技术贡献\n\n第一项贡献是重新定义排序监督。原先的 query–document 相关性难以表达“文档本身不是答案，但提供必要条件”。答案支持标签把直接信息和推导前提纳入正例，再用主题相关却无信息增量的样本做难负例。对应排序升级带来答案通过率增加 4.8 个百分点，人评净收益 2.0%，说明该变更在论文设置中确实传导到答案端；但并不能独立分离大模型容量与标签变化各自贡献。\n\n第二项贡献是把可信度做成不可相互抵偿的约束。来源适合、时间适用与事实可核验属于不同条件，不能靠其中一个高分覆盖另一项明显失败。来源角色改造的答案通过率提升为 5.2 个百分点，内容时间改造为 4.1 个百分点，分别对应不同基线。这个拆分适合诊断错误，但严格二值门控是否适用于个人经验类 UGC 仍要重新评估。\n\n第三项贡献是把检索后的信息组织作为集合决策。某段文字单独看贡献很弱，与其他页面结合却可能补齐推理链。联合抽取与组织减少“前级删掉后级需要的信息”这一不可逆错误，对比分离模块，人评净收益为 2.8%。文档离线压缩则提供了另一条工程路径：把长文本处理移出在线查询链路，在保留条件交互的同时限制实时成本。\n\n## 4. 实验结果分析\n\n表 II 报告各次组件升级相对各自基线的差值。自动指标是绝对百分点，人评 Net Gain 是盲评中“更好比例减更差比例”，并非 CTR 或用户留存的相对提升。下表摘录足以支持工程选择的结果，不能把各行相加为完整系统收益。\n\n| 组件升级 | 查询级可用率变化 | 答案通过率变化 | 人评 Net Gain |\n|---|---:|---:|---:|\n| 小相关性模型→答案支持排序 | +4.8 pp | +4.8 pp | +2.0% |\n| 网站类别→领域与作者来源判断 | +3.6 pp | +5.2 pp | +2.7% |\n| 发布时间→内容时间 | +1.7 pp | +4.1 pp | +3.5% |\n| 固定新鲜度→查询过期边界 | +2.9 pp | +3.0 pp | +2.4% |\n| 引入声明级事实核验 | +2.1 pp | +3.9 pp | +4.2% |\n| 引入抽取式内容精简 | +4.8 pp | +4.1 pp | +8.9% |\n| 抽取式→生成式提取 | +5.6 pp | +2.2 pp | +2.0% |\n| 引入集合组织器 | +7.2 pp | +1.8 pp | +1.0% |\n| 分离抽取组织→联合模型 | +2.1 pp | +1.5 pp | +2.8% |\n| 点击监督→答案层代理反馈学习 | +2.3 pp | +4.2 pp | +4.8% |\n\n最值得关注的是抽取式精简在人评端的 8.9% 净收益。这支持先清理上下文噪声的工程优先级，但由于各行起点不同，不能断言抽取器在任意系统都比更强排序器重要。集合组织器使查询可用率增加 7.2 个百分点，答案通过率却只增加 1.8 个百分点，说明证据组织改善并不保证生成器充分利用它。\n\n评估协议还有几项细节：文档标签取 0、1、2，先判断有效信息贡献和可信度；集合评估会处理矛盾与重复，至少 80% 文档有效才能达到一般可用。答案评估检查前提处理、需求满足、事实、逻辑与完整性五项，每项 0–2 分，任何一项为 0 都导致不通过。人评使用随机、盲化的成对 Good–Same–Bad 判断。自动分数与人评并列提供，比单用 LLM judge 更有说服力。\n\n这些实验属于组件对比，不能当作严格控制其他变量的全因子消融。正文没有给出足够的样本数、置信区间和独立公开测试集信息，也未给出线上 CTR、nDCG 或毫秒级延迟表。因此可以把它看作工业效果证据，但复现可信度和可迁移性仍有限。\n\n## 5. 局限与未来方向\n\n作者明确展示一个失败案例：多个网页相互重复同一虚假归因，核验器把表面上的多源一致当成相互印证。这说明声明级核验需要判断来源是否独立，而不只是数有多少页面赞同。社区里的转载、搬运与模板化营销内容会放大同样的问题。\n\n正文还明确承认时间模块目前只做日级内容时间估计，没有恢复完整有效区间、版本沿革和政策状态；过期边界实现也只是时效判断的近似。后验优化依赖模型代理判断，尚不能等同于真实用户行为反馈。自动评估对细微质量差异的准确性有限，所以人评承担主要用户效果依据。\n\n我的补充判断是：严格要求所有相关陈述得到外部佐证，可能系统性压低原创经验帖；领域画像也可能偏向历史丰富的头部作者。这些影响并未由本文实验充分覆盖。缺失训练与资源细节，则限制了短期照搬整套方案的可行性，需要先拆出可验证的小模块。\n\n## 6. 工业实践意义\n\n建议社区 UGC 搜索先做一套明确的双目标标注：帖子列表衡量相关性和点击，AI 问答衡量能否回答、证据可信度和覆盖度。把“同主题却不回答问题”的帖子作为难负例，尤其关注故障排查、对比选择和带时间条件的问题。实验应按问题类型分层，否则总体均值容易掩盖长尾查询损失。\n\n第一批改造可以只做抽取式精简和出处保留，避免同时改模型、召回、过滤与生成器。在线除了最终答案盲评，还要监控证据误删、零结果率、长尾覆盖以及 p95 延迟。对于经验分享，区分无法外部核验的主观体验和可核验事实，不宜直接套用全部通过才保留的门控规则。\n\n文档瓶颈缓存适合较长、更新较慢的内容；社区短帖可能压缩收益较小，但评论串、长回答和合集值得试验。部署时需要评估文档更新后的缓存失效、表示版本与排序模型一致性、离线重编码资源，以及查询侧在线计算。论文没有给出这些成本的量化结果，不能据其工业叙述推定本地基础设施一定承受得起。\n\n最后，应把本文表格里的自动通过率、人评偏好与自身 nDCG/CTR 分开管理。通过小流量实验验证真实用户收益，再决定是否引入更复杂的时间推断、声明核验与答案反馈训练。论文最有用的实践启示，是把检索到的内容作为需验证和组织的证据集合，并给每次改造指定可观察的失败类型。",
+        "content_html": "<h1>From Ranked Documents to Reliable Contexts：面向答案的检索实践</h1>\n<p>原文：https://arxiv.org/html/2609.23354 。以下根据正文第 II–VIII 节整理，实验数字取自表 II；业务试验建议为分析意见。</p>\n<h2>1. 问题与动机</h2>\n<p>传统网页搜索把排序列表交给用户，用户再完成比较、核实与综合。论文研究的变化是：文档变成生成模型的输入，用户看到的是最终答案。主题相关的页面可能完全没有答案所需信息；一个表面词汇不相似的页面，却可能提供推导必需的条件。原有相关性、权威性、新鲜度与页面质量四类信号，因而不足以保证上下文可用。</p>\n<p>作者以截止时间查询解释这种差别：只找会议日程能提供 AoE 截止时间，却不一定提供北京时区转换所需知识。检索器需要判断文档是否补足推理前提。另一个问题是内容重新发布后看似很新，实际描述的事件状态已经过期；仅看发布时间会把这种文章排到前面。第三个问题发生在集合层面：十篇分别相关的页面仍可能重复同一观点，挤掉其他必要条件。</p>\n<p>对社区场景，这个问题主要对应搜索问答或 AI 总结入口。传统帖子列表仍需测量 nDCG 和 CTR；答案入口则要新增证据充分性与最终答案评价，不能假定两个目标天然一致。</p>\n<h2>2. 方法详解</h2>\n<p>系统先做 Answer Support 排序，再检查 Content Trustworthiness，最后执行 Context Organization。三阶段分别回答：是否有用、是否可靠、如何供模型使用。</p>\n<p>答案支持排序器将文档标题和正文压缩到 M 个可学习瓶颈 token，M 远小于原文长度。训练时限制注意力：瓶颈 token 可以聚合文档信息，查询侧只能访问瓶颈表示，不能直接看到原始文档 token。训练标签也发生变化，正例包括直接答案和必要推导前提，难负例是主题相近但不能帮助回答的文档。由于文档压缩与查询无关，瓶颈表示及可复用 KV 状态可离线缓存；在线只计算查询与压缩表示的交互。这是正文中比“换成大模型”更具体、可迁移的工程设计。</p>\n<p>可信度由来源、时间、事实三个二值判断构成，聚合取最小值，任何适用维度失败即过滤，保留下来的文档仍维持答案支持排序。来源评估使用网站类别，并对个人作者进一步检查领域匹配和作者画像：当前实现采用 29 个领域分类，个人来源需要完全匹配且画像核验通过。它不是单纯按粉丝量排序，画像还包含身份、专业背景、内容历史和发布行为。</p>\n<p>时间模块区分内容描述的时间与页面发布时间。内容时间定位器通过推理、检索和回答动作收集证据，并以日期距离和搜索行为奖励训练 actor–critic PPO 策略；正文只说明日级定位，未完整实现有效区间与版本谱系。另一个模块按查询估计过期边界，对不确定结果做反思或人工复核，保存到查询字典。二者结合判断内容是否仍适用。</p>\n<p>事实模块把与回答有关的可验证陈述拆开，生成核验查询，寻找有出处的证据，再标成支持、矛盾或未解决。当前严格实现要求相关声明全部获得支持；“未找到反例”不会被当作成立。这个规则解释了它为何可能减少错误，也意味着证据覆盖不足会损伤召回。</p>\n<p>上下文组织有分阶段和联合两种实现。抽取式模块用查询条件下的 BIO 标注保留原文片段；生成式模块按索引选择内容单元，处理分散段落和表格关系。跨文档组织器合并适用条件一致的重复内容，保留不同实体、时间、版本与来源的差异，然后按问题的信息需求分组、分配预算、安排位置。联合模型对文档输出 full、partial 或 discard，再预测保留块的顺序，使局部抽取考虑集合互补性。</p>\n<p>后验优化目前是代理评估模拟器。它从答案的需求满足、事实正确与覆盖情况定位缺口，按预算补检索和重生成，保存轨迹中最好的答案。对通过评估的答案，再把各文档贡献标为 0–4 五档，通过随机打乱来源顺序和重复判断降低位置影响。正文并未披露完整骨干参数量、瓶颈数量、训练集规模、批大小、优化器配置、训练步数和硬件，因此只能复现结构原则，不能宣称配方已完整公开。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是重新定义排序监督。原先的 query–document 相关性难以表达“文档本身不是答案，但提供必要条件”。答案支持标签把直接信息和推导前提纳入正例，再用主题相关却无信息增量的样本做难负例。对应排序升级带来答案通过率增加 4.8 个百分点，人评净收益 2.0%，说明该变更在论文设置中确实传导到答案端；但并不能独立分离大模型容量与标签变化各自贡献。</p>\n<p>第二项贡献是把可信度做成不可相互抵偿的约束。来源适合、时间适用与事实可核验属于不同条件，不能靠其中一个高分覆盖另一项明显失败。来源角色改造的答案通过率提升为 5.2 个百分点，内容时间改造为 4.1 个百分点，分别对应不同基线。这个拆分适合诊断错误，但严格二值门控是否适用于个人经验类 UGC 仍要重新评估。</p>\n<p>第三项贡献是把检索后的信息组织作为集合决策。某段文字单独看贡献很弱，与其他页面结合却可能补齐推理链。联合抽取与组织减少“前级删掉后级需要的信息”这一不可逆错误，对比分离模块，人评净收益为 2.8%。文档离线压缩则提供了另一条工程路径：把长文本处理移出在线查询链路，在保留条件交互的同时限制实时成本。</p>\n<h2>4. 实验结果分析</h2>\n<p>表 II 报告各次组件升级相对各自基线的差值。自动指标是绝对百分点，人评 Net Gain 是盲评中“更好比例减更差比例”，并非 CTR 或用户留存的相对提升。下表摘录足以支持工程选择的结果，不能把各行相加为完整系统收益。</p>\n<table><thead><tr><th>组件升级</th><th>查询级可用率变化</th><th>答案通过率变化</th><th>人评 Net Gain</th></tr></thead><tbody><tr><td>小相关性模型→答案支持排序</td><td>+4.8 pp</td><td>+4.8 pp</td><td>+2.0%</td></tr><tr><td>网站类别→领域与作者来源判断</td><td>+3.6 pp</td><td>+5.2 pp</td><td>+2.7%</td></tr><tr><td>发布时间→内容时间</td><td>+1.7 pp</td><td>+4.1 pp</td><td>+3.5%</td></tr><tr><td>固定新鲜度→查询过期边界</td><td>+2.9 pp</td><td>+3.0 pp</td><td>+2.4%</td></tr><tr><td>引入声明级事实核验</td><td>+2.1 pp</td><td>+3.9 pp</td><td>+4.2%</td></tr><tr><td>引入抽取式内容精简</td><td>+4.8 pp</td><td>+4.1 pp</td><td>+8.9%</td></tr><tr><td>抽取式→生成式提取</td><td>+5.6 pp</td><td>+2.2 pp</td><td>+2.0%</td></tr><tr><td>引入集合组织器</td><td>+7.2 pp</td><td>+1.8 pp</td><td>+1.0%</td></tr><tr><td>分离抽取组织→联合模型</td><td>+2.1 pp</td><td>+1.5 pp</td><td>+2.8%</td></tr><tr><td>点击监督→答案层代理反馈学习</td><td>+2.3 pp</td><td>+4.2 pp</td><td>+4.8%</td></tr></tbody></table>\n<p>最值得关注的是抽取式精简在人评端的 8.9% 净收益。这支持先清理上下文噪声的工程优先级，但由于各行起点不同，不能断言抽取器在任意系统都比更强排序器重要。集合组织器使查询可用率增加 7.2 个百分点，答案通过率却只增加 1.8 个百分点，说明证据组织改善并不保证生成器充分利用它。</p>\n<p>评估协议还有几项细节：文档标签取 0、1、2，先判断有效信息贡献和可信度；集合评估会处理矛盾与重复，至少 80% 文档有效才能达到一般可用。答案评估检查前提处理、需求满足、事实、逻辑与完整性五项，每项 0–2 分，任何一项为 0 都导致不通过。人评使用随机、盲化的成对 Good–Same–Bad 判断。自动分数与人评并列提供，比单用 LLM judge 更有说服力。</p>\n<p>这些实验属于组件对比，不能当作严格控制其他变量的全因子消融。正文没有给出足够的样本数、置信区间和独立公开测试集信息，也未给出线上 CTR、nDCG 或毫秒级延迟表。因此可以把它看作工业效果证据，但复现可信度和可迁移性仍有限。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确展示一个失败案例：多个网页相互重复同一虚假归因，核验器把表面上的多源一致当成相互印证。这说明声明级核验需要判断来源是否独立，而不只是数有多少页面赞同。社区里的转载、搬运与模板化营销内容会放大同样的问题。</p>\n<p>正文还明确承认时间模块目前只做日级内容时间估计，没有恢复完整有效区间、版本沿革和政策状态；过期边界实现也只是时效判断的近似。后验优化依赖模型代理判断，尚不能等同于真实用户行为反馈。自动评估对细微质量差异的准确性有限，所以人评承担主要用户效果依据。</p>\n<p>我的补充判断是：严格要求所有相关陈述得到外部佐证，可能系统性压低原创经验帖；领域画像也可能偏向历史丰富的头部作者。这些影响并未由本文实验充分覆盖。缺失训练与资源细节，则限制了短期照搬整套方案的可行性，需要先拆出可验证的小模块。</p>\n<h2>6. 工业实践意义</h2>\n<p>建议社区 UGC 搜索先做一套明确的双目标标注：帖子列表衡量相关性和点击，AI 问答衡量能否回答、证据可信度和覆盖度。把“同主题却不回答问题”的帖子作为难负例，尤其关注故障排查、对比选择和带时间条件的问题。实验应按问题类型分层，否则总体均值容易掩盖长尾查询损失。</p>\n<p>第一批改造可以只做抽取式精简和出处保留，避免同时改模型、召回、过滤与生成器。在线除了最终答案盲评，还要监控证据误删、零结果率、长尾覆盖以及 p95 延迟。对于经验分享，区分无法外部核验的主观体验和可核验事实，不宜直接套用全部通过才保留的门控规则。</p>\n<p>文档瓶颈缓存适合较长、更新较慢的内容；社区短帖可能压缩收益较小，但评论串、长回答和合集值得试验。部署时需要评估文档更新后的缓存失效、表示版本与排序模型一致性、离线重编码资源，以及查询侧在线计算。论文没有给出这些成本的量化结果，不能据其工业叙述推定本地基础设施一定承受得起。</p>\n<p>最后，应把本文表格里的自动通过率、人评偏好与自身 nDCG/CTR 分开管理。通过小流量实验验证真实用户收益，再决定是否引入更复杂的时间推断、声明核验与答案反馈训练。论文最有用的实践启示，是把检索到的内容作为需验证和组织的证据集合，并给每次改造指定可观察的失败类型。</p>"
+      }
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.22770",
+      "title": "Parameterized Dense-Sparse Fusion for Hybrid Retrieval: Tuning a Rank-Score Mix on BEIR SciFact with Qdrant",
+      "authors": "Satyanarayan Pati, Srikanth Patil",
+      "abstract": "arXiv:2609.22770v2 Announce Type: replace \nAbstract: We study a parameterized hybrid ranker that fuses a dense embedding list and a sparse lexical list. The method has a small, explicit parameter vector: a dense prior $\\alpha \\in [0,1]$, a score-versus-rank mix $\\lambda \\in [0,1]$, an RRF smoothing parameter $\\kappa > 0$, optional list-geometry coefficients that move $\\alpha$ per query, and a router margin $\\tau$ that can turn sparse search off. We grid-search those ranges on SciFact train (809 queries) and freeze the chosen values on SciFact test (300). The tuned rank-score mix ($\\alpha = 0.8$, $\\lambda = 0.75$, $\\kappa = 20$) reaches 0.753 nDCG@10 and 0.889 recall@10, outperforming dense BGE (0.742 / 0.871) and equal-weight RRF (0.707 nDCG@10) on that test split. A list-conditioned $\\alpha$ adds +0.0006 nDCG; a sparse-off router is rejected by the same train split (any $\\tau$ that skipped approximately 50% of queries lost nDCG). These coefficients are dataset-specific. Equal RRF with",
+      "url": "https://arxiv.org/abs/2609.22770",
+      "source": "arxiv",
+      "published": "2026-09-19",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.95,
+      "company": [
+        "Involead"
+      ],
+      "summary": "研究在 Qdrant 中组合 BGE 稠密召回和 BM42 稀疏召回，通过训练集搜索稠密权重、分数与名次混合比例及 RRF 平滑参数。SciFact 的 809 条训练查询用于选参，300 条测试查询上 nDCG@10 为 0.753，高于稠密基线 0.742 和等权 RRF 的 0.707；20 个独立检索单元中有 16 个超过稠密基线。",
+      "key_insight": "UGC 短文本召回可以保留稀疏通道补充实体、型号和罕见词，再用独立验证集校准融合权重。值得复用的是搜索参数范围和冻结后测试的流程，不能照搬 SciFact 的 0.8 权重。动态权重仅增加约 0.0006 nDCG，跳过稀疏召回也未通过质量约束，优先实现简单、可审计的静态融合。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.0,
+      "rank": 2
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.25189",
+      "title": "GroundedGEO: Auditing the Evidence Gap in Generative Search Rankings",
+      "authors": "Yihan Xia, Huiling Fan, Kangrong Zhong, Taotao Wang",
+      "abstract": "arXiv:2609.25189v1 Announce Type: new \nAbstract: Generative search systems rank products and services for consequential decisions, and publishers can cheaply make candidate text look relevant. Yet evidence status is not a text property but a claim-evidence relation: text-only rankers and defenses cannot separate honest detailed content from fabricated detail, creating an identifiability gap. We audit this gap with an evidence-paired benchmark (50 e-commerce queries, 1,950 cases) and a claim-level reranker, GroundedGEO, that penalizes query-relevant claims lacking support in a supplied packet. Matched rich variants control format and volume; packet twins add attestations at fixed text, while thinned packets withdraw them. On the frozen listwise ranker Qwen2.5-7B, unsupported-rich variants show significant normalized rank gain over clean candidates (+0.065 to +0.092 across claim profiles, Holm-corrected), while supported and neutral controls do not; the effect is model-dependent (margina",
+      "url": "https://arxiv.org/abs/2609.25189",
+      "source": "arxiv",
+      "published": "2026-09-21",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.85,
+      "company": [
+        "Shenzhen University"
+      ],
+      "summary": "GroundedGEO 用 50 个电商查询、1950 个配对案例审计生成式搜索中虚构细节带来的排名收益，并根据声明与证据关系实施重排。在理想证据标签下，无支持内容进入前三的比例由 0.65 降到 0.43；但所有自动判断器均未通过基于 370 条人工声明的可靠性门槛，结果不能视为自动防御已可部署。",
+      "key_insight": "社区内容排序不能把描述丰富、措辞专业直接当作可信度。可借鉴固定文本、只改变证据支持的配对评测，测量排序器是否真正利用证据；同时分别监控虚假内容压制率和真实帖子误伤率。证据缺失与内容错误必须区分，尤其是缺少外链的原创 UGC，避免把理想标签效果外推到线上自动审核。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.85,
+      "rank": 3
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.25306",
+      "title": "ReFilter: Bridging Embeddings and LLM Filtering for Similar Mobile App Retrieval",
+      "authors": "Buthayna AlMulla, Maram Assi, Safwat Hassan",
+      "abstract": "arXiv:2609.25306v1 Announce Type: new \nAbstract: Retrieving similar mobile applications (apps) is essential for researchers, developers, and end-users. Researchers use similarity detection to study app ecosystems and trends, developers for competitor analysis, and end-users for focused app recommendations. Existing approaches rely on embedding-based retrieval, which captures semantic similarity but fails to identify functionally similar apps. To our knowledge, no prior work has applied large language model (LLM)-based filtering to this task, due to the high computational cost of evaluating large numbers of app pairs. To address this gap, we propose ReFilter, a hybrid framework that first Retrieves semantically related candidate apps using embeddings and then applies LLM-based contextual Filtering to identify true functionally similar apps with higher precision. This design balances efficiency and accuracy, achieving an F1-score of 90% for retrieving similar apps. By improving the relev",
+      "url": "https://arxiv.org/abs/2609.25306",
+      "source": "arxiv",
+      "published": "2026-09-21",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "company": [],
+      "summary": "ReFilter 面向相似移动应用检索，指出语义向量接近不等于功能相似。系统先用嵌入召回候选，再由 LLM 结合上下文过滤功能不匹配的应用，将昂贵判断限制在候选集合内；作者报告相似应用检索 F1 达到 90%。当前已核实摘要，但 HTML 全文不可用，样本构成、对照模型和线上成本仍需进一步核验。",
+      "key_insight": "对社区搜索，可将相似主题与真实需求满足拆成召回和精筛两个目标，例如同样讨论手机的帖子未必回答具体故障。优先在少量召回结果上验证功能或意图过滤，并保留原始候选以分析误删；F1 90% 来自应用场景，不能当作 UGC 的预计收益，也不应据此推断在线延迟符合要求。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.8,
+      "rank": 4
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.26250",
+      "title": "Which Reranking Conclusions Survive the Answer Interface? A Prospective Finite-Orbit Audit",
+      "authors": "Wenzhang Du",
+      "abstract": "arXiv:2609.26250v1 Announce Type: new \nAbstract: Rerankers are increasingly evaluated through downstream language-model answers. This raises a retrieval-measurement question: if only the reader's answer interface changes, should we reach the same conclusion about BM25 versus BGE-v2-m3? We prospectively audit their claim-paired effect on RAGuard and FEVER with four readers. Retrieval policies, evidence, claims, and context depth remain fixed while semantic-to-label binding, A/B versus X/Y vocabulary, and option order form eight task-equivalent interfaces. We ask whether the estimated retrieval-policy effect, its ordering, or selection value changes. None of the six confirmatory settings showed statistically certified interface variation above the prespecified 0.015 materiality threshold, and none showed a certified reversal of the BM25-BGE ordering. Selector disagreement reaches 33.5% in one environment, yet none of eight environments establishes the prespecified material held-out value",
+      "url": "https://arxiv.org/abs/2609.26250",
+      "source": "arxiv",
+      "published": "2026-08-13",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "total_score": 3.55,
+      "company": [],
+      "summary": "论文固定查询、证据和检索策略，只改变答案标签绑定、词汇和顺序，以 8 种等价接口比较 BM25 与 BGE 重排。6 个确认性设置均未证实超过 0.015 阈值的接口效应，也未证实排序优劣反转；某环境选择器分歧达 33.5%，但并未证明有实质留出收益差异。首发于 8 月，本次 RSS 公告不代表新发表。",
+      "key_insight": "用 LLM 评判社区检索结果时，应把模型平均效果、标签接口稳定性、方案优劣和实际选择收益分别报告。可对相同结果集枚举标签顺序，再采用平均值和区间，降低单一提示格式影响。该研究的主要发现是未证实广泛不稳定，不能反向宣传成“重排结论普遍失效”，也不能把不显著等同于完全等价。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.6,
+      "rank": 5
+    },
+    {
+      "id": "arxiv:2609.23307",
+      "title": "Semantic Candidate-Job Matching: A Comparative Evaluation of Dense Embedding Models in Hybrid Retrieval",
+      "url": "https://arxiv.org/abs/2609.23307",
+      "authors": "Yashwant, Sai, Jain, Siddhartha, Dubey, Anurag, Chatterjee, Samaroha, Thulsiram, Gantala",
+      "abstract": "Abstract: This paper presents a comparative evaluation of dense embedding models for semantic candidate-job matching in high-volume staffing workflows. Incoming job descriptions are converted into structured English search text and language-specific keywords through LLM-based parsing, and candidate profiles are indexed as semantically enriched resume representations. We evaluate EmbeddingGemma (base) against EmbeddingGemma fine-tuned with Cached Multiple Negatives Ranking Loss (MNRL) within a unified hybrid retrieval pipeline that fuses vector similarity and full-text relevance via reciprocal rank fusion (RRF), and benchmark both against the MPNet model on a batch comparative evaluation dataset scored through the deployed job-candidate matching scoring pipeline. We further document, with mathematical detail, the broader set of contrastive fine-tuning objectives considered during model development (including AnglE/CoSENT-style refinement) and the empirical rationale for retaining Cached-MNRL-only adaptation as the preferred configuration. To support reproducible model selection, we define a broader evaluation framework comprising standard information retrieval metrics (Recall@K, mean reciprocal rank, nDCG) under the exact hybrid-retrieval protocol; the metrics used for the evaluation reported in this paper are fine-tuning convergence diagnostics and a batch comparative evaluation using the deployed AI-Match score and an independent LLM-as-a-Judge relevance score, and we state this scope explicitly rather than implying the full framework was measured. The paper addresses the gap between general-purpose embedding benchmarks and enterprise job-candidate matching constraints, providing a structured basis for comparing embedding strategies under realistic job-candidate retrieval conditions.",
+      "source": "web_search",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-24T05:34:27.656844",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.4,
+      "company": [
+        "ManpowerGroup",
+        "IIT Hyderabad"
+      ],
+      "summary": "研究在职位与简历匹配中结合结构化文本、EmbeddingGemma 和全文检索，并以 Cached MNRL 微调向量模型。微调后内部 AI-Match 均值从 52.7 升至 73.5，但独立 LLM 评分超过 80 的比例仅从 43.8% 升至 45.6%。作者明确区分分数尺度变化与相关性提升，未将完整索引上的 nDCG 作为已完成实验。",
+      "key_insight": "社区召回微调后，相似度整体上移可能只是训练目标改变了分数分布，不能据此判断检索改善。应冻结独立人工标注集，在同一候选空间比较 Recall 和 nDCG，并额外检查高精度区间及负例分布。结构化输入与编码器更换的贡献也需要拆开，避免把多项工程变更的收益都归给微调。",
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.45,
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2609.22655",
+      "title": "Scoring With the Engine: Retrieval Exposure, Cross-Engine Divergence, and the Limits of Engine-Agnostic GEO Scores",
+      "url": "https://arxiv.org/abs/2609.22655",
+      "authors": "Tannenbaum, Benjamin",
+      "abstract": "Abstract: Recent work asks whether generative-engine visibility can be approximated with deterministic, engine-free page scores. We separate two stages such scores can conflate: exposure to a live engine and citation selection conditional on exposure. In an observational audit of ChatGPT, Microsoft Copilot, Google, and Perplexity, 15 fixed commercial prompts produced 589 citation observations on 6 June 2026, corresponding to 528 unique URLs and 356 domains. Same-prompt cross-engine URL overlap was extremely small: mean pairwise Jaccard similarity was 0.0079, the median was zero, and 84.9% of engine pairs shared no cited URL. On the ten prompts observed on all four engines, mean exact-URL Jaccard was 0.0072. A matched-size hypergeometric baseline preserving each prompt's four-engine URL universe and each engine's list length predicts 0.1272, so observed overlap was only 5.7% of that baseline; zero URL overlap occurred in 86.7% of comparisons versus 12.3% expected. Top-five exact-URL overlap was zero in all 60 pairwise comparisons. A single engine captured only 11.4%-42.6% of the four-engine URL union, and 96.4% of observed URLs appeared in only one engine. A separate 5-to-6 June same-engine comparison found 67.0% mean URL-set turnover. These results do not invalidate engine-free page scoring; they identify its estimand. A score computed without a live engine can estimate page quality or query-page fit, while end-to-end visibility additionally depends on engine-specific exposure and selection. We therefore argue for reporting page fit, observed exposure, conditional selection, and final visibility as distinct quantities.",
+      "source": "web_search",
+      "published": "2026-09-19",
+      "discovered_at": "2026-09-24T05:34:28.572436",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.35,
+      "company": [
+        "Aiso Boost"
+      ],
+      "summary": "论文区分页面相关性、引擎曝光与被引用选择，使用 15 个商业提示审计 4 个实时 AI 搜索系统。589 次引用涉及 528 个 URL，同提示跨引擎 URL 集合的平均 Jaccard 仅为 0.0079，84.9% 的引擎对没有重合引用。实验是固定日期的观察性审计，不能据此推断检索算法或因果关系。",
+      "key_insight": "评估社区内容在 AI 搜索中的表现时，可同时记录候选曝光、重排入选、上下文保留与最终引用，避免只用页面得分解释流量。检索评测最好固定查询、采样时刻和输出长度，并报告波动；引用只是可见输出，不能完全代表内部候选池。跨引擎差异提示覆盖面问题，但并不直接证明某个引擎相关性更优。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.35,
+      "rank": 7
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.26237",
+      "title": "ABAI at COLIEE 2026 Task 1: Multi-Stage Retrieval with GraphRAG-Enhanced Meta-Learning, and a Post-Hoc Study of the Cross-Validation-to-Test Gap",
+      "authors": "Minhan Cho, Soyoung Park, Daejin Choi, Jinyoung Han",
+      "abstract": "arXiv:2609.26237v1 Announce Type: new \nAbstract: We present the ABAI submission to COLIEE 2026 Task 1, case law retrieval, together with a controlled study of why it underperformed. The task suppresses the cited passages themselves, which removes much of the lexical overlap a retriever would rely on. Our pipeline answers this with four independently trained stages: multi-view BM25 over citation-context windows with reciprocal rank fusion, neural reranking, graph-based features from entity communities and a graph attention network, and a LightGBM meta-learner over 34 features. Our best run reached F1=0.177 on the official test set, against a cross-validated 0.311, and we attributed that gap to a recall ceiling, temporal distribution shift, and threshold miscalibration. We then tested all three. Under leakage-free protocols threshold transfer costs 0.007 F1, decision quality is flat across chronological quartiles, and the official test queries are not measurably farther from the training",
+      "url": "https://arxiv.org/abs/2609.26237",
+      "source": "arxiv",
+      "published": "2026-08-12",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "total_score": 3.3,
+      "company": [
+        "AlphaBridge",
+        "Sungkyunkwan University",
+        "National Assembly Research Service",
+        "Ewha Womans University"
+      ],
+      "summary": "ABAI 将多视角 BM25、神经重排、图特征与 34 维 LightGBM 元学习器用于法律案例检索。交叉验证 F1 为 0.311，官方测试仅 0.177；后续无泄漏分析发现漏召回和候选排序截断各占一半。BM25 长度归一化、事件三元组与稠密融合使 top-200 召回增加 3–7 个百分点，图特征带来 0.014 F1。",
+      "key_insight": "社区检索出现离线与线上落差时，可先按“未入候选”和“入候选但被截断”分解失败，再决定补召回还是改排序。论文复查后削弱了时间漂移和阈值失配解释，提醒团队用受控实验检验直觉。图特征需要排除答案引用泄漏；法律长文结论迁移到短文本前，还需重做负例和候选深度分析。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.3,
+      "rank": 8
+    },
+    {
+      "id": "arxiv:2609.19482",
+      "title": "Algebraic Retrieval: Composable Search for Agents",
+      "url": "https://arxiv.org/abs/2609.19482",
+      "authors": "Delmas, Damian",
+      "abstract": "Abstract: Algebraic Retrieval lets AI agents compose search strategies at query time. Relevance criteria, eligibility constraints, and ranking preferences can be expressed together in a mathematical query. The query surface exposes available operations, so an agent can combine them for the question at hand and revise a program after inspecting results. We evaluate execution parity, not agent behavior or retrieval quality. Building on Programmatic Embedding Modulation (PEM), which exposes vector and score arithmetic during retrieval, we demonstrate contrastive scoring, candidate-pool reranking, and weighted ranking as composable queries, alongside executable SQL and PyTerrier counterparts. On the public 11,429-document Vaswani fixture, each program's implementations select the same document set with score differences below 1e-6; one tied pair orders differently across scoring paths.",
+      "source": "web_search",
+      "published": "2026-09-16",
+      "discovered_at": "2026-09-24T05:36:23.136139",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 3
+      },
+      "total_score": 3.15,
+      "company": [],
+      "summary": "Algebraic Retrieval 将相关性、过滤约束与排序偏好表达为可组合数学查询，并给出 SQL 和 PyTerrier 对应实现。基于 11429 篇文档的 Vaswani 数据集，各实现选出相同文档集合，得分差异低于 1e-6，仅一对同分文档顺序不同。实验验证的是执行等价性，没有证明 Agent 行为或检索质量得到提升。",
+      "key_insight": "社区搜索可借鉴显式查询组合方式，把地域、时间和内容类型等约束与向量打分分开表达，便于重放与审计。落地前应检查过滤语义、同分顺序及浮点误差，并补上人工相关性和延迟测试。这里的可复现证据支持跨执行器语义一致，而不是支持更高 nDCG；模型自动生成查询的可靠性仍需单独评估。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.15,
+      "rank": 9
+    },
+    {
+      "id": "arxiv:oai:arXiv.org:2609.11115",
+      "title": "Benchmark Radar: A Living Database and Search Engine for AI Benchmarks and Evaluation",
+      "authors": "Koutian Wu, Junjie Zhou, Ergan Shang, Jiayu Wang, Pengqian Han, Junkai Wang, Wanghan Xu, Songyuanyi Lu, Lin Shi",
+      "abstract": "arXiv:2609.11115v3 Announce Type: replace-cross \nAbstract: Benchmark researchers and developers of large language models (LLMs) and other AI systems need to find relevant evaluations, locate their benchmark datasets and code, and understand the settings behind reported scores. We present Benchmark Radar, a living database and search engine for retrieval and discovery of AI benchmarks, covering LLM evaluation, agentic and tool-use benchmarks, coding, reasoning, safety, and domain-specific evaluations. The system combines daily discovery of benchmark papers, repositories, datasets, and releases with a searchable benchmark catalog, mentions in model cards and technical reports, and score histories. It retains source identities and citations so readers can inspect candidate benchmarks and their evaluation evidence. Daily discovery draws on 37 sources: 13 direct connectors and 24 first-party research and engineering feeds. The catalog contains 1,283 source records drawn from 4 benchmark cat",
+      "url": "https://arxiv.org/abs/2609.11115",
+      "source": "arxiv",
+      "published": "2026-09-10",
+      "discovered_at": "2026-09-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR"
+      },
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "total_score": 3.0,
+      "company": [],
+      "summary": "Benchmark Radar 构建持续更新的 AI 基准目录和检索入口，连接论文、代码、数据与模型报告中的评分证据。系统从 37 个来源每日发现内容，目录含 1283 条来源记录，并在 790 条记录上整理 12916 个数值观测。它保留来源身份和引用，提供检索、分数历史及帕累托视图，但这些规模数字不等于搜索质量提升。",
+      "key_insight": "对社区知识搜索，值得借鉴的是把内容实体、版本、引用和数值证据关联起来，使用户能够追溯答案。可在问答或技术帖垂类试验来源聚合、去重和版本筛选，再用 nDCG 与查证耗时衡量收益。不同评测设置的分数不能直接混排；本文主要是系统与数据审计贡献，缺少与社区检索基线的直接效果对比。",
+      "preference_bonus": 0,
+      "adjusted_score": 3.0,
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "hf_dataset:Qwen/RecreationBench",
+      "title": "Qwen/RecreationBench",
+      "authors": "Qwen",
+      "description": "RecreationBench GitHub · Website · Leaderboard · Report ↗ RecreationBench is a benchmark of 250 application-recreation tasks across Ubuntu, macOS, Windows, Android, and Web. It is the held-out evaluation suite of RecreationWorld, a framework for scalable and verifiable environmen; tags: task_categories:text-generation, language:en, license:other, size_categories:n<1K, modality:image, modality:text, arxiv:2609.22000, region:us",
+      "abstract": "RecreationBench GitHub · Website · Leaderboard · Report ↗ RecreationBench is a benchmark of 250 application-recreation tasks across Ubuntu, macOS, Windows, Android, and Web. It is the held-out evaluation suite of RecreationWorld, a framework for scalable and verifiable environmen; tags: task_categories:text-generation, language:en, license:other, size_categories:n<1K, modality:image, modality:text, arxiv:2609.22000, region:us",
+      "url": "https://huggingface.co/datasets/Qwen/RecreationBench",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_dataset",
+      "stars": 10,
+      "language": "dataset",
+      "created_at": "2026-09-18",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-18",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "dataset",
+        "repo_id": "Qwen/RecreationBench",
+        "likes": 10,
+        "downloads": 3677,
+        "pipeline_tag": "",
+        "tags": [
+          "task_categories:text-generation",
+          "language:en",
+          "license:other",
+          "size_categories:n<1K",
+          "modality:image",
+          "modality:text",
+          "arxiv:2609.22000",
+          "region:us",
+          "agent",
+          "benchmark",
+          "evaluation",
+          "computer-use",
+          "software-recreation",
+          "multimodal",
+          "qwen"
+        ],
+        "created_at": "2026-09-18T11:19:15.000Z",
+        "last_modified": "2026-09-21T05:03:16.000Z"
+      },
+      "rank": 1
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, rgba, text-to-image, license:other",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2006,
+      "language": "model",
+      "created_at": "2026-09-14",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-14",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 2006,
+        "downloads": 28407,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "rgba",
+          "text-to-image",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-09-14T03:47:26.000Z",
+        "last_modified": "2026-09-21T04:50:49.000Z"
+      },
+      "rank": 2
+    },
+    {
+      "id": "hf_space:Qwen/Qwen-Image-2.1",
+      "title": "Qwen/Qwen-Image-2.1",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen-Image-2.1",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 165,
+      "language": "space",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-21",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/Qwen-Image-2.1",
+        "likes": 165,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T10:15:59.000Z",
+        "last_modified": "2026-09-21T04:36:41.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1-PE-I2I",
+      "title": "Qwen/Qwen-Image-2.1-PE-I2I",
+      "authors": "Qwen",
+      "description": "tags: safetensors, qwen3_5, qwen, prompt-rewriting, image-editing, license:other, region:us",
+      "abstract": "tags: safetensors, qwen3_5, qwen, prompt-rewriting, image-editing, license:other, region:us",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1-PE-I2I",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 46,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-09-20",
+      "published": "2026-09-20",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1-PE-I2I",
+        "likes": 46,
+        "downloads": 6189,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "qwen3_5",
+          "qwen",
+          "prompt-rewriting",
+          "image-editing",
+          "license:other",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T08:46:47.000Z",
+        "last_modified": "2026-09-20T11:59:48.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:internlm/Intern-S2-397B",
+      "title": "internlm/Intern-S2-397B",
+      "authors": "internlm",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5_moe, image-text-to-text, conversational, license:apache-2.0, endpoints_compatible, region:us",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5_moe, image-text-to-text, conversational, license:apache-2.0, endpoints_compatible, region:us",
+      "url": "https://huggingface.co/internlm/Intern-S2-397B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 46,
+      "language": "model",
+      "created_at": "2026-09-13",
+      "updated_at": "2026-09-22",
+      "published": "2026-09-13",
+      "discovered_at": "2026-09-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Intern-S2-397B",
+        "likes": 46,
+        "downloads": 619,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5_moe",
+          "image-text-to-text",
+          "conversational",
+          "license:apache-2.0",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-09-13T03:20:35.000Z",
+        "last_modified": "2026-09-22T08:16:51.000Z"
+      },
+      "rank": 5
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recent_7_days": true,
+    "source_diversity": true,
+    "sources": {
+      "arxiv": 7,
+      "web_search": 3
+    },
+    "warnings": [
+      "中文来源因历史去重未入选。",
+      "爬虫回看 3 天；RSS 公告可包含旧稿，按原文首发日期评分。Web 补充按技能允许的 90 天窗口筛选。",
+      "Semantic Scholar 限流，会议源接口失败。"
+    ]
+  },
+  "preference_method": "仅对商业相关>=4且实用性>=4的候选给予0.05维度匹配加分；无精确主题命中时不追加主题分。排序以基础分为主。"
+}

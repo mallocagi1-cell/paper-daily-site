@@ -1,0 +1,249 @@
+{
+  "date": "2026-04-09",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 921,
+    "papers_selected": 10,
+    "score_min": 3.3,
+    "score_max": 4.2
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2604.05314",
+      "title": "Next-Scale Generative Reranking: A Tree-based Generative Rerank Method at Meituan",
+      "url": "https://arxiv.org/abs/2604.05314",
+      "authors": "Meituan",
+      "company": [
+        "Meituan"
+      ],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 4.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文提出 Next-Scale Generative Reranking (NSGR)，一种基于树结构的生成式重排方法，解决多阶段推荐系统中重排环节的组合空间复杂度问题。该方法通过多尺度生成策略同时建模局部与全局排列视角，并引入树状生成架构实现从粗粒度到细粒度的渐进式列表生成。在美团搜索推荐场景中部署验证，相比传统生成式重排方法在核心业务指标上取得显著提升。",
+      "key_insight": "NSGR 的核心创新在于将重排建模为多尺度的树状生成过程，从宏观排列到局部调整逐层细化，克服了现有生成式重排器缺乏全局和局部统一视角的缺陷。对搜索推荐系统的实践启示：树状生成范式为工业级重排提供了兼顾生成质量和推理效率的新思路，特别适合候选集规模较大的场景。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2604.05314",
+        "title": "Next-Scale Generative Reranking: A Tree-based Generative Rerank Method at Meituan",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n在现代多阶段推荐系统中，重排（reranking）通过建模候选列表的上下文信息来优化最终展示顺序。生成式重排方法已成为主流趋势，但现有方法存在三个根本缺陷：(1) **自回归方法**（如 PRM、GRN）按从左到右的顺序逐个生成 item，无法利用未来上下文信息，计算开销大且生成结果次优；(2) **一步生成方法**（如 NAR4Rec）生成粒度过粗，缺乏对局部排列关系的精细建模能力；(3) **多步生成方法**（如 DCDR、NLGR）容易陷入排列空间的局部最优，因为排列空间的目标函数是非单调的——相邻排列之间的评估值差异并不随距离单调变化。更深层的问题是**生成器与评估器的目标不一致**：生成器试图在组合空间中找到最优列表，而评估器则被训练来估计列表级别的分数，两者之间的指导信号存在 gap。美团外卖的推荐场景涉及数千万商品和数亿用户交互记录，A_20^20 = 2.43×10^18 的排列空间使得穷举评估不可行，迫切需要一种兼顾全局与局部视角、同时保证生成效率的新范式。\n\n## 2. 方法详解\n\nNSGR 由两个核心组件构成：**多尺度评估器（MSE）**和**下一尺度生成器（NSG）**，通过树状结构实现从粗粒度到细粒度的渐进式列表生成。\n\n**多尺度评估器（MSE）**：首先通过层次化序列转换单元 HSTU 提取全局用户兴趣向量 e_u = AvgPool(HSTU(H_u))，然后通过 MLP 特征交叉增强候选 item 的语义表示。关键创新是在 K = log_2(m) 个尺度上计算多尺度上下文——在每个尺度上通过 self-attention 捕获不同粒度的列表内上下文关系。最终 CTR 预测整合了语义信息、多尺度上下文和位置信息，列表整体价值为 y_L = sum(y_t)。训练损失为标准二元交叉熵。\n\n**下一尺度生成器（NSG）**：采用\"一生二、二生四\"的二叉树递归分裂策略。每个分裂步骤包含五个关键机制：(1) **Item 优先级打分** p_i = MLP(x_i^s)，为每个 item 计算独立的相关性分数；(2) **成对关系建模**，通过 softmax 分类器将 item 对关系分为竞争抑制、互补增强和中性共存三类；(3) **非对称影响权重计算** w_ij = -r_ij^sup · ReLU(p_i - p_j) + r_ij^enh · (p_i + p_j)/2，其中竞争关系是非对称的（高优先级 item 抑制低优先级 item），互补关系是对称的；(4) **集合条件细化**，基于成对交互和子集上下文对每个 item 表示进行精炼；(5) **Item-to-Tree 注意力打分**，生成锚向量捕获全局集合视角，计算 item 与目标子集的相关性分数，按分数排序后进行二叉分裂。\n\n**训练策略**：提出**多尺度邻域损失（MSNL）**，在每个尺度上计算生成列表与邻域列表之间的相对奖励，通过对比学习优化生成器。损失函数利用树对齐的多尺度向量，结合温度缩放的点积计算，对正样本（奖励大于1）和负样本（奖励小于1）进行对比。\n\n## 3. 核心技术贡献\n\n(1) **树状多尺度生成范式**：将重排建模为递归二叉树分裂过程，统一了局部和全局视角。与自回归方法的 O(m) 步生成不同，树状结构仅需 O(log m) 步即可完成生成，每一步都在当前尺度上做出全局最优的二分决策。这一设计有效避免了多步生成方法的局部最优陷阱，因为每次分裂都考虑了子集内所有 item 的相对关系。\n\n(2) **非对称成对关系建模**：区分竞争抑制（非对称）和互补增强（对称）两种关系模式。竞争场景下，高优先级 item 对低优先级 item 有单向抑制作用（如同品类的高评分商品压制低评分商品）；互补场景下，两个 item 的共同出现是对称增益的（如主菜与饮品的搭配推荐）。\n\n(3) **多尺度评估-生成协同训练**：MSE 在 log_2(m) 个尺度上提供梯度信号，MSNL 在每个尺度上通过邻域对比学习引导 NSG 的分裂决策，实现评估器与生成器的深度对齐。相比单一尺度的评估反馈，这种多尺度监督使生成器在不同粒度上都能获得有效的优化方向。\n\n## 4. 实验结果分析\n\n离线实验在淘宝广告数据集（114 万用户、2655 万记录）和美团数据集（568 万用户、2.43 亿记录）上与 6 种基线方法对比。在美团数据上，NSGR 的 AUC 达到 0.8902（vs YOLOR 的 0.8749，+0.0153），GAUC 达到 0.8829（+0.0160），领先幅度远超其他方法。在生成器一致性指标 Hit Ratio 上，NSGR 在 A_20^20 空间的 HR@1% 达到 0.861（vs YOLOR 0.822），HR@10% 达到 0.987，表明生成器与评估器的高度对齐。\n\n消融实验显示：移除语义 ID（SID）后 AUC 从 0.8902 降至 0.8761，HR@1% 从 0.861 降至 0.834，证明 SID 对生成器的引导作用关键；移除 NSG 单元不影响 AUC（因 MSE 独立预测 CTR）但 HR@1% 大幅降至 0.796；移除 MSNL 后 HR@1% 降至 0.772，验证了多尺度邻域损失的有效性。\n\n**在线 A/B 测试**（2025 年 8-10 月，8 周）：NSGR(20)（20 候选重排）vs YOLOR(8) 基线，实现 **CTR +2.89%、CVR +0.58%、GMV +3.15%** 的显著提升，同时推理延迟反而降低 1.4ms。值得注意的是 NSGR(8) vs YOLOR(8) 出现了小幅负向（CTR -0.42%），说明 NSGR 的优势需要在较大候选集上才能充分发挥。\n\n## 5. 局限与未来方向\n\n论文未设置专门的局限性章节，但从实验结果可推断：(1) 在小候选集（m=8）场景下 NSGR 未展现优势，甚至略有负向，表明树状生成的优势需要足够大的排列空间才能显现；(2) 当前的二叉树分裂策略是固定的，未探索自适应分裂深度或非均匀分裂比例；(3) 成对关系的三分类（竞争/互补/中性）可能过于简化，未来可考虑更细粒度的关系建模。作者隐含提到排列空间非单调性仍是固有挑战，现有的邻域采样策略可能无法覆盖全局最优附近的关键区域。\n\n## 6. 工业实践意义\n\nNSGR 对搜索推荐从业者有三方面直接启示：(1) **重排候选集规模的重要性**：在线实验中 NSGR(20) 远优于 NSGR(8)，说明扩大重排阶段的候选集规模是释放生成式重排潜力的关键——这要求上游召回和粗排阶段提供更多高质量候选；(2) **延迟优化的可行性**：NSGR 复用排序模型的用户嵌入和 item 特征，离线预计算用户表示，并利用树结构的上下文缓存减少重复计算，在美团场景中实现了延迟降低（-1.4ms），证明更复杂的重排模型不一定带来更高延迟；(3) **部署架构参考**：基于 TensorFlow 1.15.0 + NVIDIA A100-80GB GPU 的实现方案，HSTU 预计算 + 实时树分裂推理的两阶段部署策略，为类似规模的搜索推荐系统提供了可复制的工程模板。对 UGC 社区搜索而言，帖子的上下文排列关系（如话题互补、内容竞争）同样重要，NSGR 的成对关系建模思路可直接迁移。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>在现代多阶段推荐系统中，重排（reranking）通过建模候选列表的上下文信息来优化最终展示顺序。生成式重排方法已成为主流趋势，但现有方法存在三个根本缺陷：(1) <strong>自回归方法</strong>（如 PRM、GRN）按从左到右的顺序逐个生成 item，无法利用未来上下文信息，计算开销大且生成结果次优；(2) <strong>一步生成方法</strong>（如 NAR4Rec）生成粒度过粗，缺乏对局部排列关系的精细建模能力；(3) <strong>多步生成方法</strong>（如 DCDR、NLGR）容易陷入排列空间的局部最优，因为排列空间的目标函数是非单调的——相邻排列之间的评估值差异并不随距离单调变化。更深层的问题是<strong>生成器与评估器的目标不一致</strong>：生成器试图在组合空间中找到最优列表，而评估器则被训练来估计列表级别的分数，两者之间的指导信号存在 gap。美团外卖的推荐场景涉及数千万商品和数亿用户交互记录，A_20^20 = 2.43×10^18 的排列空间使得穷举评估不可行，迫切需要一种兼顾全局与局部视角、同时保证生成效率的新范式。</p>\n<h2>2. 方法详解</h2>\n<p>NSGR 由两个核心组件构成：<strong>多尺度评估器（MSE）</strong>和<strong>下一尺度生成器（NSG）</strong>，通过树状结构实现从粗粒度到细粒度的渐进式列表生成。</p>\n<p><strong>多尺度评估器（MSE）</strong>：首先通过层次化序列转换单元 HSTU 提取全局用户兴趣向量 e_u = AvgPool(HSTU(H_u))，然后通过 MLP 特征交叉增强候选 item 的语义表示。关键创新是在 K = log_2(m) 个尺度上计算多尺度上下文——在每个尺度上通过 self-attention 捕获不同粒度的列表内上下文关系。最终 CTR 预测整合了语义信息、多尺度上下文和位置信息，列表整体价值为 y_L = sum(y_t)。训练损失为标准二元交叉熵。</p>\n<p><strong>下一尺度生成器（NSG）</strong>：采用&quot;一生二、二生四&quot;的二叉树递归分裂策略。每个分裂步骤包含五个关键机制：(1) <strong>Item 优先级打分</strong> p_i = MLP(x_i^s)，为每个 item 计算独立的相关性分数；(2) <strong>成对关系建模</strong>，通过 softmax 分类器将 item 对关系分为竞争抑制、互补增强和中性共存三类；(3) <strong>非对称影响权重计算</strong> w_ij = -r_ij^sup · ReLU(p_i - p_j) + r_ij^enh · (p_i + p_j)/2，其中竞争关系是非对称的（高优先级 item 抑制低优先级 item），互补关系是对称的；(4) <strong>集合条件细化</strong>，基于成对交互和子集上下文对每个 item 表示进行精炼；(5) <strong>Item-to-Tree 注意力打分</strong>，生成锚向量捕获全局集合视角，计算 item 与目标子集的相关性分数，按分数排序后进行二叉分裂。</p>\n<p><strong>训练策略</strong>：提出<strong>多尺度邻域损失（MSNL）</strong>，在每个尺度上计算生成列表与邻域列表之间的相对奖励，通过对比学习优化生成器。损失函数利用树对齐的多尺度向量，结合温度缩放的点积计算，对正样本（奖励大于1）和负样本（奖励小于1）进行对比。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) <strong>树状多尺度生成范式</strong>：将重排建模为递归二叉树分裂过程，统一了局部和全局视角。与自回归方法的 O(m) 步生成不同，树状结构仅需 O(log m) 步即可完成生成，每一步都在当前尺度上做出全局最优的二分决策。这一设计有效避免了多步生成方法的局部最优陷阱，因为每次分裂都考虑了子集内所有 item 的相对关系。</p>\n<p>(2) <strong>非对称成对关系建模</strong>：区分竞争抑制（非对称）和互补增强（对称）两种关系模式。竞争场景下，高优先级 item 对低优先级 item 有单向抑制作用（如同品类的高评分商品压制低评分商品）；互补场景下，两个 item 的共同出现是对称增益的（如主菜与饮品的搭配推荐）。</p>\n<p>(3) <strong>多尺度评估-生成协同训练</strong>：MSE 在 log_2(m) 个尺度上提供梯度信号，MSNL 在每个尺度上通过邻域对比学习引导 NSG 的分裂决策，实现评估器与生成器的深度对齐。相比单一尺度的评估反馈，这种多尺度监督使生成器在不同粒度上都能获得有效的优化方向。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线实验在淘宝广告数据集（114 万用户、2655 万记录）和美团数据集（568 万用户、2.43 亿记录）上与 6 种基线方法对比。在美团数据上，NSGR 的 AUC 达到 0.8902（vs YOLOR 的 0.8749，+0.0153），GAUC 达到 0.8829（+0.0160），领先幅度远超其他方法。在生成器一致性指标 Hit Ratio 上，NSGR 在 A_20^20 空间的 HR@1% 达到 0.861（vs YOLOR 0.822），HR@10% 达到 0.987，表明生成器与评估器的高度对齐。</p>\n<p>消融实验显示：移除语义 ID（SID）后 AUC 从 0.8902 降至 0.8761，HR@1% 从 0.861 降至 0.834，证明 SID 对生成器的引导作用关键；移除 NSG 单元不影响 AUC（因 MSE 独立预测 CTR）但 HR@1% 大幅降至 0.796；移除 MSNL 后 HR@1% 降至 0.772，验证了多尺度邻域损失的有效性。</p>\n<p><strong>在线 A/B 测试</strong>（2025 年 8-10 月，8 周）：NSGR(20)（20 候选重排）vs YOLOR(8) 基线，实现 <strong>CTR +2.89%、CVR +0.58%、GMV +3.15%</strong> 的显著提升，同时推理延迟反而降低 1.4ms。值得注意的是 NSGR(8) vs YOLOR(8) 出现了小幅负向（CTR -0.42%），说明 NSGR 的优势需要在较大候选集上才能充分发挥。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文未设置专门的局限性章节，但从实验结果可推断：(1) 在小候选集（m=8）场景下 NSGR 未展现优势，甚至略有负向，表明树状生成的优势需要足够大的排列空间才能显现；(2) 当前的二叉树分裂策略是固定的，未探索自适应分裂深度或非均匀分裂比例；(3) 成对关系的三分类（竞争/互补/中性）可能过于简化，未来可考虑更细粒度的关系建模。作者隐含提到排列空间非单调性仍是固有挑战，现有的邻域采样策略可能无法覆盖全局最优附近的关键区域。</p>\n<h2>6. 工业实践意义</h2>\n<p>NSGR 对搜索推荐从业者有三方面直接启示：(1) <strong>重排候选集规模的重要性</strong>：在线实验中 NSGR(20) 远优于 NSGR(8)，说明扩大重排阶段的候选集规模是释放生成式重排潜力的关键——这要求上游召回和粗排阶段提供更多高质量候选；(2) <strong>延迟优化的可行性</strong>：NSGR 复用排序模型的用户嵌入和 item 特征，离线预计算用户表示，并利用树结构的上下文缓存减少重复计算，在美团场景中实现了延迟降低（-1.4ms），证明更复杂的重排模型不一定带来更高延迟；(3) <strong>部署架构参考</strong>：基于 TensorFlow 1.15.0 + NVIDIA A100-80GB GPU 的实现方案，HSTU 预计算 + 实时树分裂推理的两阶段部署策略，为类似规模的搜索推荐系统提供了可复制的工程模板。对 UGC 社区搜索而言，帖子的上下文排列关系（如话题互补、内容竞争）同样重要，NSGR 的成对关系建模思路可直接迁移。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2604.05379",
+      "title": "Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2604.05379",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "针对序列推荐模型在推理阶段难以适应用户实时偏好变化的问题，本文提出 Retrieve-then-Adapt (RTA) 框架，通过检索增强的测试时自适应策略实现动态适配。与传统 test-time training 和 test-time augmentation 方法不同，RTA 避免了高计算开销和随机增强的局限性，通过检索相似用户行为模式来引导模型在推理时的自适应调整。实验表明该方法在多个序列推荐基准上优于现有方案。",
+      "key_insight": "将检索增强 (RAG) 思想引入序列推荐的测试时自适应，是一种轻量且有效的在线适应策略。对于 UGC 社区搜索场景，用户兴趣漂移是核心挑战之一，该方法提供了一种不需要重新训练即可跟踪用户兴趣变化的技术路径，可考虑在排序模型的在线推理阶段引入类似机制。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2604.05379",
+        "title": "Retrieve-then-Adapt: Retrieval-Augmented Test-Time Adaptation for Sequential Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\nReAd 关注序列推荐上线后的训练—服务分布差异。传统序列推荐器在历史交互上训练完成，部署后参数被冻结；训练数据又经常由热门物品和高频行为主导，线上测试序列却可能包含长尾物品、少见组合和刚出现的兴趣转移。论文用一个具体例子说明这种失配：训练中频繁出现“网球拍、足球、篮球→运动鞋”，测试序列却可能变成“运动鞋、网球拍、足球、智能手机”，原模型对智能手机这一稀有转移缺少足够的参数化协同信号。已有 test-time training 会在请求时更新参数，计算和稳定性成本高；test-time augmentation 依赖随机裁剪、mask 等操作，可能造出与真实偏好无关的样本；RaSeRec 一类训练期检索方法需要重新设计两阶段训练，不能直接适配已经上线的冻结模型。ReAd 的动机是找到一个 model-agnostic、低开销的测试时增强层：保持原 SR 模型完全不更新，把历史协同模式显式存进可检索记忆，再根据当前序列动态补充信息，尤其帮助稀疏行为和长尾项目。\n\n## 2. 方法详解\nReAd 分为一次性离线准备和纯前向在线推理。基础 SR 模型 M 按正常的 next-item 任务训练。作者为全部物品学习 d 维 embedding 矩阵 ME，把每个用户序列拆成“前缀—下一个物品”训练对；序列编码器得到 hj，与物品 embedding 做内积形成全目录 logits，并用 softmax 负对数似然训练。模型训练完后，对训练集中的每个前缀重新计算表示 h，并把 <h, e_next> 存入 collaborative memory D。这个记忆条目不是文本知识，而是“某类历史行为表示通常之后接什么物品”的显式协同模式；因此它能补充参数模型中被热门项目覆盖的局部信号。\n\n在线时，测试序列经过冻结的 M 得到 hut，并在 D 中用余弦相似度检索 top-K 条目。为了避免简单平均把噪声一起累加，检索学习模块以当前表示为 query、检索到的物品 embedding 为 key/value，使用一层 cross-attention 计算增强向量 e_aug。注意力分布 p_aug 先按语义/协同相似度分配权重，但作者认为相似不等于对当前目标真正有用，于是对每个检索物品 ek 与真实目标 et 计算独立预测损失 ℓ(ek,et)，把 -ℓ 经过 softmax 得到 utility-aware 参考分布 p_ref，再用 KL(p_aug||p_ref) 对齐。检索学习的总目标是 L=L_rec+λL_align，其中 L_rec 要求融合后的表示能正确预测目标，L_align 让注意力更多关注具有预测效用的候选，而不是只关注表面相似的热门物品。\n\nReAd 还用熵估计初始预测 p_init 和增强预测 p_aug 的不确定性，在 top-ρ 候选上计算截断熵，形成动态系数 α，最终概率为 p=αp_init+(1-α)p_aug。直觉是：原模型很确定时少改动，原模型不确定时更多依赖检索信号。训练只发生在离线阶段，在线只做一次主模型前向、近邻检索、轻量 cross-attention 和分布融合，不进行梯度更新。作者在实现中使用 FAISS 等近似近邻库，基础 embedding 维度为 64、batch size 为 256、Adam 学习率 0.001，在 RTX 4090D 上重复 10 次取平均；K 从 1、3、5、10、15、20 搜索，λ 从 0、0.5、1、1.5、2 搜索，top-ρ 从 10%、5%、1%、0.5%、0.1% 搜索。\n\n## 3. 核心技术贡献\n第一，ReAd 将 test-time adaptation 改成检索增强而非参数更新，保留冻结主模型的稳定性，并且可以插入不同的序列推荐 backbone。第二，collaborative memory 把训练序列的表示—下一物品关系显式索引，直接暴露模型参数里不容易保留的局部协同模式，尤其针对长尾项目与稀有组合。第三，cross-attention 与 KL utility alignment 共同解决“相似但无用”的检索噪声：attention 学习当前 query 对每个候选的条件权重，KL 参考分布再用候选自身的目标预测能力校准它。第四，熵驱动融合把检索信号变成自适应残差，避免所有请求固定采用同样强度的增强。论文还显示，方法可接入 SASRec、DuoRec、BERT4Rec 和 GRU4Rec，说明它不是绑定某一种注意力结构的专用模块。\n\n## 4. 实验结果分析\n作者使用五个公开数据集：Amazon Office、Beauty、Sports、Home 和 ML-1M。四个 Amazon 子集分别有 4,906、22,364、35,599、66,520 个用户，ML-1M 有 6,040 个用户；交互数分别为 53,258、198,502、296,337、551,682 和 1,000,209。过滤用户和物品少于五次交互后，Amazon 数据仍高度稀疏，稀疏率为 99.55% 至 99.97%，ML-1M 为 95.53%。作者用全目录排序、HR@5/10/20 和 NDCG@5/10/20，避免负采样把结果变得过于乐观。主结果中，DuoRec+ReAd 在五个数据集上均为最佳或接近最佳；以 Beauty 为例，SASRec 的 NDCG@10 为 0.0308，SASRec+ReAd 为 0.0367，DuoRec+ReAd 为 0.0481；在 ML-1M 上，DuoRec+ReAd 的 NDCG@10 为 0.1653，高于 SASRec 的 0.1135 和 DuoRec 的 0.1603，配对检验 p<0.01。\n\n| 组件/方案 | Beauty HR@10 | Beauty NDCG@10 | Office HR@10 | Office NDCG@10 |\n|---|---:|---:|---:|---:|\n| SASRec | 0.0326 | 0.0308 | 0.0532 | 0.0483 |\n| SASRec + ReAd | 0.0339 | 0.0367 | 0.0907 | 0.0489 |\n| DuoRec + ReAd | 0.0496 | 0.0481 | 0.1090 | 0.0582 |\n\n跨 backbone 的实验显示，GRU4Rec、BERT4Rec 和 SASRec 接入后都改善，论文报告 Office 上 GRU4Rec 的 NDCG@10 提升 14.29%，BERT4Rec 提升 13.19%；Beauty 上 GRU4Rec 提升 12.05%，BERT4Rec 提升 10.28%。超参数曲线显示 K 大多在 10 左右达到峰值，继续增大就引入无关或噪声物品；λ 的变化影响较小，说明只要检索集合本身有协同相关性，KL 校准是辅助作用。消融结果很有区分度：DuoRec backbone 下，Beauty 的 NDCG@10 为 ReAd 0.0481、去掉 attention 0.0413、去掉 KL 0.0473、去掉 Rec loss 0.0332、固定 α=0.5 为 0.0451；去掉推荐损失下降最大，说明检索必须被目标预测直接约束，简单平均和固定融合也会损害效果。检索策略对比中，Beauty 的 NDCG@10 为 SASRec 0.0308、随机检索 0.0212、热门检索 0.0226、ReAd 0.0367；随机检索普遍降级，极稀疏的 Home 则出现热门检索略有竞争力的例外。效率方面，ML-1M batch 推理 ReAd 为 4.76ms，快于 RaSeRec 的 6.20ms，但慢于 DuoRec 的 1.06ms 和随机 TTA 的 1.48ms，属于可控而非零成本的增加。\n\n## 5. 局限与未来方向\n作者的分析没有把 ReAd 宣称为所有分布漂移都有效的通用解。长尾分层结果显示，Q1 到 Q3 的收益明显，最热门的 Q4 收益变小，说明方法需要记忆库中存在足够但不过量的协同信号；如果项目极端稀疏，热门检索有时反而更稳。作者还明确观察到 K 过大后噪声累积，top-ρ 若覆盖全目录会被长尾低概率项稀释，动态熵融合因此需要切到头部候选区域。论文结论把“效果与交互密度、物品流行度相关”作为能力边界，并将进一步的跨域和实时场景验证留给后续工作。工程上还需关注记忆库规模、向量索引更新和在线近邻检索的成本；论文的 4.76ms 来自 RTX 4090D 实验，不能直接等同于移动端或大规模工业集群的端到端延迟。\n\n## 6. 工业实践意义\nReAd 最适合被当作冻结精排器前的轻量增强层，而不是替代用户建模主干。社区平台可以按主题、作者、时间窗和行为序列构建“前缀—后续帖子”记忆，在线对新 query 或短行为序列检索相似路径，再用熵控制检索信号对原排序的改写强度。推荐上线前应先确定 K 的预算，论文给出的经验峰值约为 10；检索结果必须与目标损失关联，不能拿热门项目或随机邻居直接平均。对新热点、短序列用户和长尾 UGC，要单独看 nDCG@10、Recall、覆盖率、作者/主题多样性和负反馈，防止检索层把协同偏差进一步放大。服务工程上可用 FAISS 或其他 ANN 索引，把记忆构建放在离线/准实时任务，在线只保留 query 编码、top-K 查询、cross-attention 和概率融合；同时建立索引版本、延迟超时和无结果回退策略。若主模型已是 BERT4Rec、SASRec 或 GRU 类结构，论文的跨 backbone 结果支持以插件方式做小流量实验；若内容更新极快，则应重点评估记忆过期和兴趣切换，因为 ReAd 利用的是历史协同模式而不是外部知识。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>ReAd 关注序列推荐上线后的训练—服务分布差异。传统序列推荐器在历史交互上训练完成，部署后参数被冻结；训练数据又经常由热门物品和高频行为主导，线上测试序列却可能包含长尾物品、少见组合和刚出现的兴趣转移。论文用一个具体例子说明这种失配：训练中频繁出现“网球拍、足球、篮球→运动鞋”，测试序列却可能变成“运动鞋、网球拍、足球、智能手机”，原模型对智能手机这一稀有转移缺少足够的参数化协同信号。已有 test-time training 会在请求时更新参数，计算和稳定性成本高；test-time augmentation 依赖随机裁剪、mask 等操作，可能造出与真实偏好无关的样本；RaSeRec 一类训练期检索方法需要重新设计两阶段训练，不能直接适配已经上线的冻结模型。ReAd 的动机是找到一个 model-agnostic、低开销的测试时增强层：保持原 SR 模型完全不更新，把历史协同模式显式存进可检索记忆，再根据当前序列动态补充信息，尤其帮助稀疏行为和长尾项目。</p>\n<h2>2. 方法详解</h2>\n<p>ReAd 分为一次性离线准备和纯前向在线推理。基础 SR 模型 M 按正常的 next-item 任务训练。作者为全部物品学习 d 维 embedding 矩阵 ME，把每个用户序列拆成“前缀—下一个物品”训练对；序列编码器得到 hj，与物品 embedding 做内积形成全目录 logits，并用 softmax 负对数似然训练。模型训练完后，对训练集中的每个前缀重新计算表示 h，并把 &lt;h, e_next&gt; 存入 collaborative memory D。这个记忆条目不是文本知识，而是“某类历史行为表示通常之后接什么物品”的显式协同模式；因此它能补充参数模型中被热门项目覆盖的局部信号。</p>\n<p>在线时，测试序列经过冻结的 M 得到 hut，并在 D 中用余弦相似度检索 top-K 条目。为了避免简单平均把噪声一起累加，检索学习模块以当前表示为 query、检索到的物品 embedding 为 key/value，使用一层 cross-attention 计算增强向量 e_aug。注意力分布 p_aug 先按语义/协同相似度分配权重，但作者认为相似不等于对当前目标真正有用，于是对每个检索物品 ek 与真实目标 et 计算独立预测损失 ℓ(ek,et)，把 -ℓ 经过 softmax 得到 utility-aware 参考分布 p_ref，再用 KL(p_aug||p_ref) 对齐。检索学习的总目标是 L=L_rec+λL_align，其中 L_rec 要求融合后的表示能正确预测目标，L_align 让注意力更多关注具有预测效用的候选，而不是只关注表面相似的热门物品。</p>\n<p>ReAd 还用熵估计初始预测 p_init 和增强预测 p_aug 的不确定性，在 top-ρ 候选上计算截断熵，形成动态系数 α，最终概率为 p=αp_init+(1-α)p_aug。直觉是：原模型很确定时少改动，原模型不确定时更多依赖检索信号。训练只发生在离线阶段，在线只做一次主模型前向、近邻检索、轻量 cross-attention 和分布融合，不进行梯度更新。作者在实现中使用 FAISS 等近似近邻库，基础 embedding 维度为 64、batch size 为 256、Adam 学习率 0.001，在 RTX 4090D 上重复 10 次取平均；K 从 1、3、5、10、15、20 搜索，λ 从 0、0.5、1、1.5、2 搜索，top-ρ 从 10%、5%、1%、0.5%、0.1% 搜索。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，ReAd 将 test-time adaptation 改成检索增强而非参数更新，保留冻结主模型的稳定性，并且可以插入不同的序列推荐 backbone。第二，collaborative memory 把训练序列的表示—下一物品关系显式索引，直接暴露模型参数里不容易保留的局部协同模式，尤其针对长尾项目与稀有组合。第三，cross-attention 与 KL utility alignment 共同解决“相似但无用”的检索噪声：attention 学习当前 query 对每个候选的条件权重，KL 参考分布再用候选自身的目标预测能力校准它。第四，熵驱动融合把检索信号变成自适应残差，避免所有请求固定采用同样强度的增强。论文还显示，方法可接入 SASRec、DuoRec、BERT4Rec 和 GRU4Rec，说明它不是绑定某一种注意力结构的专用模块。</p>\n<h2>4. 实验结果分析</h2>\n<p>作者使用五个公开数据集：Amazon Office、Beauty、Sports、Home 和 ML-1M。四个 Amazon 子集分别有 4,906、22,364、35,599、66,520 个用户，ML-1M 有 6,040 个用户；交互数分别为 53,258、198,502、296,337、551,682 和 1,000,209。过滤用户和物品少于五次交互后，Amazon 数据仍高度稀疏，稀疏率为 99.55% 至 99.97%，ML-1M 为 95.53%。作者用全目录排序、HR@5/10/20 和 NDCG@5/10/20，避免负采样把结果变得过于乐观。主结果中，DuoRec+ReAd 在五个数据集上均为最佳或接近最佳；以 Beauty 为例，SASRec 的 NDCG@10 为 0.0308，SASRec+ReAd 为 0.0367，DuoRec+ReAd 为 0.0481；在 ML-1M 上，DuoRec+ReAd 的 NDCG@10 为 0.1653，高于 SASRec 的 0.1135 和 DuoRec 的 0.1603，配对检验 p&lt;0.01。</p>\n<table><thead><tr><th>组件/方案</th><th>Beauty HR@10</th><th>Beauty NDCG@10</th><th>Office HR@10</th><th>Office NDCG@10</th></tr></thead><tbody><tr><td>SASRec</td><td>0.0326</td><td>0.0308</td><td>0.0532</td><td>0.0483</td></tr><tr><td>SASRec + ReAd</td><td>0.0339</td><td>0.0367</td><td>0.0907</td><td>0.0489</td></tr><tr><td>DuoRec + ReAd</td><td>0.0496</td><td>0.0481</td><td>0.1090</td><td>0.0582</td></tr></tbody></table>\n<p>跨 backbone 的实验显示，GRU4Rec、BERT4Rec 和 SASRec 接入后都改善，论文报告 Office 上 GRU4Rec 的 NDCG@10 提升 14.29%，BERT4Rec 提升 13.19%；Beauty 上 GRU4Rec 提升 12.05%，BERT4Rec 提升 10.28%。超参数曲线显示 K 大多在 10 左右达到峰值，继续增大就引入无关或噪声物品；λ 的变化影响较小，说明只要检索集合本身有协同相关性，KL 校准是辅助作用。消融结果很有区分度：DuoRec backbone 下，Beauty 的 NDCG@10 为 ReAd 0.0481、去掉 attention 0.0413、去掉 KL 0.0473、去掉 Rec loss 0.0332、固定 α=0.5 为 0.0451；去掉推荐损失下降最大，说明检索必须被目标预测直接约束，简单平均和固定融合也会损害效果。检索策略对比中，Beauty 的 NDCG@10 为 SASRec 0.0308、随机检索 0.0212、热门检索 0.0226、ReAd 0.0367；随机检索普遍降级，极稀疏的 Home 则出现热门检索略有竞争力的例外。效率方面，ML-1M batch 推理 ReAd 为 4.76ms，快于 RaSeRec 的 6.20ms，但慢于 DuoRec 的 1.06ms 和随机 TTA 的 1.48ms，属于可控而非零成本的增加。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者的分析没有把 ReAd 宣称为所有分布漂移都有效的通用解。长尾分层结果显示，Q1 到 Q3 的收益明显，最热门的 Q4 收益变小，说明方法需要记忆库中存在足够但不过量的协同信号；如果项目极端稀疏，热门检索有时反而更稳。作者还明确观察到 K 过大后噪声累积，top-ρ 若覆盖全目录会被长尾低概率项稀释，动态熵融合因此需要切到头部候选区域。论文结论把“效果与交互密度、物品流行度相关”作为能力边界，并将进一步的跨域和实时场景验证留给后续工作。工程上还需关注记忆库规模、向量索引更新和在线近邻检索的成本；论文的 4.76ms 来自 RTX 4090D 实验，不能直接等同于移动端或大规模工业集群的端到端延迟。</p>\n<h2>6. 工业实践意义</h2>\n<p>ReAd 最适合被当作冻结精排器前的轻量增强层，而不是替代用户建模主干。社区平台可以按主题、作者、时间窗和行为序列构建“前缀—后续帖子”记忆，在线对新 query 或短行为序列检索相似路径，再用熵控制检索信号对原排序的改写强度。推荐上线前应先确定 K 的预算，论文给出的经验峰值约为 10；检索结果必须与目标损失关联，不能拿热门项目或随机邻居直接平均。对新热点、短序列用户和长尾 UGC，要单独看 nDCG@10、Recall、覆盖率、作者/主题多样性和负反馈，防止检索层把协同偏差进一步放大。服务工程上可用 FAISS 或其他 ANN 索引，把记忆构建放在离线/准实时任务，在线只保留 query 编码、top-K 查询、cross-attention 和概率融合；同时建立索引版本、延迟超时和无结果回退策略。若主模型已是 BERT4Rec、SASRec 或 GRU 类结构，论文的跨 backbone 结果支持以插件方式做小流量实验；若内容更新极快，则应重点评估记忆过期和兴趣切换，因为 ReAd 利用的是历史协同模式而不是外部知识。</p>"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2506.03487",
+      "title": "ProRank: Prompt Warmup via Reinforcement Learning for Small Language Models Reranking",
+      "url": "https://arxiv.org/abs/2506.03487",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.7,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.7,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "本文研究小语言模型 (SLM, <7B 参数) 在重排任务中的应用，发现 SLM 存在表示空间窄和理解段落困难的瓶颈。提出 ProRank 方法，通过强化学习进行 prompt warmup 来扩展 SLM 的表示空间并增强其排序能力。该方法使小模型在重排质量上接近甚至超越大模型，同时保持显著的计算优势。",
+      "key_insight": "在工业搜索系统中，大模型重排面临延迟和成本约束。ProRank 证明了小模型经过 RL 优化的 prompt warmup 后可以达到接近大模型的重排效果，为在延迟敏感的 UGC 搜索场景中部署 LLM 重排提供了一条低成本路径。prompt warmup 作为一种通用的小模型增强策略值得关注。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2604.05309",
+      "title": "Pay Attention to Sequence Split: Uncovering the Impacts of Sub-Sequence Splitting on Sequential Recommendation Models",
+      "url": "https://arxiv.org/abs/2604.05309",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "本文系统研究了子序列切分 (Sub-Sequence Splitting, SSS) 策略对序列推荐模型评估和训练的影响。发现两个关键问题：(1) SSS 可能干扰模型真实性能的评估，许多最新 SOTA 模型在数据读取阶段隐式使用了 SSS 但未在论文中说明；(2) SSS 的引入可能导致模型性能排名发生逆转。研究提出了标准化的 SSS 使用指南。",
+      "key_insight": "这是一项方法论层面的重要发现：序列推荐领域的许多 SOTA 结果可能因隐式使用 SSS 而被高估。直接启示：(1) 在复现和比较序列推荐模型时，必须统一 SSS 设置；(2) 在设计序列推荐 pipeline 时，需要明确 SSS 策略对离线评估指标的影响，避免被误导性的实验结果左右技术选型。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2604.05461",
+      "title": "Content Fuzzing for Escaping Information Cocoons on Digital Social Media",
+      "url": "https://arxiv.org/abs/2604.05461",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.55,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "本文从内容创作者视角研究信息茧房问题。现代社交平台的推荐和排序系统使用立场检测作为重要信号，导致内容主要推送给同质化受众。提出 ContentFuzz 框架，通过基于置信度引导的内容模糊化策略，帮助内容突破既有亲缘圈子的限制，同时保持核心语义不变。",
+      "key_insight": "该研究揭示了推荐系统中立场检测信号对内容分发多样性的负面影响，这对 UGC 社区搜索平台高度相关。实践启示：(1) 在排序模型中引入立场相关特征时需注意其对生态多样性的影响；(2) ContentFuzz 的对抗式思路可用于反向评估自身推荐系统是否存在过度同质化问题。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2604.04982",
+      "title": "CURE: Circuit-Aware Unlearning for LLM-based Recommendation",
+      "url": "https://arxiv.org/abs/2604.04982",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "随着隐私法规趋严，LLM 推荐系统 (LLMRec) 中的用户数据遗忘成为重要课题。本文提出 CURE，一种基于电路感知的遗忘方法。CURE 通过分析 LLM 内部信息流动的电路结构，精准定位需要遗忘的知识所在的模型组件，实现更精确的定向遗忘而不破坏模型整体推荐能力。",
+      "key_insight": "电路级别的遗忘思路为 LLM 推荐系统的 GDPR 合规提供了技术支撑。传统微调式遗忘往往导致推荐性能大幅下降，CURE 的精准遗忘策略在保持模型效果的同时满足隐私要求。随着 LLM 在排序和理解中的应用深入，这类隐私保护技术将成为工程化落地的关键组件。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2504.03965",
+      "title": "Automating Personalization: Prompt Optimization for Recommendation Reranking",
+      "url": "https://arxiv.org/abs/2504.03965",
+      "authors": "",
+      "company": [],
+      "source": "web_search",
+      "published": "2025-04-05",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "本文提出 AGP 框架，通过自动优化用户画像生成 prompt 来实现个性化重排。核心思路是将 LLM 的个性化重排问题转化为 prompt 优化问题，引入位置感知反馈机制和批量训练策略，自动搜索最优的用户画像提取 prompt，使 LLM 能更准确地理解用户偏好进行重排。",
+      "key_insight": "将个性化重排转化为 prompt 自动优化是一种实用的工程范式：无需修改模型结构或重新训练，只需优化 prompt 即可提升个性化效果。对 UGC 搜索场景的启示：在已有 LLM 重排能力的基础上，可通过自动化 prompt 优化快速迭代个性化策略，降低人工调参成本。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2604.05365",
+      "title": "From Clues to Generation: Language-Guided Conditional Diffusion for Cross-Domain Recommendation",
+      "url": "https://arxiv.org/abs/2604.05365",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "跨域推荐 (CDR) 通过利用多域关联来缓解数据稀疏问题。现有方法主要依赖重叠用户作为知识迁移锚点，但现实中重叠用户往往稀缺。本文提出基于语言引导的条件扩散模型，利用 LLM 生成的文本线索作为跨域桥梁，为单域用户生成目标域的偏好表示，有效解决无重叠用户场景下的冷启动推荐问题。",
+      "key_insight": "将扩散模型与 LLM 文本线索结合用于跨域推荐是一种新颖的范式。核心洞察：即使没有行为层面的用户重叠，语言层面的语义描述也可作为有效的跨域桥梁。对 UGC 社区场景的启示：当用户在不同板块/频道间缺乏交叉行为时，可利用内容语义描述作为冷启动信号进行跨频道推荐。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2511.18740",
+      "title": "Multimodal Large Language Models with Adaptive Preference Optimization for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2511.18740",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.5,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.5,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "现有 LLM 序列推荐方法仅在文本模态下工作，忽略了用户由图像等视觉信号塑造的细粒度兴趣。本文提出结合多模态大语言模型 (MLLM) 和自适应偏好优化 (APO) 的序列推荐方法，将商品图像和文本描述统一纳入用户行为序列建模，并通过偏好优化损失引导模型学习更符合用户真实偏好的推荐排列。",
+      "key_insight": "将多模态 LLM 引入序列推荐并配合偏好优化是 LLM4Rec 的前沿方向。核心启示：(1) 在 UGC 搜索中，帖子通常包含图文混合内容，纯文本建模可能遗漏视觉偏好信号；(2) 自适应偏好优化为 LLM 推荐提供了比 SFT 更精细的对齐方式。实际落地需关注多模态推理的延迟和成本。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:oai:arXiv.org:2604.05341",
+      "title": "Curr-RLCER: Curriculum Reinforcement Learning For Coherence Explainable Recommendation",
+      "url": "https://arxiv.org/abs/2604.05341",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-04-08",
+      "total_score": 3.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "可解释推荐系统旨在揭示推荐理由以增强透明度和可信度。以往方法联合预测评分和生成解释，但忽视了两个目标之间的不连贯性。本文提出 Curr-RLCER，一种课程式强化学习框架，通过动态评分对齐机制协调 CTR 预测与解释生成两个目标，从简单预测任务逐步过渡到复杂解释任务。",
+      "key_insight": "CTR 预测与解释生成的目标不一致是可解释推荐的核心矛盾。Curr-RLCER 的课程学习策略为多目标推荐提供了渐进式训练思路。实践意义：随着搜索结果透明度要求提升，如何在不牺牲排序效果的前提下生成高质量解释值得关注，课程学习范式可借鉴到多目标排序的训练策略设计中。"
+    }
+  ]
+}

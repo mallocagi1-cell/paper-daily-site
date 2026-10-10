@@ -1,0 +1,250 @@
+{
+  "date": "2026-05-25",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 12,
+    "papers_selected": 6,
+    "score_min": 2.8,
+    "score_max": 4.25
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.21832",
+      "title": "FLUID: From Ephemeral IDs to Multimodal Semantic Codes for Industrial-Scale Livestreaming Recommendation",
+      "url": "https://arxiv.org/abs/2605.21832",
+      "authors": "Xinhang Yuan, Zexi Huang, Anjia Cao, Xudong Lu, Zikai Wang, Penghao Zhou, Chang Liu, Wentao Guo, Qinglei Wang",
+      "company": [
+        "TikTok",
+        "ByteDance"
+      ],
+      "source": "web_search",
+      "published": "2026-05-20",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.25,
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.25,
+      "summary": "FLUID 针对直播推荐的冷启动难题——直播间存续时间短，候选侧 item ID embedding 永远学不热。方法分两部分：用短视频+直播跨域多模态编码器生成离散分层语义码 LUCID；再用去 ID 的后融合排序结构，把 slice 级与 room 级语义码作为独立 token 输入，并在在线增量训练中分阶段 warmup。线上 A/B：优质观看时长 +0.55%、冷启动直播间曝光 +2.05%、活跃时长 +0.05%，已部署服务超十亿用户。",
+      "key_insight": "把候选侧 item ID 整体换成内容驱动的多模态语义码，是解决短时效 UGC（直播间、新帖）冷启动的关键思路——内容表征不依赖交互积累，新 item 上线即可被排序模型理解。社区短文本搜索同样面临海量新发帖冷启动，可借鉴 LUCID 的分层离散码 + 去 ID 后融合设计，用多模态/文本语义码替代稀疏 ID，缓解长尾与新内容曝光不足。",
+      "deep_reading": {
+        "paper_id": "arxiv:2605.21832",
+        "title": "FLUID: From Ephemeral IDs to Multimodal Semantic Codes for Industrial-Scale Livestreaming Recommendation",
+        "status": "completed",
+        "content": "## FLUID 深度解读：用多模态语义码替代候选侧 item ID，破解直播推荐冷启动\n\n### 1. 问题与动机\n\nFLUID（TikTok/ByteDance，服务全球超 10 亿用户）瞄准直播推荐里一个被现代大模型架构放大的结构性矛盾：**直播间平均只存活约 45 分钟，而候选侧 item ID embedding 在这个生命周期内根本学不收敛**。论文 Figure 2 直接画出 item ID embedding 的 ℓ2 范数随直播间\"年龄\"的变化，证明其在 ~45 分钟内无法收敛——也就是说，等 ID embedding 学到足够协同信号时，直播间已经下播了。\n\n更关键的是作者对\"ID-dominance effect\"（排序模型倾向于依赖 ID 信号而忽视多模态特征）的重新定性：在长生命周期域（如商品、长视频）里，ID 主导只是\"可容忍的小毛病\"；但在 item 极度短命的直播场景，它从 nuisance 变成了**根本性瓶颈**——模型把绝大部分容量堆在 ID embedding 表上，而这张表对新直播间永远是冷的。这解释了为什么直播冷启动不能靠\"喂更多交互\"解决，而要从表征范式上动刀。\n\n### 2. 方法详解\n\nFLUID 由两部分组成：**LUCID 跨域多模态编码器**（产出离散分层语义码）+ **去 ID 的后融合排序结构**。\n\n**LUCID 编码器**：先产出 128 维 slice embedding，再用 **Residual Quantization K-Means（RQ-KMeans）** 离散化成分层 codeword 元组，配置为 L=4 层量化、每层 N=64 个聚类（一个 LUCID 元组形如 [33,42,63,3]）。视觉侧用 SigLip2-base（原生分辨率 ViT）+ 两层 MLP projector；文本侧 tokenize 标题、OCR、ASR 转写、作者简介、观众评论、贴纸标签；融合采用**单塔**设计，用 Qwen3-Embedding-0.6B 做视觉-文本全深度交互。训练用短视频与直播**联合**的 query-to-item 对比任务（InfoNCE + false-negative masking），正样本由点赞/分享/完播等行为构造；训练分两阶段——先只训 MLP projector 与输出层做对齐，再解冻全模型小学习率联合微调。作者特别说明选 RQ-KMeans 而非 RQ-VAE，是因为后者在在线持续重训下会 codebook collapse。\n\n**去 ID 后融合排序**：定义 slice 级 LUCID（捕捉 2 分钟级动态，如主播切换活动）与 room 级 LUCID（对累积 slice 做\"逐层多数投票\"得到稳定的房间身份）。两者各用独立 embedding 表，并用 **prefix n-gram embedding**（Eq.1：复合键 c̄ₗ = Σₖ cₖ·Nˡ⁻ᵏ）解决 codeword 路径歧义。最终排序输入 𝒯_FLUID = {r, s}，**彻底移除候选侧 item ID g**，slice/room token 作为独立候选进入 transformer 类排序骨干。\n\n### 3. 核心技术贡献\n\n1. **把\"冷启动\"重定义为\"ID 范式与 item 时效的错配\"**，并给出量化证据（ℓ2 范数不收敛），而非笼统归因于数据稀疏——这是问题刻画上的贡献。\n2. **LUCID：面向在线重训稳定性的离散多模态码**。相比 RQ-VAE，RQ-KMeans 在持续在线训练下不崩；单塔 SigLip2+Qwen3 相比双塔 CLIP-B/32+Albert，在 Live Keyphrase Retrieval R@10/50 上 47.44/61.62 vs 43.96/59.95，证明全深度跨模态交互对噪声大、变化快的直播内容更有效。\n3. **分阶段 warmup 解决\"ID 记忆压制泛化信号\"的优化不对称**。这是全文最反直觉、也最有工程价值的发现（见第 4 节）。\n\n### 4. 实验结果分析\n\n**离线（CTR，Table 3）**：baseline（仅 item ID）AUC 0.7784；FLUID 0.7802（+0.23%），logloss 0.1264→0.1262。值得注意的是\"直接去掉 item ID 又不给替代\"会掉 -0.47% AUC（0.7748）——说明语义码是有效替代，而非简单删 ID。\n\n**在线 A/B（Table 4）**：优质观看时长 +0.55%、优质观看会话 +0.51%、**冷启动直播间曝光 +2.05%、小众直播间曝光 +2.87%、观看标签去重数 +1.63%**、停留时长 +0.07%、活跃时长 +0.05%。作者强调：只有 FLUID 同时改善所有指标组；\"仅加 slice\"有互动收益但无留存；\"直接去 ID\"则是\"虚假多样性掩盖了匹配退化\"。\n\n**消融最关键的是候选侧整合方式（Table 7）**：early fusion（replace/concat/LARM 门控）几乎没收益（-0.13%~+0.01%）；late fusion 不做 warmup 是 +0.00%；而分阶段 warmup——Stage1 slice add-on +0.22%、Stage2 ID phase-out +0.11%、Stage3 room add-on（最终）+0.23%。Figure 5 显示 LARM 可学习门控最终收敛到 100% 依赖 item ID，证明**模型自己学不会\"何时该切换到 LUCID\"，必须靠显式分阶段过渡**。LUCID embedding 设计上，prefix n-gram 相比 level-wise 解码 +0.11% AUC，独立 slice/room 表再 +0.05%。训练规模：168B 样本、4552 特征、98 个目标，复用生产 Zenith++ 管线。\n\n### 5. 局限与未来方向\n\n作者**未显式列出 limitations**。从论文可推断：(1) LUCID 质量依赖跨域编码器，在视觉/文本分布差异极大的域可能退化；(2) RQ-KMeans 是为在线稳定性妥协的选择，量化表达力可能弱于理想的 RQ-VAE；(3) 方法面向 ~45 分钟极端短命 item，对长生命周期 item 是否仍优于 ID 范式未验证；(4) 论文未给出延迟/显存等部署开销数字，只说复用现有骨干、不声明额外内存开销。\n\n### 6. 工业实践意义\n\n对搜索/推荐工程师，FLUID 给出三条可直接迁移的经验：(1) **短时效 UGC（直播间、新发帖、热点问答）的冷启动应从\"去 ID、上内容语义码\"入手**——内容表征不依赖交互积累，新 item 上线即可被排序模型理解；社区短文本搜索的海量新帖冷启动可借鉴 LUCID 的分层离散码 + 去 ID 后融合。(2) **ID 替换不能一刀切删除**（-0.47%），也不能指望模型自动学会切换（LARM 收敛到 100% 依赖 ID）；必须用\"先加新信号→再渐进 phase-out 旧 ID→再加更稳信号\"的分阶段 warmup，这对任何\"旧强特征 + 新泛化特征\"共存的迁移都适用。(3) **离线 +0.23% AUC 对应线上冷启动曝光 +2.05%、小众内容 +2.87%**——说明语义码主要价值在长尾/新内容的分发扩面，评估时应专门看冷启动与多样性分桶指标，而非只看整体 AUC。部署上要注意：RQ-KMeans 优先于 RQ-VAE 以保证在线持续重训不崩，这是落地的隐性前提。",
+        "content_html": "<h2>FLUID 深度解读：用多模态语义码替代候选侧 item ID，破解直播推荐冷启动</h2>\n<h3>1. 问题与动机</h3>\n<p>FLUID（TikTok/ByteDance，服务全球超 10 亿用户）瞄准直播推荐里一个被现代大模型架构放大的结构性矛盾：<strong>直播间平均只存活约 45 分钟，而候选侧 item ID embedding 在这个生命周期内根本学不收敛</strong>。论文 Figure 2 直接画出 item ID embedding 的 ℓ2 范数随直播间&quot;年龄&quot;的变化，证明其在 ~45 分钟内无法收敛——也就是说，等 ID embedding 学到足够协同信号时，直播间已经下播了。</p>\n<p>更关键的是作者对&quot;ID-dominance effect&quot;（排序模型倾向于依赖 ID 信号而忽视多模态特征）的重新定性：在长生命周期域（如商品、长视频）里，ID 主导只是&quot;可容忍的小毛病&quot;；但在 item 极度短命的直播场景，它从 nuisance 变成了<strong>根本性瓶颈</strong>——模型把绝大部分容量堆在 ID embedding 表上，而这张表对新直播间永远是冷的。这解释了为什么直播冷启动不能靠&quot;喂更多交互&quot;解决，而要从表征范式上动刀。</p>\n<h3>2. 方法详解</h3>\n<p>FLUID 由两部分组成：<strong>LUCID 跨域多模态编码器</strong>（产出离散分层语义码）+ <strong>去 ID 的后融合排序结构</strong>。</p>\n<p><strong>LUCID 编码器</strong>：先产出 128 维 slice embedding，再用 <strong>Residual Quantization K-Means（RQ-KMeans）</strong> 离散化成分层 codeword 元组，配置为 L=4 层量化、每层 N=64 个聚类（一个 LUCID 元组形如 [33,42,63,3]）。视觉侧用 SigLip2-base（原生分辨率 ViT）+ 两层 MLP projector；文本侧 tokenize 标题、OCR、ASR 转写、作者简介、观众评论、贴纸标签；融合采用<strong>单塔</strong>设计，用 Qwen3-Embedding-0.6B 做视觉-文本全深度交互。训练用短视频与直播<strong>联合</strong>的 query-to-item 对比任务（InfoNCE + false-negative masking），正样本由点赞/分享/完播等行为构造；训练分两阶段——先只训 MLP projector 与输出层做对齐，再解冻全模型小学习率联合微调。作者特别说明选 RQ-KMeans 而非 RQ-VAE，是因为后者在在线持续重训下会 codebook collapse。</p>\n<p><strong>去 ID 后融合排序</strong>：定义 slice 级 LUCID（捕捉 2 分钟级动态，如主播切换活动）与 room 级 LUCID（对累积 slice 做&quot;逐层多数投票&quot;得到稳定的房间身份）。两者各用独立 embedding 表，并用 <strong>prefix n-gram embedding</strong>（Eq.1：复合键 c̄ₗ = Σₖ cₖ·Nˡ⁻ᵏ）解决 codeword 路径歧义。最终排序输入 𝒯_FLUID = {r, s}，<strong>彻底移除候选侧 item ID g</strong>，slice/room token 作为独立候选进入 transformer 类排序骨干。</p>\n<h3>3. 核心技术贡献</h3>\n<ol>\n<li><strong>把&quot;冷启动&quot;重定义为&quot;ID 范式与 item 时效的错配&quot;</strong>，并给出量化证据（ℓ2 范数不收敛），而非笼统归因于数据稀疏——这是问题刻画上的贡献。</li>\n<li><strong>LUCID：面向在线重训稳定性的离散多模态码</strong>。相比 RQ-VAE，RQ-KMeans 在持续在线训练下不崩；单塔 SigLip2+Qwen3 相比双塔 CLIP-B/32+Albert，在 Live Keyphrase Retrieval R@10/50 上 47.44/61.62 vs 43.96/59.95，证明全深度跨模态交互对噪声大、变化快的直播内容更有效。</li>\n<li><strong>分阶段 warmup 解决&quot;ID 记忆压制泛化信号&quot;的优化不对称</strong>。这是全文最反直觉、也最有工程价值的发现（见第 4 节）。</li>\n</ol>\n<h3>4. 实验结果分析</h3>\n<p><strong>离线（CTR，Table 3）</strong>：baseline（仅 item ID）AUC 0.7784；FLUID 0.7802（+0.23%），logloss 0.1264→0.1262。值得注意的是&quot;直接去掉 item ID 又不给替代&quot;会掉 -0.47% AUC（0.7748）——说明语义码是有效替代，而非简单删 ID。</p>\n<p><strong>在线 A/B（Table 4）</strong>：优质观看时长 +0.55%、优质观看会话 +0.51%、<strong>冷启动直播间曝光 +2.05%、小众直播间曝光 +2.87%、观看标签去重数 +1.63%</strong>、停留时长 +0.07%、活跃时长 +0.05%。作者强调：只有 FLUID 同时改善所有指标组；&quot;仅加 slice&quot;有互动收益但无留存；&quot;直接去 ID&quot;则是&quot;虚假多样性掩盖了匹配退化&quot;。</p>\n<p><strong>消融最关键的是候选侧整合方式（Table 7）</strong>：early fusion（replace/concat/LARM 门控）几乎没收益（-0.13%~+0.01%）；late fusion 不做 warmup 是 +0.00%；而分阶段 warmup——Stage1 slice add-on +0.22%、Stage2 ID phase-out +0.11%、Stage3 room add-on（最终）+0.23%。Figure 5 显示 LARM 可学习门控最终收敛到 100% 依赖 item ID，证明<strong>模型自己学不会&quot;何时该切换到 LUCID&quot;，必须靠显式分阶段过渡</strong>。LUCID embedding 设计上，prefix n-gram 相比 level-wise 解码 +0.11% AUC，独立 slice/room 表再 +0.05%。训练规模：168B 样本、4552 特征、98 个目标，复用生产 Zenith++ 管线。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者<strong>未显式列出 limitations</strong>。从论文可推断：(1) LUCID 质量依赖跨域编码器，在视觉/文本分布差异极大的域可能退化；(2) RQ-KMeans 是为在线稳定性妥协的选择，量化表达力可能弱于理想的 RQ-VAE；(3) 方法面向 ~45 分钟极端短命 item，对长生命周期 item 是否仍优于 ID 范式未验证；(4) 论文未给出延迟/显存等部署开销数字，只说复用现有骨干、不声明额外内存开销。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐工程师，FLUID 给出三条可直接迁移的经验：(1) <strong>短时效 UGC（直播间、新发帖、热点问答）的冷启动应从&quot;去 ID、上内容语义码&quot;入手</strong>——内容表征不依赖交互积累，新 item 上线即可被排序模型理解；社区短文本搜索的海量新帖冷启动可借鉴 LUCID 的分层离散码 + 去 ID 后融合。(2) <strong>ID 替换不能一刀切删除</strong>（-0.47%），也不能指望模型自动学会切换（LARM 收敛到 100% 依赖 ID）；必须用&quot;先加新信号→再渐进 phase-out 旧 ID→再加更稳信号&quot;的分阶段 warmup，这对任何&quot;旧强特征 + 新泛化特征&quot;共存的迁移都适用。(3) <strong>离线 +0.23% AUC 对应线上冷启动曝光 +2.05%、小众内容 +2.87%</strong>——说明语义码主要价值在长尾/新内容的分发扩面，评估时应专门看冷启动与多样性分桶指标，而非只看整体 AUC。部署上要注意：RQ-KMeans 优先于 RQ-VAE 以保证在线持续重训不崩，这是落地的隐性前提。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.21967",
+      "title": "Reinforced Preference Optimization for Reasoning-Augmented Recommendations",
+      "url": "https://arxiv.org/abs/2605.21967",
+      "authors": "Jingtong Gao, Zeyu Song, Chi Lu, Xiaopeng Li, Derong Xu, Maolin Wang, Peng Jiang, Kun Gai, Qingpeng Cai, Xiangyu Zhao",
+      "company": [
+        "Kuaishou",
+        "CityU"
+      ],
+      "source": "web_search",
+      "published": "2026-05-21",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.95,
+      "preference_bonus": 0.3,
+      "adjusted_score": 3.95,
+      "summary": "RPORec 针对'LLM 推理过程与推荐目标不对齐'的问题，提出两阶段强化偏好优化：阶段一让 LLM 生成思维链推理，指导专用推荐头 Rechead 学习面向表征的特征；阶段二把 Rechead 的预测作为奖励，用强化学习反过来精炼 LLM 的推理质量与任务对齐。在公开基准与快手大规模线上部署中均稳定超过现有 LLM-based 推荐方法。",
+      "key_insight": "推理增强推荐的核心痛点是 LLM '会推理'不等于'推得对（对推荐目标有用）'。RPORec 用推荐头预测信号作为 RL 奖励，闭合推理与排序目标，是把通用 LLM 推理能力定向到推荐任务的可行范式。对社区搜索而言，可借鉴'推理→任务头→奖励回灌'的对齐思路，让 LLM 的 query/内容理解推理真正服务于相关性与点击目标，而非生成漂亮但无用的解释。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.22073",
+      "title": "Behavior-Guided Candidate Calibration for Multimodal Recommendation",
+      "url": "https://arxiv.org/abs/2605.22073",
+      "authors": "Zesheng Li, Chengchang Pan, Honggang Qi",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-21",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.75,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.75,
+      "summary": "论文研究多模态信号在排序中的相互作用，通过谱分析发现：跨视图适度一致有益，过强一致反而抑制推荐特有的判别信号——低频分量承载共享结构，高频分量保留判别性。方法把训练数据中的共同用户重叠模式转成带符号候选证据，仅作用于多模态主干输出的候选 shortlist，在保持主干表征稳定的同时于排序决策点注入行为信号。在 Amazon Baby/Sports/Electronics 三数据集上稳定优于强多模态基线。",
+      "key_insight": "'多模态对齐越强越好'是常见误区，该工作用谱分析量化了过度对齐会抹平判别信号。其'主干稳定 + 仅在 shortlist 决策点用行为证据校准'的两段式设计，避免行为信号污染内容表征。社区搜索的文本/图片多模态匹配同样需平衡语义对齐与判别力，可借鉴在召回后、精排决策点轻量注入协同/行为证据的做法。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.21969",
+      "title": "LLM Retrieval for Stable and Predictable Ad Recommendations",
+      "url": "https://arxiv.org/abs/2605.21969",
+      "authors": "Vinodh Kumar Sunkara, Satheeshkumar Karuppusamy, Hangjun Xu, et al.",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-21",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.55,
+      "summary": "面向广告库存规模化后对'稳定性与可预测性'的需求，提出 LLM 驱动的语义候选生成框架：用微调 LLM 从广告创意中抽取分层语义属性，基于图扩展检索语义近邻候选，使投放结果对输入微小扰动更鲁棒，并缓解冷启动与探索不足。离线与线上 A/B 均有显著提升。",
+      "key_insight": "传统广告/推荐召回过度追求精度，忽视了对输入扰动的稳定性——同一广告因微小特征变化被分到完全不同候选集会损害投放可预测性。用 LLM 抽取的分层语义属性 + 图扩展做'语义变体'召回，是兼顾鲁棒性与冷启动的思路。社区搜索召回也可引入内容语义层级表示，降低对稀疏 ID 与精确匹配的依赖。"
+    },
+    {
+      "rank": 5,
+      "id": "s2:8f5c488b1f8d4c7613a7a49d0102f8c5bb6f6e7f",
+      "title": "Research on CTR Prediction Based on Deep Learning",
+      "url": "https://www.semanticscholar.org/paper/8f5c488b1f8d4c7613a7a49d0102f8c5bb6f6e7f",
+      "authors": "N/A",
+      "company": [],
+      "source": "semantic_scholar",
+      "published": "",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 2
+      },
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.2,
+      "summary": "该工作聚焦互联网广告 CTR 预估中的特征交互建模，指出传统人工特征提取未考虑广告数据的高度稀疏与特征间高度非线性关联，采用深度学习自动学习高阶特征交互以提升点击率预测精度。方法较为常规，属对深度 CTR 范式的工程化梳理。",
+      "key_insight": "CTR 预估的本质仍是稀疏特征下的高阶交互建模。虽方法常规，但其对'稀疏性 + 非线性特征关联'的问题刻画对社区搜索排序仍有参考——短文本 UGC 的标签/类目特征同样高度稀疏，需要自动化的特征交互结构而非人工组合。"
+    },
+    {
+      "rank": 6,
+      "id": "dblp:conf/www/AggarwalWZ26",
+      "title": "Online Advertising with Spatial Interactions",
+      "url": "https://arxiv.org/abs/2602.12481",
+      "authors": "Gagan Aggarwal, et al.",
+      "company": [
+        "Google"
+      ],
+      "source": "conference_papers",
+      "published": "2026-01-01",
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "total_score": 2.8,
+      "preference_bonus": 0.0,
+      "adjusted_score": 2.8,
+      "summary": "论文研究广告位的'空间外部性'：一条广告的效果不仅取决于自身位置，还受邻近广告的拥挤/竞争影响，而既有拍卖与分配模型多把广告位视为独立或单维有序。作者提出将广告位建模为度量空间中的点、广告价值由出价与邻居配置折扣因子共同决定的新框架；对最近邻模型给出多项式时间常数近似且可实现为真实机制，对乘积距离模型证明除非 P=NP 否则无多项式因子近似的强难解性。",
+      "key_insight": "该工作提醒：列表/版面级排序中相邻 item 之间存在外部性，逐条独立打分会高估整体收益。虽为机制设计理论工作、与 UGC 社区搜索的直接落地距离较远，但'位置 × 邻居配置'的价值建模视角对 feed/搜索结果页的重排、多样性与拥挤控制有启发——重排阶段应显式建模相邻结果的相互抑制。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:",
+      "title": ": [ICML'26] RaBitQCache: Rotated Binary Quantization for KVCache in Long Context L",
+      "url": "https://github.com/Sakuraaa0/RaBitQCache",
+      "source": "github",
+      "description": "[ICML'26] RaBitQCache: Rotated Binary Quantization for KVCache in Long Context LLM Inference",
+      "language": "Python",
+      "stars": 9,
+      "created_at": "2026-05-18"
+    },
+    {
+      "rank": 2,
+      "id": "github:",
+      "title": ": Ranking and Covariances for Practical Learned Keypoints",
+      "url": "https://github.com/cvg/RaCo",
+      "source": "github",
+      "description": "Ranking and Covariances for Practical Learned Keypoints",
+      "language": "Jupyter Notebook",
+      "stars": 94,
+      "created_at": "2025-10-10"
+    },
+    {
+      "rank": 3,
+      "id": "github:",
+      "title": ": Claude Code plugin: deep research with 3-way LLM triangulation (Claude + Gemini ",
+      "url": "https://github.com/oh-rid/deep-research",
+      "source": "github",
+      "description": "Claude Code plugin: deep research with 3-way LLM triangulation (Claude + Gemini via agy + GPT-5 via codex). Worktree-isolated, primary-source verified (mechanical URL + passage check), defends against shared-corpus consensus hallucination.",
+      "language": "",
+      "stars": 24,
+      "created_at": "2026-05-22"
+    },
+    {
+      "rank": 4,
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-01-21"
+    },
+    {
+      "rank": 5,
+      "id": "hf_model:zai-org/GLM-OCR",
+      "title": "zai-org/GLM-OCR",
+      "url": "https://huggingface.co/zai-org/GLM-OCR",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm_ocr, image-text-to-text, conversational, zh, en, fr",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-01-30"
+    },
+    {
+      "rank": 6,
+      "id": "hf_space:TencentARC/InstantMesh",
+      "title": "TencentARC/InstantMesh",
+      "url": "https://huggingface.co/spaces/TencentARC/InstantMesh",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "",
+      "stars": 0,
+      "created_at": "2024-04-08"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "",
+      "stars": 0,
+      "created_at": "2026-04-14"
+    },
+    {
+      "rank": 8,
+      "id": "hf_space:zai-org/CogVideoX-5B-Space",
+      "title": "zai-org/CogVideoX-5B-Space",
+      "url": "https://huggingface.co/spaces/zai-org/CogVideoX-5B-Space",
+      "source": "huggingface",
+      "description": "tags: gradio, cogvideox, video-generation, thudm, region:us",
+      "language": "",
+      "stars": 0,
+      "created_at": "2024-08-23"
+    }
+  ]
+}

@@ -1,0 +1,258 @@
+{
+  "date": "2026-06-01",
+  "track": "retrieval",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "generated_at": "2026-06-01",
+  "stats": {
+    "papers_scored": 18,
+    "papers_selected": 8,
+    "score_min": 3.5,
+    "score_max": 4.4,
+    "total_candidates": 18,
+    "selected": 9,
+    "sources": {
+      "web_search": 9
+    },
+    "avg_score": 3.95
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2605.29271",
+      "title": "CoHyDE: Iterative Co-Training of LLM Rewriter & Dense Encoder for Tool Retrieval",
+      "title_zh": "CoHyDE：面向工具检索的 LLM 改写器与稠密编码器迭代协同训练",
+      "url": "https://arxiv.org/abs/2605.29271",
+      "authors": "Vaishali Senthil, Ashutosh Hathidara, Sebastian Schreiber",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-28",
+      "total_score": 4.4,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文针对 LLM agent 的工具检索：微调编码器擅长表面词形匹配但对欠规约 query 失效，而冻结 LLM 的 query 扩展能处理模糊 query 却产生词表不匹配的描述。CoHyDE 让改写器（DPO 对齐）与编码器（InfoNCE 重训）迭代协同演化。在 ToolBench 约 1 万工具子集上，标准 query 的 NDCG@5 提升 2.5 个百分点，模糊 query 提升 6.3 个百分点，最难一档达 +8。",
+      "key_insight": "改写器与检索器分开训练会目标错位；让两者迭代协同、用检索反馈对齐改写，能针对性救回模糊/欠规约 query。社区搜索 query 多短而歧义，这种联合训练范式对长尾 query 召回特别契合，且改写器可独立部署在召回前置。",
+      "tags": [
+        "query改写",
+        "稠密检索",
+        "协同训练",
+        "query理解"
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2605.29271",
+        "title": "CoHyDE: Iterative Co-Training of LLM Rewriter & Dense Encoder for Tool Retrieval",
+        "status": "completed",
+        "content": "# CoHyDE: Iterative Co-Training of LLM Rewriter & Dense Encoder for Tool Retrieval — 深度解读\n\n> 作者: Vaishali Senthil, Ashutosh Hathidara, Sebastian Schreiber｜分类: cs.AI / cs.IR / cs.LG｜arXiv:2605.29271\n> 说明: 本文基于 arXiv 全文页（arxiv.org/html/2605.29271）抓取内容撰写；论文未在抓取页面披露的训练超参（batch size、硬件、步数等）不做臆测，相应处仅作方法层面分析。\n\n## 1. 问题与动机\n论文聚焦 LLM agent 的「工具检索」(tool retrieval)：给定用户 query，从工具库中召回正确的 API/工具。作者指出现有两条路线各有失败模式。其一，**微调稠密编码器**（dense encoder）擅长匹配 query 与工具描述的「表面词形」，但面对**欠规约 / 模糊 query**（underspecified / vague）时召回急剧下降——用户往往不会用工具文档里的术语来表达需求。其二，**冻结 LLM 的 query 扩展**（HyDE 式，生成假想工具描述再检索）能更好地理解模糊意图，却会产生与工具库**词表不匹配**(vocabulary mismatch)的描述，即「想对了但说的词不对」。两条路线的割裂正是动机：改写器懂意图但不懂库，编码器懂库但不懂模糊意图。这一矛盾在工具检索里尤为尖锐，因为工具库术语高度规范、而 agent 转写的用户意图高度自由。\n\n## 2. 方法详解\nCoHyDE 的核心是把 **LLM 改写器**与**稠密编码器**当作一个**共同演化的系统**做**迭代协同训练**，而不是各自独立训练后拼接。流程可拆为：\n- **Warm-start（冷启动）**：两个组件都先在**工具库目录**(tool catalog)上初始化，让编码器先学会工具描述的表示、让改写器先见过库内术语分布。\n- **HyDE 式改写**：改写器为 query 生成「假想工具描述」，把短而模糊的 query 投射到接近工具库的语义/词表空间，再交给编码器检索。\n- **编码器更新**：用 **InfoNCE 对比损失**在检索正负样本上重训编码器，使其表示对齐改写后的 query 分布。\n- **改写器更新**：用 **DPO（Direct Preference Optimization）**对齐改写器——偏好信号来自检索结果的好坏（能召回正确工具的改写优于不能的），从而让生成的改写「对检索有用」而非仅「读起来合理」。\n- **迭代**：编码器变了，改写器的最优改写也随之变；改写器变了，编码器的最优表示又变。两者交替更新、互为对方的训练信号，逐轮收敛到协同最优。\n关键设计在于「闭环对齐」：改写器的奖励直接绑定下游检索效果（经 DPO），编码器的目标直接绑定改写后的 query（经 InfoNCE），从而消解了「懂意图」与「懂库」之间的鸿沟。\n\n## 3. 核心技术贡献\n1. **协同训练范式**：把 HyDE（query 扩展）从「冻结、外挂」变为「可训练、与编码器联合优化」，解决词表不匹配。机制上，DPO 用检索成败作偏好，使改写从「语言流畅」转向「检索有用」。\n2. **以检索反馈对齐改写器**：相比纯 prompt 或 SFT 改写，用偏好优化把下游召回收益反传到生成端，对模糊 query 的增益最大。\n3. **catalog warm-start + 迭代**：用工具库自身做冷启动并迭代协同，缓解了「编码器与改写器分布漂移」的冷启动难题。\n\n## 4. 实验结果分析\n- **数据**：ToolBench 约 1 万工具的子集。**指标**：NDCG@5。\n- **主结果**：相对最强基线，标准 query 的 NDCG@5 提升 **+2.5 个百分点**；**模糊 query 提升 +6.3 个百分点**；最难的一档模糊 query 提升达 **+8 个百分点**。增益随 query 模糊程度单调放大，印证了方法专攻「欠规约 query」的设计意图。\n- **消融**：**协同训练是必要的**——只用编码器或只用改写器（去掉协同）都会明显变差，在模糊 query 上的损失最高达 **-8 个百分点**。这说明收益主要来自两组件的「互相对齐」，而非任一单点改进。\n- **解读**：标准 query 上微调编码器本就够强，故增益有限（+2.5pp）；真正的价值在长尾/模糊 query。这与社区搜索「头部 query 已被现有相关性模型吃透、增量空间在长尾」的经验一致。\n\n## 5. 局限与未来方向\n论文证据集中在 ToolBench 单一基准、单一指标（NDCG@5），缺少跨数据集与线上 A/B 验证，外推到通用文档检索/社区搜索需谨慎。抓取页未充分披露训练成本（迭代轮数、算力、改写器规模），而**迭代协同 + DPO** 的训练开销与收敛稳定性是落地的关键未知量。改写器在线引入的**额外延迟**（生成假想描述）也未给出端到端时延分析。未来方向自然包括：减少迭代轮数的高效协同、改写器蒸馏以降延迟、以及把「检索反馈作偏好」推广到非工具检索场景。\n\n## 6. 工业实践意义\n对社区/UGC 短文本搜索的启示明确：**头部 query 靠现有稠密召回已足够，增量在模糊与长尾 query**，而 CoHyDE 给出的「改写器 + 编码器联合训练、以召回成败为偏好」正是攻这块的可行范式。可借鉴点：(1) 不要把 query 改写当成与召回无关的前置黑盒，用线上召回/点击信号经 DPO 反向对齐改写器；(2) 改写器与召回编码器若分属两个团队，需要建立联合迭代的训练闭环，避免目标错位；(3) 工程上要权衡在线改写带来的延迟——可考虑离线对高频模糊 query 预生成改写、或把改写器蒸馏成小模型。落地前应自建带「模糊度分层」的评测集，复现「增益随模糊度放大」这一现象，再决定是否上在线改写链路。",
+        "content_html": "<h1>CoHyDE: Iterative Co-Training of LLM Rewriter &amp; Dense Encoder for Tool Retrieval — 深度解读</h1>\n<blockquote><p>作者: Vaishali Senthil, Ashutosh Hathidara, Sebastian Schreiber｜分类: cs.AI / cs.IR / cs.LG｜arXiv:2605.29271<br>说明: 本文基于 arXiv 全文页（arxiv.org/html/2605.29271）抓取内容撰写；论文未在抓取页面披露的训练超参（batch size、硬件、步数等）不做臆测，相应处仅作方法层面分析。</p></blockquote>\n<h2>1. 问题与动机</h2>\n<p>论文聚焦 LLM agent 的「工具检索」(tool retrieval)：给定用户 query，从工具库中召回正确的 API/工具。作者指出现有两条路线各有失败模式。其一，<strong>微调稠密编码器</strong>（dense encoder）擅长匹配 query 与工具描述的「表面词形」，但面对<strong>欠规约 / 模糊 query</strong>（underspecified / vague）时召回急剧下降——用户往往不会用工具文档里的术语来表达需求。其二，<strong>冻结 LLM 的 query 扩展</strong>（HyDE 式，生成假想工具描述再检索）能更好地理解模糊意图，却会产生与工具库<strong>词表不匹配</strong>(vocabulary mismatch)的描述，即「想对了但说的词不对」。两条路线的割裂正是动机：改写器懂意图但不懂库，编码器懂库但不懂模糊意图。这一矛盾在工具检索里尤为尖锐，因为工具库术语高度规范、而 agent 转写的用户意图高度自由。</p>\n<h2>2. 方法详解</h2>\n<p>CoHyDE 的核心是把 <strong>LLM 改写器</strong>与<strong>稠密编码器</strong>当作一个<strong>共同演化的系统</strong>做<strong>迭代协同训练</strong>，而不是各自独立训练后拼接。流程可拆为：</p>\n<ul>\n<li><strong>Warm-start（冷启动）</strong>：两个组件都先在<strong>工具库目录</strong>(tool catalog)上初始化，让编码器先学会工具描述的表示、让改写器先见过库内术语分布。</li>\n<li><strong>HyDE 式改写</strong>：改写器为 query 生成「假想工具描述」，把短而模糊的 query 投射到接近工具库的语义/词表空间，再交给编码器检索。</li>\n<li><strong>编码器更新</strong>：用 <strong>InfoNCE 对比损失</strong>在检索正负样本上重训编码器，使其表示对齐改写后的 query 分布。</li>\n<li><strong>改写器更新</strong>：用 <strong>DPO（Direct Preference Optimization）</strong>对齐改写器——偏好信号来自检索结果的好坏（能召回正确工具的改写优于不能的），从而让生成的改写「对检索有用」而非仅「读起来合理」。</li>\n<li><strong>迭代</strong>：编码器变了，改写器的最优改写也随之变；改写器变了，编码器的最优表示又变。两者交替更新、互为对方的训练信号，逐轮收敛到协同最优。</li>\n</ul>\n<p>关键设计在于「闭环对齐」：改写器的奖励直接绑定下游检索效果（经 DPO），编码器的目标直接绑定改写后的 query（经 InfoNCE），从而消解了「懂意图」与「懂库」之间的鸿沟。</p>\n<h2>3. 核心技术贡献</h2>\n<ol>\n<li><strong>协同训练范式</strong>：把 HyDE（query 扩展）从「冻结、外挂」变为「可训练、与编码器联合优化」，解决词表不匹配。机制上，DPO 用检索成败作偏好，使改写从「语言流畅」转向「检索有用」。</li>\n<li><strong>以检索反馈对齐改写器</strong>：相比纯 prompt 或 SFT 改写，用偏好优化把下游召回收益反传到生成端，对模糊 query 的增益最大。</li>\n<li><strong>catalog warm-start + 迭代</strong>：用工具库自身做冷启动并迭代协同，缓解了「编码器与改写器分布漂移」的冷启动难题。</li>\n</ol>\n<h2>4. 实验结果分析</h2>\n<ul>\n<li><strong>数据</strong>：ToolBench 约 1 万工具的子集。<strong>指标</strong>：NDCG@5。</li>\n<li><strong>主结果</strong>：相对最强基线，标准 query 的 NDCG@5 提升 <strong>+2.5 个百分点</strong>；<strong>模糊 query 提升 +6.3 个百分点</strong>；最难的一档模糊 query 提升达 <strong>+8 个百分点</strong>。增益随 query 模糊程度单调放大，印证了方法专攻「欠规约 query」的设计意图。</li>\n<li><strong>消融</strong>：<strong>协同训练是必要的</strong>——只用编码器或只用改写器（去掉协同）都会明显变差，在模糊 query 上的损失最高达 <strong>-8 个百分点</strong>。这说明收益主要来自两组件的「互相对齐」，而非任一单点改进。</li>\n<li><strong>解读</strong>：标准 query 上微调编码器本就够强，故增益有限（+2.5pp）；真正的价值在长尾/模糊 query。这与社区搜索「头部 query 已被现有相关性模型吃透、增量空间在长尾」的经验一致。</li>\n</ul>\n<h2>5. 局限与未来方向</h2>\n<p>论文证据集中在 ToolBench 单一基准、单一指标（NDCG@5），缺少跨数据集与线上 A/B 验证，外推到通用文档检索/社区搜索需谨慎。抓取页未充分披露训练成本（迭代轮数、算力、改写器规模），而<strong>迭代协同 + DPO</strong> 的训练开销与收敛稳定性是落地的关键未知量。改写器在线引入的<strong>额外延迟</strong>（生成假想描述）也未给出端到端时延分析。未来方向自然包括：减少迭代轮数的高效协同、改写器蒸馏以降延迟、以及把「检索反馈作偏好」推广到非工具检索场景。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区/UGC 短文本搜索的启示明确：<strong>头部 query 靠现有稠密召回已足够，增量在模糊与长尾 query</strong>，而 CoHyDE 给出的「改写器 + 编码器联合训练、以召回成败为偏好」正是攻这块的可行范式。可借鉴点：(1) 不要把 query 改写当成与召回无关的前置黑盒，用线上召回/点击信号经 DPO 反向对齐改写器；(2) 改写器与召回编码器若分属两个团队，需要建立联合迭代的训练闭环，避免目标错位；(3) 工程上要权衡在线改写带来的延迟——可考虑离线对高频模糊 query 预生成改写、或把改写器蒸馏成小模型。落地前应自建带「模糊度分层」的评测集，复现「增益随模糊度放大」这一现象，再决定是否上在线改写链路。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2605.27441",
+      "title": "A Unified Structured Query Understanding Framework for Industrial Semantic Search",
+      "title_zh": "面向工业语义搜索的统一结构化查询理解框架",
+      "url": "https://arxiv.org/abs/2605.27441",
+      "authors": "Ping Liu, Qianqi Shen, Jianqiang Shen, et al. (LinkedIn)",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-28",
+      "total_score": 4.15,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文（LinkedIn，KDD-ADS 2026）提出统一的结构化查询理解框架，把 query 切分、成分标注、意图与属性抽取等子任务统一建模，产出结构化 query 表示供下游召回与排序使用，并在生产语义搜索上验证收益。",
+      "key_insight": "工业搜索常把 query 理解拆成多个互不一致的子模型；统一结构化框架既减少维护成本，又让下游召回/排序拿到一致信号。社区搜索的意图识别、属性抽取、改写可共享这一框架，是 query 理解工程化的直接参考。",
+      "tags": [
+        "query理解",
+        "结构化查询",
+        "工业语义搜索",
+        "意图识别"
+      ]
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2605.30120",
+      "title": "No More K-means: Single-Stage Sparse Coding for Efficient Multi-Vector Retrieval",
+      "title_zh": "No More K-means：面向高效多向量检索的单阶段稀疏编码",
+      "url": "https://arxiv.org/abs/2605.30120",
+      "authors": "Lixuan Guo, Yifei Wang, Tiansheng Wen, Aosong Feng, Stefanie Jegelka, Chenyu You",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-28",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文（ICML 2026）用稀疏自编码器替代多向量检索中的聚类（K-means）量化，使多向量表示可直接走倒排索引。相比 ColBERTv2，索引构建快 15 倍、检索延迟减半，且效果还有提升。",
+      "key_insight": "多向量检索精度高但量化/索引开销大；用单阶段稀疏编码替代聚类，让 late interaction 也能吃到倒排索引的效率红利。对想上多向量召回又顾虑成本的社区搜索，这条路径显著降低索引与延迟门槛。",
+      "tags": [
+        "多向量检索",
+        "稀疏编码",
+        "倒排索引",
+        "效率"
+      ]
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2605.29384",
+      "title": "Latent Terms: Dense Retrievers Contain Trivially Extractable BM25-ready Zipfian Vocabularies",
+      "title_zh": "Latent Terms：稠密检索器内含可直接抽取的 BM25 可用词表",
+      "url": "https://arxiv.org/abs/2605.29384",
+      "authors": "Benjamin Clavié, Sean Lee, Aamir Shakir, Makoto P. Kato",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-28",
+      "total_score": 4.0,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "论文发现稠密检索器内部已学到「可检索」的稀疏特征，用稀疏自编码器即可把它们抽取出来，从而无需任何学习式扩展目标就能做稀疏（倒排）检索。",
+      "key_insight": "稠密语义能力可被「翻译」回稀疏词表，让已有倒排架构无需训练 SPLADE 式扩展即可获得语义召回。对存量倒排系统的社区搜索，这是把 dense 语义迁移到 sparse 通路的低成本桥梁，兼顾效率与可解释性。",
+      "tags": [
+        "稀疏检索",
+        "稠密检索",
+        "稀疏自编码器",
+        "倒排索引"
+      ]
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2605.28522",
+      "title": "Search for Coverage: Learning Coverage-Aware Retrieval with Augmented Sub-Question Answerability",
+      "title_zh": "Search for Coverage：以子问题可答性增强的覆盖感知检索",
+      "url": "https://arxiv.org/abs/2605.28522",
+      "authors": "Jia-Huei Ju, Eugene Yang, Trevor Adriaanse, Suzan Verberne, Andrew Yates",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-27",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文提出 CoveR，用覆盖式的对比与蒸馏目标训练稠密检索，使召回结果覆盖 query 的多个信息侧面；在 90K 对的 SCOPE 数据上训练，nugget 覆盖率提升约 10%。",
+      "key_insight": "传统检索只追相关性，易召回大量同质结果；以「覆盖多个子问题」为目标能提升结果多样性与信息完整度。社区搜索中一个 query 常隐含多个意图，覆盖感知召回有助于一次性满足多面需求。",
+      "tags": [
+        "覆盖感知",
+        "稠密检索",
+        "对比学习",
+        "多样性"
+      ]
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2605.29232",
+      "title": "On the Practice of Scaling Search Conversion Rate Prediction",
+      "title_zh": "搜索转化率预估的 Scaling 实践",
+      "url": "https://arxiv.org/abs/2605.29232",
+      "authors": "James Pak, Jyun-Yu Jiang, Fan Zhang, et al.",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-28",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文是搜索转化率（CVR）预估的生产级 scaling 实证：沿主干算力、嵌入参数、训练数据三个维度扩展，发现三者收益基本独立且可叠加，在低延迟 GPU 服务下综合提升 2.6%。",
+      "key_insight": "三条 scaling 轴近似独立可叠加，给出了在固定延迟预算下如何分配扩展资源的实证依据。社区搜索的相关性/CTR 模型同样面临算力-数据-参数取舍，这套 scaling 拆解可直接指导工程投入。",
+      "tags": [
+        "CVR预估",
+        "Scaling",
+        "搜索排序",
+        "工业实践"
+      ]
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2605.29517",
+      "title": "FLASH-MAXSIM: IO-Aware Fused Kernels for Late-Interaction Scoring",
+      "title_zh": "FLASH-MAXSIM：面向 late-interaction 打分的 IO 感知融合算子",
+      "url": "https://arxiv.org/abs/2605.29517",
+      "authors": "Roi Pony, Adi Raz Goldfarb, Idan Friedman, Daniel Ezer, Udi Barzelay",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-28",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "论文提出 IO 感知的 GPU 融合算子，计算 ColBERT 的 MaxSim 打分时不物化完整相似度张量，而是把 query/doc 分块流式经过片上 SRAM。在 A100 上获得 3.9 倍加速、推理显存降低 16 倍。",
+      "key_insight": "late interaction 的瓶颈常在 MaxSim 打分的显存与带宽；借鉴 FlashAttention 式 IO 感知融合可大幅降显存提速。对要上多向量重排的社区搜索，这类底层算子优化决定了 late interaction 能否在线落地。",
+      "tags": [
+        "late interaction",
+        "GPU算子",
+        "MaxSim",
+        "推理优化"
+      ]
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2605.27951",
+      "title": "Beyond Similarity: Task-Aligned Retrieval for Language Models",
+      "title_zh": "Beyond Similarity：面向语言模型的任务对齐检索",
+      "url": "https://arxiv.org/abs/2605.27951",
+      "authors": "Zhixing Sun, Shenghe Xu, Tao Li",
+      "company": [],
+      "source": "web_search",
+      "published": "2026-05-28",
+      "total_score": 3.5,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "论文主张纯语义相似度不足以选出真正有用的证据，提出任务对齐检索：以 passage 对下游 LM 任务的有用性、而非表面相似度来选取，从而召回更契合任务目标的内容。",
+      "key_insight": "相似 ≠ 有用，按下游任务有用性检索能避免召回高相似但低价值的内容。对接入 LLM 问答的社区搜索，这提示召回目标应从相似度转向「对最终回答的贡献」，与下游指标对齐。",
+      "tags": [
+        "任务对齐",
+        "稠密检索",
+        "有用性",
+        "LLM"
+      ]
+    }
+  ],
+  "code_projects": [],
+  "papers_by_track": {
+    "retrieval": [
+      "arxiv:2605.29271",
+      "arxiv:2605.27441",
+      "arxiv:2605.29287",
+      "arxiv:2605.30120",
+      "arxiv:2605.29384",
+      "arxiv:2605.28522",
+      "arxiv:2605.29232",
+      "arxiv:2605.29517",
+      "arxiv:2605.27951"
+    ]
+  },
+  "profile_summary": ""
+}

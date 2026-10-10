@@ -1,0 +1,560 @@
+{
+  "date": "2026-05-06",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 83,
+    "papers_selected": 10,
+    "score_min": 3.1,
+    "score_max": 4.0
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2605.01399",
+      "title": "Verbal-R3: Verbal Reranker as the Missing Bridge between Retrieval and Reasoning",
+      "url": "https://arxiv.org/abs/2605.01399",
+      "authors": "Sangkwon Park, Donghun Kang, Jisoo Mok, Sungroh Yoon",
+      "company": [
+        "SNU"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 4.0,
+      "summary": "针对常规 RAG 直接把检索文本喂给 LLM 上下文导致信息整合不充分的问题，论文提出 Verbal-R3 框架：用「Verbal Annotations」明确写出查询与候选文档之间的逻辑关系，再用 Generator+Verbal Reranker 双角色迭代检索-推理。Reranker 不仅给出分数还输出语言化解释，引导 Generator 的推理；推理过程加入 relevance-guided test-time scaling 在轨迹扩展时按相关性分配算力。论文在多个复杂多跳 QA 基准上取得 SOTA 表现。",
+      "key_insight": "核心创新是把「reranker 的判定理由」从隐式 logits 升级为显式自然语言注释，等于给生成器植入一段可解释的对齐链路。这对社区搜索 UGC 场景非常有借鉴：query 与短文本之间常存在主题/口语化跳跃，仅靠相关性分数难以让排序模型「理解为什么相关」。把 verbal annotation 作为 reranker→生成式重排或答案生成的桥梁，可以显著降低幻觉、提升复杂搜索意图的 nDCG。同时 test-time scaling 思路也启发：推理阶段可按相关性弹性分配算力。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2605.01399",
+        "title": "Verbal-R3: Verbal Reranker as the Missing Bridge between Retrieval and Reasoning",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\nVerbal-R3 直接针对当下 RAG 范式中**「检索目标与推理目标错位」**这一根本性裂隙。常规 RAG 把检索到的原始段落直接拼进 LLM 上下文，但检索器是按词面/语义相似度排序的，而下游推理需要的是带有**逻辑链条**的证据。这导致两类失败：(1) 高相关分文档却对推理无贡献，模型读到了「相似但不解决问题」的段落；(2) 推理过程中产生的判别信号无法回流去改进检索/重排。作者把这种割裂称作「missing bridge between retrieval and reasoning」，并强调随着多跳 QA、复杂事实核查等任务普及，这种 gap 已成为 RAG 系统精度天花板的主要来源。论文进一步指出，如果不让 reranker「显式表达自己的判断理由」，下游 LLM 就无法基于结构化的相关性信号去做证据筛选与置信判断，因此 verbal-level 信号的注入成为设计选择的核心动机。\n\n## 2. 方法详解\n\nVerbal-R3 框架由两个紧密耦合的角色构成：\n\n**Generator**：基础大模型（论文实验中分别用 GPT-4o 和 Qwen3 系列），承担多步检索与推理的主回路。每一步它发出搜索 query、读取候选段落、推理并决定是否继续检索或给出答案。\n\n**Verbal Reranker**：轻量级 LLM-based reranker，接收 (query, passage, 当前推理 trace) 三元组，输出两个东西：(a) 数值化的相关性分数，(b) **Verbal Annotation** —— 一段自然语言注释，明确说明该段落与查询的逻辑关联（例如「这条段落提供了 X 中间事实，用于推断 Y」）。Generator 不仅看到分数，还把 Verbal Annotation 拼回上下文，作为推理依据。\n\n**训练流程**：用 (query, passage, reasoning trace) 监督样本训练 reranker，正样本是「能让推理链得到正确答案」的段落，负样本是「相似但导向错误推理」的段落，损失函数用标准 listwise/pointwise 排序损失结合 verbal annotation 的 SFT 损失。论文报告 1000–2000 条监督数据即可让 reranker 取得稳定收益。\n\n**Relevance-guided test-time scaling**：在推理阶段，Generator 对 top-k 候选生成多条推理路径，reranker 根据每条路径的「自洽性」给段落动态重打分；高一致性路径中频繁出现的段落 relevance 上调，进入下一轮检索。论文把这套机制称为 self-consistent test-time scaling，4× 计算预算下精度收益最显著。\n\n## 3. 核心技术贡献\n\n- **Verbal Annotation 显式化**：把 reranker 的隐式判断升级为可读的语言描述，本质上是在 retrieval 与 reasoning 之间引入一个**自然语言中间表征**，让两端可以在同一种语义空间对齐。\n- **Generator–Reranker 双角色解耦**：Generator 不必自己学习重排策略，Reranker 只需服务于 Generator 的推理意图，分工降低了端到端微调的成本。\n- **Reasoning-trace 监督**：反向利用「正确答案的推理链」反推「哪条段落是关键证据」作为 reranker 的训练标签，比传统 click 标签更贴近最终任务。\n- **Self-consistent test-time scaling**：把 majority-vote 思想从 LLM 内部推到检索-推理大循环中，把推理一致性作为段落重要性的额外信号。\n\n## 4. 实验结果分析\n\n实验覆盖 HotpotQA、2WikiMultiHopQA、MuSiQue、Natural Questions、TriviaQA、PopQA 等多跳/事实型 QA 数据集，主指标为 Exact Match (EM) 与中间步骤 F1，召回质量按 Recall@k 评估。\n\n主表对比若干强基线（BM25+Dense、ColBERT、DPR、Self-RAG、Iter-RetGen、Search-o1）：\n\n| 数据集 | Self-RAG | Iter-RetGen | Verbal-R3 (4× scaling) |\n|--------|----------|-------------|------------------------|\n| HotpotQA | ~71% EM | ~70% EM | **~75% EM** |\n| 2WikiMultiHopQA | — | ~62% EM | **~68% EM** |\n\n绝对收益普遍在 +3–7% EM。消融实验显示：去掉 reasoning-trace 监督会让收益消失 5–7 个点，是最关键的设计组件；reranker 单独使用即可贡献 +4–6% EM；test-time scaling 在 2× 档位再加 +2–3%；多跳推理融合在复杂数据集上 +3%。\n\n值得注意的两个观察：(1) 7B–13B reranker 已能保住 85–90% 的精度收益，且延迟降低 40%，意味着 reranker 不必放大模型；(2) test-time scaling 的边际效益在 4×–8× 之间趋于饱和，工业部署可在 2× 档拿走大部分收益。\n\n## 5. 局限与未来方向\n\n作者明确列出四点：(1) 测试期 4–8× 计算开销限制了高 QPS 场景部署；(2) 性能严格受限于 Generator 自身推理能力，弱模型无法靠 reranker 救回；(3) Verbal Annotation 是文本，仍然可能省略某些隐式相关性信号；(4) 训练阶段需要带推理链的标注数据，存在冷启动门槛。论文未深入讨论的额外限制包括：reranker 输出的自然语言注释本身可能引入新型幻觉，对 Generator 形成误导。\n\n## 6. 工业实践意义\n\n对社区搜索/UGC 问答场景，Verbal-R3 提供了三条可立即借鉴的工程路径：\n\n**第一，重排显式化解释信号**。社区 query 和短文本 UGC 之间常存在主题/口语化跳跃，把 reranker 输出从单纯分数升级为「为什么相关」的简短自然语言注释，再喂给生成式答案模型，能显著提升复杂搜索意图的 nDCG 与答案准确率。这类似业内已开始流行的「reranker explanation」做法，可以用 Qwen3-7B 或更小模型蒸馏。\n\n**第二，推理 trace 反向标注**。利用日志里答疑成功/失败案例反推哪段 UGC 是关键证据，作为 reranker 训练的弱监督，比传统 CTR 标签更逼近真实业务目标。\n\n**第三，按相关性弹性分配算力**。把 self-consistent test-time scaling 的思路用在生成式答案上，对不确定的 query 增加推理预算（多采样或多轮检索），对置信度高的 query 直接走 1× 路径。这与 community search 的 query 分层策略天然契合：高频简单 query 走轻量路径、长尾复杂 query 触发 reranker+scaling。\n\n**部署考虑**：reranker 模型可独立部署在 GPU/CPU mix 上，4×–8× 推理预算需要在 SLA 与精度之间精细权衡，建议先在「需求更敏感」的兜底链路落地（如 AI 解答、问题二次召回），再下沉主线。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>Verbal-R3 直接针对当下 RAG 范式中<strong>「检索目标与推理目标错位」</strong>这一根本性裂隙。常规 RAG 把检索到的原始段落直接拼进 LLM 上下文，但检索器是按词面/语义相似度排序的，而下游推理需要的是带有<strong>逻辑链条</strong>的证据。这导致两类失败：(1) 高相关分文档却对推理无贡献，模型读到了「相似但不解决问题」的段落；(2) 推理过程中产生的判别信号无法回流去改进检索/重排。作者把这种割裂称作「missing bridge between retrieval and reasoning」，并强调随着多跳 QA、复杂事实核查等任务普及，这种 gap 已成为 RAG 系统精度天花板的主要来源。论文进一步指出，如果不让 reranker「显式表达自己的判断理由」，下游 LLM 就无法基于结构化的相关性信号去做证据筛选与置信判断，因此 verbal-level 信号的注入成为设计选择的核心动机。</p>\n<h2>2. 方法详解</h2>\n<p>Verbal-R3 框架由两个紧密耦合的角色构成：</p>\n<p><strong>Generator</strong>：基础大模型（论文实验中分别用 GPT-4o 和 Qwen3 系列），承担多步检索与推理的主回路。每一步它发出搜索 query、读取候选段落、推理并决定是否继续检索或给出答案。</p>\n<p><strong>Verbal Reranker</strong>：轻量级 LLM-based reranker，接收 (query, passage, 当前推理 trace) 三元组，输出两个东西：(a) 数值化的相关性分数，(b) <strong>Verbal Annotation</strong> —— 一段自然语言注释，明确说明该段落与查询的逻辑关联（例如「这条段落提供了 X 中间事实，用于推断 Y」）。Generator 不仅看到分数，还把 Verbal Annotation 拼回上下文，作为推理依据。</p>\n<p><strong>训练流程</strong>：用 (query, passage, reasoning trace) 监督样本训练 reranker，正样本是「能让推理链得到正确答案」的段落，负样本是「相似但导向错误推理」的段落，损失函数用标准 listwise/pointwise 排序损失结合 verbal annotation 的 SFT 损失。论文报告 1000–2000 条监督数据即可让 reranker 取得稳定收益。</p>\n<p><strong>Relevance-guided test-time scaling</strong>：在推理阶段，Generator 对 top-k 候选生成多条推理路径，reranker 根据每条路径的「自洽性」给段落动态重打分；高一致性路径中频繁出现的段落 relevance 上调，进入下一轮检索。论文把这套机制称为 self-consistent test-time scaling，4× 计算预算下精度收益最显著。</p>\n<h2>3. 核心技术贡献</h2>\n<ul>\n<li><strong>Verbal Annotation 显式化</strong>：把 reranker 的隐式判断升级为可读的语言描述，本质上是在 retrieval 与 reasoning 之间引入一个<strong>自然语言中间表征</strong>，让两端可以在同一种语义空间对齐。</li>\n<li><strong>Generator–Reranker 双角色解耦</strong>：Generator 不必自己学习重排策略，Reranker 只需服务于 Generator 的推理意图，分工降低了端到端微调的成本。</li>\n<li><strong>Reasoning-trace 监督</strong>：反向利用「正确答案的推理链」反推「哪条段落是关键证据」作为 reranker 的训练标签，比传统 click 标签更贴近最终任务。</li>\n<li><strong>Self-consistent test-time scaling</strong>：把 majority-vote 思想从 LLM 内部推到检索-推理大循环中，把推理一致性作为段落重要性的额外信号。</li>\n</ul>\n<h2>4. 实验结果分析</h2>\n<p>实验覆盖 HotpotQA、2WikiMultiHopQA、MuSiQue、Natural Questions、TriviaQA、PopQA 等多跳/事实型 QA 数据集，主指标为 Exact Match (EM) 与中间步骤 F1，召回质量按 Recall@k 评估。</p>\n<p>主表对比若干强基线（BM25+Dense、ColBERT、DPR、Self-RAG、Iter-RetGen、Search-o1）：</p>\n<table><thead><tr><th>数据集</th><th>Self-RAG</th><th>Iter-RetGen</th><th>Verbal-R3 (4× scaling)</th></tr></thead><tbody><tr><td>HotpotQA</td><td>~71% EM</td><td>~70% EM</td><td><strong>~75% EM</strong></td></tr><tr><td>2WikiMultiHopQA</td><td>—</td><td>~62% EM</td><td><strong>~68% EM</strong></td></tr></tbody></table>\n<p>绝对收益普遍在 +3–7% EM。消融实验显示：去掉 reasoning-trace 监督会让收益消失 5–7 个点，是最关键的设计组件；reranker 单独使用即可贡献 +4–6% EM；test-time scaling 在 2× 档位再加 +2–3%；多跳推理融合在复杂数据集上 +3%。</p>\n<p>值得注意的两个观察：(1) 7B–13B reranker 已能保住 85–90% 的精度收益，且延迟降低 40%，意味着 reranker 不必放大模型；(2) test-time scaling 的边际效益在 4×–8× 之间趋于饱和，工业部署可在 2× 档拿走大部分收益。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出四点：(1) 测试期 4–8× 计算开销限制了高 QPS 场景部署；(2) 性能严格受限于 Generator 自身推理能力，弱模型无法靠 reranker 救回；(3) Verbal Annotation 是文本，仍然可能省略某些隐式相关性信号；(4) 训练阶段需要带推理链的标注数据，存在冷启动门槛。论文未深入讨论的额外限制包括：reranker 输出的自然语言注释本身可能引入新型幻觉，对 Generator 形成误导。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/UGC 问答场景，Verbal-R3 提供了三条可立即借鉴的工程路径：</p>\n<p><strong>第一，重排显式化解释信号</strong>。社区 query 和短文本 UGC 之间常存在主题/口语化跳跃，把 reranker 输出从单纯分数升级为「为什么相关」的简短自然语言注释，再喂给生成式答案模型，能显著提升复杂搜索意图的 nDCG 与答案准确率。这类似业内已开始流行的「reranker explanation」做法，可以用 Qwen3-7B 或更小模型蒸馏。</p>\n<p><strong>第二，推理 trace 反向标注</strong>。利用日志里答疑成功/失败案例反推哪段 UGC 是关键证据，作为 reranker 训练的弱监督，比传统 CTR 标签更逼近真实业务目标。</p>\n<p><strong>第三，按相关性弹性分配算力</strong>。把 self-consistent test-time scaling 的思路用在生成式答案上，对不确定的 query 增加推理预算（多采样或多轮检索），对置信度高的 query 直接走 1× 路径。这与 community search 的 query 分层策略天然契合：高频简单 query 走轻量路径、长尾复杂 query 触发 reranker+scaling。</p>\n<p><strong>部署考虑</strong>：reranker 模型可独立部署在 GPU/CPU mix 上，4×–8× 推理预算需要在 SLA 与精度之间精细权衡，建议先在「需求更敏感」的兜底链路落地（如 AI 解答、问题二次召回），再下沉主线。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2602.16375",
+      "title": "Variable-Length Semantic IDs for Recommender Systems",
+      "url": "https://arxiv.org/abs/2602.16375",
+      "authors": "Kirill Khrylchenko",
+      "company": [
+        "Yandex"
+      ],
+      "source": "web_search",
+      "published": "2026-02-21",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.9,
+      "summary": "针对 RQ-VAE 等定长 Semantic ID 在长尾/冷启动 item 上信息冗余而在热门 item 上又信息不足的问题，论文提出 VL-SID：用带 Gumbel-Softmax 重参数化的离散 VAE 学习「自适应长度」item 编码，让信息量大的 item 拿到更多 token、简单 item 用更少 token。框架避免 REINFORCE 式训练的不稳定性，可以无缝集成进 LLM 词表用于生成式推荐。实验显示 VL-SID 在长尾与冷启动 item 上召回与生成式推荐准确率显著优于定长 SID 基线，同时保留 full-softmax 训练效率。",
+      "key_insight": "把「编码长度」当作可学习自由度，是 Semantic ID 设计上的一次范式升级。对社区搜索 UGC 而言，帖子/问答 item 本身在信息密度上分布极不均匀（短评论 vs 高赞万字回答），定长编码必然损失头部信息或浪费尾部 token。借鉴 VL-SID 的思路，可在「item tokenizer」环节让 RQ-VAE 输出可变长度 SID 序列，配合生成式召回/排序，能把长尾 UGC 召回率与冷启动新帖曝光率同时打开。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2605.00964",
+      "title": "Seeking Information with RAG-Assistants: Does Model Size Matter in Human-AI Collaborations?",
+      "url": "https://arxiv.org/abs/2605.00964",
+      "authors": "Lennard C. Froma, Tom Kouwenhoven, Maaike H. T. de Boer, Catholijn M. Jonker, Max J. van Duijn",
+      "company": [
+        "TNO",
+        "Leiden University"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.85,
+      "summary": "为回答「RAG 助手到底要多大模型」，论文用 N=112 真人在多轮工作场信息搜索任务里对比 RAG-only/LLM-only/LLM+RAG 三种基线，分别接入 3B、8B、70B 三档模型。结果显示无论模型多大，「人 + RAG-assistant」组合的任务正确率都显著超过纯模型基线；3B 模型在合规性敏感场景中接入 RAG 后即可达到 70B 单模的水平，模型大小对感知可用性与满意度的影响远小于检索质量的影响。",
+      "key_insight": "这篇实证研究给生成式搜索产品一个直接结论：检索结构而非模型参数才是上限。对社区搜索/问答助手而言，与其追求大底座模型，不如把工程预算投在召回/重排和证据组织。同时 3B 级模型 + 高质量 RAG 即可在合规、敏感数据场景中胜任主线流量，给端侧或低成本部署留足空间，正契合 UGC 平台高 QPS 低成本的约束。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2605.01302",
+      "title": "Beyond Semantic Relevance: Counterfactual Risk Minimization for Robust Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2605.01302",
+      "authors": "Peiyang Liu, Qiang Yan, Ziqiang Cui, Di Liang, Xi Wang, Wei Ye",
+      "company": [
+        "PKU"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "summary": "传统 RAG 把「语义相关」当作效用代理，但真实查询常带认知偏差（错误前提、确认偏误），单看相关性反而会拉来「附和性证据」放大幻觉，论文称之为 Relevance-Robustness Gap。作者提出 CoRM-RAG：在因果干预框架下设计 Cognitive Perturbation Protocol，训练阶段模拟用户偏差查询，蒸馏出一个轻量 Evidence Critic，给候选文档打「能否纠偏」分数，再做检索 reranking。实验显示在带偏差查询基准上 CoRM-RAG 显著降低跟随性幻觉、提升答案稳健度。",
+      "key_insight": "把检索目标从「语义相似」转向「决策安全/反事实风险最小化」是一个值得学习的视角。社区搜索里大量 query 自带预设（「XX 真的有效吗」式），传统排序很容易把附和性内容顶到首位。借鉴 CoRM-RAG 的 Evidence Critic，可以在重排阶段加一个「反向证据通道」专门寻找能纠偏的高质量 UGC，对长期信任与社区健康指标都有正向作用，且 Critic 只是轻量模块、不重排整套召回，工程落地友好。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2605.00957",
+      "title": "\"I Don't Know\" -- Towards Appropriate Trust with Certainty-Aware Retrieval Augmented Generation",
+      "url": "https://arxiv.org/abs/2605.00957",
+      "authors": "Daan Di Scala, Maaike de Boer, Pınar Yolum",
+      "company": [
+        "TNO",
+        "Utrecht University"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "summary": "针对 LLM 即使没掌握信息也会自信编造的问题，论文提出 CERTA（Certainty Enhanced RAG for Trustworthy Answers）：把「问题-上下文-答案」三段间的相关性强度作为内部不确定度信号显式输出给用户，让模型在该说「我不知道」时学会示弱。配套发布的 CertaintyQA 数据集涵盖各置信梯度问答对，实验显示 CERTA 在校准度与用户感知可信度上明显胜过普通 RAG 基线。",
+      "key_insight": "「不确定性显式化」是生成式搜索从演示走向产品化的关键缺失环节。社区搜索/AI 解答类产品里，错误自信是用户流失的头号原因，而 CERTA 仅用相关性强度就能近似 self-reflection 信号，工程改造成本低。可以把它接入答案生成阶段，配合一条「弃答/转人工/反查」的产品策略，在 CTR 与信任度之间找到新平衡点。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2605.01664",
+      "title": "A Hybrid Retrieval and Reranking Framework for Evidence-Grounded Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2605.01664",
+      "authors": "Fariba Afrin Irany, Sampson Akwafuo",
+      "company": [
+        "California State University Fullerton"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "summary": "论文落地一套 citation-aware 生物医疗 RAG：以 Amazon Bedrock Knowledge Bases 做文档 ingestion/分块/embedding，存储用 S3 + OpenSearch Serverless，先做 Hybrid 检索（向量+BM25）再用 Cohere reranker 提候选，最后由 LLM 引用出处生成答案。实验比较多种检索器与 reranker 组合，给出可复用的 evidence grounding 基线。",
+      "key_insight": "对工程团队最有价值的是这套「云原生 RAG 流水线」：稀疏-稠密 hybrid + 商用 reranker + citation 输出，几乎可以原样照搬到社区搜索的智能问答模块。论文还给出 chunking 大小、reranker top-k 的灵敏度分析，是少有的把工程参数与离线指标关联起来的实证基线，对 RAG 选型具有直接参考价值。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2511.07328",
+      "title": "Q-RAG: Long Context Multi-step Retrieval via Value-based Embedder Training",
+      "url": "https://arxiv.org/abs/2511.07328",
+      "authors": "Artyom Sorokin, Nazar Buzun, Alexander Anokhin, Oleg Inozemcev, Egor Vedernikov, Petr Anokhin, Mikhail Burtsev, Trushkov Alexey, Yin Wenshuai, Evgeny Burnaev",
+      "company": [
+        "AIRI",
+        "Skoltech"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.75,
+      "summary": "面向多跳长上下文问答，主流 multi-step RAG 通过微调小 LLM 反复检索、成本高且锁死了大模型路线。Q-RAG 反过来用 Value-based RL 直接微调 Embedder 模型，把多步检索建模成 Q 学习中的状态价值估计，让 embedder 学会「为后续推理保留信息量」。在 BabiLong、RULER 等长上下文基准上取得 SOTA，参数和成本远低于 LLM 微调路线。",
+      "key_insight": "把多步检索的优化目标从 LLM 端移到 embedder 端，是 RAG 训练范式的关键反转。对成本敏感的社区搜索而言，长 query/上下文的多跳召回可以用一个 RL-tuned embedder 替代昂贵的 multi-step LLM agent，QPS 与延迟控制大幅简化。Value-based 训练也比 policy-gradient 更稳定，工业落地风险更低。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2605.01284",
+      "title": "Chain of Evidence: Pixel-Level Visual Attribution for Iterative Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2605.01284",
+      "authors": "Peiyang Liu, Ziqiang Cui, Xi Wang, Di Liang, Wei Ye",
+      "company": [
+        "PKU"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "summary": "针对 iRAG 在视觉文档（PPT、含图 PDF）上「文本解析丢失版式信息」与「粗粒度引用」两大瓶颈，论文提出 Chain of Evidence (CoE)：retriever-agnostic 视觉归因框架，让 VLM 直接在文档截图上推理，输出像素级 bounding box 引用。实验显示 CoE 在多模态 RAG 基准上提升答案准确率与可验证性，并消除了对特定文档解析器的依赖。",
+      "key_insight": "社区搜索的视觉化内容（图片帖、笔记、菜单截图）越来越多，传统「OCR→文本检索」流水线丢失版式与图文关系。CoE 提出的 VLM 截图直读 + bbox 归因路径，等于给生成式答案配了一条「可视化证据链」，对图文社区的 trust signal 与点选行为都有提升空间。retriever-agnostic 设计也意味着可与现有召回栈正交叠加。"
+    },
+    {
+      "rank": 9,
+      "id": "blog_rss:openai_research_blog:https://openai.com/index/gpt-5-5-instant-system-card",
+      "title": "GPT-5.5 Instant System Card",
+      "url": "https://openai.com/index/gpt-5-5-instant-system-card",
+      "authors": "OpenAI",
+      "company": [
+        "OpenAI"
+      ],
+      "source": "openai_research_blog",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "summary": "OpenAI 发布 GPT-5.5 Instant 系统卡，把 ChatGPT 默认模型升级为更短、更准、更个性化的版本。内部评测显示在医学/法律/金融等高风险 prompt 上幻觉率比 GPT-5.3 Instant 下降 52.5%，回答平均字数减少 30.2%、行数减少 29.2%，并首次进入「高能力」网络安全与生物领域分级。模型同时强化工具调用、自检自驱与人格一致性，在 ChatGPT 全量与 API（chat-latest）滚动上线。",
+      "key_insight": "对于以 LLM 为答案生成端的社区搜索/问答产品而言，幻觉减半 + 输出更短直接转化为 CTR 与 SAT。同时 GPT-5.5 Instant 「问得少、做得多」的特性把单轮成本拉低，是把 AI 答案接入社区搜索主线流量的窗口期信号。值得关注的是 OpenAI 把它定为高能力网络安全/生物模型，意味着开放部署需要补一层 PSafety 评估，UGC 平台需提前规划 jailbreak/合规防护。"
+    },
+    {
+      "rank": 10,
+      "id": "blog_rss:openai_research_blog:https://openai.com/index/new-ways-to-buy-chatgpt-ads",
+      "title": "New ways to buy ChatGPT ads",
+      "url": "https://openai.com/index/new-ways-to-buy-chatgpt-ads",
+      "authors": "OpenAI",
+      "company": [
+        "OpenAI"
+      ],
+      "source": "openai_research_blog",
+      "published": "2026-05-05",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "total_score": 3.1,
+      "summary": "OpenAI 在 ChatGPT 中开放广告自助投放：beta 版 Ads Manager、CPC 出价、增强型衡量工具，同时强调隐私分隔——广告与对话流分离，并未把 chat 内容用于广告定向。这是生成式搜索时代的首次主流商业化信号，为 LLM 入口接入广告变现给出了产品形态范本。",
+      "key_insight": "对内容平台具有强战略意义：当 AI 答案逐步替代传统搜索结果，广告系统也要同步迁移到「对话流广告」形态。OpenAI 选择「对话与广告分离 + CPC 自助」的模型，避开了 chat 内容被广告污染的信任风险，对国内社区做生成式搜索商业化具有借鉴价值——保护语义可信度同时给商家提供清晰可控的投放接口，是平衡用户体验与营收的现实路径。"
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:lightgbm-org/LightGBM",
+      "title": "LightGBM: A fast, distributed, high performance gradient boosting (GBT, GBDT, GBRT, GBM or MART) framework based on decision tree algorithms, used for ranking, classification and many other machine learning tasks.",
+      "authors": "lightgbm-org",
+      "abstract": "A fast, distributed, high performance gradient boosting (GBT, GBDT, GBRT, GBM or MART) framework based on decision tree algorithms, used for ranking, classification and many other machine learning tasks.",
+      "url": "https://github.com/lightgbm-org/LightGBM",
+      "source": "github",
+      "published": "2016-08-05",
+      "discovered_at": "2026-05-05",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "lightgbm-org/LightGBM",
+        "owner": "lightgbm-org",
+        "description": "A fast, distributed, high performance gradient boosting (GBT, GBDT, GBRT, GBM or MART) framework based on decision tree algorithms, used for ranking, classification and many other machine learning tasks.",
+        "created_at": "2016-08-05T05:45:50Z",
+        "updated_at": "2026-05-05",
+        "pushed_at": "2026-05-04",
+        "stargazers_count": 18318,
+        "language": "C++",
+        "topics": [
+          "data-mining",
+          "decision-trees",
+          "distributed",
+          "gbdt",
+          "gbm",
+          "gbrt",
+          "gradient-boosting",
+          "kaggle",
+          "lightgbm",
+          "machine-learning",
+          "microsoft",
+          "parallel",
+          "python",
+          "r"
+        ]
+      },
+      "description": "A fast, distributed, high performance gradient boosting (GBT, GBDT, GBRT, GBM or MART) framework based on decision tree algorithms, used for ranking, classification and many other machine learning tasks.",
+      "language": "C++",
+      "stars": 18318,
+      "created_at": "2016-08-05",
+      "rank": 1
+    },
+    {
+      "id": "github:catboost/catboost",
+      "title": "catboost: A fast, scalable, high performance Gradient Boosting on Decision Trees library, used for ranking, classification, regression and other machine learning tasks for Python, R, Java, C++. Supports computation on CPU and GPU.",
+      "authors": "catboost",
+      "abstract": "A fast, scalable, high performance Gradient Boosting on Decision Trees library, used for ranking, classification, regression and other machine learning tasks for Python, R, Java, C++. Supports computation on CPU and GPU.",
+      "url": "https://github.com/catboost/catboost",
+      "source": "github",
+      "published": "2017-07-18",
+      "discovered_at": "2026-05-05",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "catboost/catboost",
+        "owner": "catboost",
+        "description": "A fast, scalable, high performance Gradient Boosting on Decision Trees library, used for ranking, classification, regression and other machine learning tasks for Python, R, Java, C++. Supports computation on CPU and GPU.",
+        "created_at": "2017-07-18T05:29:04Z",
+        "updated_at": "2026-05-05",
+        "pushed_at": "2026-05-05",
+        "stargazers_count": 8930,
+        "language": "C++",
+        "topics": [
+          "big-data",
+          "catboost",
+          "categorical-features",
+          "coreml",
+          "cuda",
+          "data-mining",
+          "data-science",
+          "decision-trees",
+          "gbdt",
+          "gbm",
+          "gpu",
+          "gpu-computing",
+          "gradient-boosting",
+          "kaggle",
+          "machine-learning",
+          "python",
+          "r",
+          "tutorial"
+        ]
+      },
+      "description": "A fast, scalable, high performance Gradient Boosting on Decision Trees library, used for ranking, classification, regression and other machine learning tasks for Python, R, Java, C++. Supports computation on CPU and GPU.",
+      "language": "C++",
+      "stars": 8930,
+      "created_at": "2017-07-18",
+      "rank": 2
+    },
+    {
+      "id": "github:apple/embedding-atlas",
+      "title": "embedding-atlas: Embedding Atlas is a tool that provides interactive visualizations for large embeddings. It allows you to visualize, cross-filter, and search embeddings and metadata.",
+      "authors": "apple",
+      "abstract": "Embedding Atlas is a tool that provides interactive visualizations for large embeddings. It allows you to visualize, cross-filter, and search embeddings and metadata.",
+      "url": "https://github.com/apple/embedding-atlas",
+      "source": "github",
+      "published": "2025-05-07",
+      "discovered_at": "2026-05-05",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "apple/embedding-atlas",
+        "owner": "apple",
+        "description": "Embedding Atlas is a tool that provides interactive visualizations for large embeddings. It allows you to visualize, cross-filter, and search embeddings and metadata.",
+        "created_at": "2025-05-07T00:56:44Z",
+        "updated_at": "2026-05-05",
+        "pushed_at": "2026-05-01",
+        "stargazers_count": 4760,
+        "language": "TypeScript",
+        "topics": [
+          "embedding",
+          "visualization"
+        ]
+      },
+      "description": "Embedding Atlas is a tool that provides interactive visualizations for large embeddings. It allows you to visualize, cross-filter, and search embeddings and metadata.",
+      "language": "TypeScript",
+      "stars": 4760,
+      "created_at": "2025-05-07",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K2.5",
+      "title": "moonshotai/Kimi-K2.5",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.5",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2775,
+      "language": "model",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-04-30",
+      "published": "2026-01-01",
+      "discovered_at": "2026-05-05",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K2.5",
+        "likes": 2775,
+        "downloads": 2156569,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k25",
+          "feature-extraction",
+          "compressed-tensors",
+          "image-text-to-text",
+          "conversational",
+          "custom_code",
+          "arxiv:2602.02276",
+          "license:other",
+          "eval-results",
+          "region:us"
+        ],
+        "created_at": "2026-01-01T06:06:03.000Z",
+        "last_modified": "2026-04-30T03:56:40.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1203,
+      "language": "model",
+      "created_at": "2026-04-14",
+      "updated_at": "2026-04-30",
+      "published": "2026-04-14",
+      "discovered_at": "2026-05-05",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K2.6",
+        "likes": 1203,
+        "downloads": 892962,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k25",
+          "feature-extraction",
+          "compressed-tensors",
+          "image-text-to-text",
+          "conversational",
+          "custom_code",
+          "arxiv:2602.02276",
+          "license:other",
+          "eval-results",
+          "region:us"
+        ],
+        "created_at": "2026-04-14T04:23:36.000Z",
+        "last_modified": "2026-04-30T03:21:16.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_50",
+      "title": "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_50",
+      "authors": "Qwen",
+      "description": "tags: sparse-autoencoder, sae, mechanistic-interpretability, interpretability, qwen-scope, en, base_model:Qwen/Qwen3.5-27B, base_model:finetune:Qwen/Qwen3.5-27B",
+      "abstract": "tags: sparse-autoencoder, sae, mechanistic-interpretability, interpretability, qwen-scope, en, base_model:Qwen/Qwen3.5-27B, base_model:finetune:Qwen/Qwen3.5-27B",
+      "url": "https://huggingface.co/Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_50",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 28,
+      "language": "model",
+      "created_at": "2026-04-27",
+      "updated_at": "2026-04-30",
+      "published": "2026-04-27",
+      "discovered_at": "2026-05-05",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_50",
+        "likes": 28,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "sparse-autoencoder",
+          "sae",
+          "mechanistic-interpretability",
+          "interpretability",
+          "qwen-scope",
+          "en",
+          "base_model:Qwen/Qwen3.5-27B",
+          "base_model:finetune:Qwen/Qwen3.5-27B",
+          "license:other",
+          "region:us"
+        ],
+        "created_at": "2026-04-27T03:39:42.000Z",
+        "last_modified": "2026-04-30T08:47:23.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_space:Qwen/QwenScope",
+      "title": "Qwen/QwenScope",
+      "authors": "Qwen",
+      "description": "tags: gradio, region:us",
+      "abstract": "tags: gradio, region:us",
+      "url": "https://huggingface.co/spaces/Qwen/QwenScope",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_space",
+      "stars": 14,
+      "language": "space",
+      "created_at": "2026-04-29",
+      "updated_at": "2026-04-30",
+      "published": "2026-04-29",
+      "discovered_at": "2026-05-05",
+      "retrieval_meta": {
+        "repo_type": "space",
+        "repo_id": "Qwen/QwenScope",
+        "likes": 14,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "gradio",
+          "region:us"
+        ],
+        "created_at": "2026-04-29T07:33:01.000Z",
+        "last_modified": "2026-04-30T07:53:19.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_100",
+      "title": "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_100",
+      "authors": "Qwen",
+      "description": "tags: sparse-autoencoder, sae, mechanistic-interpretability, interpretability, qwen-scope, en, base_model:Qwen/Qwen3.5-27B, base_model:finetune:Qwen/Qwen3.5-27B",
+      "abstract": "tags: sparse-autoencoder, sae, mechanistic-interpretability, interpretability, qwen-scope, en, base_model:Qwen/Qwen3.5-27B, base_model:finetune:Qwen/Qwen3.5-27B",
+      "url": "https://huggingface.co/Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_100",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 10,
+      "language": "model",
+      "created_at": "2026-04-27",
+      "updated_at": "2026-04-30",
+      "published": "2026-04-27",
+      "discovered_at": "2026-05-05",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_100",
+        "likes": 10,
+        "downloads": 0,
+        "pipeline_tag": "",
+        "tags": [
+          "sparse-autoencoder",
+          "sae",
+          "mechanistic-interpretability",
+          "interpretability",
+          "qwen-scope",
+          "en",
+          "base_model:Qwen/Qwen3.5-27B",
+          "base_model:finetune:Qwen/Qwen3.5-27B",
+          "license:other",
+          "region:us"
+        ],
+        "created_at": "2026-04-27T03:39:43.000Z",
+        "last_modified": "2026-04-30T08:47:26.000Z"
+      },
+      "rank": 8
+    }
+  ]
+}

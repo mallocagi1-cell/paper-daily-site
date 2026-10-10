@@ -1,0 +1,280 @@
+{
+  "date": "2026-06-16",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 55,
+    "papers_selected": 7,
+    "score_min": 3.0,
+    "score_max": 4.5
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2606.14127",
+      "dedup_id": "arxiv:oai:arXiv.org:2606.14127",
+      "title": "CoRe: A Continuously Reward-Finetuned LLM Query Rewriter for Multi-Stage Context-Aware Relevance in Web-Scale Video Search",
+      "url": "https://arxiv.org/abs/2606.14127",
+      "authors": "Yilin Wen, Rong Yang, Xiaojia Chang, Hong Sun, Gefu Tang, Chunhui Liu, Jeffrey Chen, Zeyu Ma, Lisong Qiu, Xiaochuan Fan, Congjia Yu, Quan Zhou, Yuheng Chen, Zian Wang",
+      "company": [],
+      "source": "arxiv",
+      "source_detail": "",
+      "published": "2026-06-15",
+      "total_score": 4.5,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.7,
+      "summary": "针对生产环境 LLM query 改写器的两难——奖励要反映改写如何被线上排序器消费，训练又必须便宜到能随数据漂移持续重训——提出 CoRe，已在某大型短视频搜索引擎按周重训上线超过 5 个月。奖励直接取自已部署的多模态相关性模型，并采用与生产融合公式一致的乘性比值形式，消除离线奖励代理与线上的偏差；半在线 Mixed Preference Optimization 用 DPO 式成对目标只对采样轨迹的 top-k/bottom-k 子集回传梯度，配合分阶段结构把训练器/推理服务的参数同步从每步降到每阶段，使百万级周训练量可承受。",
+      "key_insight": "这是少见的把 RL query 改写做到长期线上、按周迭代的工业系统。关键设计是让奖励复用已部署的相关性模型并复刻线上融合代数，避免离线指标与线上脱节；再用 top-k/bottom-k 子集采样加分阶段同步把成本压到可持续重训。社区搜索做 LLM query 改写/扩展时，可直接参考以线上排序器为奖励源、半在线偏好优化为训练方式的做法来对齐训练目标与线上相关性。",
+      "deep_reading": {
+        "paper_id": "arxiv:2606.14127",
+        "title": "CoRe: A Continuously Reward-Finetuned LLM Query Rewriter for Multi-Stage Context-Aware Relevance in Web-Scale Video Search",
+        "status": "completed",
+        "content": "## CoRe: 持续奖励微调的 LLM Query 改写器（TikTok / ByteDance）深度解读\n\n### 1. 问题与动机\n生产环境的 LLM query 改写器有一个根本张力：训练奖励必须反映\"改写最终如何被线上 ranker 消费\"，但训练过程又要便宜到能随数据漂移做持续重训。短视频搜索的场景尤其特殊——用户往往在刷到某条内容后立即发起搜索，上下文很窄（仅最后浏览的文档 d_last），但有密集的后验反馈（展示结果上的点击/划走）。此前一代方法 SAR 用粗粒度的群体聚合信号改善排序，rewrite improvement rate（RIR）只有 47.4%，朴素 7B baseline 也仅 47.6%。CoRe 的出发点是：用一个与生产排序融合代数同构的奖励来训练 7B LLM 改写器，并把它做成可按周持续重训上线的系统，已在 TikTok 短视频搜索连续运行超过 5 个月（2025-12 至 2026-05）。\n\n### 2. 方法详解\n**奖励设计（核心）**：奖励源直接取自已部署的多模态相关性模型（文本/多模态分量权重 0.33/0.67），采用乘性比值形式（Eq.2）以复刻线上 ranking-fusion 代数：硬负例比值 S_pos(q̃)^(1+γ)/S_neg(q̃) 与易负例比值 (S_pos/S_rand)^αR 相乘，γ=0.1、αR=0.05、clip 到 [0.05, 20]。文档池分三类：严格点击正例 D⁺（按 strictCTR 加权）、用户看到却未操作的硬负例 D⁻（按 noActionRate 加权）、5 篇随机语料作易负例 D^rand（不加权）。为防止\"啰嗦刷分\"的 reward hacking，加了长度-停止惩罚 min(L_target/L,1)^λL × β_cut^𝟙_cut（λL=0.05、β_cut=0.98、L_target=25、L_max=30 tokens），并按四个内容安全分剔除正例池前 2%。\n\n**半在线 Mixed Preference Optimization（MPO）**：训练分阶段（初始 PP=4 个 phase），每个 phase 内：① 对每条训练实例从 π_{θ_{p-1}} 采样 N=30 条改写；② 在奖励下打分；③ 用拒绝采样抽偏好对——默认取 top-k vs bottom-k（k=2）并过滤 margin δ_pair，若原始 query 反超改写超过 δ_raw 则把原始 query 与 k² 条采样改写配对；④ 跑一个 MPO epoch；⑤ phase 边界做 cosine warm restart。效率关键在于：GRPO 要对全部 N 条 rollout 算策略梯度，而 DPO 式成对目标只回传 top-k/bottom-k 子集——这是训练提效的主因；分阶段结构把参数同步从 O(steps) 降到 O(phases)，便于把 reward 调用批到低峰期。\n\n**MPO 损失（Eq.4）**三项：DPO 项 -log σ(β[r_θ(q̃⁺)-r_θ(q̃⁻)])、BCO 绝对校准项（防止 chosen/rejected 一起被压低）、SFT 正则（把策略锚在高奖励改写附近），权重 (w_p,w_q,w_g)=(1.0,0.1,0.1)、β=0.1。\n\n### 3. 核心技术贡献\n（1）**生产对齐的奖励**：把奖励直接锚在已部署的多模态相关性模型上，并用与线上融合公式同构的乘性比值形式，从根上缩小了\"离线代理奖励 vs 线上消费\"的仿真-生产差距——这是离线 reward proxy 一直补不上的缺口。（2）**半在线 MPO 把成本压到可承受**：DPO 式只回传 top-k/bottom-k 子集 + 分阶段参数同步，使每周百万级实例（单区约 2.4×10⁶）的重训在算力上可行；并用 MPO 而非纯 DPO 解决了 joint-suppression（受控对比中纯 DPO 在 10K 步把 chosen log-prob 从 -20 拉到 -100，MPO 只到 -10）。（3）**自动晋级门控**：3 个 reward-like 指标（r_main、S_pos、r_rand）必须全部严格变好，且 4 个稳定性指标（top10 熵、surprisal、平均 token 长、stop_rate）必须在界内，才允许晋级——把\"靠刷头部奖励却牺牲稳定性\"的候选挡在门外。\n\n### 4. 实验结果分析\n**离线（4 个前置 phase）**：reward 从 SAR 的 1.055 提升到 Phase4 的 1.231，RIR 从 47.4% 提升到 58.9%，每个 phase 增量大致相等。**线上 A/B**：配置 A（Finerank 上线）在 strict CTR、long-click CTR、人工 side-by-side 偏好、平均相关性因子、画面负面安全等指标上均显著为正，且 change-query ratio（用户改写 query 的比例）显著下降；配置 B（Recall+Rawrank，叠加在 A 之上）进一步全面提升。**消融**：① 长度-停止惩罚把平均 token 长 27.56→22.89、stop_rate 0.82→0.38，同时 r_main 1.334→1.352、S_pos 0.374→0.394；② 损失形式（7B backbone）Vanilla reward 1.60/RIR 60.3%、DPO 1.89/63.9%、SFT-DPO 1.88/64.2%、MPO 1.93/66.4%（生产选择）——值得注意的是 SFT-then-DPO 反而不如纯 DPO，作者认为 SFT 预训练阶段过早约束了探索；③ γ=0 使平均相关性因子掉 0.71%，去掉安全过滤会使 safety-flag 率升 0.5%，纯文本相关性奖励会让 finerank 收益减半；④ 7B 反而优于 24B（reward 1.60 vs 1.40）。生产记录：20 次周度重训晋级 16 次（80% 接受率），其中 3 次仅被稳定性指标拦下、1 次因主奖励回退被拒。\n\n### 5. 局限与未来方向\n作者明确指出：（1）**奖励目标会漂移**——用已部署相关性模型当奖励源虽然缩小了仿真-生产差距，但也把奖励目标的控制权让了出去，线上模型升级会移动奖励值（3 月一次升级造成 Δr_main≈+0.07、Δr_rand≈-0.6 的单周扰动，下一周自愈）；（2）应引入 **engaging-aware 项**，把策略同时推向\"相关性模型给高分且用户确实互动\"的文档；（3）**瓶颈与工作负载相关**——本场景以逐步梯度计算为主、reward 调用调度为辅，若 reward 调用本身才是主成本，则两者主次互换；（4）稳定性指标需精心设计——附录中的 verbosity reward-hacking 完全是 reward-like 指标看不见的，必须靠结构化稳定性指标兜底。\n\n### 6. 工业实践意义\n对搜索/推荐从业者，CoRe 给出几条可直接借鉴的设计：（1）**让奖励复刻线上消费方式**——用与生产融合公式同构的乘性比值奖励、并直接取线上相关性模型为奖励源，比离线代理更贴近真实收益；（2）**大规模偏好优化用 top-k/bottom-k 成对 + 分阶段同步**控成本，是把 RLHF 类训练做到每周百万级可持续重训的务实路径；（3）**晋级必须同时卡奖励和稳定性**——本案例 80% 接受率里有 3 次仅靠稳定性指标拦截，说明只看头部指标会放过 reward hacking。部署上，CoRe 采用近线（near-line）架构：7B 改写器在专用推理实例上异步生成、结果进内存 KV cache（稳态命中 >90%），线上排序查 cache、miss 则回退原始信号；且改写以**加性并行路**接入（Recall 召回并集、Rawrank 作为 L0/L1 融合因子相乘、Finerank 喂入全相关性因子），从不替换原有相关性机制——\"加了改写在极限情况下也不会比不加更差\"，把故障爆炸半径控制住。对社区 UGC 短文本搜索，这套\"生产对齐奖励 + 持续重训 + 稳定性门控 + 加性接入\"的范式，对 query 理解链路的长期迭代很有参考价值。",
+        "content_html": "<h2>CoRe: 持续奖励微调的 LLM Query 改写器（TikTok / ByteDance）深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>生产环境的 LLM query 改写器有一个根本张力：训练奖励必须反映&quot;改写最终如何被线上 ranker 消费&quot;，但训练过程又要便宜到能随数据漂移做持续重训。短视频搜索的场景尤其特殊——用户往往在刷到某条内容后立即发起搜索，上下文很窄（仅最后浏览的文档 d_last），但有密集的后验反馈（展示结果上的点击/划走）。此前一代方法 SAR 用粗粒度的群体聚合信号改善排序，rewrite improvement rate（RIR）只有 47.4%，朴素 7B baseline 也仅 47.6%。CoRe 的出发点是：用一个与生产排序融合代数同构的奖励来训练 7B LLM 改写器，并把它做成可按周持续重训上线的系统，已在 TikTok 短视频搜索连续运行超过 5 个月（2025-12 至 2026-05）。</p>\n<h3>2. 方法详解</h3>\n<p><strong>奖励设计（核心）</strong>：奖励源直接取自已部署的多模态相关性模型（文本/多模态分量权重 0.33/0.67），采用乘性比值形式（Eq.2）以复刻线上 ranking-fusion 代数：硬负例比值 S_pos(q̃)^(1+γ)/S_neg(q̃) 与易负例比值 (S_pos/S_rand)^αR 相乘，γ=0.1、αR=0.05、clip 到 [0.05, 20]。文档池分三类：严格点击正例 D⁺（按 strictCTR 加权）、用户看到却未操作的硬负例 D⁻（按 noActionRate 加权）、5 篇随机语料作易负例 D^rand（不加权）。为防止&quot;啰嗦刷分&quot;的 reward hacking，加了长度-停止惩罚 min(L_target/L,1)^λL × β_cut^𝟙_cut（λL=0.05、β_cut=0.98、L_target=25、L_max=30 tokens），并按四个内容安全分剔除正例池前 2%。</p>\n<p><strong>半在线 Mixed Preference Optimization（MPO）</strong>：训练分阶段（初始 PP=4 个 phase），每个 phase 内：① 对每条训练实例从 π_{θ_{p-1}} 采样 N=30 条改写；② 在奖励下打分；③ 用拒绝采样抽偏好对——默认取 top-k vs bottom-k（k=2）并过滤 margin δ_pair，若原始 query 反超改写超过 δ_raw 则把原始 query 与 k² 条采样改写配对；④ 跑一个 MPO epoch；⑤ phase 边界做 cosine warm restart。效率关键在于：GRPO 要对全部 N 条 rollout 算策略梯度，而 DPO 式成对目标只回传 top-k/bottom-k 子集——这是训练提效的主因；分阶段结构把参数同步从 O(steps) 降到 O(phases)，便于把 reward 调用批到低峰期。</p>\n<p><strong>MPO 损失（Eq.4）</strong>三项：DPO 项 -log σ(β[r_θ(q̃⁺)-r_θ(q̃⁻)])、BCO 绝对校准项（防止 chosen/rejected 一起被压低）、SFT 正则（把策略锚在高奖励改写附近），权重 (w_p,w_q,w_g)=(1.0,0.1,0.1)、β=0.1。</p>\n<h3>3. 核心技术贡献</h3>\n<p>（1）<strong>生产对齐的奖励</strong>：把奖励直接锚在已部署的多模态相关性模型上，并用与线上融合公式同构的乘性比值形式，从根上缩小了&quot;离线代理奖励 vs 线上消费&quot;的仿真-生产差距——这是离线 reward proxy 一直补不上的缺口。（2）<strong>半在线 MPO 把成本压到可承受</strong>：DPO 式只回传 top-k/bottom-k 子集 + 分阶段参数同步，使每周百万级实例（单区约 2.4×10⁶）的重训在算力上可行；并用 MPO 而非纯 DPO 解决了 joint-suppression（受控对比中纯 DPO 在 10K 步把 chosen log-prob 从 -20 拉到 -100，MPO 只到 -10）。（3）<strong>自动晋级门控</strong>：3 个 reward-like 指标（r_main、S_pos、r_rand）必须全部严格变好，且 4 个稳定性指标（top10 熵、surprisal、平均 token 长、stop_rate）必须在界内，才允许晋级——把&quot;靠刷头部奖励却牺牲稳定性&quot;的候选挡在门外。</p>\n<h3>4. 实验结果分析</h3>\n<p><strong>离线（4 个前置 phase）</strong>：reward 从 SAR 的 1.055 提升到 Phase4 的 1.231，RIR 从 47.4% 提升到 58.9%，每个 phase 增量大致相等。<strong>线上 A/B</strong>：配置 A（Finerank 上线）在 strict CTR、long-click CTR、人工 side-by-side 偏好、平均相关性因子、画面负面安全等指标上均显著为正，且 change-query ratio（用户改写 query 的比例）显著下降；配置 B（Recall+Rawrank，叠加在 A 之上）进一步全面提升。<strong>消融</strong>：① 长度-停止惩罚把平均 token 长 27.56→22.89、stop_rate 0.82→0.38，同时 r_main 1.334→1.352、S_pos 0.374→0.394；② 损失形式（7B backbone）Vanilla reward 1.60/RIR 60.3%、DPO 1.89/63.9%、SFT-DPO 1.88/64.2%、MPO 1.93/66.4%（生产选择）——值得注意的是 SFT-then-DPO 反而不如纯 DPO，作者认为 SFT 预训练阶段过早约束了探索；③ γ=0 使平均相关性因子掉 0.71%，去掉安全过滤会使 safety-flag 率升 0.5%，纯文本相关性奖励会让 finerank 收益减半；④ 7B 反而优于 24B（reward 1.60 vs 1.40）。生产记录：20 次周度重训晋级 16 次（80% 接受率），其中 3 次仅被稳定性指标拦下、1 次因主奖励回退被拒。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确指出：（1）<strong>奖励目标会漂移</strong>——用已部署相关性模型当奖励源虽然缩小了仿真-生产差距，但也把奖励目标的控制权让了出去，线上模型升级会移动奖励值（3 月一次升级造成 Δr_main≈+0.07、Δr_rand≈-0.6 的单周扰动，下一周自愈）；（2）应引入 <strong>engaging-aware 项</strong>，把策略同时推向&quot;相关性模型给高分且用户确实互动&quot;的文档；（3）<strong>瓶颈与工作负载相关</strong>——本场景以逐步梯度计算为主、reward 调用调度为辅，若 reward 调用本身才是主成本，则两者主次互换；（4）稳定性指标需精心设计——附录中的 verbosity reward-hacking 完全是 reward-like 指标看不见的，必须靠结构化稳定性指标兜底。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐从业者，CoRe 给出几条可直接借鉴的设计：（1）<strong>让奖励复刻线上消费方式</strong>——用与生产融合公式同构的乘性比值奖励、并直接取线上相关性模型为奖励源，比离线代理更贴近真实收益；（2）<strong>大规模偏好优化用 top-k/bottom-k 成对 + 分阶段同步</strong>控成本，是把 RLHF 类训练做到每周百万级可持续重训的务实路径；（3）<strong>晋级必须同时卡奖励和稳定性</strong>——本案例 80% 接受率里有 3 次仅靠稳定性指标拦截，说明只看头部指标会放过 reward hacking。部署上，CoRe 采用近线（near-line）架构：7B 改写器在专用推理实例上异步生成、结果进内存 KV cache（稳态命中 &gt;90%），线上排序查 cache、miss 则回退原始信号；且改写以<strong>加性并行路</strong>接入（Recall 召回并集、Rawrank 作为 L0/L1 融合因子相乘、Finerank 喂入全相关性因子），从不替换原有相关性机制——&quot;加了改写在极限情况下也不会比不加更差&quot;，把故障爆炸半径控制住。对社区 UGC 短文本搜索，这套&quot;生产对齐奖励 + 持续重训 + 稳定性门控 + 加性接入&quot;的范式，对 query 理解链路的长期迭代很有参考价值。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2606.13814",
+      "dedup_id": "arxiv:oai:arXiv.org:2606.13814",
+      "title": "TASR: Training-Free Adaptive Stopping for Iterative Retrieval",
+      "url": "https://arxiv.org/abs/2606.13814",
+      "authors": "Adrian Kieback, Uyiosa Philip Amadasun, Aman Chadha, Aaron Elkins",
+      "company": [],
+      "source": "arxiv",
+      "source_detail": "",
+      "published": "2026-06-15",
+      "total_score": 4.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.25,
+      "adjusted_score": 4.3,
+      "summary": "迭代式 RAG agent 常在模型已收敛答案后继续检索，这些调用既不改预测也不改证据，纯属浪费；已有停止策略需从标注轨迹学习，换模型或任务就要重训。TASR 提出一条免训练判据：当模型重复上一轮归一化答案、且经等渗校准的 logit margin 超过 0.25 时即停止，该阈值在全部 24 个(模型,检索器,语料)配置下固定不变。在 3 模型×2 数据集的干扰网格上，TASR 用 fixed-k=5 的 62.6% 调用量保留其 94.8% 的 macro F1，并比 fixed-k=3 高 +3.42 F1。",
+      "key_insight": "停止时机的判断不一定要训练分类器或 value head，答案稳定加置信度阈值这条一行规则就能跨模型/检索器迁移，省去为每个新系统重训停止器的成本。对做 agentic 搜索/RAG 的团队，这是立即可用的降本手段：在多轮检索里加一个收敛判据即可砍掉约 37% 的检索调用而几乎不掉指标，特别适合按 query 复杂度自适应控制检索预算。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2606.14179",
+      "dedup_id": "arxiv:oai:arXiv.org:2606.14179",
+      "title": "CacheRL:Multi-Turn Tool-Calling Agents via Cached Rollouts and Hybrid Reward",
+      "url": "https://arxiv.org/abs/2606.14179",
+      "authors": "Md Amirul Islam, Sumiran Thakur, Huancheng Chen, Su Min Park, Jiayun Wang, Gyuhak Kim",
+      "company": [],
+      "source": "arxiv",
+      "source_detail": "",
+      "published": "2026-06-15",
+      "total_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.8,
+      "summary": "CacheRL 训练小型 agent 基座模型，在多步工具调用任务上达 92% 过程准确率，逼近 GPT-5 的 94%，而所需算力少 100 倍。它针对三个实际训练难题：从大模型规模化迁移工具调用知识、无需昂贵的在线工具执行即可做 RL、从带噪缓存环境稳健学习。三项创新为：混合思维轨迹流水线用 LLM 生成的推理痕迹增广轨迹，教模型调用什么工具以及为什么；CacheAgentLoop 用三级模糊缓存消除在线执行成本，并以 token 级 mask 保持轨迹保真；缓存层级感知的奖励动态调节答案质量权重以避免劣化。",
+      "key_insight": "让小模型在多步工具调用上接近前沿大模型的关键，是把为什么这样调用的推理痕迹注入训练数据，并用缓存回放替代昂贵的真实工具执行来做 RL。对要落地搜索/问答 agent 的团队，这条路线把 agent RL 的训练成本压低约两个数量级；三级模糊缓存加 token 级 mask 的设计尤其适合工具响应不稳定、在线执行昂贵的场景。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2606.13685",
+      "dedup_id": "arxiv:oai:arXiv.org:2606.13685",
+      "title": "The Coin Flip Judge? Reliability and Bias in LLM-as-a-Judge Evaluation",
+      "url": "https://arxiv.org/abs/2606.13685",
+      "authors": "Abel Yagubyan",
+      "company": [],
+      "source": "arxiv",
+      "source_detail": "",
+      "published": "2026-06-15",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.6,
+      "summary": "LLM-as-a-Judge 被广泛用于排名模型输出、训练奖励模型和刷榜，但它重复运行的可靠性少有刻画。作者对 2 个 OpenAI 评委(GPT-4o-mini、GPT-4.1-mini)在 10 类共 29 个任务上各做 50 次成对与 50 次逐点重复评测，并辅以温度与 prompt 敏感性消融。结果显示：成对偏好平均有 13.6% 会翻转，28% 的问题翻转率超 20%，单题最高达 56%；GPT-4o-mini 存在显著首位偏置(72% 选 A，p=0.024)；而逐点分差很小(10 分制仅 0.19–0.36)且总体不显著。",
+      "key_insight": "用 LLM 当评委做离线评估时，单次成对判断的随机性可能高到接近抛硬币，且存在系统性首位偏置，直接拿来刷榜或训练奖励模型风险很大。对搜索/推荐做 LLM 自动评测的团队，应做多次重复取多数、随机化候选顺序、并优先看逐点分而非单次成对结论，同时把评测噪声纳入显著性判断。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2606.13904",
+      "dedup_id": "arxiv:oai:arXiv.org:2606.13904",
+      "title": "SANA: What Matters for QA Agents over Massive Data Lakes?",
+      "url": "https://arxiv.org/abs/2606.13904",
+      "authors": "Austin Senna Wijaya, Jiaxiang Liu, Haonan Wang, Eugene Wu",
+      "company": [],
+      "source": "arxiv",
+      "source_detail": "",
+      "published": "2026-06-15",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "summary": "数据湖上的探索式问答(EQA)需要 LLM agent 发现相关源、分析检索数据并据中间结果调整动作；端到端准确率无法区分失败发生在搜索、规划、数据分析，还是 agent 的动作策略(决定下一步做什么、何时提交答案)。SANA 把 EQA 任务转成含黄金源序列、净化子问题和执行记录的运行时画像，据此构造理想化的搜索/规划/分析工具逐一消融，残差即为动作策略失败的诊断证据。作者用它改造 LakeQA、KramaBench 两个基准，评测了轻量与中等规模的 agent。",
+      "key_insight": "评估搜索 agent 不能只看最终准确率，要能把失败归因到搜索、规划、分析、动作策略哪一环。SANA 的理想化工具消融给出一套可复用的诊断方法：逐个把某能力替换为黄金版，看准确率回升多少来定位瓶颈。对自研搜索/问答 agent 的团队，这是排查到底是召回不行还是决策不行的实用评测手段。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2606.13686",
+      "dedup_id": "arxiv:oai:arXiv.org:2606.13686",
+      "title": "Benchmarking Web Agent Safety under E-commerce Deceptive Interfaces",
+      "url": "https://arxiv.org/abs/2606.13686",
+      "authors": "Zijing Shi, Meng Fang, Ling Chen",
+      "company": [],
+      "source": "arxiv",
+      "source_detail": "",
+      "published": "2026-06-15",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "summary": "随着自主 web agent 被部署执行真实任务，其安全性成为关键问题。作者研究电商场景下 web agent 面对真实欺骗式界面的行为，提出 WebDecept——一个轻量可配置的插件框架，可把欺骗式界面模式受控注入现有 web 环境。基于它实例化了开放网络上常见的 7 类欺骗模式(定向广告、域名重定向、购物诱导等)，在任务执行时注入前端并评测多个多模态 web agent。结果显示当前 web agent 对多类欺骗界面高度易感，基于 prompt 的约束往往不足以缓解这些失败。",
+      "key_insight": "多模态 web agent 在遇到广告诱导、域名重定向等欺骗界面时很容易被带偏，且加 prompt 约束并不可靠，部署购物/导购类 agent 前必须做对抗性界面测试。WebDecept 提供了可配置注入 7 类欺骗模式的红队框架，对要上线交易/电商 agent 的平台，这是评估与加固 agent 安全性的实用工具。"
+    },
+    {
+      "rank": 7,
+      "id": "blog_rss:nvidia_developer_blog:https://developer.nvidia.com/blog/pretrained-to-imagine-fine-tuned-to-act-the-rise-of-world-action-models",
+      "dedup_id": "blog_rss:nvidia_developer_blog:https://developer.nvidia.com/blog/pretrained-to-imagine-fine-tuned-to-act-the-rise-of-world-action-models",
+      "title": "Pretrained to Imagine, Fine-Tuned to Act: The Rise of World-Action Models",
+      "url": "https://developer.nvidia.com/blog/pretrained-to-imagine-fine-tuned-to-act-the-rise-of-world-action-models/",
+      "authors": "NVIDIA Developer Blog",
+      "company": [
+        "NVIDIA"
+      ],
+      "source": "blog_rss",
+      "source_detail": "nvidia_developer_blog",
+      "published": "2026-06-15",
+      "total_score": 3.0,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 2,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.0,
+      "summary": "NVIDIA 这篇博客梳理了 World-Action Model(WAM)的兴起：与从 VLM 骨干起步的 VLA 不同，WAM 从已建模场景动态的视频预训练骨干起步，再适配为机器人控制并预测动作。文章给出三种范式(逆动力学、联合预测、仅表征)与动作整合方式，并列出 DreamZero(Wan 14B 骨干，RoboArena 得分 1750)、LingBot-VA(Wan 2.2-5B，1.6 万小时跨形态预训练)等代表模型，对比 VLA 基线 Pi-0.5(1622)；WAM 带视频生成时每动作块需 590–800ms，约为 Pi-0.5(约 190ms)的 3–4 倍。",
+      "key_insight": "机器人基座的下一代很可能是 WAM 与 VLA 的混合，而非某一路线独大：视频预训练提供世界会如何演变的先验，VLM 提供语言-视觉知识，两者都各有接地缺口。对关注 agent 范式演进的从业者，这给出一个清晰信号：把先想象再行动(预训练世界模型，再微调出动作)作为构建动作型 agent 的组织原则，同时要权衡视频生成带来的 3–4 倍推理延迟。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:modelscope/ms-swift",
+      "title": "ms-swift: Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "url": "https://github.com/modelscope/ms-swift",
+      "source": "github",
+      "description": "Use PEFT or Full-parameter to CPT/SFT/DPO/GRPO 600+ LLMs (Qwen3.6, DeepSeek-V4, GLM-5.1, InternLM3, Llama4, ...) and 300+ MLLMs (Qwen3-VL, Qwen3-Omni, InternVL3.5, Ovis2.5, GLM4.5v, Gemma4, Llava, Phi4, ...) (AAAI 2025).",
+      "language": "Python",
+      "stars": 14515,
+      "created_at": "2023-08-01"
+    },
+    {
+      "rank": 2,
+      "id": "github:huggingface/transformers",
+      "title": "transformers: 🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "url": "https://github.com/huggingface/transformers",
+      "source": "github",
+      "description": "🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "language": "Python",
+      "stars": 161603,
+      "created_at": "2018-10-29"
+    },
+    {
+      "rank": 3,
+      "id": "github:linuxhsj/openclaw-zero-token",
+      "title": "openclaw-zero-token: OpenClaw: Use All Major AI Models NO API Token! Claude/ChatGPT/Gemini/DeepSeek/Doubao/Grok/Qwen/Manus/Kimi",
+      "url": "https://github.com/linuxhsj/openclaw-zero-token",
+      "source": "github",
+      "description": "OpenClaw: Use All Major AI Models NO API Token! Claude/ChatGPT/Gemini/DeepSeek/Doubao/Grok/Qwen/Manus/Kimi",
+      "language": "TypeScript",
+      "stars": 4991,
+      "created_at": "2026-02-23"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:Alibaba-DAMO-Academy/ClinHallu",
+      "title": "Alibaba-DAMO-Academy/ClinHallu",
+      "url": "https://huggingface.co/datasets/Alibaba-DAMO-Academy/ClinHallu",
+      "source": "huggingface",
+      "description": "CLINHALLU Benchmark CLINHALLU is a benchmark for diagnosing stage-wise hallucinations in medical MLLM reasoning. Paper: CLINHALLU: A Benchmark for Diagnosing Stage-Wise Hallucinations in Medical MLLM ReasoningGitHub: alibaba-damo-academy/ClinHallu Benchmark Results Accuracy and s; tags: size_categories:10K<n<100K, format:json, modality:text, library:datasets, library:pandas, library:polars, library:mlcroissant, arxiv:2606.14697",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-06-03"
+    },
+    {
+      "rank": 5,
+      "id": "hf_space:Qwen/Qwen3-TTS",
+      "title": "Qwen/Qwen3-TTS",
+      "url": "https://huggingface.co/spaces/Qwen/Qwen3-TTS",
+      "source": "huggingface",
+      "description": "tags: gradio, region:us",
+      "language": "space",
+      "stars": 1953,
+      "created_at": "2026-01-21"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:moonshotai/Kimi-K2.7-Code",
+      "title": "moonshotai/Kimi-K2.7-Code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.7-Code",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, image-feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "model",
+      "stars": 724,
+      "created_at": "2026-06-11"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:zai-org/SCAIL-2",
+      "title": "zai-org/SCAIL-2",
+      "url": "https://huggingface.co/zai-org/SCAIL-2",
+      "source": "huggingface",
+      "description": "pipeline: image-to-video; tags: diffusers, character-animation, video-generation, pose-driven, diffusion, image-to-video, arxiv:2606.10804, arxiv:2512.05905",
+      "language": "model",
+      "stars": 186,
+      "created_at": "2026-06-09"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:internlm/CapRL-Video-4B",
+      "title": "internlm/CapRL-Video-4B",
+      "url": "https://huggingface.co/internlm/CapRL-Video-4B",
+      "source": "huggingface",
+      "description": "tags: safetensors, qwen3_vl, arxiv:2606.09393, arxiv:2509.22647, license:apache-2.0, region:us",
+      "language": "model",
+      "stars": 9,
+      "created_at": "2026-05-22"
+    }
+  ]
+}

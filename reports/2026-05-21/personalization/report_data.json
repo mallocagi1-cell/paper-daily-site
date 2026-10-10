@@ -1,0 +1,331 @@
+{
+  "date": "2026-05-21",
+  "track": "personalization",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 67,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:oai:arXiv.org:2605.19651",
+      "title": "Divergence Meets Consensus: A Multi-Source Negative Sampling Framework for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2605.19651",
+      "authors": "Yuanzi Li, Lingjie Wang, Jingyu Zhao, Zihang Tian, Yuhan Wang, Lei Wang, Xu Chen",
+      "company": [
+        "RUC"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "序列推荐隐式反馈下的负采样长期被 self-guided hard negative 主导：模型用当前参数挑硬负，结果是采样和模型互相强化、被困局部最优。论文提出 MDCNS（Multi-source Divergence-Consensus），借鉴 Vygotsky 最近发展区理论搭建 Teacher-Peer-Self 三源打分框架：用辅助模型扩大采样空间、引入分歧度过滤、再用共识投票决定最终负样本。在多个公开数据集上 Recall@10 与 NDCG@10 显著优于 DNS、SRNS 等基线。",
+      "key_insight": "核心创新是把负采样从“单模型自洽”改成“多模型分歧 + 共识”——分歧扩展搜索空间避免坍缩，共识抑制噪声。对搜推系统的启示是：硬负样本不必依赖在线全库打分，可以蒸馏出 teacher/peer 离线打分缓存，再用 voting threshold 控制 precision-recall trade-off，工程上比 in-batch hard negative + ANN 召回更可控。",
+      "deep_reading": {
+        "paper_id": "arxiv:oai:arXiv.org:2605.19651",
+        "title": "Divergence Meets Consensus: A Multi-Source Negative Sampling Framework for Sequential Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n序列推荐 (Sequential Recommendation, SR) 在隐式反馈下训练时，几乎所有 hard negative sampling 都属于\"self-guided\"范式——以模型当前打分为依据从候选池里挑硬负样本（如 DNS、SRNS、MixGCF）。作者将这一族方法归为\"L1 级别 self-learning\"，并指出三个被忽视的固有失效模式：(1) **negative self-reinforcement loop**：采样策略与模型当前状态紧耦合，模型一旦挑到坏负样本，下一轮的梯度反过来污染判别能力，循环把模型困在局部最优；(2) **restricted sampling diversity**：负样本只在模型当前关注的 item 子空间内搜索，采样分布逐步坍缩，泛化能力被严重抑制；(3) **inefficient resource allocation**：为挑一个 hard negative 必须对整个候选池打分，绝大多数分数被丢弃，computational cost 与 information gain 不匹配。论文借鉴 Vygotsky 的 Zone of Proximal Development (ZPD) 理论，把单模型自学习扩展为 Teacher-Peer-Self 三方协作，用 divergence 拓展边界、用 consensus 巩固知识，提出 MDCNS (Multi-source Divergence-Consensus for Negative Sampling)。论文已被 SIGIR'26 接收。\n\n## 2. 方法详解\n\nMDCNS 主要由三个模块组成，整套流程是 model-agnostic 的，可即插即用接入任何 SR backbone。\n\n**(1) Multi-source Scoring (3.1)**：对每个用户序列 $S_u$，先从未观测物品空间均匀采样得到候选集 $C_N$（排除历史和 ground-truth 正样本）。随后两个对等的 student 模型——self 和 peer（如 self=SASRec、peer=Mamba4Rec），分别对 $C_N$ 打分，dot product 形式为 $s_{u,v}^* = h_u^* \\cdot e_v$。teacher 模型不是独立训练的网络，而是把两位 student 的打分直接相加：$s^{teacher} = s^{self} + s^{peer}$。这种 additive teacher 极大降低了部署成本，因为它没有第三个参数。\n\n**(2) Divergence Re-ranking (3.2)**：对每个候选 item 计算 divergence score $d_{u,v} = |s^{self} - s^{peer}|$，再把它叠加到原始打分上得到 divergence-aware score $\\tilde{s}_{u,v}^* = s_{u,v}^* + d_{u,v}$。然后对 self/peer/teacher 三个视角分别取 top-M，再在 top-M 池里**均匀采样一个负样本**——既保证 hard 又引入随机性以缓解 false negative。对应损失 $L_{rec} = \\alpha L_{self} + \\beta L_{peer} + \\gamma L_{teacher}$ 是三个负样本视角的 BPR/BCE 加权之和。\n\n**(3) Consensus Distillation (3.3)**：先前对 $C_N$ 计算出的全套分数本来只用了一两个 token，作者把 teacher 的全候选打分作为 soft target，最小化 self 与 teacher 在 $C_N$ 上的 KL 散度 $L_{dis}$。总目标变为 $L_{rec} + \\mu L_{dis}$，几乎免费地利用了已有的 forward 计算。\n\n训练算法见论文 Algorithm 1：每个 epoch 对每条 sequence 走一遍\"候选采样 → 多源打分 → divergence 重排 → 三视角负采样 → 共识蒸馏 → 反传更新\"。**实验默认 backbone 是 SASRec**，loss 使用 BCE 或 BPR，candidate 大小 N、top-M、$\\alpha\\beta\\gamma\\mu$ 视数据集略调。\n\n## 3. 核心技术贡献\n\n**贡献 1：用 peer 模型打破自强化循环**。引入异构 peer（SASRec ↔ Mamba4Rec），让 peer 的归纳偏置主动暴露 self 模型从未关注过的负样本子空间，从根上解掉 self-guided 采样的退化问题——这比 SRNS 用单模型 + uncertainty 估计更稳健，因为后者本质仍是 self-loop。\n\n**贡献 2：以 prediction divergence 量化\"有信息量\"的硬负样本**。divergence 高意味着两个 student 对该 item 看法不一致，对模型学习的边际信息最大。把 divergence 当作 ranking signal 显式加进打分，比 SRNS、AdaSIR 那种基于 uncertainty 的隐式重赋权更直观、训练曲线更稳定（Figure 3）。\n\n**贡献 3：免费的 teacher 蒸馏**。teacher 是 self + peer 的 additive 组合而非独立大模型，KL 蒸馏复用 multi-source 阶段已经算好的全候选分数，几乎不增加 forward 成本，把原本被丢弃的打分转化为额外梯度。\n\n**贡献 4：model-agnostic + loss-agnostic**。在 SASRec、GRU4Rec、FMLP4Rec、LinRec、Mamba4Rec 五种主流 backbone 上，无论 BPR 还是 BCE 损失都能跑通且持续胜过 baseline，证明它不是 backbone-specific trick。\n\n## 4. 实验结果分析\n\n实验覆盖六个公开数据集：Amazon 系列的 Beauty / Toys / Sports / Health（5-core 过滤）、Kuaishou 的 KuaiRand（含随机曝光日志）、LastFM（音乐艺人推荐）。划分 70/20/10，指标 Recall@K、NDCG@K (K ∈ {5,10,20})，paired t-test 显著性 p<0.05。\n\n**主表 (Table 3, SASRec + BPR)**：MDCNS Recall@5 全面领先，相对最强基线提升幅度为 Beauty +39.49%、Sports +23.31%、Toys +16.06%、Health +25.81%、LastFM +15.02%、KuaiRand +12.59%；NDCG@5 提升幅度 11.65%–39.56%。值得注意的是，在最稀疏的 Sports 与 Toys 上提升幅度最大，说明 multi-source 采样确实把模型从局部最优拽了出来。在工业级别的 KuaiRand 上提升相对温和（约 7–13%），符合工业数据噪声多、行为更密集的特征。\n\n**Cross-backbone (Table 4–5)**：在 SASRec / LinRec / FMLP4Rec / GRU4Rec / Mamba4Rec 上 MDCNS 都是 SOTA，证明非 backbone-specific。值得注意 LinRec 与 FMLP4Rec 这种轻量化架构同样受益，意味着 MDCNS 的收益主要来自采样质量而非容量补偿。\n\n**Ablation (Table 6)**：依次剥离 CD → CD+DR → CD+DR+MS 性能阶梯式下降，三者均不可替代。**移除 multi-source scoring (MS) 退化最大**，与作者关于\"打破自强化循环是最关键\"的假设一致；**移除 consensus distillation (CD)** 影响次之，说明 teacher 蒸馏不仅省算力也确实在传递可用知识。\n\n**Training Dynamics (Figure 3)**：值得玩味的反直觉发现是——常规蒸馏会让 student 与 teacher 损失 gap 不断收敛，但 MDCNS 的 KD loss gap 反而长期维持或扩大。作者解释这正是 divergence re-ranking 在主动阻止 teacher 与 self 表征同质化，从而让 teacher 持续提供有效梯度。这条曲线对调参（增大 μ 是否会导致同质化）是个很有用的诊断信号。\n\n## 5. 局限与未来方向\n\n作者在 Conclusion 中明确承认两个局限：(1) **训练成本**——multi-source 架构需要同时维护并 forward self + peer 两个 backbone，训练阶段开销大约翻倍；(2) **效率优化未深入**——目前候选池 $C_N$ 仍是 uniform 采样，未探索更聪明的 candidate pool 构造（如基于流行度或 cluster）。作者明确表态未来会探索\"lighter and more efficient alternatives\"。\n\n另外一些隐含的局限没有在 paper 中讨论：(a) peer 模型架构如何选择——SASRec + Mamba4Rec 这种 transformer + SSM 组合在 inductive bias 上差异较大，但若两者过于相似 divergence 将退化；(b) 推断阶段只用 self 模型，因此论文报告的延迟与原始 backbone 相同；(c) 没有报告 online A/B test，工业线上效果待验证。\n\n## 6. 工业实践意义\n\n对搜索 / 推荐工程团队的核心可借鉴点：\n\n**(1) 不必上线 peer 网络**：MDCNS 的核心 cost 在训练阶段，**线上推断只跑 self 模型**，部署成本与 baseline 完全一致——这是最关键的工业友好属性，意味着可以在不改造 serving 链路的前提下拿到 15–40% 的离线指标提升。\n\n**(2) Peer 模型选择有讲究**：建议选与现有线上 backbone 不同 inductive bias 的架构（线上是 SASRec/Transformer，可以挑 Mamba4Rec 做 peer；线上是 GBDT/MLP，可以挑序列化 Transformer），避免 divergence 退化。Peer 不需要追求强精度，反而需要\"看世界的方式不同\"。\n\n**(3) 复用算力做蒸馏**：consensus distillation 几乎不增加 forward 成本，是把\"原本要丢的全候选打分\"转化为正则信号的一种通用技巧。对 CTR/CVR 排序场景，可以直接借鉴：每个 mini-batch 算 in-batch all-pair score 时，把 teacher（如双塔模型 + 协同过滤召回的混合）打分作为 soft target 蒸进单塔 ranker，既稳泛化又不额外费 GPU。\n\n**(4) 多 gate 负采样替代单一硬负**：直接把\"top-M 内均匀采样\" + \"三视角负样本加权\"的范式搬到曝光未点击负样本里——可以缓解工业数据中 false negative 高发的痛点（曝光未点击不一定 = 真不喜欢）。\n\n**(5) 监控指标**：上线时可以加一个 divergence loss gap 监控曲线，若发现 gap 持续收缩，说明 peer 与 self 出现同质化，需要调整 peer 架构或重启 peer 训练——这是论文 Training Dynamics Analysis 提供的额外运维 insight。\n\n**部署考量**：训练阶段 GPU/时间近似翻倍，但若在 A/B 上能拿到 5–10% 的 nDCG 提升，对大体量推荐场景仍然 ROI 显著；KuaiRand 上 +12% Recall@5 的工业实证给了一个相对保守的预期参考。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>序列推荐 (Sequential Recommendation, SR) 在隐式反馈下训练时，几乎所有 hard negative sampling 都属于&quot;self-guided&quot;范式——以模型当前打分为依据从候选池里挑硬负样本（如 DNS、SRNS、MixGCF）。作者将这一族方法归为&quot;L1 级别 self-learning&quot;，并指出三个被忽视的固有失效模式：(1) <strong>negative self-reinforcement loop</strong>：采样策略与模型当前状态紧耦合，模型一旦挑到坏负样本，下一轮的梯度反过来污染判别能力，循环把模型困在局部最优；(2) <strong>restricted sampling diversity</strong>：负样本只在模型当前关注的 item 子空间内搜索，采样分布逐步坍缩，泛化能力被严重抑制；(3) <strong>inefficient resource allocation</strong>：为挑一个 hard negative 必须对整个候选池打分，绝大多数分数被丢弃，computational cost 与 information gain 不匹配。论文借鉴 Vygotsky 的 Zone of Proximal Development (ZPD) 理论，把单模型自学习扩展为 Teacher-Peer-Self 三方协作，用 divergence 拓展边界、用 consensus 巩固知识，提出 MDCNS (Multi-source Divergence-Consensus for Negative Sampling)。论文已被 SIGIR&#x27;26 接收。</p>\n<h2>2. 方法详解</h2>\n<p>MDCNS 主要由三个模块组成，整套流程是 model-agnostic 的，可即插即用接入任何 SR backbone。</p>\n<p><strong>(1) Multi-source Scoring (3.1)</strong>：对每个用户序列 $S_u$，先从未观测物品空间均匀采样得到候选集 $C_N$（排除历史和 ground-truth 正样本）。随后两个对等的 student 模型——self 和 peer（如 self=SASRec、peer=Mamba4Rec），分别对 $C_N$ 打分，dot product 形式为 $s_{u,v}^<em> = h_u^</em> \\cdot e_v$。teacher 模型不是独立训练的网络，而是把两位 student 的打分直接相加：$s^{teacher} = s^{self} + s^{peer}$。这种 additive teacher 极大降低了部署成本，因为它没有第三个参数。</p>\n<p><strong>(2) Divergence Re-ranking (3.2)</strong>：对每个候选 item 计算 divergence score $d_{u,v} = |s^{self} - s^{peer}|$，再把它叠加到原始打分上得到 divergence-aware score $\\tilde{s}_{u,v}^<em> = s_{u,v}^</em> + d_{u,v}$。然后对 self/peer/teacher 三个视角分别取 top-M，再在 top-M 池里<strong>均匀采样一个负样本</strong>——既保证 hard 又引入随机性以缓解 false negative。对应损失 $L_{rec} = \\alpha L_{self} + \\beta L_{peer} + \\gamma L_{teacher}$ 是三个负样本视角的 BPR/BCE 加权之和。</p>\n<p><strong>(3) Consensus Distillation (3.3)</strong>：先前对 $C_N$ 计算出的全套分数本来只用了一两个 token，作者把 teacher 的全候选打分作为 soft target，最小化 self 与 teacher 在 $C_N$ 上的 KL 散度 $L_{dis}$。总目标变为 $L_{rec} + \\mu L_{dis}$，几乎免费地利用了已有的 forward 计算。</p>\n<p>训练算法见论文 Algorithm 1：每个 epoch 对每条 sequence 走一遍&quot;候选采样 → 多源打分 → divergence 重排 → 三视角负采样 → 共识蒸馏 → 反传更新&quot;。<strong>实验默认 backbone 是 SASRec</strong>，loss 使用 BCE 或 BPR，candidate 大小 N、top-M、$\\alpha\\beta\\gamma\\mu$ 视数据集略调。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：用 peer 模型打破自强化循环</strong>。引入异构 peer（SASRec ↔ Mamba4Rec），让 peer 的归纳偏置主动暴露 self 模型从未关注过的负样本子空间，从根上解掉 self-guided 采样的退化问题——这比 SRNS 用单模型 + uncertainty 估计更稳健，因为后者本质仍是 self-loop。</p>\n<p><strong>贡献 2：以 prediction divergence 量化&quot;有信息量&quot;的硬负样本</strong>。divergence 高意味着两个 student 对该 item 看法不一致，对模型学习的边际信息最大。把 divergence 当作 ranking signal 显式加进打分，比 SRNS、AdaSIR 那种基于 uncertainty 的隐式重赋权更直观、训练曲线更稳定（Figure 3）。</p>\n<p><strong>贡献 3：免费的 teacher 蒸馏</strong>。teacher 是 self + peer 的 additive 组合而非独立大模型，KL 蒸馏复用 multi-source 阶段已经算好的全候选分数，几乎不增加 forward 成本，把原本被丢弃的打分转化为额外梯度。</p>\n<p><strong>贡献 4：model-agnostic + loss-agnostic</strong>。在 SASRec、GRU4Rec、FMLP4Rec、LinRec、Mamba4Rec 五种主流 backbone 上，无论 BPR 还是 BCE 损失都能跑通且持续胜过 baseline，证明它不是 backbone-specific trick。</p>\n<h2>4. 实验结果分析</h2>\n<p>实验覆盖六个公开数据集：Amazon 系列的 Beauty / Toys / Sports / Health（5-core 过滤）、Kuaishou 的 KuaiRand（含随机曝光日志）、LastFM（音乐艺人推荐）。划分 70/20/10，指标 Recall@K、NDCG@K (K ∈ {5,10,20})，paired t-test 显著性 p&lt;0.05。</p>\n<p><strong>主表 (Table 3, SASRec + BPR)</strong>：MDCNS Recall@5 全面领先，相对最强基线提升幅度为 Beauty +39.49%、Sports +23.31%、Toys +16.06%、Health +25.81%、LastFM +15.02%、KuaiRand +12.59%；NDCG@5 提升幅度 11.65%–39.56%。值得注意的是，在最稀疏的 Sports 与 Toys 上提升幅度最大，说明 multi-source 采样确实把模型从局部最优拽了出来。在工业级别的 KuaiRand 上提升相对温和（约 7–13%），符合工业数据噪声多、行为更密集的特征。</p>\n<p><strong>Cross-backbone (Table 4–5)</strong>：在 SASRec / LinRec / FMLP4Rec / GRU4Rec / Mamba4Rec 上 MDCNS 都是 SOTA，证明非 backbone-specific。值得注意 LinRec 与 FMLP4Rec 这种轻量化架构同样受益，意味着 MDCNS 的收益主要来自采样质量而非容量补偿。</p>\n<p><strong>Ablation (Table 6)</strong>：依次剥离 CD → CD+DR → CD+DR+MS 性能阶梯式下降，三者均不可替代。<strong>移除 multi-source scoring (MS) 退化最大</strong>，与作者关于&quot;打破自强化循环是最关键&quot;的假设一致；<strong>移除 consensus distillation (CD)</strong> 影响次之，说明 teacher 蒸馏不仅省算力也确实在传递可用知识。</p>\n<p><strong>Training Dynamics (Figure 3)</strong>：值得玩味的反直觉发现是——常规蒸馏会让 student 与 teacher 损失 gap 不断收敛，但 MDCNS 的 KD loss gap 反而长期维持或扩大。作者解释这正是 divergence re-ranking 在主动阻止 teacher 与 self 表征同质化，从而让 teacher 持续提供有效梯度。这条曲线对调参（增大 μ 是否会导致同质化）是个很有用的诊断信号。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在 Conclusion 中明确承认两个局限：(1) <strong>训练成本</strong>——multi-source 架构需要同时维护并 forward self + peer 两个 backbone，训练阶段开销大约翻倍；(2) <strong>效率优化未深入</strong>——目前候选池 $C_N$ 仍是 uniform 采样，未探索更聪明的 candidate pool 构造（如基于流行度或 cluster）。作者明确表态未来会探索&quot;lighter and more efficient alternatives&quot;。</p>\n<p>另外一些隐含的局限没有在 paper 中讨论：(a) peer 模型架构如何选择——SASRec + Mamba4Rec 这种 transformer + SSM 组合在 inductive bias 上差异较大，但若两者过于相似 divergence 将退化；(b) 推断阶段只用 self 模型，因此论文报告的延迟与原始 backbone 相同；(c) 没有报告 online A/B test，工业线上效果待验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索 / 推荐工程团队的核心可借鉴点：</p>\n<p><strong>(1) 不必上线 peer 网络</strong>：MDCNS 的核心 cost 在训练阶段，<strong>线上推断只跑 self 模型</strong>，部署成本与 baseline 完全一致——这是最关键的工业友好属性，意味着可以在不改造 serving 链路的前提下拿到 15–40% 的离线指标提升。</p>\n<p><strong>(2) Peer 模型选择有讲究</strong>：建议选与现有线上 backbone 不同 inductive bias 的架构（线上是 SASRec/Transformer，可以挑 Mamba4Rec 做 peer；线上是 GBDT/MLP，可以挑序列化 Transformer），避免 divergence 退化。Peer 不需要追求强精度，反而需要&quot;看世界的方式不同&quot;。</p>\n<p><strong>(3) 复用算力做蒸馏</strong>：consensus distillation 几乎不增加 forward 成本，是把&quot;原本要丢的全候选打分&quot;转化为正则信号的一种通用技巧。对 CTR/CVR 排序场景，可以直接借鉴：每个 mini-batch 算 in-batch all-pair score 时，把 teacher（如双塔模型 + 协同过滤召回的混合）打分作为 soft target 蒸进单塔 ranker，既稳泛化又不额外费 GPU。</p>\n<p><strong>(4) 多 gate 负采样替代单一硬负</strong>：直接把&quot;top-M 内均匀采样&quot; + &quot;三视角负样本加权&quot;的范式搬到曝光未点击负样本里——可以缓解工业数据中 false negative 高发的痛点（曝光未点击不一定 = 真不喜欢）。</p>\n<p><strong>(5) 监控指标</strong>：上线时可以加一个 divergence loss gap 监控曲线，若发现 gap 持续收缩，说明 peer 与 self 出现同质化，需要调整 peer 架构或重启 peer 训练——这是论文 Training Dynamics Analysis 提供的额外运维 insight。</p>\n<p><strong>部署考量</strong>：训练阶段 GPU/时间近似翻倍，但若在 A/B 上能拿到 5–10% 的 nDCG 提升，对大体量推荐场景仍然 ROI 显著；KuaiRand 上 +12% Recall@5 的工业实证给了一个相对保守的预期参考。</p>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:oai:arXiv.org:2605.18771",
+      "title": "LWGR: Lagrangian-Constrained Personalized World Knowledge for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2605.18771",
+      "authors": "Lingyu Mu, Hao Deng, Haibo Xing, Kaican Lin, Zhitong Zhu, Yu Zhang, Xiaoyi Zeng, Zhengxiao Liu, Zheng Lin, Jinxin Hu",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LLM-based 生成式推荐通常用一套固定 prompt 抽取世界知识再拼接进 GR，问题是：prompt 不可个性化、知识与行为信号容易冲突。LWGR 引入两层 Lagrangian 约束——一层用 soft instruction 让 prompt 随用户兴趣多维分布动态生成 personalized 知识；另一层把 GR 的知识融合显式建模为带约束的优化问题，限制知识 token 对行为 token 的影响幅度。阿里团队在公开和工业数据集均验证 NDCG/Recall 提升。",
+      "key_insight": "把“LLM 世界知识何时听、听多少”从手工 prompt 工程升级成显式约束优化，是生成式推荐拉齐离线知识与在线行为的关键。对落地的启示是：不要让 LLM 输出无条件参与排序，而应在 fusion 阶段用 bounded constraint（Lagrangian 或 KL）控制知识漂移，否则在 head item 上行为信号会被语义噪声反向覆盖。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:oai:arXiv.org:2605.18920",
+      "title": "SynGR: Unleashing the Potential of Cross-Modal Synergy for Generative Recommendation",
+      "url": "https://arxiv.org/abs/2605.18920",
+      "authors": "Wei Chen, Xingyu Guo, Shuang Li, Fuwei Zhang, Meng Yuan, Jing Fan, Zhao Zhang, Deqing Wang, Fuzhen Zhuang",
+      "company": [
+        "BUAA",
+        "CAS"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "多模态生成式推荐现有方法多是 alignment-centric fusion（文本/图像对齐到同一空间再拼接），忽视了模态间“协同信息”——即任何单模态都无法单独表达的 emergent 物品属性。SynGR 显式建模 cross-modal 依赖，并通过约束抑制对优势模态（通常是文本 ID）的过度依赖，让 token-level 生成可以引用模态互补信号。多个公开 GR 基准上对比 TIGER 系列变体均有提升。",
+      "key_insight": "alignment-only 的多模态推荐其实只是模态拼接，真正决定上限的是“协同信息”——比如菜品图像 + 评论中“油烟味”这种单模态都无法独立暴露的属性。对短文本社区搜索的启示是：图文 token 在做生成式排序时不能让文本侧主导 attention，应该加 modality dropout 或显式 cross-modal regularization 暴露图像独有信号。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:oai:arXiv.org:2605.18769",
+      "title": "ClusterRAG: Cluster-Based Collaborative Filtering for Personalized Retrieval-Augmented Generation",
+      "url": "https://arxiv.org/abs/2605.18769",
+      "authors": "Gibson Nkhata, Uttamasha Anjally Oyshi, Quan Mai, Susan Gauch",
+      "company": [
+        "University of Arkansas"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "个性化 RAG 通常只读当前用户 profile，忽略相似用户的协同信号，且全量检索成本高。ClusterRAG 把每个用户表征成 profile document，用 density-based clustering 切成语义聚簇，检索时先做 cluster-level 相似度筛选再做 document-level fine ranking——两层结构既保留相似用户的协同信号又压缩了检索域。LaMP 基准上联合当前用户 profile + Top-K 相似用户 profile 在多任务上一致最优。",
+      "key_insight": "RAG 检索阶段把“相似用户”视为可复用知识，是把推荐系统经典 user-based CF 思想搬进 LLM pipeline 的一次干净落地。对社区搜索的启示是：query rewriting/personalization 不需要为每个用户单独维护行为 index，可以按 user cluster 维度预算 K 个 cluster centroid，线上仅检索用户所属 cluster 的 representative profiles，省了大量长尾用户的存储和检索成本。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:oai:arXiv.org:2605.18805",
+      "title": "RecoAtlas: From Semantic Plausibility to Set-Level Utility in LLM Recommendation Agents",
+      "url": "https://arxiv.org/abs/2605.18805",
+      "authors": "Imad Aouali, Flavian Vasile, Otmane Sakhi, Alexandre Gilotte, Benjamin Heymann",
+      "company": [
+        "Criteo"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "LLM 推荐 Agent 越来越输出“一组商品 + 自然语言解释”的结构化推荐报告，但已有评测要么退化成 reranking 小候选，要么只判断 semantic plausibility。Criteo 推出 RecoAtlas（Agentic Tool-Level Assessment for Shopping），用真实交互数据学到 relevance/complementarity/diversity 三类 utility proxy，再配合 semantic coherence、explanation quality 单独打分；并设计可控工具环境（语义工具 / 行为对齐工具 / 故障工具）拆分“推理强 vs 信号好 vs 工具用得好”。",
+      "key_insight": "对评估推荐 Agent 的实用启示是：单独看 semantic plausibility 会被花言巧语欺骗，必须把 utility proxy 学在交互行为上才能 hold 住业务指标。社区搜索如果未来切到 LLM Agent 模式，建议借鉴它的“工具消融”做法——分别替换 retrieval/排序/解释工具，定位 Agent 收益到底来自推理还是来自后端信号。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:oai:arXiv.org:2605.20157",
+      "title": "SAGE: Scalable Automatic Gating Ensemble for Confident Negative Harvesting in Fraud Detection",
+      "url": "https://arxiv.org/abs/2605.20157",
+      "authors": "Sudheer Tubati, Amit Goyal",
+      "company": [
+        "Spotify"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "音乐流媒体作弊检测的核心难题是“正面边界样本”——超级粉丝、睡眠音乐场景的播放模式与协调作弊高度相似，传统 PU learning 会把这些样本当作疑似正例污染训练。SAGE 用 SimHash 分层抽样从未标注数据中抽样，再串联可插拔的统计 gate（Mahalanobis 距离 + k-NN 密度），通过 voting threshold 决策哪些样本是“高置信度负样本”，从而修复 representation bias。",
+      "key_insight": "把 PU learning 的“可信负样本挖掘”从单一阈值升级成多 gate ensemble，对推荐系统的迁移价值在于：CTR/CVR 模型也有未观测负样本（曝光未点击 ≠ 不喜欢）。可借鉴 SimHash 分层 + 多统计 gate 的范式，按 voting threshold 调整 negative 高质量样本的比例，直接喂入双塔/排序模型，比简单的 down-sampling 更稳健。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:oai:arXiv.org:2605.18763",
+      "title": "Query-Conditioned Graph Retrieval for Contextualized LLM Reasoning in Personalized Wearable Data",
+      "url": "https://arxiv.org/abs/2605.18763",
+      "authors": "Zhenyu Lu, Mahyar Abbasian, Amir M. Rahmani",
+      "company": [
+        "UCI"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "可穿戴数据给 LLM 推理时面临 context 选择困境：太少推不动、全塞进上下文又冗余降质。WAG 把用户的可穿戴指标和个体信号建模成 personalized 知识图，针对 query 检索 subgraph：通过分层贝叶斯建模融合 global（人群/个体先验）和 local（短期偏离）关系，再用 query openness signal 控制 subgraph 大小。在多模态健康问答数据集上优于直接 prompt + 全量数据。",
+      "key_insight": "针对“per-user 知识图 + query-conditioned subgraph 检索”这套思路，推荐系统也能借鉴：长行为序列建模如果直接拼 token 会爆，可以把行为按层级抽象成 personalized graph（场景节点 / 兴趣节点 / 实体节点），线上根据 query openness 动态决定剪到哪一层，比固定窗口截断更能保留相关信号。"
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:oai:arXiv.org:2605.04949",
+      "title": "AllSERP: Exhaustive Per-Element Enrichment of the Versatile AdSERP Dataset",
+      "url": "https://arxiv.org/abs/2605.04949",
+      "authors": "K. Andrew Edmonds",
+      "company": [
+        "Independent"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "summary": "AllSERP 是对 AdSERP 商业意图搜索结果页面数据集的全元素增强版本：原始 AdSERP 提供 2776 trial、150Hz Gazepoint 眼动 + 鼠标 telemetry，但 bbox 只覆盖广告位（占可归因点击 15.5%）。AllSERP 用截图锚定 CV 补充像素级 organic 与 widget bbox，按 13 类 element type 做语义标注，X+Y 点击归因覆盖率提升到 91.7%，并给出 typed_gapfill 处理结果间隙。",
+      "key_insight": "对短文本社区搜索的研究价值在于：罕有公开数据集同时提供眼动 + 鼠标 + 像素级元素标注，可以用来研究 “SERP 元素曝光—注视—点击”这条全链路漏斗。建议作为离线 SERP 元素布局/卡片设计 A/B 的 prior 数据，例如校准 attention bias 对 CTR 的影响、训练 position-aware CTR 校准模型。"
+    },
+    {
+      "rank": 9,
+      "id": "arxiv:oai:arXiv.org:2605.18780",
+      "title": "A Reproducibility Analysis of PO4ISR: Diagnosing and Mitigating Semantic Drift in LLM-Based Session Recommendation",
+      "url": "https://arxiv.org/abs/2605.18780",
+      "authors": "Aditya Tiwari, Konduri Naga Lakshmi Rekha, Rajesh Kumar Mundotiya",
+      "company": [
+        "IIT BHU"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "PO4ISR 等 reasoning-based LLM 在 session-based 推荐上刷新了 benchmark，但跨语义域的可复现性未被验证。该工作复现 PO4ISR 并指出关键失效：标准 reasoning prompt 在长 session 上出现严重 contextual drift，在 Games、Bundle 等语义复杂域上性能显著退化。作者提出 PO4ISR++，加入 reflexive prompting 与 consistent rank detection 做动态自适应，在 ML-1M / Games / Bundle 三个数据集上把退化指标拉回。",
+      "key_insight": "这篇复现报告暴露了一个被忽视的现象：LLM-as-recommender 的“reasoning” 在长 session 上会因为 attention 漂移而压低 hit-rate。对线上建议：使用 LLM 做 session 推荐时不要无限制拼接历史，要么周期性 self-reflect 重述偏好（reflexive prompting），要么用 rank consistency check 做兜底，避免“推理越多越偏”。"
+    },
+    {
+      "rank": 10,
+      "id": "arxiv:oai:arXiv.org:2605.18806",
+      "title": "Towards FairRAG: Preventing Representational Harm in Retrieval-Augmented Generation by Enforcing Fair Exposure at Retrieval Time",
+      "url": "https://arxiv.org/abs/2605.18806",
+      "authors": "Riddhi Tikoo",
+      "company": [
+        "Independent"
+      ],
+      "source": "arxiv",
+      "published": "2026-05-20",
+      "total_score": 3.2,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "summary": "RAG pipeline 的多组件易在检索阶段引入偏差。论文基于 TREC 2022 Fair Ranking 数据集（Wikipedia 文章带 protected/non-protected 标注），对比四种排序：Standard、Stochastic、Forced-Exposure、Representative Stochastic，从 exposure bias 和 utility 双维度评估 LLM 引用情况。结果显示 Representative Stochastic 在保留 utility 的同时取得统计显著的 near-parity exposure。",
+      "key_insight": "把“Fair Exposure 在 retrieval 阶段就强加”是比下游 rerank 重排更稳定的路径。对社区搜索的启示是：UGC 内容里冷门/新作者/小众 query 极易被 RAG/LLM 排序漏掉，可以在 retrieval 侧引入 representative stochastic 采样（按 protected 属性分层加权采样），既能保留主路径相关性，又能给长尾作者稳定曝光配额，比 post-hoc rerank 更难被规避。"
+    }
+  ],
+  "code_projects": [
+    {
+      "rank": 1,
+      "id": "github:david-franz/ctx-sys",
+      "title": "ctx-sys: Intelligent context management for AI coding assistants. Indexes your codebase with tree-sitter, builds a semantic knowledge graph, and serves 12 tools over MCP. Hybrid RAG combines keyword search, vector embeddings, and graph traversal for precise retrieval. Works with Claude Desktop, Cursor, and any MCP client. Fully local with Ollama.",
+      "url": "https://github.com/david-franz/ctx-sys",
+      "source": "github",
+      "description": "Intelligent context management for AI coding assistants. Indexes your codebase with tree-sitter, builds a semantic knowledge graph, and serves 12 tools over MCP. Hybrid RAG combines keyword search, vector embeddings, and graph traversal for precise retrieval. Works with Claude Desktop, Cursor, and any MCP client. Fully local with Ollama.",
+      "language": "TypeScript",
+      "stars": 13,
+      "created_at": "2026-02-08"
+    },
+    {
+      "rank": 2,
+      "id": "github:liuqi6777/llm4ranking",
+      "title": "llm4ranking: Large language models for document ranking.",
+      "url": "https://github.com/liuqi6777/llm4ranking",
+      "source": "github",
+      "description": "Large language models for document ranking.",
+      "language": "Python",
+      "stars": 75,
+      "created_at": "2024-05-23"
+    },
+    {
+      "rank": 3,
+      "id": "github:moonpiesheldon1337/mobsf-fail-app",
+      "title": "mobsf-fail-app: In-browser false-positive triage for MobSF Community Edition reports. Local LLM, no uploads, no API keys.",
+      "url": "https://github.com/moonpiesheldon1337/mobsf-fail-app",
+      "source": "github",
+      "description": "In-browser false-positive triage for MobSF Community Edition reports. Local LLM, no uploads, no API keys.",
+      "language": "TypeScript",
+      "stars": 30,
+      "created_at": "2026-05-19"
+    },
+    {
+      "rank": 4,
+      "id": "hf_dataset:internlm/WildClawBench",
+      "title": "internlm/WildClawBench",
+      "url": "https://huggingface.co/datasets/internlm/WildClawBench",
+      "source": "huggingface",
+      "description": "WildClawBench Hard, practical, end-to-end evaluation for AI agents — in the wild. WildClawBench is an agent benchmark that tests what actually matters: can an AI agent do real work, end-to-end, without hand-holding? We drop agents into a live OpenClaw environment — the same open-; tags: benchmark:official, benchmark:eval-yaml, task_categories:visual-question-answering, task_categories:image-text-to-text, task_categories:question-answering, language:en, language:zh, license:mit",
+      "language": "dataset",
+      "stars": 59,
+      "created_at": "2026-03-24"
+    },
+    {
+      "rank": 5,
+      "id": "hf_dataset:zai-org/ImageMining",
+      "title": "zai-org/ImageMining",
+      "url": "https://huggingface.co/datasets/zai-org/ImageMining",
+      "source": "huggingface",
+      "description": "Dataset Card for ImageMining Dataset Description ImageMining is a benchmark for evaluating image mining and knowledge discovery capabilities of multimodal models. Given an image, the task requires models to identify entities, perform multi-step reasoning (often with search-augmen; tags: task_categories:visual-question-answering, task_categories:question-answering, language:en, language:zh, license:cc-by-sa-4.0, size_categories:n<1K, format:parquet, format:optimized-parquet",
+      "language": "dataset",
+      "stars": 3,
+      "created_at": "2026-05-05"
+    },
+    {
+      "rank": 6,
+      "id": "hf_model:zai-org/GLM-OCR",
+      "title": "zai-org/GLM-OCR",
+      "url": "https://huggingface.co/zai-org/GLM-OCR",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm_ocr, image-text-to-text, conversational, zh, en, fr",
+      "language": "model",
+      "stars": 1756,
+      "created_at": "2026-01-30"
+    },
+    {
+      "rank": 7,
+      "id": "hf_model:moonshotai/Kimi-K2.6",
+      "title": "moonshotai/Kimi-K2.6",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.6",
+      "source": "huggingface",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "language": "model",
+      "stars": 1313,
+      "created_at": "2026-04-14"
+    },
+    {
+      "rank": 8,
+      "id": "hf_model:bytedance-research/Lance",
+      "title": "bytedance-research/Lance",
+      "url": "https://huggingface.co/bytedance-research/Lance",
+      "source": "huggingface",
+      "description": "pipeline: any-to-any; tags: Lance, safetensors, multimodal, image-generation, video-generation, image-editing, video-understanding, any-to-any",
+      "language": "model",
+      "stars": 445,
+      "created_at": "2026-05-15"
+    }
+  ]
+}

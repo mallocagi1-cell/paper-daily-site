@@ -1,0 +1,178 @@
+{
+  "date": "2026-03-17",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。",
+  "stats": {
+    "papers_scored": 468,
+    "papers_selected": 7,
+    "score_min": 3.15,
+    "score_max": 3.85
+  },
+  "papers": [
+    {
+      "rank": 1,
+      "id": "arxiv:2502.07490",
+      "title": "Mask-Enhanced Autoregressive Prediction: Pay Less Attention to Learn More",
+      "url": "https://arxiv.org/abs/2502.07490",
+      "authors": "Xialie Zhuang, Zhikai Jia, Jianjin Li, Zhenyu Zhang, Li Shen, Zheng Cao, Shiwei Liu",
+      "company": [],
+      "source": "arxiv",
+      "published": "2025-02-11",
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.05,
+      "summary": "针对大语言模型在长序列中难以准确检索关键信息的问题，提出 MEAP（Mask-Enhanced Autoregressive Prediction）训练范式，将 Masked Language Modeling 无缝集成到 Next-Token Prediction 中。核心思路是在训练时随机遮蔽少量输入 token，然后直接进行标准的自回归预测，无需双向注意力或编码器-解码器架构，预训练和推理零额外开销。实验表明 MEAP 在 lost-in-the-middle 场景下的监督微调中提升 11.77 个百分点，同时在常识推理任务上表现持平或更优。",
+      "key_insight": "MEAP 的核心创新在于证明了仅通过在标准 NTP 训练中加入随机 token 遮蔽，就能迫使模型对未遮蔽 token 产生更具区分度的注意力分数，从而显著增强上下文信息检索能力。这对生成式推荐系统中基于 Transformer 的自回归模型（如 HSTU）具有直接借鉴意义——用户行为序列中的关键交互往往淹没在长历史中，MEAP 式的训练策略可以低成本地提升模型对序列中关键行为信号的捕捉能力。该方法的最大优势是实现简单、零额外推理开销，可直接应用于现有 decoder-only 推荐模型的训练流程。",
+      "deep_reading": {
+        "paper_id": "arxiv:2502.07490",
+        "title": "Mask-Enhanced Autoregressive Prediction: Pay Less Attention to Learn More",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n大语言模型（LLM）普遍采用 Next-Token Prediction（NTP）作为训练目标，通过单向注意力实现高效的自回归生成。然而，NTP 训练的模型在**准确检索上下文中的关键信息**方面存在显著缺陷——即广为人知的「Lost-in-the-Middle」问题。当关键信息出现在长序列的中间位置时，模型的检索准确率会大幅下降。\n\n与此同时，Masked Language Modeling（MLM）通过双向重构获得了更好的语义理解能力，在信息检索等下游任务上表现优异。已有工作如 UniLM、UL2 等尝试统一 MLM 和 NTP，但都需要复杂的编码器-解码器架构或多目标切换机制，与现代 LLM 的高效推理流水线不兼容。\n\n**核心问题**：能否在不引入任何架构复杂度和计算开销的前提下，将 MLM 的优势融入 NTP 训练，从根本上提升自回归模型的上下文信息检索能力？\n\n## 2. 方法详解\n\n### 训练范式设计\n\nMEAP 的核心设计极其简洁：在标准 NTP 训练的输入序列中，随机将一小部分 token 替换为 [MASK] 标记，然后**直接执行标准的 left-to-right 自回归预测**。关键区别在于：\n\n- **预训练阶段**：随机遮蔽 15% 的输入 token，使用因果注意力进行标准 NTP 训练。被遮蔽的 token 在注意力计算中获得极低的权重，迫使模型将注意力集中在未遮蔽的 token 上。\n- **微调阶段**：复制训练样本，对副本施加 10% 的随机遮蔽，仅在答案跨度上的遮蔽 token 上计算交叉熵损失。原始序列和遮蔽序列共同作为训练输入。\n\n### 关键设计决策\n\n1. **无需双向注意力**：不同于 BERT 系列需要双向 Transformer，MEAP 完全保持 decoder-only 架构和因果注意力掩码，被遮蔽的 token 自然地在注意力传播中被「忽略」。\n2. **零额外推理开销**：推理时模型与标准 NTP 模型完全一致，无需任何特殊处理。\n3. **遮蔽比例选择**：预训练最优为 15%，微调最优为 10%。随机遮蔽优于跨度遮蔽，保持了实现的简洁性。\n\n### 训练配置\n\n- 模型：1.1B 参数 LLaMA 风格（24 层，32 头，2048 隐藏维度，4096 上下文）\n- 优化器：AdamW（β₁=0.9, β₂=0.95），最大学习率 4×10⁻⁴\n- 训练规模：40B、60B、200B tokens\n- 微调基础模型：Llama-3-8B，使用 Stanford Alpaca 指令集\n\n## 3. 核心技术贡献\n\n**贡献 1：注意力区分度增强机制。** MEAP 的核心机理在于：遮蔽 token 在注意力计算中获得极低权重（衰减 53.34%），这隐式地放大了未遮蔽 token 之间的注意力方差（增加 7.80%，T-stat = -9.97, p ≪ 1e-6）。效果是模型学会了更具选择性的注意力分配模式，将关注点集中在任务相关信号上。\n\n**贡献 2：任务相关注意力重分配。** 在结构化输入分析中，MEAP 将答案跨度上的注意力比例从 NTP 的 9.4% 提升至 34.5%（+3.67 倍），同时将前文上下文的注意力从 73.1% 降低至 49.1%。这意味着模型不再被大量无关上下文「淹没」，而是能精准定位关键信息。\n\n**贡献 3：数据效率提升。** MEAP 使用 60B tokens 训练即可在 Needle-in-a-Haystack 任务上达到 85.8% 准确率，而标准 NTP 需要 200B tokens 才能达到类似水平（87.1%），数据效率提升约 3 倍。\n\n**贡献 4：跨模型泛化性。** 该方法在 Llama-3-8B、Llama-3.2-3B、Qwen2.5-14B、Mistral-7B-0.2 等多个模型上均展现出一致的提升效果，验证了方法的通用性。\n\n## 4. 实验结果分析\n\n### 预训练阶段\n\n| 评估维度 | MEAP (200B) | NTP (200B) | 提升 |\n|---------|------------|-----------|------|\n| 常识推理平均 | 47.8% | 46.2% | +1.6 pp |\n| Needle-in-Haystack (40B tokens) | 80.2% | 65.9% | +14.3 pp |\n| Needle-in-Haystack (60B tokens) | 85.8% | 52.8% | **+33.0 pp** |\n| Needle-in-Haystack (200B tokens) | 98.2% | 87.1% | +11.1 pp |\n\n最引人注目的结果是在 60B tokens 训练量下的 +33.0 百分点提升，说明 MEAP 在数据有限时的优势尤为突出。\n\n### 微调阶段（Llama-3-8B + Alpaca）\n\n**多文档 QA（20 篇文档，关键信息位于不同位置）：**\n| 位置 | MEAP | NTP | 提升 |\n|------|------|-----|------|\n| Position 1 | 33.22% | 24.29% | +8.93 pp |\n| Position 5 | - | - | +11.34 pp |\n| Position 20 | - | - | **+15.22 pp** |\n| 平均 | - | - | **+11.77 pp** |\n\n越靠后的文档位置提升越大，证实 MEAP 特别擅长缓解 Lost-in-the-Middle 问题。\n\n**跨模型泛化：**\n- Llama-3.2-3B：常识推理 +1.26 点，多文档 QA +8.91 pp\n- Qwen2.5-14B：常识推理 +2.14 点，多文档 QA +1.62 pp\n- Mistral-7B-0.2：常识推理 +0.10 点，多文档 QA +3.27 pp\n\n### 消融实验\n\n遮蔽比例分析表明：预训练最优 15%（准确率 58% vs 10% 时的 56%），微调最优 10%（准确率 81% vs 15% 时的 71%）。这一差异暗示预训练和微调阶段模型对信息扰动的容忍度不同。\n\n随机遮蔽与跨度遮蔽的对比中，两者表现相近（41.13% vs 41.64%），但随机遮蔽更简单且通用。\n\n### 幻觉减少\n\n在 XSum、MultiNews、WikiSum 摘要任务上，MEAP 一致性地降低了幻觉率（WikiSum 上从 0.24 提升至 0.33，GPT-4o 评判），表明更精准的上下文关注也有助于减少事实性错误。\n\n## 5. 局限与未来方向\n\n论文明确讨论的局限包括：\n\n1. **规模验证不足**：实验仅在 1.1B 模型上进行预训练验证，10B+ 规模模型的可扩展性尚未验证。\n2. **微调计算开销**：序列复制策略使微调阶段的输入长度翻倍，但论文指出 MEAP 只需 NTP 50% 的训练 epoch 即可达到相似效果，部分抵消了开销。\n3. **遮蔽比例需调优**：预训练（15%）和微调（10%）的最优遮蔽比例不同，暗示需要针对不同训练阶段和任务进行调优。\n4. **理论基础有限**：论文提供了经验性的机理分析（注意力区分度假说），但缺乏严格的理论证明。\n\n论文未讨论但值得注意的局限：多模态场景下的适用性未探索；与其他训练技巧（如 curriculum learning、数据混合策略）的组合效果未研究。\n\n## 6. 工业实践意义\n\n### 对生成式推荐系统的直接价值\n\n1. **用户行为序列建模**：生成式推荐模型（如 HSTU、TIGER）以用户行为序列作为输入进行自回归预测。MEAP 的核心优势——增强长序列中关键信息的检索能力——直接适用于用户长历史序列中关键交互信号的捕捉。在实际推荐系统中，用户行为序列可达数千条，重要的购买/点击行为往往淹没在大量浏览行为中。\n\n2. **零成本集成**：MEAP 无需修改模型架构，不增加推理延迟，仅需在训练数据流中添加随机遮蔽。对于已有的 decoder-only 推荐模型（如基于 LLaMA 架构的推荐模型），可以直接在训练流程中加入 MEAP 策略。\n\n3. **数据效率对推荐的意义**：推荐场景中高质量标注数据稀缺，MEAP 的 3 倍数据效率提升意味着用更少的训练数据就能获得更好的序列理解能力。\n\n### 部署考量\n\n- **推理延迟**：零额外推理开销，完全兼容现有推理优化（KV cache、speculative decoding 等）\n- **训练成本**：预训练阶段零额外成本；微调阶段因序列复制有约 2 倍数据吞吐量增加，但 epoch 数可减半\n- **实施复杂度**：极低——仅需在数据预处理中添加随机遮蔽逻辑，约 10 行代码修改\n\n### 实践建议\n\n推荐从业者可以考虑在以下场景尝试 MEAP：\n- 长用户行为序列建模（序列长度 > 1000）\n- 需要从历史交互中精准检索用户兴趣信号的场景\n- 训练数据规模有限但希望最大化序列理解能力的场景\n- 现有 decoder-only 推荐模型的训练流程改进（如 SASRec、HSTU 的训练）",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>大语言模型（LLM）普遍采用 Next-Token Prediction（NTP）作为训练目标，通过单向注意力实现高效的自回归生成。然而，NTP 训练的模型在<strong>准确检索上下文中的关键信息</strong>方面存在显著缺陷——即广为人知的「Lost-in-the-Middle」问题。当关键信息出现在长序列的中间位置时，模型的检索准确率会大幅下降。</p>\n<p>与此同时，Masked Language Modeling（MLM）通过双向重构获得了更好的语义理解能力，在信息检索等下游任务上表现优异。已有工作如 UniLM、UL2 等尝试统一 MLM 和 NTP，但都需要复杂的编码器-解码器架构或多目标切换机制，与现代 LLM 的高效推理流水线不兼容。</p>\n<p><strong>核心问题</strong>：能否在不引入任何架构复杂度和计算开销的前提下，将 MLM 的优势融入 NTP 训练，从根本上提升自回归模型的上下文信息检索能力？</p>\n<h2>2. 方法详解</h2>\n<h3>训练范式设计</h3>\n<p>MEAP 的核心设计极其简洁：在标准 NTP 训练的输入序列中，随机将一小部分 token 替换为 [MASK] 标记，然后<strong>直接执行标准的 left-to-right 自回归预测</strong>。关键区别在于：</p>\n<ul>\n<li><strong>预训练阶段</strong>：随机遮蔽 15% 的输入 token，使用因果注意力进行标准 NTP 训练。被遮蔽的 token 在注意力计算中获得极低的权重，迫使模型将注意力集中在未遮蔽的 token 上。</li>\n<li><strong>微调阶段</strong>：复制训练样本，对副本施加 10% 的随机遮蔽，仅在答案跨度上的遮蔽 token 上计算交叉熵损失。原始序列和遮蔽序列共同作为训练输入。</li>\n</ul>\n<h3>关键设计决策</h3>\n<ol>\n<li><strong>无需双向注意力</strong>：不同于 BERT 系列需要双向 Transformer，MEAP 完全保持 decoder-only 架构和因果注意力掩码，被遮蔽的 token 自然地在注意力传播中被「忽略」。</li>\n<li><strong>零额外推理开销</strong>：推理时模型与标准 NTP 模型完全一致，无需任何特殊处理。</li>\n<li><strong>遮蔽比例选择</strong>：预训练最优为 15%，微调最优为 10%。随机遮蔽优于跨度遮蔽，保持了实现的简洁性。</li>\n</ol>\n<h3>训练配置</h3>\n<ul>\n<li>模型：1.1B 参数 LLaMA 风格（24 层，32 头，2048 隐藏维度，4096 上下文）</li>\n<li>优化器：AdamW（β₁=0.9, β₂=0.95），最大学习率 4×10⁻⁴</li>\n<li>训练规模：40B、60B、200B tokens</li>\n<li>微调基础模型：Llama-3-8B，使用 Stanford Alpaca 指令集</li>\n</ul>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：注意力区分度增强机制。</strong> MEAP 的核心机理在于：遮蔽 token 在注意力计算中获得极低权重（衰减 53.34%），这隐式地放大了未遮蔽 token 之间的注意力方差（增加 7.80%，T-stat = -9.97, p ≪ 1e-6）。效果是模型学会了更具选择性的注意力分配模式，将关注点集中在任务相关信号上。</p>\n<p><strong>贡献 2：任务相关注意力重分配。</strong> 在结构化输入分析中，MEAP 将答案跨度上的注意力比例从 NTP 的 9.4% 提升至 34.5%（+3.67 倍），同时将前文上下文的注意力从 73.1% 降低至 49.1%。这意味着模型不再被大量无关上下文「淹没」，而是能精准定位关键信息。</p>\n<p><strong>贡献 3：数据效率提升。</strong> MEAP 使用 60B tokens 训练即可在 Needle-in-a-Haystack 任务上达到 85.8% 准确率，而标准 NTP 需要 200B tokens 才能达到类似水平（87.1%），数据效率提升约 3 倍。</p>\n<p><strong>贡献 4：跨模型泛化性。</strong> 该方法在 Llama-3-8B、Llama-3.2-3B、Qwen2.5-14B、Mistral-7B-0.2 等多个模型上均展现出一致的提升效果，验证了方法的通用性。</p>\n<h2>4. 实验结果分析</h2>\n<h3>预训练阶段</h3>\n<table><thead><tr><th>评估维度</th><th>MEAP (200B)</th><th>NTP (200B)</th><th>提升</th></tr></thead><tbody><tr><td>常识推理平均</td><td>47.8%</td><td>46.2%</td><td>+1.6 pp</td></tr><tr><td>Needle-in-Haystack (40B tokens)</td><td>80.2%</td><td>65.9%</td><td>+14.3 pp</td></tr><tr><td>Needle-in-Haystack (60B tokens)</td><td>85.8%</td><td>52.8%</td><td><strong>+33.0 pp</strong></td></tr><tr><td>Needle-in-Haystack (200B tokens)</td><td>98.2%</td><td>87.1%</td><td>+11.1 pp</td></tr></tbody></table>\n<p>最引人注目的结果是在 60B tokens 训练量下的 +33.0 百分点提升，说明 MEAP 在数据有限时的优势尤为突出。</p>\n<h3>微调阶段（Llama-3-8B + Alpaca）</h3>\n<p><strong>多文档 QA（20 篇文档，关键信息位于不同位置）：</strong></p>\n<table><thead><tr><th>位置</th><th>MEAP</th><th>NTP</th><th>提升</th></tr></thead><tbody><tr><td>Position 1</td><td>33.22%</td><td>24.29%</td><td>+8.93 pp</td></tr><tr><td>Position 5</td><td>-</td><td>-</td><td>+11.34 pp</td></tr><tr><td>Position 20</td><td>-</td><td>-</td><td><strong>+15.22 pp</strong></td></tr><tr><td>平均</td><td>-</td><td>-</td><td><strong>+11.77 pp</strong></td></tr></tbody></table>\n<p>越靠后的文档位置提升越大，证实 MEAP 特别擅长缓解 Lost-in-the-Middle 问题。</p>\n<p><strong>跨模型泛化：</strong></p>\n<ul>\n<li>Llama-3.2-3B：常识推理 +1.26 点，多文档 QA +8.91 pp</li>\n<li>Qwen2.5-14B：常识推理 +2.14 点，多文档 QA +1.62 pp</li>\n<li>Mistral-7B-0.2：常识推理 +0.10 点，多文档 QA +3.27 pp</li>\n</ul>\n<h3>消融实验</h3>\n<p>遮蔽比例分析表明：预训练最优 15%（准确率 58% vs 10% 时的 56%），微调最优 10%（准确率 81% vs 15% 时的 71%）。这一差异暗示预训练和微调阶段模型对信息扰动的容忍度不同。</p>\n<p>随机遮蔽与跨度遮蔽的对比中，两者表现相近（41.13% vs 41.64%），但随机遮蔽更简单且通用。</p>\n<h3>幻觉减少</h3>\n<p>在 XSum、MultiNews、WikiSum 摘要任务上，MEAP 一致性地降低了幻觉率（WikiSum 上从 0.24 提升至 0.33，GPT-4o 评判），表明更精准的上下文关注也有助于减少事实性错误。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文明确讨论的局限包括：</p>\n<ol>\n<li><strong>规模验证不足</strong>：实验仅在 1.1B 模型上进行预训练验证，10B+ 规模模型的可扩展性尚未验证。</li>\n<li><strong>微调计算开销</strong>：序列复制策略使微调阶段的输入长度翻倍，但论文指出 MEAP 只需 NTP 50% 的训练 epoch 即可达到相似效果，部分抵消了开销。</li>\n<li><strong>遮蔽比例需调优</strong>：预训练（15%）和微调（10%）的最优遮蔽比例不同，暗示需要针对不同训练阶段和任务进行调优。</li>\n<li><strong>理论基础有限</strong>：论文提供了经验性的机理分析（注意力区分度假说），但缺乏严格的理论证明。</li>\n</ol>\n<p>论文未讨论但值得注意的局限：多模态场景下的适用性未探索；与其他训练技巧（如 curriculum learning、数据混合策略）的组合效果未研究。</p>\n<h2>6. 工业实践意义</h2>\n<h3>对生成式推荐系统的直接价值</h3>\n<ol>\n<li><strong>用户行为序列建模</strong>：生成式推荐模型（如 HSTU、TIGER）以用户行为序列作为输入进行自回归预测。MEAP 的核心优势——增强长序列中关键信息的检索能力——直接适用于用户长历史序列中关键交互信号的捕捉。在实际推荐系统中，用户行为序列可达数千条，重要的购买/点击行为往往淹没在大量浏览行为中。</li>\n</ol>\n<ol>\n<li><strong>零成本集成</strong>：MEAP 无需修改模型架构，不增加推理延迟，仅需在训练数据流中添加随机遮蔽。对于已有的 decoder-only 推荐模型（如基于 LLaMA 架构的推荐模型），可以直接在训练流程中加入 MEAP 策略。</li>\n</ol>\n<ol>\n<li><strong>数据效率对推荐的意义</strong>：推荐场景中高质量标注数据稀缺，MEAP 的 3 倍数据效率提升意味着用更少的训练数据就能获得更好的序列理解能力。</li>\n</ol>\n<h3>部署考量</h3>\n<ul>\n<li><strong>推理延迟</strong>：零额外推理开销，完全兼容现有推理优化（KV cache、speculative decoding 等）</li>\n<li><strong>训练成本</strong>：预训练阶段零额外成本；微调阶段因序列复制有约 2 倍数据吞吐量增加，但 epoch 数可减半</li>\n<li><strong>实施复杂度</strong>：极低——仅需在数据预处理中添加随机遮蔽逻辑，约 10 行代码修改</li>\n</ul>\n<h3>实践建议</h3>\n<p>推荐从业者可以考虑在以下场景尝试 MEAP：</p>\n<ul>\n<li>长用户行为序列建模（序列长度 &gt; 1000）</li>\n<li>需要从历史交互中精准检索用户兴趣信号的场景</li>\n<li>训练数据规模有限但希望最大化序列理解能力的场景</li>\n<li>现有 decoder-only 推荐模型的训练流程改进（如 SASRec、HSTU 的训练）</li>\n</ul>"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "arxiv:2603.13134",
+      "title": "When Right Meets Wrong: Bilateral Context Conditioning with Reward-Confidence Correction for GRPO",
+      "url": "https://arxiv.org/abs/2603.13134",
+      "authors": "Yu Li, Tian Lan, Zhengling Qi",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-16",
+      "total_score": 3.7,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.13,
+      "adjusted_score": 3.83,
+      "summary": "针对 GRPO（Group Relative Policy Optimization）在训练推理模型时忽略组内正确与错误样本之间对比信号的问题，提出对比式重构方法。首先证明 GRPO 目标函数隐式地最大化正确与错误样本策略比率之间的间距，基于此提出 Bilateral Context Conditioning（BICC）机制，允许模型在优化过程中交叉引用成功和失败的推理轨迹。同时引入 Reward-Confidence Correction（RCC）通过奖励-置信度协方差动态调整 GRPO 的优势基线以稳定训练。两种机制无需额外采样或辅助模型，可适配所有 GRPO 变体，在数学推理基准上实现一致提升。",
+      "key_insight": "BICC 的核心贡献在于揭示了 GRPO 训练中被忽视的结构化信号——同组内正确与错误推理轨迹的对比关系。通过让模型在优化时直接对比成功和失败的推理过程，实现了跨样本的信息流动，这比独立处理每个样本效率更高。对于生成式推荐系统的训练，GRPO 已成为关键的对齐算法（如 DiffuReason 中的排序优化），BICC 的即插即用特性意味着可以直接应用于推荐模型的 GRPO 训练流程中，通过对比好/差推荐结果的生成轨迹来提升模型的排序质量。代码已开源。"
+    },
+    {
+      "rank": 3,
+      "id": "arxiv:2603.12368",
+      "title": "Multi-Step Semantic Reasoning in Generative Retrieval",
+      "url": "https://arxiv.org/abs/2603.12368",
+      "authors": "Steven Dong, Yubao Tang, Maarten de Rijke",
+      "company": [
+        "University of Amsterdam"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-16",
+      "total_score": 3.5,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.3,
+      "adjusted_score": 3.8,
+      "summary": "针对生成式检索（GR）模型在处理涉及数值推理的复杂查询时能力不足的问题，提出 ReasonGR 框架。该框架采用结构化提示策略，将任务特定指令与逐步推理引导相结合，同时集成推理聚焦的适配模块来增强推理相关参数的学习。在 FinQA（金融报表查询）数据集上的实验表明，该方法显著提升了检索准确率和一致性，验证了推理能力增强对 GR 模型在实际应用中的重要性。已被 ECIR2026 接收。",
+      "key_insight": "ReasonGR 揭示了生成式检索的一个重要盲区：现有 GR 模型虽然能生成文档标识符，但在需要多步语义推理（特别是数值推理）的查询上表现不佳。结构化提示+推理适配模块的双重策略为 GR 模型增添推理能力提供了一条可行路径。对搜索系统而言，这意味着生成式检索不能仅依赖模式匹配，还需要具备推理能力才能处理复杂查询（如'营收同比增长超过 20% 的公司'）。该思路可迁移至 UGC 搜索中涉及条件筛选和逻辑推理的查询场景。"
+    },
+    {
+      "rank": 4,
+      "id": "arxiv:2603.12595",
+      "title": "Swap-guided Preference Learning for Personalized Reinforcement Learning from Human Feedback",
+      "url": "https://arxiv.org/abs/2603.12595",
+      "authors": "Gihoon Kim, Euntai Kim",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-16",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.55,
+      "summary": "针对标准 RLHF 假设单一全局奖励导致无法捕捉多样化用户偏好的问题，首次识别出 Variational Preference Learning（VPL）中的后验坍缩现象——在稀疏偏好数据和过度表达性解码器下，用户特定的隐变量被忽略，模型退化为单一奖励模型。提出 Swap-guided Preference Learning（SPL），通过构造虚拟交换标注者并利用其偏好的镜像特性来引导编码器，包含三个组件：交换引导基础正则化、Preferential Inverse Autoregressive Flow（P-IAF）和自适应隐变量条件化。已被 ICLR 2026 接收。",
+      "key_insight": "SPL 的核心发现是个性化 RLHF 中 VPL 方法的后验坍缩问题——这意味着看似学到了用户偏好的模型实际上可能退化为忽略用户差异的统一模型。对生成式推荐系统而言，这一发现具有警示意义：基于 LLM 的推荐模型在使用 RLHF 进行个性化对齐时，同样可能遭遇后验坍缩，导致推荐结果趋同化。SPL 的交换引导机制提供了一种在偏好数据稀疏时仍能有效学习用户特定偏好的方法，可借鉴用于推荐系统中的个性化奖励建模。"
+    },
+    {
+      "rank": 5,
+      "id": "arxiv:2512.12858",
+      "title": "Information-Consistent Language Model Recommendations through Group Relative Policy Optimization",
+      "url": "https://arxiv.org/abs/2512.12858",
+      "authors": "Sonal Prabhune, Balaji Padmanabhan, Kaushik Dutta",
+      "company": [],
+      "source": "arxiv",
+      "published": "2025-12-17",
+      "total_score": 3.25,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "preference_bonus": 0.27,
+      "adjusted_score": 3.52,
+      "summary": "针对 LLM 在企业关键领域（金融、教育、客户支持）中提供推荐时对语义等价但措辞不同的提示产生不一致结果的问题，提出基于 GRPO 的强化学习框架。现有方法如 RAG 和温度调整虽能改善事实性或降低随机性，但无法保证跨等价提示的稳定性。该框架通过 GRPO 训练 LLM 对语义等价的推荐请求生成一致的输出，适用于 HR 入职引导、客户服务、政策披露等需要确定性信息传递的场景。",
+      "key_insight": "该工作指出了 LLM 推荐系统中一个常被忽视的问题：推荐一致性。即使查询语义相同，LLM 可能因措辞差异产生不同推荐结果，这在企业场景中会带来合规风险和用户信任问题。GRPO 被证明是解决此类一致性问题的有效工具——通过将一致性作为奖励信号进行优化。对搜索推荐系统而言，这提供了一个重要启示：在追求推荐质量的同时，推荐的稳定性和可预测性同样是关键质量指标，尤其在 LLM 驱动的生成式推荐中需要显式优化一致性。"
+    },
+    {
+      "rank": 6,
+      "id": "arxiv:2603.12631",
+      "title": "Collaborative Multi-Agent Optimization for Personalized Memory System",
+      "url": "https://arxiv.org/abs/2603.12631",
+      "authors": "Wenyu Mao, Haoyang Liu, Zhao Liu, Haosong Tan, Yaorui Shi, Jiancan Wu, An Zhang, Xiang Wang",
+      "company": [
+        "USTC"
+      ],
+      "source": "arxiv",
+      "published": "2026-03-16",
+      "total_score": 3.45,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "summary": "针对个性化 LLM 记忆系统中多个 Agent 独立优化无法保证全局系统性能的问题，提出协作强化学习框架 CoMAM。将多 Agent 的执行过程建模为序贯马尔可夫决策过程，将 Agent 间依赖关系嵌入状态转移中，同时产生局部任务奖励（如信息覆盖度）和全局系统奖励（如问答准确率）。通过组级排序一致性进行信用分配，使局部 Agent 的优化方向与全局系统性能对齐。实验表明 CoMAM 优于现有主流记忆系统。",
+      "key_insight": "CoMAM 解决了多 Agent 系统中局部优化与全局性能不一致的根本问题——各 Agent 各自优化自身任务（记忆构建、记忆检索），但拼凑起来的全局效果可能不如协同优化。这一思路对推荐系统中的多阶段流水线（如召回→粗排→精排→重排）具有启发意义：各阶段独立优化可能导致全局次优，通过协作 RL 框架可以实现端到端的全局优化。个性化记忆检索的能力也与对话式推荐中的长期用户建模高度相关。"
+    },
+    {
+      "rank": 7,
+      "id": "arxiv:2603.12529",
+      "title": "TERMINATOR: Learning Optimal Exit Points for Early Stopping in Chain-of-Thought Reasoning",
+      "url": "https://arxiv.org/abs/2603.12529",
+      "authors": "Alliot Nagle, Jakhongir Saydaliev, Dhia Garbaya, Michael Gastpar, Ashok Vardhan Makkuva, Hyeji Kim",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-03-16",
+      "total_score": 3.15,
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "preference_bonus": 0.08,
+      "adjusted_score": 3.23,
+      "summary": "针对大型推理模型（LRM）在 Chain-of-Thought 推理中严重的「过度思考」问题——即使答案已经生成仍继续消耗大量计算资源——提出 TERMINATOR 早期退出策略。核心思路是利用 LRM 最终答案首次出现的可预测性，训练一个早期停止机制来自动判断最优推理长度。在 MATH-500、AIME 2025、HumanEval、GPQA 四个数据集上平均将 CoT 长度缩短 14%–55%，同时性能优于现有最优方法，精度损失微乎其微。",
+      "key_insight": "TERMINATOR 的实用价值在于大幅降低推理型 LLM 的推理成本——CoT 长度缩短 14%–55% 意味着同等算力可以服务更多请求。对于生成式推荐场景，当推荐模型引入推理能力（如 DiffuReason 的 Thinking Tokens）时，过度推理将成为在线服务延迟的主要瓶颈。TERMINATOR 式的早期退出机制可以在保持推荐质量的前提下显著降低推理延迟，是推理增强型推荐模型走向线上部署的关键优化技术。"
+    }
+  ]
+}
