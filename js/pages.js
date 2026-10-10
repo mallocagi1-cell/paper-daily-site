@@ -833,9 +833,11 @@
         if (DATA.track_labels_zh) TRACK_ZH = Object.assign({}, TRACK_ZH, DATA.track_labels_zh);
         const foot = document.getElementById("site-foot");
         if (foot && DATA.latest_date) {
+          const counter = document.getElementById("busuanzi_container_site_pv"); // 不蒜子 counter: keep the live node
           foot.innerHTML = "<span>Paper Daily · 静态站</span><span>·</span><span>数据最新 " + escapeHtml(DATA.latest_date) +
             "</span><span>·</span><span>共 " + escapeHtml(DATA.days.length) + " 期</span><span>·</span><span>" +
             escapeHtml(DATA.deep_reading_entries || 0) + " 篇深度解读</span>";
+          if (counter) foot.appendChild(counter);
         }
         render();
         window.addEventListener("hashchange", render);
