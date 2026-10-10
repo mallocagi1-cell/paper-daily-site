@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/app.css" />
-  <link rel="stylesheet" href="../../../css/pages.css" />
+  <link rel="stylesheet" href="../../../css/app.css?v=e86c7416d3" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=e86c7416d3" />
   <style>
     body { background: var(--bg); }
     .standalone-wrap {
@@ -40,9 +40,6 @@
       <ul class="navbar-nav">
         <li><a href="../../../index.html#/" class="active">Reports</a></li>
         <li><a href="../../../deep-readings/index.html">&#128214; 深度解读</a></li>
-        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
-        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
-        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
       </ul>
       <span class="pages-badge">Static preview</span>
     </nav>
@@ -176,6 +173,69 @@
       <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 1</div>
       <div class="paper-body" style="margin-top: 12px;"><p><strong>Summary:</strong> 美团以 HSTU 为基础提出 MTGR，把传统 DLRM 的交叉特征保留在生成式推荐框架中，并在外卖首页、频道页和小程序全量上线。相较基准模型，单样本前向推理 FLOPs 增加 65 倍，离线 CTCVR GAUC 提升 2.88 个百分点，首页订单量提升 1.22%、PV_CTR 提升 1.31%；训练成本持平，在线推理资源节省 12%。</p><p><strong>Key insight:</strong> MTGR 的启示不是简单替换成更大的 Transformer，而是把已有业务特征、目标函数和在线资源约束一起迁移。对于社区短文本搜索，可沿用“保留强特征 + 生成式序列建模”的渐进路线，先比较 nDCG/CTR 增益与推理成本，再决定是否扩大模型，而不是一次性重写召回排序链路。</p></div>
       
+<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="blog_rss:meituan_tech_blog:https://tech.meituan.com/2025/05/19/Meituan-Generative-Recommendation.html" id="dr-blog_rss-meituan_tech_blog-https-tech-meituan-com-2025-05-19-Meituan-Generative-Recommendation-html">
+  <div class="deep-read-toggle-row">
+    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
+      <span class="deep-read-trigger-icon">&#9660;</span>
+      <span>&#128214; 展开深度解读</span>
+    </button>
+    <a class="deep-read-page-link" href="../../../deep-readings/web-meituan-mtgr-blog-2025.html">独立页面阅读 &#8599;</a>
+  </div>
+  <div class="deep-read-section" hidden>
+    <div class="deep-read-header-bar">
+      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
+        <span class="deep-read-trigger-icon">&#9650;</span>
+        <span>收起深度解读</span>
+      </button>
+    </div>
+    <div class="deep-read-content"><h2>MTGR：美团外卖生成式推荐 Scaling Law 落地实践（深度解读）</h2>
+<h3>1. 问题与动机</h3>
+<p>美团外卖推荐团队经过近十年基于交易目标的传统 DLRM（Deep Learning Recommendation Model）迭代，已经触及了基于人工特征工程范式的天花板——博客原文明确指出&quot;通过传统 DLRM 模式进一步提升转化率变得十分困难&quot;。这不是一个增量优化问题，而是范式问题：DLRM 受限于显式特征工程的上限、模型规模受限于 CTR/CVR 任务对算力 ROI 的敏感性，无法享受类似 LLM 的 Scaling Law 红利。团队由此把目光转向 Meta 在 2024 年提出的生成式推荐 (GR) 框架与 HSTU (Hierarchical Sparse Transformer Unit) 架构，希望验证一个核心假设：能否在工业推荐场景中通过把推荐建模为序列生成任务，让模型规模与算力的提升直接转化为业务指标增长。这个动机在 2026 年的中国互联网工业界具有典型性——快手 OneRec、阿里 LUM、腾讯/字节相关团队都在同步探索同一问题，但各家走向了不同分支。MTGR 选择的是&quot;混合式生成&quot;——既要 Scaling Law，又不愿丢掉过去十年沉淀的特征工程信息全集。</p>
+<h3>2. 方法详解</h3>
+<p>MTGR 的核心方法可以拆为四个层次：</p>
+<p><strong>Token 化方案</strong>：把异构推荐输入统一映射为 Token 序列。用户 Profile 类静态特征每个特征对应一个 Token；用户行为序列里每条 Item 由 Item ID Embedding + 多个 side info Embedding 拼接经非线性映射后得到一个 Token；曝光样本则把 Item ID、side info、交叉特征、时空 context 一起组进单个 Token。关键设计是保留全部交叉特征——博客 Table 1 的对比实验直接证明&quot;完全抛弃交叉特征会极大损害 MTGR 模型性能&quot;，这是 MTGR 与纯生成式（端到端 Semantic ID）路线的关键分歧。</p>
+<p><strong>HSTU 编码 + Group LayerNorm</strong>：所有 Token 进入统一的 HSTU encoder。但因为来自 Profile / 行为 / 曝光样本的 Token 处于不同语义空间，简单 LayerNorm 会把它们对齐到同一分布，损失结构信息；MTGR 引入 Group LayerNorm，按 Token 来源分组归一化，让不同语义保持独立分布，离线 GAUC 进一步提升（Table 2）。</p>
+<p><strong>动态混合掩码</strong>：经典 GR 用因果掩码让 Token 顺序生成，但工业推荐里历史静态特征其实可以双向看到、当日实时行为需要因果、曝光样本需要按时间戳过滤保证因果。MTGR 对三类 Token 分别采用&#x27;无掩码 / 因果掩码 / 时间戳过滤&#x27;的混合策略，让 HSTU 同时具备 encoder 的双向学习能力与 decoder 的因果生成能力（Table 3 的 ablation 显示混合掩码显著优于纯因果）。</p>
+<p><strong>用户粒度变长压缩</strong>：传统训练把同一用户的 N 条曝光样本视为 N 行，每行重复 user-level 特征。MTGR 把同一用户的 N 行压成一行，配合 JaggedTensor 与变长 HSTU 算子彻底抛弃 padding。这一步是把 Scaling Law 跑得动的关键。</p>
+<p>训练设置上，MTGR 采用 small / middle / large 三档模型规模，single-sample 前向 FLOPs 跨越 1×、~10×、65× 区间；其中 large 版本对应 22 层、d_model=1024 的 HSTU 主干（约 137.87 GFLOPs，约 160× DLRM），但因推理代价考虑暂未上全量。优化器细节博客未完全披露，但提及随机长度采样策略来控制训练时的 token 总量，使得 65× 计算复杂度的 GR 模型最终训练成本仅约 DLRM 的 2 倍（Table 5）。</p>
+<h3>3. 核心技术贡献</h3>
+<p><strong>贡献 1：混合式生成范式</strong>——保留交叉特征作为辅助 Token 的同时享受 HSTU 序列建模与 Scaling Law。这一设计的工程合理性在于：交叉特征是过去十年人工沉淀的高质量信号，丢弃它们等于让模型从零学习；保留则让 GR 在其上做增量。</p>
+<p><strong>贡献 2：Fused Cutlass-based HSTU Kernel</strong>——原始 PyTorch / Triton 实现把 HSTU 拆成多个细碎算子，无法支持变长序列。MTGR 借鉴 flash-attention 的思想手写核心 HSTU 算子（基于 Cutlass），单算子相比 Triton 版本提速 2~3 倍。这是把 65× FLOPs 的模型成本压回到 1× 量级的核心。</p>
+<p><strong>贡献 3：变长负载均衡 + JaggedTensor</strong>——用户行为序列长度呈长尾分布；如果按固定 batch size 训练，长尾用户会让单卡 OOM、短尾用户让卡间负载失衡。MTGR 改为动态调整 batch size 让 total_tokens per GPU 一致，并修改梯度聚合策略加权。</p>
+<p><strong>贡献 4：推理路径全面工程化</strong>——TensorRT + Triton Inference Server，特征 H2D 用预开辟 Host buffer + merge-split 把 H2D 耗时从 7.5ms 压到 12μs；CUDA Graph + FP16 把推理延迟从 19ms 降到 12ms (-37%)、吞吐 68→94 req/s (+38%)。FP16 与 FP32 精度差控制在 0.006 以内，无业务影响。</p>
+<h3>4. 实验结果分析</h3>
+<table><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody><tr><td>单样本前向 FLOPs 提升</td><td>65× (55.76 GFLOPs vs DLRM ~0.86)</td></tr><tr><td>离线 CTCVR GAUC</td><td>+2.88 pp</td></tr><tr><td>外卖首页列表订单量 (A/B)</td><td>+1.22%</td></tr><tr><td>PV_CTR (A/B)</td><td>+1.31%</td></tr><tr><td>训练成本</td><td>与 DLRM 持平</td></tr><tr><td>在线推理资源</td><td>-12%</td></tr><tr><td>H2D 延迟</td><td>7.5ms → 12μs (-99.84%)</td></tr><tr><td>推理 P99 延迟</td><td>-16% ~ -57%</td></tr></tbody></table>
+<p>最值得关注的是&quot;近两年单次优化最大收益&quot;的定性描述——团队明确表示这一点击穿了过去 DLRM 增量调优 0.x% 量级的 ceiling，符合 Scaling Law 期待。Ablation 关键结论：(a) 完全抛弃交叉特征会显著降低 GAUC，验证混合式架构的必要性；(b) Group LayerNorm vs 普通 LayerNorm 显示分组归一化对异构 Token 的关键作用；(c) 混合掩码 vs 纯因果掩码差距明显。值得注意的&quot;未上线&quot;结果是 large 版本 137.87 GFLOPs 模型在离线最佳但推理性能约束下未能 A/B——说明 Scaling Law 本身没饱和，瓶颈仍然在工程。</p>
+<h3>5. 局限与未来方向</h3>
+<p><strong>作者明确承认的局限</strong>：</p>
+<ul>
+<li><strong>数据劣势</strong>：MTGR 仅训练 2024 年 10 月后半年数据，而 DLRM 基线是 2 年以上累积，意味着 +2.88pp GAUC 是在数据劣势下取得的，潜力还更大；</li>
+<li><strong>序列长度受限</strong>：small/middle 用 3k，large 受训练效率约束只能用 1k，未达到 HSTU 理论上限；</li>
+<li><strong>推理算力天花板</strong>：137.87 GFLOPs 的超大模型暂时无法上线。</li>
+</ul>
+<p>未来方向：(1) 结合 LBS 时空属性优化 HSTU 结构；(2) 多业务全场景 User Center + KV Cache 共享推理；(3) 粗排+精排融合为一段式 MTGR 打分。这三条都直指当前架构的工程瓶颈。</p>
+<p>未提及但实际存在的局限：与 OneRec 的端到端 Semantic ID 路线相比，MTGR 仍依赖外部召回与 user feature pipeline，未走完&quot;完全替换级联&quot;的最后一步；这与团队选择的工程稳健路线相符。</p>
+<h3>6. 工业实践意义</h3>
+<p>对社区搜索/推荐团队的可借鉴点：</p>
+<p><strong>应该立即采纳</strong>：</p>
+<ol>
+<li><strong>JaggedTensor + 变长 HSTU 算子</strong>：任何长序列建模任务（用户行为序列、长 query 文本）都应抛弃 padding。这是把 Scaling Law 跑得动的工程基础。</li>
+<li><strong>Group LayerNorm 处理异构 Token</strong>：多种类型特征通过同一 backbone 时务必分组归一化，对齐分布会损失结构信息。</li>
+<li><strong>Fused Cutlass kernel 思路</strong>：高频自定义算子用 Cutlass 写而不是 Triton，2-3× 提速直接决定能否上线。</li>
+</ol>
+<p><strong>应该谨慎评估</strong>：</p>
+<ol>
+<li><strong>混合式 vs 端到端</strong>：MTGR 选保留交叉特征，OneRec 选 Semantic ID 端到端。前者风险低、迭代成本低，但 Scaling Law 上限可能更早饱和；后者风险高、对工程要求极高，但天花板更高。社区搜索推荐如果还在 DLRM 阶段，建议先走 MTGR 路线，把现有特征体系迁移到 GR 上。</li>
+<li><strong>推理优化必须跟训练设计同步迭代</strong>：MTGR 把 65× FLOPs 压到 -12% 推理资源的关键不是某一个优化，而是 H2D + CUDA Graph + FP16 + 单分片推理的组合拳。任何 GR 项目立项前应估算 inference 路径成本。</li>
+</ol>
+<p><strong>应该避免</strong>：</p>
+<ol>
+<li>直接搬 Meta 原版 HSTU 不要：原版用因果掩码、不保留交叉特征，在工业冷启场景下性能可能不如 DLRM。</li>
+<li>别为了 Scaling Law 强行扩参数：MTGR-large 137 GFLOPs 离线最佳但因推理上不了线就只能保留 65× 量级。模型大小的天花板永远是部署侧约束。</li>
+</ol>
+<p>部署考量：MTGR 推理资源 -12% 的核心原因是&quot;对候选数量不敏感、可单分片推理&quot;——这与 LLM serving 类似，社区搜索如果上 GR 排序，应预留 8 卡 H100 / 单分片足以支撑数十 QPS 的工程预算，并提前准备 TensorRT engine 编译流程。</p></div>
+  </div>
+</div>
       <div class="paper-meta"><span class="source-tag">blog_rss</span><span class="company-tag">Meituan</span><span style="font-size: 12px; color: var(--text-muted);">2025-05-19</span><span style="font-size: 12px; color: var(--text-muted);">美团业务研发平台</span></div>
     </div>
   </div>
