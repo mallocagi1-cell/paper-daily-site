@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — SequenceO1: End-to-End Ultra-Long (100K) Sequence Modeling in Recommendation with Low-Rank Caching</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>SequenceO1: End-to-End Ultra-Long (100K) Sequence Modeling in Recommendation with Low-Rank Caching</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.20</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> SequenceO1 将最多100K次历史行为压缩为与候选无关的固定长度用户草图，再结合近期10K行为进行目标条件推理。原型维归一化、两层草图细化与缓存共同降低重复计算；抖音一个月线上实验中，总体时长提升1.4999%、完播提升2.3256%、不喜欢下降6.9829%，对照为STCA 10K加TWIN V2生产模型。</p><p><strong>Key insight:</strong> 对UGC搜索，可将稳定用户兴趣压缩并跨候选复用，让实时query与帖子只参与后续匹配。迁移价值取决于历史长度和缓存命中率，应先按活跃度评估CTR与nDCG；论文中的常数成本只指草图缓存命中路径，缓存失效仍需处理原始历史，近期行为与候选特征也不能简单复用。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-09-10/personalization/report.html#dr-arxiv-2609-08443">2026-09-10 · Personalization (4.20)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2609.08443" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>SequenceO1处理超长历史排序的成本问题。短视频用户一年可能产生十万级行为，里面包含长期兴趣、周期性需求和反复出现的主题；直接截断会丢失这些信号。但是把序列从10K延长到100K，问题不仅是attention计算量，还包括原始特征存储、样本传输、GPU显存和每个候选重复处理用户侧输入。</p>
+<p>论文的生产对照是STCA 10K加终身兴趣TWIN V2模块。后者通过聚类压缩与分阶段检索选取历史，能够利用长期信息，但压缩和检索与最终排序优化存在分离。另一条路线是短序列训练、长序列推理，作者指出已报告的长度外推仍与训练长度相联系，且不能消除服务时随历史长度增长的特征与计算开销。</p>
+<p>关键观察是：长期历史可以先形成与候选无关的紧凑表示，再让候选读取它。只要同一用户在多候选、多请求间复用这一表示，成本就不必反复支付。论文名称中的O1严格指缓存命中的超长分支相对原始历史长度为常数，既不指整个推荐请求无条件常数时间，也不指缓存失效时不再扫描历史。</p>
+<h2>2. 方法详解</h2>
+<p>Sketch Attention首先把物品与行为类型融合成历史矩阵X。论文附录给出的动作侧融合思路是：将物品embedding与动作embedding拼接，经SwiGLU前馈映射回物品宽度，再与物品向量做残差相加。同一视频的完播、跳过、点赞因而可以贡献不同的长期兴趣信号。</p>
+<p>模型学习一组全局共享原型P，计算原型与每个历史token的相似度。与常规attention在历史位置上做softmax不同，SA对每个历史token沿原型维归一化，令该行为把权重分配到多个原型。再按权重聚合历史向量，得到固定数量的草图token。这个过程可写成“原型与历史计算相似度—每个行为在原型之间分配单位质量—按分配矩阵汇总历史”。它保留了每个行为参与摘要的通路，避免压缩时过早只选择少数位置。</p>
+<p>草图随后经少量残差细化，配合Add&amp;Norm和SwiGLU FFN。默认最终配置为1K原型、2层SA、宽度128，产物大小为1K×128，与原始历史是否达到100K无关。之后通过宽度适配器送入目标条件的STCA；另一个分支直接读取最近10K行为，保留短期细节。两个分支交给下游排序骨干融合，部署实例使用MixFormer，但方法不要求固定融合骨干。</p>
+<p>缓存只存与候选无关的用户草图。键包含用户ID、模型版本、历史时间戳和草图配置；训练侧TTL为3小时、实测命中率约0.5，服务侧TTL为1小时、命中率约0.6。近期行为和候选特征不进入同一复用逻辑。MRLB把同一用户临近请求组织在一起，草图构建一次后供多个目标使用；近期分支使用请求级mask，避免跨请求穿越时间边界。</p>
+<p>Pipeline Lift把用户草图计算前移到请求入口或召回阶段，因为此时尚未拿到候选也能执行。FlashSA则分块计算相似度、原型维softmax及聚合，不在显存中完整存放原型数乘历史长度的中间矩阵，减少内存流量和kernel启动开销。这些服务与训练策略是实现收益的一部分，不能仅复现一个低秩attention层就视为复现完整系统。</p>
+<p>训练使用抖音生产日志，离线消融用轻量STCA(512)设置，生产实验用完整排序器。正文和附录给出了关键结构及缓存参数，但没有提供完整样本规模、优化器超参数、batch size、训练步数与GPU型号的可复现实验配置。本报告不补造这些值；附录中的训练复用比40、服务复用比300是FLOPs分析的工作点，不是训练batch size。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一项贡献是可端到端学习且与目标无关的历史压缩。相较固定长度投影，原型生成的分配矩阵依赖输入内容，参数不必随历史长度扩大。相较先检索目标相关行为再排序，草图压缩由最终排序训练约束，并且可以跨目标复用。低秩指的是沿长度维构造紧凑表示，不能把它误读成对整张推荐特征表做通用低秩分解。</p>
+<p>第二项贡献是原型维归一化。所有行为都有分配通路，适合需要服务多种候选的通用摘要，而目标信息留给后续STCA读取。论文也提醒，不同归一化轴上的最大权重没有相同概率含义，注意力可视化不能单独证明原型更专门化；有效性仍需看任务指标。去除动作侧融合损失0.20%的Finish AUC变化量，表明行为语义与压缩规则共同影响质量。</p>
+<p>第三项贡献是把草图视为训练和服务都可复用的状态。普通Transformer KV缓存通常随原序列长度扩大，SA草图保持固定形状。缓存命中时无需反复物化、传输和计算原始100K历史；缓存失效仍付出SA计算，但可由请求聚合和前移计算摊销。因此系统成本依赖缓存与用户请求分布，不能只按attention的大O符号预测生产时延。</p>
+<h2>4. 实验结果分析</h2>
+<p>论文表3使用统一100K输入和1K×128摘要预算；以下都是相对同一轻量STCA(512)基线的Finish AUC增益，不是完整生产模型的线上收益。</p>
+<table><thead><tr><th>压缩方法</th><th>Finish AUC增益</th></tr></thead><tbody><tr><td>STCA(512)，无超长分支</td><td>0.00%</td></tr><tr><td>TWIN V2式KMeans</td><td>+0.30%</td></tr><tr><td>相邻行为均值池化</td><td>+0.46%</td></tr><tr><td>位置分桶query</td><td>+0.72%</td></tr><tr><td>Lightning-Attention压缩</td><td>+0.83%</td></tr><tr><td>最近行为初始化query</td><td>+0.78%</td></tr><tr><td>SA最终配置</td><td>+1.07%</td></tr></tbody></table>
+<p>固定摘要尺寸的对照使比较更有说服力：SA的优势不能仅归因于增加输出token。位置分桶低于SA，作者据此讨论了推荐历史和语言连续局部结构的差别——相关行为可以相隔很远。这里仍是经验解释，不是对所有推荐数据都成立的定理。</p>
+<p>结构消融显示，原型从1K减至512损失0.04%，增至2K只增加0.03%；层数从2到3增加0.02%；宽度从128减到64损失0.10%，移除每层细化也损失0.10%。作者明确把小幅增量视为成本与效果权衡的依据，没有将其包装成独立显著性证据。默认配置因此选择较小的两层、1K原型。</p>
+<p>完整生产离线比较使用STCA 10K加TWIN V2作对照，SequenceO1用100K草图分支替代TWIN V2。Finish AUC相对提升0.29%、UAUC提升0.40%；收藏UAUC提升1.47%，不喜欢UAUC提升3.63%。这些UAUC提升衡量预测能力，不能与线上“不喜欢行为下降”直接等同。</p>
+<p>线上A/B持续一个月，抖音与抖音极速版结果如下，表中均为相对控制组变化，论文报告统计显著。</p>
+<table><thead><tr><th>指标</th><th>抖音</th><th>抖音极速版</th></tr></thead><tbody><tr><td>30日活跃</td><td>+0.1968%</td><td>+0.2335%</td></tr><tr><td>使用时长</td><td>+1.4999%</td><td>+1.6655%</td></tr><tr><td>完播</td><td>+2.3256%</td><td>+3.4872%</td></tr><tr><td>评论</td><td>+3.5910%</td><td>+8.6132%</td></tr><tr><td>点赞</td><td>+2.3617%</td><td>+2.9399%</td></tr><tr><td>不喜欢</td><td>-6.9829%</td><td>-5.9972%</td></tr></tbody></table>
+<p>分活跃度结果值得关注：抖音低活跃人群30日活跃提升0.5484%，高于总体；说明利用长期历史可能帮助重新识别其稳定偏好。但低活跃不是完全没有历史的新用户，不能把该结果称为零样本冷启动证明。不同产品评论增益相差较大，也提醒迁移时需要保留产品和用户分桶。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确把百万级历史、更分层或多分辨率草图以及随用户和行为模式调整容量作为未来方向。当前实证部署是100K，不能因为架构原则上支持扩展就声称已经验证百万级效果。文中讨论的图内草图检索和局部细化也未在当前部署中实验。</p>
+<p>缓存收益的边界在附录中有明确分析：命中路径成本只包含固定草图适配及后续推理，期望成本还要加上“失效率乘草图构建成本”。训练和推理复用比、命中率一旦变化，FLOPs比值也会变化。相关复杂度图省略两方案共同的近期10K和排序骨干成本，因此图中的分支计算节省不能解释成整条推荐链路同比例提速。</p>
+<p>以下属于本报告补充判断：生产缓存下如何稳定更新压缩器、模型版本如何与TTL协调、缓存命中样本的梯度如何处理，复现时仍需要逐项确认。私有生产数据和不完整训练配置也限制了独立复现；与其他公司两阶段系统的收益保留率只能提供背景，缺少相同数据和预算的直接比较。</p>
+<h2>6. 工业实践意义</h2>
+<p>UGC社区搜索可先验证长期兴趣是否在query给定后仍有额外价值。如果查询意图已经非常明确，过强的长期偏好可能降低相关性；因此建议把query、近期行为和长期草图分开输入，让下游排序决定使用多少长期信号，并同时检查nDCG、CTR和满意阅读。该建议为场景迁移分析，论文没有提供UGC搜索实验。</p>
+<p>小规模试验可比较短历史、简单均值草图、目标无关原型草图三种设置。保持候选、训练时间切分与输出摘要尺寸一致，先看低活跃用户及长尾内容分桶，再加入MRLB和缓存。这样能够分别判断压缩方法的质量收益与工程复用的成本收益，避免把训练样本变化误认为模型进步。</p>
+<p>部署前应确认可以复用的输入边界：用户历史草图可跨候选共享，当前query通常只能在请求内共享，候选帖子内容不能被混入全局用户缓存键之外。缓存键至少覆盖用户、模型版本、历史版本和摘要配置；近期分支保留新鲜行为，缓存未命中时走明确计算路径。对于历史只有几十次交互的用户，直接处理短序列可能更合适，无需强制分配1K摘要槽位。</p>
+<p>该方法最值得借鉴的是“把长期偏好表示做成有清楚更新语义的可复用状态”。要获得类似生产收益，除了模型层，还需具备请求聚合、特征前移与高效kernel能力；缺少这些条件时应先验证表示质量，再决定是否投入完整系统改造。</p>
+<p>来源：<a href="https://arxiv.org/html/2609.08443" target="_blank" rel="noopener">论文全文，第3—7节及附录D、G</a>。实验数字均保持原论文对照与指标口径。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

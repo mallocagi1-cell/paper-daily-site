@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — TWICE: Two-Clock, Two-Window Learning for Long-Horizon Conversion Prediction in Online Advertising</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>TWICE: Two-Clock, Two-Window Learning for Long-Horizon Conversion Prediction in Online Advertising</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> TWICE 将延迟转化拆为目标窗口 CVR 与分组延迟 CDF，用点击时钟的未成熟样本训练当前状态似然，用转化时钟更新延迟分布，并以固定 pCVR 质量校正历史流量混合。快手全流量实验中，预期收入、实际收入和转化分别提升 2.486%、1.858% 和 2.061%。</p><p><strong>Key insight:</strong> 对收藏、关注、回访等长延迟目标，等待完整标签会牺牲时效，直接把早期未转化当负样本又会产生偏差。双时钟设计把“是否最终转化”和“何时到达”分开学习，服务端只需一次单调 CDF 推断，无历史查表或卷积，适合多窗口价值预估。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-31/personalization/report.html#dr-arxiv-2607-25404">2026-07-31 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2607.25404" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>TWICE 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>广告和推荐中的转化率模型面临一个天然的双时钟问题：点击在时刻 C 发生，购买、注册或订阅可能在几小时乃至几周后的 V 才到达。线上训练又不能等待完整归因窗口，否则模型总是落后于最新流量。工程上常在点击后一小时就释放样本，把尚未转化的点击暂时记为负例；结果是真正会在第二天转化的样本被系统性错标。另一方面，直接用历史到达的转化延迟训练延迟模型也有偏差，因为某一时刻到达的转化来自多个点击 cohort，而这些 cohort 的规模和质量不断变化。大促、投放调整或流量结构变化时，观察到的到达延迟分布并不等于单个点击条件下的真实延迟分布。</p>
+<p>TWICE 把目标明确分成两部分：目标窗口 v 内最终会不会转化，以及在已经会转化的条件下延迟 D 的分布。论文采用 v=30 天、基础观察窗口 o=1 小时。对特征 x，基础窗口观测到的转化概率可以分解为 p_o(x)=p_v(x)乘以 F(o|x)，其中 p_v 是 30 天目标 CVR，F 是转化者条件下延迟不超过 o 的 CDF。若能在线估计 F，就可使用最新的一小时标签训练最终 CVR，而不必等 30 天成熟。真正困难之处是如何从按到达时间涌入的转化事件中，无偏或至少低偏地学习 F。</p>
+<p>论文名称中的 Traffic-Weighted 指向核心修正：在时刻 t 看到延迟 d 的转化，其可能来源不仅由延迟密度 f(d) 决定，还由 t-d 时刻对应 cohort 的可转化质量总量 m(t-d) 决定。到达强度近似是 m 与 f 的卷积。忽略 m，就会把流量涨跌误认为延迟规律变化。TWICE 用历史点击时保存的 pCVR 质量，构造每个到达事件的风险集权重，从而在真实的非平稳流量中恢复延迟分布。</p>
+<h2>2. 方法详解</h2>
+<h3>2.1 双头分解与新鲜标签训练</h3>
+<p>CVR 头输出 p_theta(x)，表示点击在 30 天内最终转化的概率。新鲜点击在 C+o 只释放一次，标签 Y(o) 表示一小时内是否转化。模型用于该标签的预测是 p_theta(x)乘以 stop-gradient 的 F_phi(o|G(x))，再计算二元交叉熵。停止梯度非常关键：一小时标签只负责更新最终 CVR 头，不能反向把延迟头推成一个迎合大量暂时负例的捷径。CVR 头学到的是目标窗口概率，而不是一小时概率；延迟校正项把它投影到当前可观察窗口。</p>
+<p>延迟头只使用稳定、低基数的分组特征 G(x)，输出 12 个延迟桶的 softmax 概率。桶边界为 0、1、2、4、8、12、24 小时，以及 2、4、7、14、21、30 天。CDF 由桶概率前缀和构成，桶内用均匀密度插值，因此任意小于 30 天的观察窗口都能从同一 checkpoint 得到单调一致的 F。选择紧凑 G 不是为了节省几个参数，而是为了让不同点击共享风险集；若使用完整高维 x，每个上下文几乎成为单例，到达事件无法为其他样本提供有效延迟梯度。</p>
+<h3>2.2 到达事件的流量加权似然</h3>
+<p>每个点击发生时，系统记录分组 G、精确时间和停止梯度后的 pCVR 分数 a_j。若某次转化在 V_i 到达、实际落入第 k 个延迟桶，系统按该桶对应的点击时间区间，查询同组历史点击的 a_j 之和 R_i,k。直观上，R_i,k 是这个到达事件可能来自该延迟桶的历史可转化质量。候选桶的到达概率与 R_i,k、桶概率 q_k 和桶宽 Delta_k 的倒数成正比，再对所有桶归一化得到 Q_i(k)。延迟损失就是实际桶的负对数似然。</p>
+<p>这个构造修正了只看到达延迟的选择偏差。假设昨天流量突然翻倍，即使用户延迟规律不变，今天到达的一天延迟转化也会更多。朴素方法会提高一天桶概率；TWICE 的 R 会同时反映昨天更大的 cohort 质量，从而把流量规模解释掉。它还用保存的 pCVR 而非纯点击计数做质量加权：一千个低意图点击不应与一千个高意图点击贡献相同的潜在转化质量。点击分数必须在点击时固定，避免后来模型版本变化回写历史风险集。</p>
+<p>论文也清楚限定了统计假设。第一，pCVR 在分组与时间范围内的总量需要近似校准；第二，给定 G 后，目标窗口内的延迟分布在所用窗口内近似平稳。因 pCVR 本身是估计量，这仍是插件似然，并非对所有分布都严格无偏。方法的价值在于把主要的 cohort 质量变化显式建模，而不是宣称消除了所有延迟反馈偏差。</p>
+<h3>2.3 流式训练与服务架构</h3>
+<p>系统将点击流和转化到达流打乱交替训练，总损失为新鲜点击损失加 lambda_d 倍延迟损失，默认 lambda_d=1。两套头参数分离，配合 stop-gradient 实现清晰的梯度所有权。训练每小时滚动一次，历史点击质量通过按组、按时间范围求和的 mass index 查询；每个未过 30 天归因窗口的点击只需保存一个标量 pCVR，过期即淘汰。到达记录携带所需信息，训练时不必重新跑历史特征。</p>
+<p>线上推理更简单：服务只读取最新 checkpoint，直接输出 p_theta(x)，不需要访问 mass index，也不做卷积。换言之，复杂度被放在训练数据准备而非毫秒级服务链路。论文报告预测延迟仍为 36 ms，训练每小时 4 分钟不变，数据准备从 20 分钟增至 25 分钟，总计 29 分钟，仍能在小时刷新周期内完成。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，TWICE 把延迟反馈学习重新表述为到达事件对历史点击 cohort 的责任分配问题。风险集不按点击数等权，而按点击时的最终 pCVR 质量加权，能区分流量规模变化、点击质量变化和真实延迟变化。这比仅给未成熟负例做逆倾向权重更直接地利用了在线到达过程。</p>
+<p>第二，论文构造了可部署的双头训练协议。新鲜标签只更新 CVR 头，成熟到达只更新延迟头；F 在 CVR 损失中停止梯度，pCVR 在 mass index 中也停止并固定。消融显示去掉 CVR 梯度隔离会显著退化，证明这些看似工程性的 stop-gradient 实际上承担了统计识别作用。</p>
+<p>第三，12 桶 CDF 让一个 checkpoint 支持 1 至 24 小时等多个观察窗口，同时天然保持随时间单调。基线通常为每个观察窗口重新训练，TWICE 在不同标签成熟度下只替换 F(o)，适合数据延迟或训练周期经常调整的线上系统。</p>
+<p>第四，论文给出了从统计公式到小时级流水线的完整闭环，包括风险集索引、状态过期、到达记录自包含和线上零额外状态。工业数据有 1.7409 亿点击、最终 CVR 仅 0.64%，属于极度类别不平衡场景；线上实验最终全流量发布，说明方法不只在公开数据上成立。</p>
+<h2>4. 实验结果分析</h2>
+<p>实验包含 Criteo 与工业广告数据。Criteo 有 1561 万点击、60 天点击流，最终 CVR 为 22.66%；工业数据有 1.7409 亿点击，CVR 为 0.64%。点击日 0 至 60 用于构造流式实验，转化继续收集到第 90 天以获得完整 30 天标签；0 至 30 天预训练，30 至 60 天流式更新。所有方法按时间顺序单遍训练，AdamW、batch 8192。Criteo 使用 8 维 embedding 和 128、64 两层 ReLU MLP，工业实验使用线上主干；延迟头为 64、32 两层 MLP。学习率从 1e-6 到 1e-3 的七个候选中按时间验证选择。论文报告五个随机种子与双侧 t 检验，但未报告训练硬件。</p>
+<p>主要离线结果如下：</p>
+<table><thead><tr><th>模型</th><th>Criteo AUC</th><th>Criteo PR-AUC</th><th>Criteo LogLoss</th><th>工业 AUC</th><th>工业 PR-AUC</th><th>工业 LogLoss</th></tr></thead><tbody><tr><td>Vanilla</td><td>0.8353</td><td>0.6322</td><td>0.3996</td><td>0.9076</td><td>0.1450</td><td>0.02545</td></tr><tr><td>Oracle</td><td>0.8426</td><td>0.6410</td><td>0.3890</td><td>0.9226</td><td>0.1980</td><td>0.02368</td></tr><tr><td>MISS</td><td>0.8395</td><td>0.6378</td><td>0.3922</td><td>0.9160</td><td>0.1795</td><td>0.02423</td></tr><tr><td>TWICE</td><td>0.8413</td><td>0.6388</td><td>0.3901</td><td>0.9185</td><td>0.1880</td><td>0.02385</td></tr></tbody></table>
+<p>Oracle 等待完整标签，代表可达到的上界而非可部署基线。TWICE 在 Criteo 上回收 Oracle 相对 Vanilla 的 AUC、PR-AUC、LogLoss 空间的 81.8%、75.0%、89.7%，在工业数据上分别回收 72.7%、81.1%、90.4%。相对最强在线基线 MISS，Criteo 的 AUC 与 PR-AUC 提升 0.0018、0.0010，LogLoss 降低 0.0021；工业数据分别提升 0.0025、0.0085，LogLoss 降低 0.00038，均达到 p 小于 0.05。工业 PR-AUC 从 0.1795 到 0.1880 的绝对变化在 0.64% 基率下尤其有意义。</p>
+<p>消融把贡献拆得较清楚。完整 TWICE 在 Criteo 的 AUC、LogLoss、Delay NLL 为 0.8413、0.3901、1.792，工业数据为 0.9185、0.02385、1.402。去掉 traffic convolution 后分别退化到 0.8397、0.3928、1.872 和 0.9158、0.02430、1.566；仅用点击数而不用 pCVR 质量时为 0.8404、0.3917、1.824 和 0.9167、0.02412、1.498；不隔离 CVR 梯度时也明显变差。完全去掉延迟建模几乎回到 Vanilla。由此可见，流量规模校正、质量加权、梯度隔离三部分都有独立贡献，提升不是来自多加一个 MLP。</p>
+<p>分组上下文也展示了偏差—方差权衡。工业数据中，全局零字段的 AUC、Delay NLL、LogLoss 为 0.9135、1.621、0.02470；6 字段 Minimal 为 0.9164、1.493、0.02425；10 字段 Default 为 0.9185、1.402、0.02385；20 字段 Expanded 为 0.9187、1.387、0.02382。扩大到 20 字段只带来边际收益，默认 10 字段已足以部署。上下文过粗会混合不同延迟行为，过细又使风险集稀疏，这比一味堆特征更值得注意。</p>
+<p>同一个 TWICE checkpoint 在 1 至 24 小时观察年龄上能回收 89.6% 至 91.0% 的 LogLoss 上界空间，而基线需为不同窗口重训。按真实延迟分段看，相对 MISS 的 AUC 优势从早期 0.00012 增至 14 至 30 天的 0.00405，LogLoss 改善从 0.00004 增至 0.00441，说明越长尾的转化越需要显式建模 cohort 变化。</p>
+<p>线上八天 A/B 使用 10% 流量，等 30 天成熟后评估。期望收入提升 2.486%，实际收入提升 1.858%，转化数提升 2.061%，PCOC 从 0.961 改善到 0.990，均达到 p 小于 0.01。期望收入增幅高于实际收入，提示排序收益与真实归因之间仍有差距；但校准、转化和收入同时改善，并最终全量发布，构成较强的工业证据。</p>
+<h2>5. 局限与未来方向</h2>
+<p>最重要的局限来自论文明确写出的两个假设。分组范围内的 pCVR 总量若严重失准，R_i,k 就不再代表潜在转化质量；延迟分布若在同一 G 内快速漂移，历史风险集也会把旧规律带入当前估计。因此 TWICE 不是无条件无偏估计器，而是依赖校准与局部平稳性的插件方法。未来可把 pCVR 不确定性带入责任分配，或用随时间衰减、状态空间模型处理延迟分布漂移。</p>
+<p>第二，紧凑 G 在统计支持和个性化之间折中。20 字段相对 10 字段仍有小幅改善，表明某些个体差异尚未被捕获；但继续增加字段会导致风险集接近单例。可以探索层次化分组、可学习聚类、哈希平滑或从粗到细的贝叶斯回退，让稀疏组借用父组统计量。评估时还应按新用户、广告主、国家和流量峰谷分层报告，而不是只给整体指标。</p>
+<p>第三，方法固定目标窗口为 30 天，CDF 最长也只支持到 v。若业务从 30 天改为 60 天，历史 mass index、桶定义和训练标签都需要版本化迁移。每个未过期点击保存一个 pCVR 标量，在每天数十亿点击的平台上仍是可观的状态规模，尽管不进入在线 serving。论文只报告数据准备多 5 分钟，没有给存储量、查询吞吐、故障恢复和迟到事件处理细节。</p>
+<p>第四，实验范围仍有限。公开 Criteo 数据年代较早，工业部分只有一个广告场景；对自然推荐中的收藏、复访、付费订阅等多阶段行为能否成立，需要重新检查首次转化定义和竞争风险。论文把第一个匹配转化作为结果，重复购买、取消、跨设备归因和多触点归因都可能破坏简单的单延迟假设。</p>
+<p>第五，线上实验本身要等待 30 天才成熟，八天试验的最终读数在运营上有较长反馈周期。论文未给硬件、mass index 的峰值资源和长期模型漂移数据。实际部署还需防止训练小时窗口未完成、事件积压或分组配置变更时发布不兼容 checkpoint。未来工作应加入可观测性和回滚协议，并比较端到端资源成本。</p>
+<h2>6. 工业实践意义</h2>
+<p>TWICE 最适合目标价值高、转化延迟长、流量结构变化明显且模型需要高频更新的系统。广告购买是直接场景，社区推荐中的 7 日回访、30 日订阅、内容创作者留存也可借鉴。若目标在几分钟内几乎全部完成，或平台可以接受等待完整标签，额外的风险集系统未必值得；它解决的不是所有 CVR，而是新鲜度与标签成熟度冲突。</p>
+<p>落地第一步应先建立可靠的事件语义：点击主键、首次匹配转化、精确事件时间、30 天 watermark、迟到与重复事件去重。第二步选择稳定低基数字段构成 G，例如国家、设备、广告位、流量来源、商品大类，而不要直接放用户 ID 或高维 embedding。第三步在点击时冻结 pCVR 与模型版本，并建设按组和时间区间求和的 mass index；所有桶边界、归因窗口和分组 schema 都应带版本。</p>
+<p>运行时至少监控 pCVR 分组校准、各延迟桶观测与预测质量、风险集覆盖率、零质量区间比例、数据准备耗时、状态量和过期淘汰，以及不同观察窗口下的 PCOC。模型收益评估必须等完整窗口成熟，同时用领先指标监控训练异常。若校准突然恶化，应先回退到较粗分组或 Vanilla checkpoint，不能让错误的质量权重持续污染延迟头。</p>
+<p>对已有延迟反馈校正的团队，论文最有启发的点是把训练和服务解耦：复杂的到达卷积只存在于小时级数据面，预测面仍是普通 CVR 网络。团队可以先离线复现 traffic convolution 与 no-pCVR 消融，确认自身流量非平稳确实造成偏差，再小流量验证。TWICE 的价值不在网络结构新奇，而在把时间、流量和标签成熟度变成一套可审计、可刷新、服务零额外依赖的训练协议。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

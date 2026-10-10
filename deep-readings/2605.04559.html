@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Beyond Static Best-of-N: Bayesian List-wise Alignment for LLM-based Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Beyond Static Best-of-N: Bayesian List-wise Alignment for LLM-based Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.35</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 5 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 现有 LLM4Rec 多用 token 级目标，难以直接优化 NDCG、Fairness 等列表级不可微指标；推理时 Best-of-N 虽能优化但成本极高。BLADE 用贝叶斯框架动态融合历史先验与当前 rollout 证据：F̂(r)=(N_ref^&lt;r + τ·N_batch^&lt;r)/(M+τ·G)，最优 τ≈0.3。在 Amazon-CDs/Steam/Goodreads 上 NDCG@5 较 BoN 对齐基线提升 5.1–23.1%，单次推理 44.56s vs N=4 BoN 的 178.24s，且在 Fairness/Diversity 上达到 Pareto 占优。</p><p><strong>Key insight:</strong> 把 BoN 静态参考分布换成贝叶斯自演化目标，解决了「静态参考无法区分超出经验范围的候选」与「策略变好后梯度消失」两大对齐顽疾。社区搜索/推荐的 list-wise 公平性、多样性、相关性混合目标无法用 token-level loss 直接优化的场景，可借鉴该 CDF 估计器：不需要在线 BoN，offline 训练一次即可。τ 控制先验稳定性 vs 在线适应，是后续多目标推荐对齐工作的关键超参。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-08/personalization/report.html#dr-arxiv-2605-04559">2026-05-08 · Personalization (4.35)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.04559" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>LLM4Rec 把推荐转成自回归生成任务，但训练目标停留在 token 级 cross-entropy 或 pair-wise preference（DPO/IPO），导致两类指标无法直接优化：（1）list-level 不可微指标，如 NDCG（涉及 ranking position）、Fairness（如组间 MGU）、Diversity（ILD）；（2）多目标的混合权衡。</p>
+<p>推理时 Best-of-N (BoN) 通过对每个 query 采样 N 个候选列表、按 list-wise reward 选最优，可绕过这一问题。但 BoN 的 N 倍延迟在线上不可接受（实测 N=4 时 178.24s vs 单次 44.56s，4× 时延）。BoN Alignment 试图把 BoN 的搜索能力 distill 进策略本身（即 offline 训练让模型直接采样到高分候选），但作者识别出两个根本性失败模式：</p>
+<p><strong>(1) Indiscriminate Supervision（无差别监督）</strong>：静态参考分布的 CDF 在超过最大参考奖励 R_max 后饱和到 1.0，所有「比 R_max 还好」的候选获得相同 quantile 分数，丢失了 ranking guidance。当策略变强、采样开始普遍超过 R_max，监督信号坍缩。</p>
+<p><strong>(2) Gradient Decay（梯度消失）</strong>：随着策略改进，weighting 项 log F_ref(R(y)) → 0，有效监督信号迅速衰减，训练提前收敛在次优。</p>
+<p>作者把这归结为「静态参考分布与动态策略不匹配」，提出动态贝叶斯参考分布。</p>
+<h2>2. 方法详解</h2>
+<p><strong>核心 CDF 估计器</strong>：</p>
+<p>F̂_BLADE(r) = (N_ref^&lt;r + τ · N_batch^&lt;r) / (M + τ · G)</p>
+<p>其中：</p>
+<ul>
+<li>N_ref^&lt;r：静态参考样本中奖励 &lt; r 的个数</li>
+<li>N_batch^&lt;r：当前 batch（rollout）中奖励 &lt; r 的个数</li>
+<li>M = 128（参考集大小）</li>
+<li>G = 16（每 query rollout 组大小）</li>
+<li>τ：动态系数，控制「先验稳定性 vs 在线适应」权衡</li>
+</ul>
+<p>形式上等价于在 Beta-Binomial 共轭框架下做参数更新：<br>α_new(r) = α_0(r) + τ · N_batch^&lt;r<br>β_new(r) = β_0(r) + τ · (G − N_batch^&lt;r)</p>
+<p>把这一动态 CDF 代入 BoN-as-distillation 的代理奖励：</p>
+<p>r_i = (N − 1) · log F̂_BLADE(R(y_i))</p>
+<p>这一奖励放进 GRPO 目标（group-relative advantage），保证当策略变强时，参考分布也跟着 batch 移动，避免 saturation。</p>
+<p><strong>训练管线</strong>：</p>
+<ul>
+<li>Backbone：Llama-3.2-1B-Instruct</li>
+<li>硬件：4×A100</li>
+<li>SFT：3 epoch，lr=1e-4</li>
+<li>BLADE 阶段：3 epoch，lr=5e-6，linear decay；group size G=16，reference set M=128</li>
+<li>采样：temperature=0.8，repetition penalty=1.05</li>
+</ul>
+<p><strong>关键设计</strong>：BLADE-N 的 N 表示用 BoN 推理时也用 N 个候选，但因 BLADE 已 distill BoN 能力进策略，单次推理与 base 同价位（44.56s）。</p>
+<h2>3. 核心技术贡献</h2>
+<p><strong>(1) 动态贝叶斯参考分布</strong>：从根本上解决 BoN Alignment 的 saturation 与 gradient decay。机制：参考分布不是固定的，而是 Beta-Binomial 后验，随 rollout 不断 fuse 当前 batch 证据。τ 调节 prior vs likelihood 权重，τ=0.3 是稳健甜区。</p>
+<p><strong>(2) 与 GRPO 无缝集成</strong>：proxy reward r_i = (N−1)·log F̂(R(y_i)) 直接替换静态 quantile，无需修改 GRPO loss 形式。等于「给 PPO/GRPO 装一个动态 reference distribution adapter」，工程改动小。</p>
+<p><strong>(3) 多目标 Pareto 占优</strong>：在 R_NDCG − λ·MGU（公平性）和 R_NDCG + λ·ILD（多样性）两类复合 reward 上，BLADE 在所有 λ 值上 Pareto 占优 SFT baseline。证明该框架是 metric-agnostic 的，可挂载任意 list-wise reward。</p>
+<p><strong>(4) Inference-time 零开销</strong>：1× 单次推理，性能反超 4× BoN，是 BoN distillation 的「真 distillation」证据。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>主结果（NDCG@5）</strong>：</p>
+<table><thead><tr><th>Method</th><th>Amazon CDs</th><th>Steam</th><th>Goodreads</th></tr></thead><tbody><tr><td>BIGRec (SFT)</td><td>0.0283</td><td>0.0357</td><td>0.0545</td></tr><tr><td>S-DPO</td><td>0.0319</td><td>0.0317</td><td>0.0605</td></tr><tr><td>ReRe</td><td>0.0345</td><td>0.0358</td><td>0.0584</td></tr><tr><td>SPRec</td><td>0.0336</td><td>0.0374</td><td>0.0606</td></tr><tr><td>List-DPO</td><td>0.0308</td><td>0.0325</td><td>0.0612</td></tr><tr><td>BoN Alignment</td><td>0.0333</td><td>0.0384</td><td>0.0588</td></tr><tr><td><strong>BLADE-N</strong></td><td><strong>0.0410</strong></td><td><strong>0.0393</strong></td><td><strong>0.0618</strong></td></tr></tbody></table>
+<p>BLADE 较 BoN Alignment 在 Amazon CDs 上 +23.1%，Steam 上 +2.3%，Goodreads 上 +5.1%。Amazon CDs 增益最大，可能与该数据集 reward 分布尾部更长、static reference 更早 saturation 有关。</p>
+<p><strong>计算成本</strong>：</p>
+<ul>
+<li>Base 单次：44.56s</li>
+<li>BoN N=4：178.24s（4× latency，性能反而不如 BLADE）</li>
+<li>BLADE：44.56s（与 base 一致，零推理开销）</li>
+</ul>
+<p>这是 BoN distillation 路线的一个里程碑——首次证明 distill 后的策略能严格超过原 BoN。</p>
+<p><strong>τ 消融</strong>：</p>
+<ul>
+<li>τ=0：等价静态 BoN Alignment，gradient decay 明显，训练提前停滞</li>
+<li>τ=0.3：最优，Recall 持续上升</li>
+<li>τ&gt;1：batch 噪声放大，方差大，diminishing returns</li>
+</ul>
+<p><strong>多目标实验</strong>：</p>
+<ul>
+<li>Fairness：在 λ ∈ [0, 1] 全范围内 Pareto 占优 SFT，λ≈0.5 出现非单调 sensitivity（可能是 fairness reward 与 NDCG reward 在该点互相对抗最强）</li>
+<li>Diversity：λ=0.1 即可显著提升 ILD，且 NDCG 不降反升，说明 BLADE 学到的多样性是「高效用多样性」而非随机扰动</li>
+</ul>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确：</p>
+<ul>
+<li>BLADE 是 metric-agnostic，但实验仅 NDCG/Fairness/Diversity 三类，对 calibration、cold-start 等其他 list 指标未测；</li>
+<li>Bayesian posterior 每 batch 更新带来的额外计算未量化（声称通过 shared sampling 抵消，但没有详细数字）；</li>
+<li>仅在 Llama-3.2-1B 上验证，更大模型/不同 backbone 行为未知。</li>
+</ul>
+<p>笔者补充：M=128, G=16 的超参未做 sensitivity，且 reference set 是否随训练阶段更新（warm-start）未说明。</p>
+<h2>6. 工业实践意义</h2>
+<p><strong>对搜索/推荐 ranking team 的直接借鉴</strong>：</p>
+<ol>
+<li><strong>BoN distillation 路线可行</strong>：以前 BoN 是「推理时增加成本换效果」的 trick，BLADE 证明可以 distill 进策略，单次推理获得 BoN 效果。社区搜索/电商精排在面对 NDCG/Diversity 联合优化时，可优先尝试 BoN 训练而非 inference-time BoN。</li>
+</ol>
+<ol>
+<li><strong>τ=0.3 是工程默认值</strong>：作为新方法首次部署，可直接采用；后续按业务调优。</li>
+</ol>
+<ol>
+<li><strong>多目标 reward 设计</strong>：复合 reward R = R_NDCG + λ_1·ILD − λ_2·MGU 可直接把 list-wise diversity / fairness / accuracy 三目标统一进 RL 训练，比 multi-task / pareto search 方案工程实现简单得多。</li>
+</ol>
+<p><strong>部署考量</strong>：</p>
+<ul>
+<li>训练成本：4×A100 + 3 epoch 在 4096 训练样本上完成，资源需求中等；</li>
+<li>上线开销：与 SFT 模型同价（单次推理 ≈ 44s 是 1B 模型在 list 生成场景，社区搜索 reranker 可能用更小模型 → 毫秒级）；</li>
+<li>需要 reward model：MGU、ILD、NDCG 都要可计算，但都是规则化指标，无需训练额外 reward model。</li>
+</ul>
+<p><strong>避坑</strong>：τ 不能设过大（&gt;1 batch 噪声大）；reference set M 太小会导致 prior 不稳；group size G 必须 ≥ 8 才能稳定估计 batch CDF。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

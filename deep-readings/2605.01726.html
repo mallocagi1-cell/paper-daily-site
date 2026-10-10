@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — FEDIN: Frequency-Enhanced Deep Interest Network for Click-Through Rate Prediction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>FEDIN: Frequency-Enhanced Deep Interest Network for Click-Through Rate Prediction</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.30</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 5 | Timely 4</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 论文针对CTR预估中用户兴趣的时序变化与频率模式难以同时利用的问题，提出频率增强Deep Interest Network（FEDIN），在时间域和频率域联合编码行为序列，并用频域分支提取周期性兴趣。在Tmall、Alipay、Taobao上，FEDIN的GAUC/AUC分别为0.9658/0.9666、0.9335/0.9320、0.9740/0.9729，均超过DIN、DIEN等七类基线。</p><p><strong>Key insight:</strong> 频域建模为用户兴趣提供了“周期信号”视角，适合补足只依赖最近行为的序列模型。工程上可先把频域分支放入精排或预估实验，用GAUC和分桶校准验证它是否真正改善长周期兴趣；论文结果覆盖三个电商数据集，但在线延迟与频谱计算成本仍需单独压测。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-17/personalization/report.html#dr-web_search-https-www-alphaxiv-org-abs-2605-01726">2026-08-17 · Personalization (4.30)</a> <a href="../reports/2026-05-06/personalization/report.html#dr-arxiv-oai-arXiv-org-2605-01726">2026-05-06 · Personalization (4.30)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://www.alphaxiv.org/abs/2605.01726" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>FEDIN关注工业CTR预估里一个很具体的失效模式：用户历史行为同时包含长期周期性习惯和短期随机噪声，而常见的时间域序列模型容易把一次误点、探索性点击或缺失行为当成连续兴趣。论文的动机不是简单地“把FFT接到推荐模型上”，而是先观察目标商品条件下的注意力分布：当历史行为确实与候选商品相关时，注意力在频域往往呈现集中、低谱熵的峰；当行为是无关噪声时，频谱更分散、熵更高。也就是说，是否存在周期信号不能脱离当前候选商品判断，目标商品本身可以充当频率选择器。</p>
+<p>这一区分对CTR尤其重要。DIN、DIEN等目标注意力模型能回答“哪些历史行为与目标相关”，却仍主要在时间域处理逐点序列；DIFF等频域方法可以提取稳定模式，却通常先对用户序列独立滤波，忽略了候选商品改变兴趣解释方式的事实。论文把问题定位为目标无关的频域滤波不足，而不是单纯的模型容量不足。对社区UGC或电商推荐而言，同一用户的长期“数码产品”兴趣和当前“露营装备”兴趣，可能在不同候选下激活不同历史片段；如果预估模型只看最近若干次点击，长期周期和抗噪能力都会受损。</p>
+<h2>2. 方法详解</h2>
+<p>FEDIN的输入是用户行为序列X和目标物品向量X_tar，整体输出用户兴趣表示U。模型采用双分支去噪结构：时间域分支保留局部行为演化，频域分支提取全局周期共振，最后由User Interest Aggregator融合。两路可以并行执行，论文强调这一点是为了让频域增强不必把线上推理变成串行的重型模块。</p>
+<p>第一步是Reversible Instance Normalization（RevIN），用于缓解用户行为分布的非平稳性和不同序列之间的分布漂移。时间域分支先使用目标注意力做粗过滤，但不同于传统注意力池化，它保留加权后的完整序列：X_attn = Softmax(X_tar X^T / sqrt(d))^T ⊙ X。这样模型不仅知道哪些行为与目标相关，还保留这些行为的时间位置。随后将序列切成不重叠patch，不足一个patch的部分补零，再线性投影并送入Transformer encoder，得到X_time。patching同时降低长序列注意力开销，也把连续的局部行为片段作为更稳定的建模单元。</p>
+<p>频域分支的关键是目标感知。模型先计算历史行为对目标商品的相关分数X_score，再对该分数做FFT得到目标条件频谱。随后对频谱幅值做softmax，并与行为序列的FFT逐元素广播相乘：这一步不是对原始行为盲目做固定滤波，而是先用候选商品决定哪些频率更值得保留。接着使用复值MLP学习频谱到干净兴趣频谱的非线性映射，再做IFFT还原为时域表示X_freq。使用复值MLP是为了保留复频谱中的相位-幅值耦合，不把周期位置关系简单丢掉。</p>
+<p>作者进一步加入Adaptive Resonance Scaling。它根据目标条件频谱的幅值生成门控系数，用sigmoid动态缩放X_freq：谱结构清晰、低熵时提高频域分支权重；周期性弱或噪声占主导时降低频域贡献，让模型回退到时间域。两分支相加得到X_mix，再用Top-k Target Attention聚合最终兴趣U。Top-k做法把非前k个注意力分数掩为负无穷后再softmax，保留候选相关的少量兴趣，避免弱相关信号稀释预测。</p>
+<p>训练设置是可复现的：论文在Tmall、Taobao、Alipay三个公开数据集上按全局时间切分训练、验证、测试，用AUC和GAUC评价；模型以FuxiCTR实现，优化器为Adam，学习率5×10^-4，batch size 2048，embedding维度32，最大行为序列长度100。噪声实验额外以0.0、0.2、0.4、0.6、0.8五个污染比例，分别模拟随机删除历史行为和用随机物品替换真实行为。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，论文给出目标条件谱熵这一可解释观察：正样本注意力更集中、负样本更像高熵白噪声。它把“频域有用”从经验技巧变成了与候选物品相关的判别信号，改进了只对用户序列独立滤波的做法。</p>
+<p>第二，FEDIN把时间域和频域设计为互补而非替代。时间域保留即时兴趣和局部顺序，频域负责稳定周期与抗噪；消融显示去掉时间域后Tmall GAUC从0.9658降到0.9482，去掉频域后降到0.9605，说明两类信号都不可缺。</p>
+<p>第三，目标感知频域注意力是方法的核心增量。把它替换成静态可学习滤波后，Tmall AUC从0.9666降至0.9626，Alipay AUC从0.9320降至0.9293，Taobao AUC从0.9729降至0.9724，说明候选商品确实参与了频率选择，而不是装饰性条件。</p>
+<p>第四，自适应频域缩放解决了“所有用户都存在周期兴趣”的错误假设。去掉缩放后，Taobao GAUC从0.9740降至0.9662、AUC从0.9729降至0.9655；这说明频域分支应该按样本的谱清晰度启用，而不是固定加权。</p>
+<h2>4. 实验结果分析</h2>
+<p>整体结果如下，FEDIN在三个数据集、两个指标上都取得最高值；带星号的结果在论文中表示相对最佳基线具有统计显著性（p&lt;0.05）。</p>
+<table><thead><tr><th>模型</th><th>Tmall GAUC/AUC</th><th>Alipay GAUC/AUC</th><th>Taobao GAUC/AUC</th></tr></thead><tbody><tr><td>DIN</td><td>0.9547 / 0.9518</td><td>0.8897 / 0.8832</td><td>0.9689 / 0.9664</td></tr><tr><td>DIEN</td><td>0.9237 / 0.9157</td><td>0.8980 / 0.8953</td><td>0.9443 / 0.9442</td></tr><tr><td>BERT4Rec</td><td>0.9103 / 0.9157</td><td>0.9179 / 0.9189</td><td>0.9523 / 0.9535</td></tr><tr><td>DIFF</td><td>0.8513 / 0.8618</td><td>0.8962 / 0.8995</td><td>0.9463 / 0.9475</td></tr><tr><td>FEDIN</td><td><strong>0.9658 / 0.9666</strong></td><td><strong>0.9335 / 0.9320</strong></td><td><strong>0.9740 / 0.9729</strong></td></tr></tbody></table>
+<p>数据集差异也很有信息。DIN在Tmall和Taobao表现很强，但在Alipay相对弱；论文将其归因于数据稀疏性和行为复杂度差异。FEDIN三个场景都稳定领先，说明频域分支并不只是在某一个数据集上过拟合周期，而是能补偿时间域兴趣在稀疏、噪声环境中的不稳定性。</p>
+<p>消融实验揭示了贡献排序。去掉时间域分支造成最大幅度的结构性损失，表明频域不能独立承担即时兴趣预测；去掉频域分支也在三个数据集上普遍下降，证明全局周期模式提供了增量信息。将目标感知滤波替换为静态滤波后，三个数据集都下降，验证“目标商品是频率选择器”的核心假设。去掉自适应缩放后Taobao下降尤其明显，说明不是每个用户-商品对都存在强周期共振。</p>
+<p>噪声实验进一步支持这一解释。随机删除或替换行为比例从0.0增加到0.8时，频域分支的相对性能衰减比时间域分支更缓；随机噪声在频域表现为分散的高熵波动，而真实兴趣保留集中能量。复杂度上，FFT分支主导成本为O(L log L)，而标准自注意力为O(L^2)，长序列时有潜在优势。不过论文的复杂度优势是模块级分析，真正线上收益仍取决于FFT、复值MLP、Top-k筛选和特征搬运的实现常数。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文明确的局限信息较少，结论部分主要强调三数据集效果和频域、时间域联合建模，并没有给出线上A/B、真实QPS、显存占用或端到端延迟。实验使用公开电商日志，行为序列最大长度固定为100，尚不能直接证明在更长的社区UGC历史、强实时流式行为和冷启动用户上同样成立。复值频域过滤器与patch超参还需要在不同业务分布上重新调节；论文的噪声实验使用合成删除/替换，和真实曝光偏差、机器人流量、埋点缺失并不完全等价。</p>
+<p>后续更值得做的是把谱熵作为可监控信号接入线上诊断：区分哪些用户-候选对真正受周期兴趣驱动，哪些只需要短期行为。还可以探索在线增量FFT、低秩复值MLP、动态序列长度和蒸馏到轻量CTR塔，验证频域收益是否能在延迟预算内保留。</p>
+<h2>6. 工业实践意义</h2>
+<p>对于社区短文本搜索与推荐，FEDIN最可借鉴的不是直接照搬FFT，而是“候选条件下的兴趣去噪”。可以在精排阶段增加一个轻量频域支路：输入用户最近一段点击、停留、收藏或负反馈序列，用当前帖子/商品向量生成目标注意力频谱；频谱清晰时利用周期兴趣，频谱高熵时主要依赖时间域即时信号。这样能够把长期主题偏好和当前意图分开处理，减少偶发点击对CTR的污染。</p>
+<p>落地建议分三步。第一，在现有DIN/DIEN或Transformer基线旁加入离线频域特征，不改变主排序塔，先检查GAUC、nDCG和分用户活跃度分桶的收益。第二，复现论文的两个污染实验，但把随机噪声替换成业务中的真实缺失、误触和曝光截断，确认收益来自抗噪而不是数据集偶然性。第三，针对长序列压测FFT和复值MLP的CPU/GPU成本，并以候选相关Top-k聚合替代全量注意力。</p>
+<p>论文没有线上A/B证据，因此不应直接承诺CTR提升。对于生产系统，建议保留时间域兜底、对频域门控做灰度开关，并监控不同内容垂类的谱熵、延迟、内存和校准误差；如果频域支路只改善高活跃用户，应考虑分层启用，避免把复杂度扩散到冷启动流量。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

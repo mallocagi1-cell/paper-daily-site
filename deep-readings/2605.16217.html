@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Argus: Evidence Assembly for Scalable Deep Research Agents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Argus: Evidence Assembly for Scalable Deep Research Agents</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.35</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 5 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对 deep research agent 并行 rollout 重复采集证据、聚合上下文撑爆模型窗口的问题，提出 Argus：Searcher 以 ReAct 方式为子查询收集证据轨迹，Navigator 维护共享证据图（evidence graph），校验缺失片段、调度 Searcher 补全，并在完整图上推理生成可溯源答案。Navigator 用强化学习训练 verify/dispatch/synthesize，Searcher 保持标准 ReAct 独立训练。基于 35B-A3B MoE，单 Searcher 在 8 个 benchmark 平均 +5.5 分，8 路并行 +12.7 分，64 路并行在 BrowseComp 达 86.2，超过所有对比的闭源 agent，且 Navigator 推理上下文稳定在 21.5K token 以内。</p><p><strong>Key insight:</strong> 把 deep research 建模为&#x27;拼图式证据补全&#x27;而非并行暴力枚举：Navigator 用证据图显式追踪&#x27;还缺哪块&#x27;，从根上解决并行 rollout 的冗余与上下文膨胀。Searcher 数量可在不重训的情况下从 1 扩到 64，工程上把推理时算力扩展和训练解耦。对社区搜索的启示：复杂多跳问答场景可借鉴&#x27;调度器+证据图&#x27;结构，用一个轻量协调策略管控召回去重与上下文预算，而不是单纯堆并发。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-19/agentic/report.html#dr-arxiv-2605-16217">2026-05-19 · Agentic (4.35)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.16217" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>Argus: Evidence Assembly for Scalable Deep Research Agents — 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>Deep research agent 的主流提效路径是测试时并行：跑 K 条独立轨迹再做 self-consistency / best-of-N / 学习式聚合。本文用一组硬数字戳破这条路径的天花板：单 Searcher（Qwen 35B-A3B）在 BrowseComp 上 55.0%，8 路多数投票只到 56.2%（+1.2），LLM 聚合 8 路也只有 56.5%（+1.5）。作者的诊断是：deep research 的答案由互补的证据碎片拼成，而并行 rollout 倾向于重复采集相同证据而非补全缺口——所有聚合方法都是事后（post-hoc）在已完成轨迹上操作，把轨迹当成&quot;扁平的线性 trace 集合&quot;，没有共享的&#x27;哪些证据已拿到、哪些互相支持/矛盾、哪些还缺&#x27;的表示。于是并行越多，边际收益越小，同时聚合上下文被推向模型窗口上限。这个问题此刻重要，是因为业界正用大量推理算力堆 deep research，但收益递减；需要的是把&quot;算力扩展&quot;转成&quot;证据补全&quot;而非&quot;答案投票&quot;。</p>
+<h2>2. 方法详解</h2>
+<p>Argus 把系统拆成两个角色。<strong>Searcher</strong>：无状态 ReAct agent，动作集 {search, visit, answer}，用 WebSailor-v2 pipeline 在约 10K 合成轨迹上 SFT，不做任何架构改动，因此对基线兼容。<strong>Navigator</strong>：维护一个有向无环证据图 𝒢=(E,C,𝒜)——E 是证据节点（带 source URL 的原始发现），C 是 claim 节点（暂定/最终断言），𝒜⊆(E∪C)×C×{+1,−1} 是带 support(+1)/contradict(−1) 标签的边。</p>
+<p>三阶段流程：(I) Search——Navigator 把输入问题改写成多个子查询（solo 模式 1 个，parallel 模式 K 个），各自派给独立 Searcher；(II) Verify &amp; Dispatch——把返回轨迹解析成证据/claim 节点并按 source URL 去重，由策略（而非固定规则）把每个 claim 标为 supported / contradicted / unverified，识别三类缺口（未验证 claim 需独立佐证、矛盾 claim 需权威源消解、问题维度未覆盖需定向子查询），把缺口批量打包成验证查询 𝒱 再派新 Searcher，循环 observe-verify 直到学到的终止信号触发或预算耗尽；(III) Synthesize——丢弃工作上下文，仅在 (q,𝒢) 上推理出最终答案，每个 claim 都可回溯到证据节点的 source URL。</p>
+<p>Navigator 用 <strong>GRPO</strong> 训练，反事实对比奖励：R_i = clip(R_w/v + λ(R_w/v − R_w/o v), 0, 1)，λ=0.5；R_w/v 是用验证后图做 synthesis 的 LLM-judge 分，R_w/o v 是用验证前图的影子分（不回传梯度），这个 bonus 把&quot;验证&quot;的因果贡献单独隔离出来。数据为 5,298 个多跳信息检索问题（答案可验证），每题预先收集固定 Searcher 轨迹，并对 8 个评测基准做实体级去污染。训练用 64×H200 约 1.5 天（100 个 GRPO rollout step），batch=64 prompt×8 rollout=512 有效样本，lr=1e-6，KL β=0.001，clip ϵ=0.2。Rollout 是单条序列展开完整 Argus 循环，observation 用滑动窗口（15 轮，≤8 窗口）增量建图，只有 Navigator 生成的 token 回传梯度、外部输入被 mask，并用状态机强制 DAG 输出格式。Searcher 独立 SFT，不做 Argus 专属 RL。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(1) <strong>结构化证据图替代扁平轨迹聚合</strong>：把 deep research 从&quot;对线性 trace 投票/聚合&quot;改成&quot;在共享图上做组合式证据拼装&quot;，让&quot;哪块还缺&quot;成为可显式推理的对象。(2) <strong>环内验证（in-loop verification）</strong>：在 synthesis 之前就识别缺口并定向派发检索，而非事后打分；对比奖励证明验证阶段全程带来稳定增益（R_w/v 始终高于 R_w/o v）。(3) <strong>上下文与 Searcher 数解耦</strong>：把累计 25.6M Searcher token 压成 21.5K 的 Navigator 视图，约 1200:1 压缩比，使并行规模扩展不再撞上下文窗口。(4) <strong>零样本规模迁移</strong>：在单 Searcher 轨迹上训练的 Navigator 可直接迁移到 K 路并行、甚至换底座，无需重训。消融显示完整 DAG（带 ±1 标签与验证状态）74.5%，去掉边标签降到 72.0%（−2.5），纯文本拼接 69.3%（−5.2），结构化表示净贡献 5.2 分。</p>
+<h2>4. 实验结果分析</h2>
+<p>8 个基准：BrowseComp、BrowseComp-ZH、GAIA、SEAL-0、xbench DeepSearch-2510、HLE、FrontierScience Olympiad/Research。底座 Qwen 35B-A3B：Searcher→Argus Solo→Argus Parallel(K=8) 在 BrowseComp 55.0→62.2→74.5，BrowseComp-ZH 62.3→74.4→83.4，GAIA 84.5→88.0→93.2，SEAL-0 48.9→53.2→56.2，xbench 62.0→67.0→73.0，HLE 43.2→44.2→49.8。8 基准平均：Solo +7.1，Parallel(K=8) 论文口径 +12.7；K=64 时 BrowseComp 达 86.2，超过所有对比闭源 agent（GPT-5.2、Claude-4.6-Opus、Gemini-3.1-Pro 等）。GAIA 93.2 比最强闭源高 12.6 分，SEAL-0 高 6.2 分，5/8 基准取得 SOTA。规模动态（Fig.4）：精度随 Searcher token 单调上升 55.0%(0.4M)→86.2%(25.6M)，而 Navigator synthesis 上下文仅 0.34K→21.5K，对数拟合未见硬上限。换底座（Table 2）：在 DeepSeek-V4-Flash-Max 上 Parallel +18.5、Seed-2.0-Pro +12.2，且 35B 上训练的 Navigator 零样本提升所有闭源底座。训练动态（Fig.5）显示 reward 与留出集精度同步、验证触发率上升后趋平、矛盾证据呈现&quot;探索→固化&quot;转变，说明学到的是有意义的验证行为而非奖励 hack。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确列出：(1) 推理成本高——累计 Searcher token 从 K=1 的 0.4M 涨到 K=64 的 25.6M，定位是&quot;重型研究求解器&quot;而非低成本/低延迟助手；(2) 墙钟延迟——高 K 时并行批中最慢的 Searcher 主导整体耗时（Navigator synthesis 仍是单次前向）；(3) 源可得性天花板——继承底层 web 源的召回上限，付费墙/不可得内容无法突破，更强 Searcher 大致线性抬升此上限；(4) 标准 agentic 风险——错误信息、版权问题，靠 per-claim 源追溯部分缓解。未提及但显见的是：LLM-judge 奖励本身的偏置会传导进策略，去污染只做到实体级、对改写型泄漏未必稳健。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索/推荐团队最可迁移的是&quot;调度器 + 共享证据图&quot;这套结构，而非具体 web benchmark 分数。要点：(a) 复杂多跳问答（社区里&quot;对比型/求证型&quot;长尾 query）不该靠堆并发投票，而应让一个轻量协调策略显式追踪&quot;已覆盖/有矛盾/还缺&quot;，把算力花在补缺口上；(b) 上下文工程上，&quot;把海量原始证据压成结构化图，synthesis 阶段只读图&quot;是控制长上下文成本的实用范式，1200:1 的压缩比说明收益巨大；(c) 可追溯性——每个结论挂 source URL，对 UGC 问答的可信度与人工审核友好；(d) 训练-部署解耦，单 Searcher 训练、多 Searcher 部署且免重训，降低上线成本。需注意的工程约束：该方法是&quot;重型离线/异步研究&quot;定位，墙钟延迟受最慢分支拖累，不适合在线低延迟搜索主链路，更适合做异步&quot;深度求证&quot;旁路（如争议话题的事实核验、长文生成的证据准备）。落地前应先用自有多跳 query 集验证证据图的去重与矛盾标注质量，并替换 LLM-judge 为更可控的可验证奖励。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — PriCoRec: A Privacy-Aware Cloud-Device Collaborative Framework for Ad Recommendation under Feature Constraints</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>PriCoRec: A Privacy-Aware Cloud-Device Collaborative Framework for Ad Recommendation under Feature Constraints</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.55</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> PriCoRec 面向敏感用户特征无法上云的广告推荐，将云端预排序与端上排序拆开：云端只处理可访问特征，端上融合年龄、性别和细粒度行为。它用 DPP 风格多样性正则改善短名单，并用云端指导训练保持端模型轻量；在 OpenMCC、TaobaoAd、Ali-CCP 三个数据集上，云端 R@100 达到 50.41、68.29、47.72，端上 R@10 达到 13.87、21.74、24.10。</p><p><strong>Key insight:</strong> 对社区 UGC 推荐而言，隐私约束不必牺牲个性化：把敏感画像留在端上，把候选覆盖和粗粒度相关性留在云端，再用蒸馏式辅助信号连接两侧。工程落地可先复用现有召回与预排序链路，只迁移轻量精排，并以 R@100、nDCG@10、端侧延迟和功耗共同验收；论文报告 TaobaoAd 全链路 10.32ms。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-18/personalization/report.html#dr-arxiv-oai-arXiv-org-2608-14429">2026-08-18 · Personalization (4.55)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2608.14429" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>PriCoRec 讨论的是广告与推荐系统中一个越来越现实的约束：用户画像、年龄、性别、细粒度行为和时间信号受到隐私法规及用户同意机制限制，不能继续像传统 CTR 系统一样全部上传云端。标准的级联链路通常是召回、云端预排序、云端精排和重排，后续模型依赖复杂的特征交互；如果把所有计算留在云端，模型无法看到受保护的用户特征，如果把全链路搬到手机，又会遇到算力、功耗、存储和本地数据分布稀疏的问题。论文把问题明确成“特征不对称”而不是笼统的联邦学习问题：云端可以看到候选物品、请求上下文和粗粒度环境信息，但不能看到敏感画像和细粒度历史；端侧有更强的个性化信号，却不能承载大型预排序模型。作者因此追求三个目标的同时满足：云端候选质量不能塌、端侧推理必须足够轻、敏感特征必须不离开设备。论文还特别关注预排序的多样性，因为当云端看不到用户细粒度偏好时，单纯按云端 pCTR 排序容易让短名单被相似且热门的广告占满，后续端上模型甚至没有机会纠正这一偏差。</p>
+<h2>2. 方法详解</h2>
+<p>PriCoRec 保留传统级联框架的大体形状，但把中间两个阶段重新分工：检索模型先从全库取得 1,000 个候选，云端预排序只用可访问特征把候选压到 100 个，端上轻量排序再使用敏感特征和行为信号做个性化排序。云端预排序的主干采用 PNN；每个用户—候选集合的相似性来自物品 embedding 的内积，作者把归一化 embedding 的相似度定义为 S(i,j)=(1+&lt;I_i,I_j&gt;)/2，并把候选的相似度组成核矩阵。多样性损失是负的 log determinant，即 L_div=-log det(S_Ru)，直觉是候选向量张成的体积越大，项目之间越不重复。它与原有的 BPR 成对排序损失相加，形成 L_total=L_base+λL_div；训练样本采用一个点击正样本配四个随机下采样负样本，λ 在 10^-5 到 10^-2 搜索，最终 OpenMCC 为 10^-3、TaobaoAd 和 Ali-CCP 为 10^-2。这样做不是把多样性作为固定的后处理，而是让预排序器在保留 pCTR 相关性的同时主动减少冗余。</p>
+<p>端上排序使用 PNN，但模型显著缩小：云端 embedding 维度为 32，端上 embedding 维度为 4；云端把预排序 logit 和短名单特征传给端侧，端上模型将这个 logit 作为辅助特征，不再重复计算大型云模型。论文还使用 cloud-guided ranking，让云端模型的输出在训练时指导轻量端模型，同时用离线词表重映射减少 embedding table 行数，用 FP16 存储压缩 checkpoint。端侧最终同时接收云可见特征、端侧私有特征和云端相关性 logit，由轻量 PNN 完成排序；后续重排属于论文范围之外。算法的边界很清楚：敏感字段从不进入云端，云端主要负责把足够好的候选送到端上，端上再用本地信号恢复个性化能力。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，论文将隐私保护落成级联链路中的特征隔离方案，而不是只报告一个联邦训练算法。云端预排序和端上排序共享候选与 logit，但不共享敏感画像，模型职责、数据边界和部署位置一一对应。第二，DPP 风格的 log-det 正则把短名单多样性直接写进预排序目标，解决云端特征不完整时热门或相似广告占满候选的问题。第三，cloud-guided auxiliary learning 让端侧小模型利用云端教师的相关性输出，在不增加端上前向成本的情况下补足由于 embedding 维度压缩带来的表达损失。第四，作者在 OpenMCC、TaobaoAd、Ali-CCP 上统一划分 cloud-accessible 与 device-only 特征，使比较不是把某个数据集的字段优势误当成方法收益，而是测试同一套隐私约束下的可迁移性。</p>
+<h2>4. 实验结果分析</h2>
+<p>论文在三个工业广告/推荐数据集上评估：OpenMCC 有 5,865,593 个用户、381,345 个物品和 9,672,681 次交互；TaobaoAd 有 1,083,798 个用户、806,874 个物品和 23,341,680 次交互；Ali-CCP 有 356,908 个用户、3,168,707 个物品和 42,738,779 次交互。指标包括云端 gAUC、R@100，以及端上 gAUC、R@1、R@10、nDCG@10 和 reciprocal rank。云端预排序中，PriCoRec 的 gAUC/R@100 分别是 OpenMCC 80.29/50.41、TaobaoAd 89.36/68.29、Ali-CCP 73.69/47.72；最强对比方法的对应值为 80.06/49.82、89.25/67.85、72.93/46.92。端上排序中，PriCoRec 的 gAUC 分别为 79.76、86.93、73.30，R@10 分别为 13.87、21.74、24.10；PNN 基线的 R@10 为 10.72、15.24、20.26，说明云端短名单质量和端上私有特征共同起作用。</p>
+<table><thead><tr><th>数据集</th><th>方法</th><th>云端 gAUC</th><th>云端 R@100</th><th>端上 gAUC</th><th>端上 R@10</th></tr></thead><tbody><tr><td>OpenMCC</td><td>PNN / PriCoRec</td><td>79.95 / 80.29</td><td>49.44 / 50.41</td><td>78.44 / 79.76</td><td>10.72 / 13.87</td></tr><tr><td>TaobaoAd</td><td>PNN / PriCoRec</td><td>88.69 / 89.36</td><td>67.30 / 68.29</td><td>83.31 / 86.93</td><td>15.24 / 21.74</td></tr><tr><td>Ali-CCP</td><td>PNN / PriCoRec</td><td>72.40 / 73.69</td><td>46.86 / 47.72</td><td>71.39 / 73.30</td><td>20.26 / 24.10</td></tr></tbody></table>
+<p>论文没有单独列出“去掉多样性正则”或“去掉 cloud-guided”这样的完整消融表，因此不能把所有收益归因到某一个组件；它主要通过跨方法对比、λ 搜索和效率分析来解释组件价值。λ 的结果显示，小的非零正则最有效，过大的正则会继续增加 Diversity@100，却可能损害相关性，说明多样性不是越强越好。部署效率方面，TaobaoAd 的云端预排序 9.81ms、端上排序 0.51ms，总计 10.32ms，纯云端对比为 11.62ms；OpenMCC 总计 5.08ms，纯云端为 4.86ms，表明拆分不是必然降低延迟，而是换来了隐私和端侧个性化。端模型从 7.7MB 增至 29.4MB 时，R@1 从 4.51 提升到 7.51，展示了明显的内存—质量折中。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者在结论中明确提出两条后续工作。第一，继续研究多样性正则是否能抑制 popularity bias，让长尾物品在云端短名单中获得更合理的机会；这说明论文当前的多样性机制还没有被完整等同为长期公平或长尾收益。第二，作者计划把 PriCoRec 与完全云端模型做更系统的对照，以量化隐私保护带来的净收益，而不仅仅比较同样特征边界下的模型。论文没有给出大规模线上 A/B 结果，也没有宣称已经解决端侧设备异构、密钥/特征同步或隐私泄露的全部工程问题；因此实验的“低延迟”应理解为公开数据集上的测量，而不是对所有移动端硬件的生产保证。</p>
+<h2>6. 工业实践意义</h2>
+<p>对于社区搜索和 UGC 推荐，PriCoRec 提供了一条渐进式改造路径：召回、粗排和大规模特征处理继续留在云端，细粒度用户画像、近期行为以及需要本地保护的信号留在端上，端侧只对百级短名单做轻量精排。可先把现有精排器压缩成 4 维 embedding 的小 PNN，输入云端教师 logit，再比较端上模型与纯云端模型在 nDCG@10、CTR、R@100、功耗和端侧延迟上的联合收益。对短文本社区搜索，DPP 正则也可作用于候选帖子主题或作者相似度，避免同质内容在前 100 个候选里重复出现；但应把 λ 作为业务可调参数，分别按内容密度、冷启动和长尾切片调优。部署上要明确三类数据契约：什么特征可上云、什么只在端上、云端返回哪些中间 logit；同时为离线训练补充隐私边界校验，避免通过教师输出反推出端侧敏感字段。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

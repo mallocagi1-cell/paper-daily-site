@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Long-History User Transformers for Real-Time Ad Ranking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Long-History User Transformers for Real-Time Ad Ranking</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.55</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 3</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 论文解决长行为序列虽能提升 CTR、却无法满足实时竞价延迟的问题：离线 Transformer 异步编码全量跨场景历史并缓存，线上轻量模型只融合缓存向量、近期行为和请求上下文。该拆分方案恢复完整在线长序列模型 72%–80% 的效果，搜索广告与广告网络排序指标分别提升 2.77% 和 2.10%，收入提升 2.26% 和 0.43%，且不增加服务延迟。</p><p><strong>Key insight:</strong> 长序列价值与在线成本可以通过“离线重编码、线上轻匹配”解耦，关键是把全历史表征做成可容忍一定陈旧度的特征服务。社区搜索可异步编码用户跨帖子、评论、作者和主题的长期兴趣，线上只拼接最近会话与 query，从而在严格延迟预算内改善个性化排序。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-28/personalization/report.html#dr-arxiv-2607-14331">2026-07-28 · Personalization (4.55)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2607.14331" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>深度解读：Long-History User Transformers 的离线—在线长序列拆分</h1>
+<h2>1. 问题与动机</h2>
+<p>在线广告 CTR 排序必须在几百毫秒内完成候选打分，而长行为序列 Transformer 的计算随序列增长，若为每次请求重算数千事件，无法进入竞价关键路径。已有 HSTU 展示了 8000 行为生成式建模，LLaTTE 讨论多阶段序列缩放，TransAct 则聚焦实时近期行为；但工业系统仍缺少一个明确答案：能否保留长历史的大部分质量，同时让在线只承担固定、可控的小窗口成本。</p>
+<p>论文还指出长历史不是单一广告日志。Yandex 用户的真实意图分散在自然搜索 query、自然点击、Search Ads、Yandex Advertising Network（YAN）和 Product Gallery。只看目标广告面会丢掉大量先于广告点击出现的意图信号；但把所有表面拼接后简单多任务训练又会产生梯度干扰和位置偏差。作者因此把研究问题拆成六个可检验部分：拆分架构能恢复多少完整模型收益、数据与训练配方有多重要、缓存向量能容忍多陈旧、能否跨广告表面迁移、历史长度是否真的决定收益，以及线上增益是否在不增加延迟的条件下成立。</p>
+<h2>2. 方法详解</h2>
+<p>数据层构建统一跨表面时间线。每个事件包含时间、surface/交互类型、banner ID、文本向量和点击标签。自然 query 与自然点击各占一个 token；广告事件把 context 作为一个 token，再把 banner embedding 与 action embedding 相加形成第二个 token，因此一个广告事件占两个位置。系统区分 NoAware、ContextAware 和 TargetAware：NoAware 只编码历史、可完全离线；ContextAware 还看当前页面/设备等请求上下文但不看具体候选，一次前向可服务多个广告；TargetAware 把候选写入序列、每个候选重跑模型，成本随候选数增长。生产选择 ContextAware，兼顾上下文质量和多候选吞吐。</p>
+<p>预训练使用带 causal mask 和 ALiBi 的统一 Transformer，在一年约 10 亿事件上训练。Search query 占事件 40%、自然点击 30%，Search Ads 与 YAN 各约 13%–14%，Product Gallery 3%。三个广告面同时承担二元 CTR 交叉熵与 next-event retrieval 目标；自然 query/点击没有 CTR 标签，但通过 sampled-softmax 预测下一次自然事件，所以每个 token 都贡献监督。统一预训练让底层同时学到行为反馈和下一事件语义，之后从同一个 checkpoint 初始化离线与在线编码器。</p>
+<p>部署模型约 2 亿参数。离线 Transformer 输入维度 64、hidden size 1024、10 层、ALiBi、全因果注意力，最多处理 8192 token；线上 Transformer 同为 1024 hidden，但仅 5 层、无显式位置编码，每层窗口 20，总感受野 100 个事件，生产最多可输入 200 个事件但最终选择 100 作为延迟折中。两塔输出维度为 128。在线编码器复制预训练模型的前 5 层初始化，比随机初始化的 CTR fine-tuning loss 更低；短窗口本身提供强局部顺序约束，因此实验中无需额外位置编码。</p>
+<p>离线模型取完整历史最后一个 hidden state 作为固定用户向量。训练时故意模拟生产陈旧：对曝光时刻 t，只给离线塔输入 t 两天以前的事件，因为真实管道约需一天摄取去重、另一天合并历史、GPU 批推并写入特征库。线上读取当前缓存，不人为截断；每次广告点击触发重算，低活用户每周全量刷新。在线塔始终取最新固定数量事件，因此活跃用户主要看到两天内新信号；若两天内无活动，窗口会与离线前缀重叠，但不会产生历史空洞。</p>
+<p>融合时把预训练联合 head 换成可部署的双塔。离线向量和在线最后 hidden state 拼接，经 DCNv2 与 MLP 投影为用户侧 128 维向量；候选 banner embedding 经过同结构 DCNv2+MLP 映射到同一空间，最终内积得到 CTR 分数。候选向量可预计算缓存，线上 Transformer 每请求只跑一次，不随候选数量线性重复。运行时模型采用 windowed causal attention，单层复杂度由全注意力的 O(L²) 限制为 O(LW)；离线 8192 全注意力在专用 GPU 异步运行，不进入请求关键路径。</p>
+<p>训练使用 Adam，无 warmup、无 weight decay，并关闭 dropout；学习率按约每 1/5 epoch 衰减 3 次，HTML 版本未显示初始数值。预训练 1 epoch，64 张 NVIDIA A800，每张卡 pack 5 万 token，约两天完成；随后在目标广告面端到端 fine-tune 3 epoch，同时更新两编码器和预测 head。位置去偏时，历史事件始终保留真实展示位置；训练候选用真实位置，推理候选位置固定为 1，迫使模型预测“若位于首位”的内在点击概率，削弱位置对 CTR 的混杂。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一项贡献是把长历史质量与请求成本真正解耦。离线塔吸收 8192 token 的全局信号，在线塔只负责 100 个近期事件和当前上下文，两者不是简单蒸馏，而是在 CTR fine-tuning 中联合训练为互补表示。离线向量相对仅在线模型额外贡献 5.3 个百分点的归一化 log-loss 增益，说明缓存不是冗余摘要。</p>
+<p>第二项贡献是跨表面、异构 token 的双目标预训练。自然搜索行为没有广告点击标签，却通过 next-event retrieval 成为主动监督；广告事件同时学 CTR 与检索。加入自然点击使收益从 +8.5% 增至 +11.0%，表明用户意图数据的覆盖度与架构宽度同等重要。最终再做单表面 fine-tuning，解决共享预训练中的梯度干扰。</p>
+<p>第三项贡献是面向真实管道训练“陈旧分布”。作者没有在训练时使用完美新鲜的离线向量再到线上接受两天延迟，而是直接用两天 cutoff 构造样本；随后通过 5 天 embedding lag 与 6 个月 checkpoint age 实验区分“表示陈旧”和“模型陈旧”，据此设计点击触发加每周批刷，而非盲目每事件更新。</p>
+<p>第四项贡献是完整线上闭环：模型分数只作为现有 CatBoost CTR ranker 的新增特征，隔离了长序列信号的增量；在线 Transformer 与既有特征管道并行执行，计算被现有延迟预算吸收。Search Ads 和 YAN 两个结构不同的表面均获得显著业务收益且辅助指标无回退。</p>
+<h2>4. 实验结果分析</h2>
+<p>离线主指标不是 AUC，而是给生产 CatBoost 加入 Transformer 特征前后的归一化 log-loss 差。广告排序的预测会进入竞价、预算节奏和收入计算，校准与顺序同样重要，因此 log-loss 比只看排序的 AUC 更贴近业务。完整在线 8k 模型作为不可部署上界，收益 +16.2%；只用在线 Transformer 时，200/100 事件分别为 +7.29%/+6.30%，半尺寸模型为 +7.01%/+5.75%。加入离线 8k 后，半尺寸在线 200/100 事件达到 +12.3%/+11.7%，分别恢复完整上界的大部分收益。</p>
+<table><thead><tr><th>配置</th><th>Search Ads 增益</th><th>YAN 增益/说明</th></tr></thead><tbody><tr><td>完整 8k 在线模型（上界）</td><td>+16.2%</td><td>+4.09%</td></tr><tr><td>半尺寸在线塔，200 事件</td><td>+7.01%</td><td>未单列</td></tr><tr><td>半尺寸在线塔，100 事件</td><td>+5.75%</td><td>未单列</td></tr><tr><td>离线 8k + 在线 200</td><td>+12.3%</td><td>未单列</td></tr><tr><td>离线 8k + 在线 100</td><td>+11.7%</td><td>+3.26%</td></tr><tr><td>拆分方案保留完整上界</td><td>72%</td><td>80%</td></tr></tbody></table>
+<p>感受野比宽度更重要：在 200 事件下，全尺寸与半尺寸只有 7.29% 对 7.01% 的差距；把在线窗口从 100 增至 200 带来温和提升，但生产仍选择 100，因为 +11.7% 已接近 200 事件的 +12.3%，而注意力预算更紧。跨表面上，Search Ads 有显式 query，完整模型上界更高；YAN 只有页面上下文与历史，绝对增益较小，但拆分保留率反而达到 80%，说明离线表示学到的是可迁移用户模式而非单表面技巧。</p>
+<p>训练配方消融同样关键。三表面多任务 baseline 为 +7.5%；只在目标 Search Ads fine-tune 后 +8.5%，表明共享目标存在梯度干扰；加入自然搜索点击后 +11.0%；候选位置去偏加更高学习率后 +15.0%，最后一步贡献 +4.0 个百分点，为最大单项。这个结果提醒实践者：长序列模型效果不应全部归因于参数规模，跨表面行为、目标适配和位置因果混杂往往是一级因素。</p>
+<p>陈旧度实验中，缓存 embedding 延迟 5 天只损失 0.38 个百分点，变化是渐进的；6 个月旧 checkpoint 却损失 3.40 点，约高一个数量级。历史完全不看当前请求的 NoAware 模式仍有 +2.81%，说明即使搜索广告强依赖 query，长期广告互动也包含独立信号。注册用户 PUID 平均历史 1200 条，增益 +18.22%；匿名设备 UniqID 平均 550 条，增益 +13.32%，历史长度与收益方向一致，也揭示了持久身份用户受益更大。</p>
+<p>线上 A/B 中，Search Ads/YAN 的主 acceptance 指标分别 +2.77%/+2.10%，点击 +2.87%/+2.59%，收入 +2.26%/+0.43%，均具统计显著性。YAN 点击增长快于收入，但广告主侧 post-click conversion 同步改善，作者认为这是更高广告主价值的点击，而非低 CPM 流量稀释。所有辅助指标改善或中性，服务延迟没有增加；Search Ads 收益主要集中在移动端，因为原移动 baseline 使用的长历史信号较少。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者在结论中明确提出三条未来路线：为缓存表示加入内容对比学习、转化和复访等长期辅助目标；依据用户会话新鲜度动态分配在线感受野，而不是所有人固定 100；系统研究模型深度、序列长度和特征丰富度的 scaling law，辅助容量规划。论文也明确指出实现依赖 Yandex 的异步 GPU、特征库和现有 CTR 并行管道，跨公司可迁移的是拆分模式，不是原样系统配置。</p>
+<p>实验主要来自 Search Ads 和 YAN，Product Gallery 只参与预训练且占 3%，没有给出独立线上结论。绝对训练样本/用户分群细节、初始学习率、batch 的样本数、GPU 利用率、特征库容量、离线刷新成本及在线 P99 延迟均未披露。离线上界用完整 8k 在线模型测得，但它本身不可生产，未比较蒸馏、长序列检索压缩或线性注意力等其他成本方案。</p>
+<p>作者未充分讨论的风险包括：PUID 跨设备长历史比匿名用户丰富，收益差距可能扩大个性化体验不平等；广告点击触发刷新让高活用户更及时，低活用户只每周更新，可能进一步强化活跃度偏差。跨表面时间线涉及隐私、目的限制和特征保留期限，特别是自然搜索行为用于广告建模，需要严格权限、脱敏和用户控制。缓存向量与模型版本必须成对管理，否则新 checkpoint 读取旧空间向量会产生兼容性故障。</p>
+<h2>6. 工业实践意义</h2>
+<p>社区搜索或推荐团队可以先做低风险验证：不替换现有排序器，只把长序列模型分数作为 GBDT/深度 ranker 的一项新增特征，按归一化 log-loss、校准、NDCG、CTR 与负反馈评估净增量。事件时间线应覆盖 query、点击、收藏、关注、作者互动和内容消费，但每种事件明确 token 化与监督任务；无点击标签的 query/浏览可做下一事件或对比目标，而不是被动上下文。</p>
+<p>架构上可从 7 天或更长历史的离线用户向量加最近 50–100 事件在线塔开始。训练时按真实数据 SLA 截断离线前缀，若生产需要两天才能产出向量，训练就必须模拟两天 lag。候选侧尽量预计算，用户侧融合使用轻量 DCNv2/MLP；在线塔和其他特征 RPC 并行，而非串在召回之后。先做窗口长度与网络宽度消融，论文结果提示扩感受野可能比加宽更划算。</p>
+<p>刷新策略应由陈旧曲线决定。分别测 embedding lag 1/3/5/7 天和 checkpoint age 1/3/6 个月，若表示缓慢退化，可用高价值行为触发更新、低活用户周期批刷；但模型重训频率不能因缓存稳定而放松。需要建立 embedding_schema_version、model_version、生成时间和 TTL，支持双写、回滚与缺失时退回短序列模型。</p>
+<p>位置去偏是可直接借鉴的训练细节：历史保留真实位置用于解释行为，待评分候选在推理时固定到同一标准位置，输出更接近内在相关性，再由下游 utility 决定最终展示。上线必须按注册/匿名、历史长度、设备、活跃度和隐私授权分层，防止只改善长历史用户。成本侧同时监控离线 GPU 小时、特征库字节/用户、点击触发刷新 QPS、在线 P95/P99 和缓存命中率。该论文的核心启示不是“所有请求跑 2 亿参数”，而是把昂贵的全历史理解移出关键路径，把在线算力集中在最新意图。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — LLMs as Assessors: Right for the Right Reason?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>LLMs as Assessors: Right for the Right Reason?</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.15</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 3 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 论文聚焦 LLM 作为 IR 相关性评估员能否给出可解释的判断。作者基于 INEX Wikipedia 测试集，要求 LLM 不仅判断文档相关/不相关，还高亮文档内回答信息需求的相关段落，并与人工评估员标注的段落对比。实验比较了多种主流 LLM 在文档级判断与段落级标注的一致性，发现即使 LLM 判断准确率与人工高度一致，其高亮的段落与人工标注的重叠度仍显著偏低，表明 LLM 评估的可解释性远不如表面准确率。</p><p><strong>Key insight:</strong> 对社区搜索的离线相关性评估有直接借鉴意义：用 LLM-as-judge 替代人工标注时，仅看 nDCG/标签一致性会高估其可靠性，应同时让模型给出支撑段落并与人工对齐才能验证因果。建议在 UGC 搜索的相关性建设中引入“高亮段落对齐”作为二级评估信号，对存在 hallucination-by-luck 的样本及时剔除，避免训练 ranker 时把噪声标签当 ground truth。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-04-28/retrieval/report.html#dr-arxiv-2601-08919">2026-04-28 · Retrieval (4.15)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2601.08919" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>LLM-as-judge 已成为检索系统离线评估的主流路径，但作者指出现有研究只关注「LLM 给出的 relevance label 是否与人工一致」，忽视了一个更基础的问题：LLM 是否「Right for the Right Reason」——它判断相关时，依据的文本片段是否与人工评估员一致？这一缺口在工业搜索场景尤其危险，因为相关性标签会被进一步用于训练 reranker、构造正负例对，若标签恰好正确而依据错误，等于把 spurious correlation 写入模型，长期会损害排序鲁棒性。</p>
+<p>作者基于 INEX 2009/2010 ad-hoc 检索集做研究——该集合不仅有文档级 0/1 label，还要求人工评估员高亮文档内回答信息需求的具体段落，正好能验证 LLM 是否「指向了正确的证据」。INEX 2009 含 68 个 topic、4858 个相关文档，INEX 2010 含 52 个 topic、5471 个相关文档，文档长度跨度极大（204 字节到 159,845 字节），构成天然的 needle-in-haystack 难题。</p>
+<h2>2. 方法详解</h2>
+<p>研究采用 6-shot in-context learning：每个 exemplar 包含 query 标题、query narrative、文档全文、人工高亮的相关段落。测试时让 LLM 同时输出（a）文档相关/不相关 0-1 判断，（b）若判定相关则抽取并高亮证据段落。Llama-3.1-8B 设 temperature=1.0 做抽取（鼓励多样性），GPT-4.1-mini 与 GPT-4o-mini 设 temperature=0 保证确定性。</p>
+<p>为了控制 in-context demonstration 对结果的影响，作者设计了多种 exemplar 选择策略：Exemplar1 与 Exemplar2 用不同随机种子；进一步引入分位数采样 Q1–Q4，按 exemplar 文档中「相关 chunk 占文档比例」（rel-chunk-prop）分桶。Q1 桶意味着相关片段在文档中占比小，更接近真实长文档场景。这种策略让模型「学会从噪声中分离出意图匹配证据」。</p>
+<p>实验链路：先把 INEX 文档批量喂给 LLM，记录文档级判断、抽取出的字符串。然后做两层评估：（i）文档级相关 vs 非相关 accuracy；（ii）抽取段落与人工高亮段落的 token 级 micro/macro Precision、Recall、F1。为应对 LLM 输出可能包含同义改写而非原文复制，作者还做 hallucination 验证——以 10 字符为阈值判断抽取内容是否真正出现在原文。</p>
+<p>模型对比涵盖三类：开源中等规模 (Llama-3.1-8B-Instruct)、闭源轻量 (GPT-4.1-mini)、闭源 reasoning 变体 (GPT-4o-mini)，覆盖 cost/性能不同档位。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，把「LLM-as-judge 评估」从「label-only」升级为「label + evidence span」二维评测，这是首次在 IR 领域系统化验证 LLM 评估的可解释性。该范式可扩展到任何已有 highlight 标注的 IR 集合（INEX、ClueWeb、TREC Common Core 等）。</p>
+<p>第二，揭示了「Right for the Wrong Reason」现象的量化证据：Llama-3.1-8B 在 INEX 2010 文档级 accuracy 高达 0.9375，但在 80.7% 的输出里高亮了过半文档，等于「凡是怀疑就大段返回」，把 recall 推高至 0.69+ 同时把 precision 压到 0.37 左右。这说明高 label 一致性可被 lazy span 抽取掩盖。</p>
+<p>第三，提出 quantile-based exemplar selection（按 rel-chunk-prop 分桶）作为提升 LLM 抽取精度的方法，证明 Q1（相关 chunk 占比小的难样本）做 in-context demo，能把 INEX 2009 上的 precision 从 0.2520 提升至 0.3415（相对提升 ~36%）。这给 LLM-as-judge 的 prompt 工程提供了可复用的「难样本示教」原则。</p>
+<p>第四，发现 reasoning 模型（GPT-4o-mini）虽然在 hard set 上比 GPT-4.1-mini 取得 151%–234% 相对 precision 提升，却伴随更高拒答率与更频繁的 paraphrasing 改写，提示 chain-of-thought 在抽取任务上未必是净增益。</p>
+<h2>4. 实验结果分析</h2>
+<p>文档级判断（Table 2）在「相关文档子集」上的对比令人意外：Llama-3.1-8B 对相关文档判断准确率最高（0.90/0.94），GPT-4.1-mini 与 GPT-4o-mini 反而下降到 0.61/0.72 与 0.57/0.64。但若看「非相关但 BM25 高排名文档」（Table 3，Group-1 rank 1-100），Llama 仅 0.30，而 GPT 系列均超 0.77。说明 Llama「倾向把疑难文档判为相关」，本质是召回偏置，而非真正理解。</p>
+<p>段落级评估（Table 4，micro 指标）GPT-4.1-mini 表现最好：INEX 2009 P=0.6185 / R=0.8091；INEX 2010 P=0.6117 / R=0.8364。Llama-3.1-8B 的 macro precision 跌到 INEX 2010 的 0.3684，与 GPT 系列差距显著。Recall 看起来都不低，但前述 80% 案例「半文档高亮」表明 recall 是被无差别返回撑起来的。</p>
+<p>needle-in-haystack 分析（Figure 4）显示，所有模型在「相关 chunk 占文档比例」减小时 precision 急剧衰减。Table 5 的 hard set 上 max precision ≤ 0.2，意味着「真实长文档 + 短相关片段」时几乎所有 LLM 都无法精确定位证据。Discontiguous 多片段相关比 contiguous 单段相关更难：Llama 在 INEX 2009 上从 0.4691 (discontiguous) 升至 0.5462 (contiguous)。</p>
+<p>Table 6 的 quantile-based exemplar 实验是最有工程价值的发现：Q1（难 demo）效果最好。Hallucination 验证显示 GPT-4.1-mini 抽取超过 10 字符的内容只在 14574 例中的 10222 例 (~70%) 真正复刻原文，仍有 30% 是 paraphrase——这进一步削弱了它作为「证据抽取」工具的可信度。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确承认：（1）预算限制导致 quantile exemplar 选择策略仅在子样本上验证，未跑全集；（2）INEX 集合本身的 inter-annotator agreement 数据有限，因此「人工 ground truth」也带噪声，导致 precision 上限被低估；（3）初步证据显示 step-by-step prompting 反而会让模型 paraphrase 而非 faithful extraction，未来需要专门的「faithful span prompt」研究。此外作者观察到 GPT-4.1-mini 在某些 exemplar 组合下会拒答（输出「No relevant information…」），频次在 19–340 之间，是另一未量化的失败模式。</p>
+<p>未提及但显而易见的局限：实验只覆盖 Wikipedia 文档（INEX 是 2008 年 Wikipedia dump），没有验证短文本（社交、UGC）、多语种、领域专有词（医疗/法律）场景。reasoning 模型只用了 GPT-4o-mini 这一档，未跨模型族验证 reasoning 与抽取的相互作用。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区搜索/UGC 检索团队，本文给出三条可立即落地的实践建议：</p>
+<p><strong>(a) 评估流程改造：</strong> 用 LLM 替代人工做相关性评估时，必须同时校验「证据段落」。建议在评估管道里加入 evidence overlap 指标——让 LLM 给出 supporting span，再与人工 highlight 计算 token-level F1；任何 label 一致但 span 严重错位的样本应被列为 high-noise，不进入 ranker 训练集。这一步成本极低（只多一次抽取请求），却能把 Right-for-Wrong-Reason 风险显式暴露。</p>
+<p><strong>(b) Prompt 工程：</strong> 选择 in-context demo 时，优先采样「相关 chunk 占比小」的难样本（即 Q1 桶），而不是直观的「典型样本」。在 UGC 短文本场景，可类比为「相关性词只占 query 1/3、其余是噪声词」的 demo，能显著提升模型对长尾 query 的判别 precision。</p>
+<p><strong>(c) 模型选择与延迟：</strong> 不要无脑迷信 reasoning 模型——GPT-4o-mini 虽然在难样本 precision 上有 2 倍以上提升，但伴随高拒答率和延迟；对于线上要求秒级返回的场景，仍可优先用 GPT-4.1-mini + 难样本 demo 的组合，离线深度评估再上 reasoning 档。Llama-3.1-8B 在「快速判定相关」场景仍有价值（accuracy 0.93+），但绝不能用它做证据抽取，因为它倾向「整段回复」浪费下游算力。</p>
+<p>部署考虑：若要在 UGC 搜索中长期使用 LLM-as-judge，建议每周抽样 100–200 条样本与人工 spot check 对齐，并保留 INEX 风格的 evidence-aware 黄金集（站内可标注 200 query × 5 doc × highlight）作为回归基线，以防 prompt/模型更新后悄然引入「label 对、依据错」的漂移。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

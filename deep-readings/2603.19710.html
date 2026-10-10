@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — AIGQ: An End-to-End Hybrid Generative Architecture for E-commerce Query Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>AIGQ: An End-to-End Hybrid Generative Architecture for E-commerce Query Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.35</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 5 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> AIGQ 是淘宝首页「猜你想搜」（HintQ）场景的首个端到端生成式 query 推荐框架。传统方法依赖 ID 匹配和共点击启发式，面临语义浅层、冷启动差、偶然发现率低等问题。AIGQ 提出三大创新：Interest-Aware List SFT (IL-SFT) 通过 session 感知行为聚合和兴趣引导重排序构建训练样本；Interest-aware List GRPO (IL-GRPO) 设计列表级策略优化算法；以及适合工业部署的混合生成架构。该系统已在淘宝上线部署。</p><p><strong>Key insight:</strong> AIGQ 的实践价值在于将 LLM 生成能力引入 query 推荐这一高流量入口场景：(1) 列表级而非单条级建模用户意图，更贴近实际搜索行为；(2) IL-GRPO 将 GRPO 从文本生成扩展到推荐列表优化，平衡相关性与多样性；(3) 混合架构兼顾生成质量和在线延迟。对 UGC 搜索场景，query 推荐是引导用户发现内容的关键环节，AIGQ 的生成式方案可有效解决长尾 query 和冷启动问题。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-03-24/personalization/report.html#dr-arxiv-oai-arXiv-org-2603-19710">2026-03-24 · Personalization (4.35)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2603.19710" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>淘宝首页&quot;猜你想搜&quot;（HintQ）是用户进入搜索的关键入口，每日服务数亿用户。传统 HintQ 方案依赖 ID 匹配和共点击启发式，面临三个核心问题：(1) <strong>语义浅层</strong>——ID-based 匹配只能捕捉显式共现，无法理解用户意图的语义深度；(2) <strong>冷启动差</strong>——新 query 或低频 query 无法获得足够的共现信号；(3) <strong>偶然发现率低</strong>——基于历史行为的匹配倾向于推荐同质化内容，缺少惊喜感。</p>
+<p>embedding-based 方案虽部分缓解语义问题，但静态的 context-to-query 映射仍难以捕捉用户多元兴趣。更关键的是，当生成的 query 进入下游 CTR 排序模型时，语义合法性与用户偏好之间存在对齐缺口。</p>
+<h2>2. 方法详解</h2>
+<h3>2.1 Interest-Aware List SFT (IL-SFT)</h3>
+<p>AIGQ 将 query 推荐建模为有序列表生成任务（而非逐 token 的下一个预测）。设计了两个变体：</p>
+<ul>
+<li><strong>AIGQ-Direct</strong>：从生产排序输出生成平铺的 K-query 列表。使用曝光级 session 数据，仅保留至少一条被点击的三条展示 query 组成的 session。</li>
+<li><strong>AIGQ-Think</strong>：推理增强变体，遵循两阶段认知过程——(1) 从用户行为归纳多兴趣触发集 {T_k}；(2) 为每个兴趣生成 query 列表 Q_k。使用 Qwen3-32B 生成自然语言推理链（rationale），产出可解释可控的输出。</li>
+</ul>
+<h3>2.2 用户上下文工程</h3>
+<p><strong>行为内容表征</strong>：用微调的 Qwen3-32B 将结构化商品元数据（标题、类目、属性、标签）转化为统一文本描述。采用统一 schema：&quot;index — time — behavior type — behavior content&quot;。</p>
+<p><strong>Prompt 压缩</strong>：两步优化——(1) 离散字段（时间戳、行为类型）编码为特殊 token，初始化为构成子词的平均 embedding；(2) 指令剪枝，消除冗余解释性文本。例如&quot;1—1 day ago — search — iPhone17&quot;压缩为&quot;&lt;1&gt;&lt;1_day_ago&gt;&lt;search&gt; iPhone17&quot;。</p>
+<h3>2.3 Interest-aware List GRPO (IL-GRPO)</h3>
+<p>核心算法创新——在 query 位置粒度上进行细粒度优势估计的列表级策略优化：</p>
+<p><strong>双层奖励设计</strong>：</p>
+<ul>
+<li>Query 级：$R_{query}(q_{i,j}) = \sum_m w_m r_m(q_{i,j})$，评估用户偏好对齐（CTR 模型近似）、语义忠实度（ROUGE-L）、查询一致性（长度约束）</li>
+<li>序列级：$R_{seq}(o_i) = R_{fmt}(o_i) + R_{rep}(o_i)$，确保格式正确和非重复</li>
+</ul>
+<p><strong>优势计算</strong>：$A_{i,t} = [R_{query}(q_{i,j}) - \mu_j^Q] / \sigma_j^Q + \lambda [R_{seq}(o_i) - \mu^S] / \sigma^S$</p>
+<p>位置特定归一化 $(\mu_j^Q, \sigma_j^Q)$ 确保不同位置的 query 在各自位置上公平比较。</p>
+<p><strong>持续 CTR 奖励自适应</strong>：$r_{CTR}(q_j) = Clip(\gamma \cdot \hat{p}_{\phi_T}(q_j|u), 0, \beta)$，采用日更新周期：每天用新数据更新 CTR 模型，再用更新后的奖励函数更新策略，对抗数据漂移。</p>
+<p><strong>AIGQ-Think 的解耦触发奖励</strong>：trigger 侧使用 ROUGE-L 作为奖励，与 query 侧严格信号分离，防止推理和推荐之间的梯度干扰。</p>
+<p><strong>训练稳定化</strong>：动态熵正则化（线性衰减权重）+ 熵自适应裁剪（基于 token 熵阈值 τ 设置差异化裁剪边界）。</p>
+<h3>2.4 在线部署架构</h3>
+<p><strong>AIGQ-u2q 近线召回</strong>：异步推理与用户请求解耦，结果缓存在用户级 KV 表中。集成到现有多源召回栈。牺牲少量个性化时效性换取延迟可控。</p>
+<p><strong>AIGQ-x2q 实时召回</strong>：将 AIGQ-Think 的 CoT 输出蒸馏为紧凑的 trigger-to-query 索引，日级离线更新。排序通过复合评分 $S_{final}(x,q) = \alpha \cdot S_{rel}(x,q) + (1-\alpha) \cdot S_{eff}(q)$。</p>
+<h3>2.5 训练配置</h3>
+<p>基座模型 Qwen3-30B-A3B（300亿稀疏 MoE），SFT 训练 2 个 epoch、batch size 1024、学习率 2e-3（Megatron 框架），IL-GRPO 使用 ROLL 框架、rollout batch size 512、学习率 1e-6、每输入 8 个采样、温度 1.0。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>列表级建模范式</strong>：首次将 query 推荐从单条生成扩展到有序列表生成，IL-SFT 和 IL-GRPO 在列表粒度上建模用户意图，更贴近实际搜索行为（一次展示 3 条 query）。</li>
+</ol>
+<ol>
+<li><strong>推理增强的 AIGQ-Think</strong>：引入多兴趣触发归纳和推理链，使模型能&quot;先思考后生成&quot;。Qwen3-32B 的师生蒸馏使推理能力可迁移到部署模型。消融实验显示推理增强带来 Cate HR@30 +4.9% 的提升。</li>
+</ol>
+<ol>
+<li><strong>位置感知的细粒度优势估计</strong>：IL-GRPO 的位置特定归一化确保列表中不同位置的 query 在公平基线上比较，避免头部位置主导梯度更新。</li>
+</ol>
+<ol>
+<li><strong>持续自适应奖励</strong>：CTR 模型日更新+策略日更新形成闭环，10 天 A/B 实验验证了持续更新对 PVR 和 CTR 的一致提升。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<h3>离线评估</h3>
+<p>在淘宝 2025 年 10-11 月日志上（约 100 万 PV），与多个强基线对比：</p>
+<table><thead><tr><th>模型</th><th>Cate HR@30</th><th>Query HR@30</th><th>Sem. Sim.</th></tr></thead><tbody><tr><td>EBR (embedding-based)</td><td>0.1998</td><td>0.0100</td><td>0.5198</td></tr><tr><td>Qwen3-30B (zero-shot)</td><td>0.3054</td><td>0.0022</td><td>0.5554</td></tr><tr><td>GPT-5.1 (zero-shot)</td><td>0.3353</td><td>0.0021</td><td>0.5606</td></tr><tr><td>AIGQ-Direct (SFT)</td><td>0.4181</td><td>0.0428</td><td>0.5926</td></tr><tr><td>AIGQ-Think (IL-SFT+IL-GRPO)</td><td><strong>0.4704</strong></td><td><strong>0.0745</strong></td><td><strong>0.6624</strong></td></tr></tbody></table>
+<p>关键发现：零样本 LLM 在 Cate HR@30 上超越 EBR 50%+，证明了 LLM 的内在语义理解能力。AIGQ-Think 全链路优化后相比最强零样本模型 GPT-5.1 提升 40%。</p>
+<h3>消融分析</h3>
+<p>组件贡献量化：</p>
+<ul>
+<li>兴趣引导标签重排序：+0.8% Cate HR</li>
+<li>Prompt 压缩：+0.5% Cate HR</li>
+<li>IL-GRPO（AIGQ-Direct）：+9.3% Cate HR</li>
+<li>推理增强（AIGQ-Think vs Direct）：+4.9% Cate HR</li>
+<li>IL-GRPO（AIGQ-Think）：Cate HR +1.1%, Query HR <strong>+35.6%</strong>（query 精确匹配的巨大提升）</li>
+</ul>
+<h3>在线 A/B 实验（30 天生产部署）</h3>
+<table><thead><tr><th>指标</th><th>变化</th></tr></thead><tbody><tr><td>HintQ UCTR</td><td><strong>+7.42%</strong></td></tr><tr><td>归因订单数</td><td><strong>+10.31%</strong></td></tr><tr><td>归因 GMV</td><td><strong>+10.68%</strong></td></tr><tr><td>7 日留存</td><td><strong>+3.73%</strong></td></tr><tr><td>搜索 UV</td><td>+0.20%</td></tr></tbody></table>
+<p>发现独特性指标：AIGQ 生成的独特 query 中 79.3% 未被其他通道覆盖，独特叶子类目 37.3% 未被覆盖——证实了生成式方案在拓展搜索覆盖上的优势。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者隐含承认的局限：</p>
+<ul>
+<li><strong>纯文本理解</strong>：当前方案仅处理文本化的商品信息，缺乏多模态（图片、视频）上下文理解，而电商场景中视觉信息对用户意图的影响不可忽视</li>
+<li><strong>推理延迟</strong>：AIGQ-Think 的推理增强带来显著计算开销，虽通过近线缓存+离线索引规避了在线延迟问题，但这本质上是延迟-时效性的折中（用户最新行为只能在下次访问时反映）</li>
+<li><strong>日级更新频率</strong>：CTR 模型和策略的日更新可能无法捕捉快速变化的热点趋势</li>
+</ul>
+<h2>6. 工业实践意义</h2>
+<p><strong>直接可采纳的设计</strong>：</p>
+<ul>
+<li><strong>近线+离线混合架构</strong>：将 LLM 推理解耦到异步管线，缓存用户级结果 + 离线蒸馏触发索引，是大模型落地推荐系统的实用范式。对 UGC 搜索同样适用——可异步为用户生成个性化搜索建议。</li>
+<li><strong>列表级训练范式</strong>：IL-SFT 和 IL-GRPO 的列表级建模直接适用于任何展示多条结果的推荐/搜索场景。</li>
+<li><strong>持续奖励自适应</strong>：日级 CTR 模型更新+策略更新的闭环设计简单有效，值得在在线学习场景中推广。</li>
+</ul>
+<p><strong>部署资源参考</strong>：</p>
+<ul>
+<li>基座 Qwen3-30B-A3B，训练使用 PPU 810E，SFT+GRPO 全流程</li>
+<li>在线推理通过近线缓存+离线索引实现，对实时延迟影响可控</li>
+</ul>
+<p><strong>对 UGC 搜索的启示</strong>：</p>
+<ul>
+<li>UGC 内容（帖子、问答）同样存在 query 推荐的冷启动问题，AIGQ 的生成式方案可直接迁移</li>
+<li>79.3% 的独特 query 覆盖率证明生成式方法在拓展长尾搜索需求上的巨大潜力</li>
+<li>推理增强（AIGQ-Think）特别适合需要理解用户多元兴趣的场景</li>
+</ul></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

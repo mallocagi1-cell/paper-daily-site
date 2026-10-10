@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — RAG-Enhanced Large Language Models for Dynamic Content Expiration Prediction in Web Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>RAG-Enhanced Large Language Models for Dynamic Content Expiration Prediction in Web Search</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.10</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 3 | Practical 5 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 本文针对商业搜索中“内容时效性与用户意图不一致”的问题，提出一种基于 RAG 增强的 LLM 动态内容过期预测框架，已部署在百度搜索线上。系统从文档中抽取细粒度时间上下文，并通过 LLM 推断 query 相关的“有效期边界”（validity horizon），即在该 query 意图下信息何时变得语义过期。框架引入了幻觉缓解策略以保证可靠性。离线评测与线上 A/B 实验均验证了显著的时效性收益。</p><p><strong>Key insight:</strong> 传统时间窗口过滤是“一刀切”，而“语义过期”才是搜索时效性的本质：同一篇 2 年前的帖子对一个 query 仍然有效，对另一个 query 已经过期。论文用 LLM 把“过期”建模为 query 相关的语义判断而非时间硬阈值，对社区 UGC 搜索（帖子/问答的有效期长短差异巨大）非常有借鉴价值——可以把 freshness 信号从规则改造成可学习的 query-document 二元判断特征接入排序。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-15/personalization/report.html#dr-arxiv-2605-13052">2026-05-15 · Personalization (4.10)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.13052" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>商业 Web 搜索的&quot;时效性 vs 相关性&quot;对齐长期是工业难题。传统方法依赖静态的时间窗口过滤（如&quot;过去 30 天&quot;），把时效性当作 metadata 属性而非语义关系，结果是&quot;一刀切&quot;——既会把语义已失效的近期内容硬推上来，也会无差别地压制权威但年代较老的内容。论文用两个对比例子刻画&quot;信息生命周期&quot;的极端差异：突发性的&quot;香港大火&quot;事件中，两天前的文档可能已经语义过期；而&quot;交通法规&quot;类政策文档则保持有效期长达数年。</p>
+<p>核心动机是 reformulate timeliness：不再把&quot;新鲜度&quot;看作时间戳属性，而是把它建模为 query 意图与文档时间线的<strong>语义动态关系</strong>。论文进一步指出，普适的&quot;过期阈值&quot;并不存在——expiration 必须 query-aware、context-aware。</p>
+<h2>2. 方法详解</h2>
+<p>整体框架由四个流水线模块组成：</p>
+<p><strong>时间信息抽取模块</strong>：把原始文档转成&quot;以时间锚为中心的语义片段&quot;。具体两步：(a) anchor parsing 从文档中抽取查询关键词与时间实体，构建 Document Temporal Index 把时间表达式映射到句子位置；(b) time-anchored context refinement 用 5 句滑窗围绕时间锚做上下文聚合，结合 cosine 语义相似度 + 时间对齐分计算 relevance；对于无显式时间约束的查询，模块自动切换到 exponential recency decay 加权。最终通过 threshold 过滤得到&quot;focused semantic chunks&quot;喂给 LLM。</p>
+<p><strong>结构化时间推理 prompt</strong>：不让 LLM 自由发挥，而是用严格模板锚定绝对时间。Prompt 同时输入 (用户 query, 抽取的时间上下文, 搜索时间戳)，配合 few-shot 周期性事件（如&quot;双十一&quot;）的领域适配示例，并加入负向约束防止 LLM 抽取无关日期。Prompt 引导逐步推理把 query 意图与时间证据综合成 query-specific validity horizon。</p>
+<p><strong>Temporal Consistency Verification（幻觉抑制）</strong>：双重机制。第一重是 contrastive forward-backward CoT：LLM 先正向生成一个候选 expiration 时间，再反向 stress-test 验证逻辑自洽，用 consistency penalty 量化两个方向推理的吻合度；同时加 granularity penalty 防止&quot;年级别 vs 日级别&quot;的粒度错配。第二重是 authority-weighted evidence fusion：当多个文档源给出冲突时间证据时，系统按&quot;领域权威度 × 语义相关度&quot;加权融合，选择得到最强权威背书的时间锚。</p>
+<p><strong>线上特征落地</strong>：把昂贵的 LLM 推理&quot;蒸馏&quot;成轻量级二元信号——文档要么通过 expiration 检验（flag=1）要么不通过（flag=0）。线上有三种执行路径：离线缓存（dictionary lookup of 高频 query 阈值）、distilled student LLM 调用、或直接 teacher LLM 调用。系统配备 circuit-breaking：若推理超时或检测到分布漂移，flag 默认为 0，gracefully 退回到 baseline 排序而非注入不可靠信号。最终该 binary 信号作为 learnable soft constraint 通过多阶特征交互融入 Baidu 的 freshness sub-network。</p>
+<p>训练侧的优化目标是三项 loss 之和：predicted timestamp 与 ground-truth 的归一化时间距离、temporal granularity penalty、logical consistency penalty。框架不微调 LLM 权重，全部依赖 prompt engineering，以最小化部署复杂度。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(1) <strong>可扩展的 query-aware dynamic expiration</strong>：把&quot;时效性&quot;从硬阈值规则改造成 query-specific 语义推断，解决了 one-size-fits-all 的根本问题。</p>
+<p>(2) <strong>专门面向时间推理的幻觉抑制</strong>：contrastive forward-backward CoT + authority-weighted evidence fusion 这套组合明确为&quot;LLM 给出错误日期&quot;这种高代价错误兜底，比通用 self-consistency 多了 granularity 维度，是工业部署的关键。</p>
+<p>(3) <strong>从昂贵推理到二元特征的产线化路径</strong>：通过 offline cache + student LLM + teacher LLM 三级回退 + circuit breaker，把 LLM 推理变成一个可降级、可观测的 ranking 特征。这套架构是其他 LLM-as-feature 工作可直接借鉴的模板。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>离线评测</strong>（1M queries × 10M docs，3 个月数据）：Aurora-Expiry vs Aurora-Baseline。</p>
+<ul>
+<li>Satisfaction Score: +0.52%</li>
+<li>Positive Navigation Rate (Tier-2 ≤1 月): <strong>+5.21%</strong>；Tier-3 (≤1 周): <strong>+7.36%</strong></li>
+<li>median time-away@4: -2.44%；@10: -3.19%（结果越新越好）</li>
+<li>关键：general relevance 指标保持稳定——证明 freshness 收益没有牺牲语义相关性。</li>
+</ul>
+<p><strong>线上 A/B</strong>（14 天，5% 流量/组）：</p>
+<ul>
+<li>Satisfactory Consumption: +0.78%, CTR: +0.41%, Search Activity: +0.12%, Search Retention: +0.06%</li>
+<li>整体 median day-away@4: <strong>-6.87%</strong>，@10: -6.24%</li>
+<li>高时效性 query 子集 day-away@4: <strong>-12.81%</strong>，@10: -11.46%</li>
+</ul>
+<p><strong>人工 GSB（Good/Same/Bad）评测</strong>：</p>
+<ul>
+<li>Long-Tail/Cold Demand: +5.00% advantage ratio, Good:Bad = 12:2</li>
+<li>Time-Sensitive: +2.50%, Good:Bad = 6:1</li>
+<li>Random Demand: +1.50%, Good:Bad = 5:2</li>
+</ul>
+<p>时效敏感与长尾冷需求增益最大，且通用 query 上没有伤害，证明系统精准地只在该作用的地方作用——典型的工业系统理想形态。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文未单列 limitations 章节，从方法本身看几个隐含约束：(a) 时间表达式的隐式/歧义引用（如&quot;前段时间&quot;&quot;上次&quot;）抽取仍困难；(b) few-shot prompt 的领域适配在新内容形态（如直播片段、AIGC 帖子）下需要重新调优；(c) 即便有双重验证，长尾 query 上的幻觉残余风险仍存在，circuit breaker 是兜底而非根治；(d) authority-weighted fusion 依赖 source credibility，对新涌现的发布者存在冷启动；(e) &quot;每个 query 一个 expiration 阈值&quot;对多意图复合 query 仍属粗粒度。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区 UGC 搜索（帖子、问答、评论）非常直接：</p>
+<ul>
+<li><strong>可借鉴的工程模式</strong>：把&quot;内容新鲜度&quot;从规则评分（&quot;7 日内 +0.3，30 日内 +0.1&quot;）改造成 query-aware 二元特征接入排序模型，是高 ROI 的方向。社区 UGC 中&quot;经验型帖子（如装修攻略）有效期长，事件型帖子（如演唱会抢票）有效期短&quot;的差异比通用网页更明显，收益空间应该比 Baidu 的 +0.41% CTR 还大。</li>
+<li><strong>LLM as offline feature engineer 的范式</strong>：论文的三级回退（cache/student/teacher）+ circuit breaker 是把 LLM 接入工业排序系统的标准化做法，可直接复用到其他特征（如 query 意图、内容质量分、用户满意度预测）。</li>
+<li><strong>要避坑的点</strong>：必须设 fallback 路径（不能让 LLM 失败把整体相关性拖下水）、必须做 grain-level 验证（避免&quot;年级别&quot;判断错配到&quot;日级别&quot; query）。</li>
+<li><strong>部署成本估算</strong>：offline cache 覆盖率是关键，论文未披露具体 cache hit rate，但从可行性看 long-tail query 必须有 student LLM 兜底——这是接入前要先准备好的 infra。</li>
+</ul></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

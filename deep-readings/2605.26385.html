@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Credit-assigned Policy Gradient for Early Stage Retrieval in Two-stage Ranking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Credit-assigned Policy Gradient for Early Stage Retrieval in Two-stage Ranking</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.40</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对搜索/推荐/RAG 中两阶段排序（早期召回 ESR + 后排 LSR）端到端训练的难题，作者指出 vanilla policy gradient (V-PG) 在 ESR 上方差爆炸，因为它对整个候选集联合概率求梯度，忽略了单个候选的贡献。论文提出 credit-assigned policy gradient (CA-PG)：把梯度归到「目标物品被任何候选集选中」的边际概率上，对候选集大小做了边际化。理论上证明在常见 LSR 假设下 CA-PG 与 V-PG 期望一致但方差大幅降低，在合成与真实数据上 NDCG/Recall@K 明显优于 V-PG 和 distillation 基线。</p><p><strong>Key insight:</strong> CA-PG 提供了一个真正可工业落地的 ESR 端到端 RL 训练方案：核心改动只在策略梯度的归因公式，不需要改变现有 two-stage 架构。对社区搜索的直接价值是把目前主要用 distillation/CTR 标签训练的召回侧升级为以下游 nDCG/CTR 为目标的强化学习训练，且不会因候选集动辄 1000+ 而方差崩溃。论文里 marginal probability 重写技巧也可以迁移到推荐多目标排序中的候选集级 reward 分解问题。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-28/retrieval/report.html#dr-arxiv-oai-arXiv-org-2605-26385">2026-05-28 · Retrieval (4.40)</a> <a href="../reports/2026-05-28/personalization/report.html#dr-arxiv-2605-26385">2026-05-28 · Personalization (4.65)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.26385" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>工业级搜索/推荐/RAG 系统普遍采用两阶段架构：early-stage ranker (ESR) 从十亿级 item 池中筛出几千到上万的候选集，late-stage ranker (LSR) 再在候选集内精排。LSR 训练已有大量 RL 方法，但 ESR 的端到端 RL 训练一直是空白——根本原因是把 vanilla policy gradient (V-PG) 直接套到 ESR 时方差呈 𝒪(|𝒜|^K) 指数级爆炸（|𝒜| 是动作空间，K 是候选集大小）。论文指出 V-PG 的两个症结：(1) 方差爆炸——V-PG 对整个候选集 𝒜^K 的联合概率求梯度，每次只采样一个候选集组合却要估计在 𝒜^K 组合空间上的期望；(2) credit-assignment 失败——V-PG 把候选集中所有 item 同等对待，无法把单个 item 对最终 reward 的贡献区分出来。例子：候选集 {A,B,C} 进入 LSR，A 被选中且 reward 正，B 被选中且 reward 负，V-PG 会把整体概率上调，无法识别 C 是否相关。前序工作 (Ma et al. 2020) 也讨论 V-PG 的两阶段训练，但只用启发式（对非目标 item 加 discount）压方差，缺乏严格分析。本工作要回答：能否找到一个 PG 形式，让 ESR 在大候选集场景下也能稳定收敛？</p>
+<h2>2. 方法详解</h2>
+<p>CA-PG 的核心是<strong>策略分解</strong>：把 ESR 的策略写成 π(a_l | x) = π_ESR(𝒮^K(a_l) | x) · π(l)(a_l | x, 𝒮^K(a_l))，其中 𝒮^K(a_l) := {𝒜^K | a_l ∈ 𝒜^K} 是所有包含 a_l 的候选集的集合，π_ESR(𝒮^K(a_l) | x) := Σ_{𝒜^K} 𝟙{a_l ∈ 𝒜^K} π_ESR(𝒜^K | x) 是 ESR 选中 a_l 的<strong>边际概率</strong>。关键 trick：CA-PG 只对第一项（边际概率）求梯度、忽略第二项（条件概率）：</p>
+<p>∇v_l(π) = 𝔼_𝒟 [∇log π_ESR(𝒮^K(a_l) | x) · r_l]</p>
+<p>这一步把动作空间从 |𝒜|^K 降到 |𝒜|，方差和样本复杂度都大幅下降。Theorem 3.1 证明 CA-PG 就是 V-PG 的一个组成部分，剩余项 ∇C(π) 包含一个 LSR 与 ESR 条件分布之比的因子，作者证明该因子在 LSR 与 ESR 合理对齐时贡献小。Theorem 3.3 给出 CA-PG 能学到正确排序的充分条件：reward 为正、LSR 相对 ESR 合理对齐（不必最优）。</p>
+<p>具体落地用 Plackett-Luce (PL) 双塔 MoE 模型：每个专家 m(k) 输出 10 维用户/item embedding，logit = ⟨μ̂_{m(k)}(x), ν̂_{m(k)}(a)⟩，整体 PL 策略 π_ESR(𝒜^K | x) = ∏ exp(logit) / Σ。当 K 大、|𝒜| 大时直接求 PL marginal 不可行，作者引入 Sampling with Replacement (SwR) 近似——把不放回采样近似为放回，得到 CA-PG-SwR (论文也称 TOP1-PG，因为 M=1 时退化为 top-1 sampling 形式)。训练用标准 Adam，learning rate 网格搜索；代码开源于 facebookresearch/early_stage_retrieval。</p>
+<h2>3. 核心技术贡献</h2>
+<p><strong>(1) 边际化变量替换</strong>：把策略分解中 ESR 的随机变量从&quot;具体候选集 𝒜^K&quot;换成&quot;包含 a_l 的所有候选集 𝒮^K(a_l)&quot;——这是 variance reduction 的根本机制。前序工作只在 single-stage 上做 PL 近似，没人意识到 two-stage 下边际概率才是统计上更稳的优化目标。<strong>(2) 与 V-PG 的精确关系定理</strong>（Theorem 3.1）：CA-PG = V-PG − 残差项，且残差项可解释为&quot;每个具体候选集组合的归一化重要度&quot;。这给出从 V-PG 移除噪声项的清晰理论解读。<strong>(3) 学习等价性证明</strong>（Theorem 3.3）：在 LSR-ESR 合理对齐 + reward 正性条件下，CA-PG 与 V-PG 学到相同最优 ESR。<strong>(4) SwR 实用近似</strong>：把 sampling-without-replacement 替换为 with-replacement，让 CA-PG 在 K=200 这种工业级候选集上仍可计算。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>合成实验</strong> (1000 users × 1000 items，K=5/10/20)：</p>
+<ul>
+<li>V-PG: K=5/10/20 时 policy value 收敛到 7.22/7.17/6.86（500K 步）；</li>
+<li>V-PG-SwR: 8.33/8.54/8.74；</li>
+<li>CA-PG: 8.19/8.44/8.70；</li>
+<li>CA-PG-SwR: 性能最优。</li>
+</ul>
+<p>V-PG 在 K=20 时已出现 gradient overflow 提前中止；CA-PG 系列在 K=20 仍稳定收敛。</p>
+<p><strong>LSR 对齐扫描</strong> (K=10)：四种 LSR (optimal/noisy/uniform/anti-opt)：</p>
+<ul>
+<li>V-PG 在 noisy 下 7.25，uniform 下骤降到 3.27，anti-opt 仅 1.07；</li>
+<li>CA-PG 在 uniform LSR 下仍能学到 5.64（更稳）。这验证 Theorem 3.3 关于&quot;对齐宽容度&quot;的预测。</li>
+</ul>
+<p><strong>真实数据 KuaiRec</strong> (1411 users × 3326 items，K=50/100/200，只能跑 SwR 版本)：</p>
+<ul>
+<li>V-PG-SwR @50K 步: 5.05/5.39/5.92；@500K 步: 7.91/8.22/8.26；</li>
+<li>CA-PG-SwR @50K 步: 5.61/6.37/7.10；@500K 步: 7.19/7.82/8.32。</li>
+</ul>
+<p>CA-PG 在 @50K 早期收敛优势随 K 增大而扩大（K=200 时 7.10 vs 5.92），最终收敛值在 K=200 时也反超 V-PG-SwR。<strong>关键观察</strong>：CA-PG 的早期收敛优势在大候选集下最显著，这正是工业场景需要的（候选集越大 V-PG 越无法用）。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确列出两个方向：(1) <strong>off-policy learning (OPL)</strong>——本文是 on-policy，工业级 ESR 训练通常依赖 logged data，需要给 CA-PG 配套 importance sampling 策略；(2) <strong>reward 交互</strong>——本文假设 position-wise reward 只与对应 action 有关，但实际排序中存在 diversity 等 item-item 交互，CA-PG 在多样性场景下的扩展尚未解决。论文未明显讨论的局限：CA-PG-SwR 的 sampling 近似在极小 K 时与精确 CA-PG 有差距；MoE 多专家的 expert imbalance 问题未做专门处理；reward function 的正性要求（Theorem 3.3）在带 KL 罚的工业 reward 下可能违反。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索/推荐工程团队的最具体启示：<strong>召回侧 RL 训练长期被认为&quot;不可能用 vanilla PG&quot;，CA-PG 把行动空间从 |𝒜|^K 降到 |𝒜|，让 ESR 可以与 LSR 联合优化业务 reward（CTR、CVR、播放时长）而非只优化 retrieval-only nDCG</strong>。落地路径：(1) 已有双塔召回 + 排序 pipeline 的团队，可以把召回侧 loss 从 in-batch negative softmax 切到 CA-PG-SwR，reward 用线上 LSR 输出 + 后验业务指标；(2) MoE 召回（业界常见的多通道融合）天然适配 CA-PG 的两阶段 PL 公式；(3) 候选集 K=200~1000 是工业典型量级，论文证明这正是 CA-PG 收益最大的区间。对社区搜索而言，UGC 帖子的召回长期靠 BM25 + 双塔召回融合，CA-PG 提供了&quot;用线上点击/转化直接训召回模型&quot;的可行通路，不再需要先用代理标签（如曝光-点击对）训召回再用 RL 训排序。需要注意的工程约束：CA-PG 需要 LSR 是固定/可查询的（或异步更新），不能 LSR/ESR 同时变化；梯度计算需要对 𝒮^K 边际概率做归一化，框架需支持 PL 的 logsumexp 稳定实现；reward 必须正（建议加 baseline）。Meta 的 facebookresearch/early_stage_retrieval 仓库提供了参考实现，可直接 fork 适配业务 PL 头。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

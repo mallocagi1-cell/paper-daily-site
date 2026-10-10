@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — LLMGR: Large Language Model-based Generative Retrieval in Alipay Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>LLMGR: Large Language Model-based Generative Retrieval in Alipay Search</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.25</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 4 | Timely 1</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 支付宝搜索部署 LLM 生成式检索系统 LLMGR，将小程序信息编码进大模型后直接生成候选标题进行检索。</p><p><strong>Key insight:</strong> 对于复杂 query 传统检索难以召回的场景，LLM 生成式检索可作为补充召回源，通过将 item 信息编码进模型参数实现端到端检索，显著提升长尾 query 覆盖率。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-03-02/generative/report.html#dr-s2-a8205e76db531fd9dc26118c4c5bfc9f33386d23">2026-03-02 · Generative (4.25)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Semantic Scholar</span>
+          <a href="https://www.semanticscholar.org/paper/a8205e76db531fd9dc26118c4c5bfc9f33386d23" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><p>warn: CPU lacks AVX support, strange crashes may occur. Reinstall Bun or use *-baseline build:<br>  https://github.com/oven-sh/bun/releases/download/bun-v1.3.10/bun-darwin-x64-baseline.zip<br>基于多轮检索，我已获取了 LLMGR 系统及其后续工作的详细信息。以下是深度解读：</p>
+<blockquote><p><strong>注意</strong>：原始 LLMGR 论文发表于 SIGIR 2024（工业短文，4页），无 arXiv 预印本，全文在 ACM 付费墙后。以下解读结合了同团队的 SIGIR 2025 后续论文 <a href="https://arxiv.org/abs/2503.21098" target="_blank" rel="noopener">arXiv:2503.21098</a>（详细描述了 LLMGR 系统）以及相关文献的信息。</p></blockquote>
+<hr>
+<h2>问题与动机</h2>
+<p>支付宝搜索的核心场景是帮助用户找到合适的<strong>小程序（mini-program）</strong>——这些是第三方开发的轻量级应用，运行在支付宝主 App 内。传统检索系统采用<strong>多阶段管线</strong>架构（索引构建 → 稀疏检索 → 稠密检索 → 排序），存在以下问题：</p>
+<ol>
+<li><strong>端到端优化困难</strong>：各阶段独立训练，无法联合优化，语义理解碎片化</li>
+<li><strong>长尾 query 覆盖不足</strong>：对于复杂、模糊或低频的用户查询，传统的稀疏检索（BM25）和稠密检索（双塔模型）都难以召回相关结果，导致<strong>空结果率（Zero-Result Rate）</strong>居高不下</li>
+<li><strong>语义鸿沟</strong>：用户表达的 query 与小程序标题/描述之间存在显著的语义差距，例如用户搜&quot;怎么交水费&quot;，但对应小程序名为&quot;生活缴费&quot;</li>
+</ol>
+<p>这个问题的重要性在于：支付宝作为超级 App，其搜索质量直接影响用户体验和商业转化。长尾 query 虽然单条流量低，但<strong>聚合起来占总搜索量的很大比例</strong>，提升长尾召回率具有显著的商业价值。</p>
+<h2>方法概述</h2>
+<p>LLMGR 提出了一种<strong>基于大语言模型的生成式检索（Generative Retrieval）</strong>方法，核心思路是：</p>
+<p><strong>将小程序信息&quot;记忆&quot;进 LLM 的参数中，推理时直接根据 query 生成候选小程序标题，实现端到端检索。</strong></p>
+<p>具体流程分为三个阶段：</p>
+<h3>训练阶段</h3>
+<ul>
+<li><strong>骨干模型</strong>：采用 <strong>Qwen2.5-14B</strong> 作为 GR 基座模型</li>
+<li><strong>文档标识</strong>：使用<strong>小程序/产品标题（Title）作为 Document ID</strong>，而非数字 ID 或语义哈希</li>
+<li><strong>SFT 微调</strong>：构建 <code>{query, 相关标题}</code> 的正例对，通过<strong>监督微调（Supervised Fine-Tuning）</strong>让 LLM 学习 query → title 的映射关系。训练的本质是让模型<strong>记忆整个小程序语料库</strong>的标题</li>
+</ul>
+<h3>推理阶段</h3>
+<ul>
+<li>用户输入 query 后，LLM 以<strong>自回归方式逐 token 生成</strong>候选标题</li>
+<li>使用 <strong>Trie 约束解码（Trie-Constrained Decoding）</strong>：将全部合法标题构建前缀树（Trie），在每一步解码时只允许生成合法前缀路径上的 token，确保最终输出的标题一定是语料库中<strong>真实存在的文档</strong></li>
+<li>通过 <strong>Beam Search</strong> 生成 Top-K 个候选标题</li>
+</ul>
+<h3>系统集成</h3>
+<ul>
+<li>LLMGR 作为<strong>补充召回源</strong>，与现有的稀疏检索（SR）和稠密检索（DR）并行工作，其输出并入统一的排序模块</li>
+</ul>
+<h2>核心技术贡献</h2>
+<h3>1. 端到端生成式检索取代多阶段管线</h3>
+<p>与传统的&quot;索引-检索-重排&quot;管线不同，LLMGR 将检索问题转化为<strong>序列生成问题</strong>，模型参数即索引。这消除了中间表示的信息损失，实现了从 query 到文档的端到端映射。</p>
+<h3>2. Title 作为自然语言 DocID</h3>
+<p>相比 DSI（Differentiable Search Index）等工作使用数字 ID 或语义哈希作为文档标识符，LLMGR 直接使用<strong>自然语言标题</strong>作为 DocID。优势在于：</p>
+<ul>
+<li>天然具有语义信息，LLM 可以利用预训练知识理解标题含义</li>
+<li>不需要额外的 ID 分配和学习过程</li>
+<li>对于小程序场景，标题数量有限（通常在万级到十万级），Trie 树规模可控</li>
+</ul>
+<h3>3. 大模型 + 约束解码的工业落地</h3>
+<p>这是<strong>最早将 LLM 级别的生成式检索真正部署到工业搜索系统中的工作之一</strong>。之前的 GR 研究多基于 T5 等中小模型，LLMGR 直接使用 14B 参数量的 Qwen 模型，充分利用大模型的语义理解和推理能力。</p>
+<h3>4. 与现有方法的关键区别</h3>
+<table><thead><tr><th>维度</th><th>传统稀疏/稠密检索</th><th>LLMGR</th></tr></thead><tbody><tr><td>索引</td><td>倒排索引/向量索引</td><td>模型参数即索引</td></tr><tr><td>匹配</td><td>词匹配/向量相似度</td><td>序列生成</td></tr><tr><td>语义理解</td><td>受限于 encoder 能力</td><td>利用 LLM 预训练知识</td></tr><tr><td>优化</td><td>分阶段独立优化</td><td>端到端联合优化</td></tr><tr><td>长尾 query</td><td>覆盖不足</td><td>借助 LLM 推理能力提升</td></tr></tbody></table>
+<h2>实验结果分析</h2>
+<h3>离线评估</h3>
+<ul>
+<li>从搜索日志中采样<strong>高频、中频、低频</strong>三类 query 构建测试集</li>
+<li>由经验丰富的标注员对检索结果进行相关性标注（相关/不相关）</li>
+<li>使用 <strong>Accuracy（ACC）</strong> 作为离线评估指标</li>
+<li>LLMGR 在特别是<strong>中低频 query</strong> 上表现出明显的召回优势</li>
+</ul>
+<h3>在线 A/B 测试</h3>
+<p>后续论文（SIGIR 2025）在<strong>基金搜索（Fund Search）</strong>和<strong>保险搜索（Insurance Search）</strong>场景进行了在线 A/B 测试：</p>
+<ul>
+<li>对照组 A：现有的稀疏检索 + 稠密检索的基线召回系统</li>
+<li>实验组 B：在基线上加入优化后的 GR 框架</li>
+<li><strong>保险搜索检索准确率提升 3.88%</strong></li>
+<li>搜索质量和<strong>转化率（Conversion Rate）</strong>均有显著提升</li>
+</ul>
+<h3>幻觉问题的发现</h3>
+<p>部署后发现 LLM 生成式检索存在<strong>幻觉问题</strong>——虽然 Trie 约束保证了生成的标题一定存在于语料库中，但模型仍会生成与 query <strong>语义不相关</strong>的标题。这导致后续团队专门发表了 SIGIR 2025 论文来解决此问题。</p>
+<h2>局限与未来方向</h2>
+<h3>现有局限</h3>
+<ol>
+<li><strong>幻觉问题</strong>：这是最大的挑战。即使使用 Trie 约束解码，LLM 仍可能生成语义不相关但字面合法的标题。后续工作通过知识蒸馏推理（用 Qwen2.5-72B 和 GPT-4o 评估 query-doc 相关性，再蒸馏回 GR 模型）和决策代理（Decision Agent）进行后处理来缓解</li>
+</ol>
+<ol>
+<li><strong>推理延迟</strong>：14B 模型的自回归生成 + Beam Search + Trie 约束解码，延迟远高于传统的稀疏/稠密检索。Google 近期提出的 <a href="https://arxiv.org/abs/2602.22647" target="_blank" rel="noopener">STATIC</a> 框架（2026年2月）通过稀疏矩阵加速 Trie 约束解码，实现了 948x 的加速，说明这仍是活跃的研究方向</li>
+</ol>
+<ol>
+<li><strong>语料库更新</strong>：新小程序上线时需要重新训练模型或至少更新 Trie 树，无法像倒排索引那样实时增量更新</li>
+</ol>
+<ol>
+<li><strong>适用场景有限</strong>：当前主要适用于候选集规模可控的场景（小程序、基金、保险产品），对于海量网页级别的检索，Trie 树和模型记忆的规模都面临挑战</li>
+</ol>
+<h3>未来方向</h3>
+<ul>
+<li><strong>增量学习</strong>：支持语料库动态更新而不需全量重训</li>
+<li><strong>更高效的约束解码</strong>：如 Google STATIC 和 Trie 向量化方案</li>
+<li><strong>多模态生成式检索</strong>：结合小程序的图标、截图等视觉信息</li>
+<li><strong>更好的幻觉控制</strong>：在训练阶段引入负例对比学习，或更精细的推理时 verification</li>
+</ul>
+<h2>工业实践意义</h2>
+<h3>1. 作为补充召回源的定位非常务实</h3>
+<p>LLMGR 没有试图替代传统检索，而是作为<strong>补充召回路</strong>与 SR/DR 并行。这是工业落地的关键——降低风险的同时获取增量收益。对于长尾 query、复杂意图等传统检索薄弱的场景，GR 可以贡献<strong>增量召回</strong>。</p>
+<h3>2. 对&quot;封闭语料库&quot;搜索场景的启示</h3>
+<p>支付宝小程序、电商 SKU、金融产品等场景的候选集规模有限（万到百万级），非常适合生成式检索。<strong>搜索/推荐系统中的&quot;封闭域检索&quot;都可以借鉴这一思路</strong>。</p>
+<h3>3. LLM 作为检索系统组件的工程化范式</h3>
+<p>LLMGR 展示了如何将 LLM 嵌入到工业搜索系统中：SFT 微调记忆语料库 → Trie 约束解码保证合法性 → 与传统召回融合。这为搜广推团队提供了一条<strong>可复制的技术路线</strong>。</p>
+<h3>4. 幻觉控制是工业化的核心挑战</h3>
+<p>论文团队连续两年（SIGIR 2024 + SIGIR 2025）聚焦这一问题，说明<strong>GR 的准确性和可信度是工业部署的最大瓶颈</strong>。工业实践中可以借鉴他们的思路：训练时通过大模型蒸馏提升质量，推理时通过 Decision Agent 做后验筛选。</p>
+<h3>5. 对搜索/推荐系统演进的前瞻性意义</h3>
+<p>LLMGR 代表了搜索系统从&quot;检索范式&quot;到&quot;生成范式&quot;演进的重要一步。同团队还发表了 MAAQR（LLM 多代理查询改写），形成了 <strong>GR 召回 + LLM 改写 + 传统召回</strong> 的完整 LLM-native 搜索体系，这可能是未来搜索系统架构的趋势。</p>
+<hr>
+<p>Sources:</p>
+<ul>
+<li><a href="https://arxiv.org/abs/2503.21098" target="_blank" rel="noopener">Alleviating LLM-based Generative Retrieval Hallucination in Alipay Search (SIGIR 2025)</a></li>
+<li><a href="https://dl.acm.org/doi/10.1145/3726302.3731950" target="_blank" rel="noopener">MAAQR: Multi-Agent Framework for Query Rewriting in Alipay Search (SIGIR 2025)</a></li>
+<li><a href="https://arxiv.org/abs/2602.22647" target="_blank" rel="noopener">Vectorizing the Trie: Efficient Constrained Decoding (Google, 2026)</a></li>
+<li><a href="https://sigir-2024.github.io/proceedings.html" target="_blank" rel="noopener">SIGIR 2024 Proceedings</a></li>
+</ul></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

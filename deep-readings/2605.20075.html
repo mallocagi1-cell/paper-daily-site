@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — CopT: Contrastive On-Policy Thinking with Continuous Spaces for General and Agentic Reasoning</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>CopT: Contrastive On-Policy Thinking with Continuous Spaces for General and Agentic Reasoning</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.20</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 5 | Practical 4 | Evidence 4 | Timely 4</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> CopT 把传统 think-then-answer 的 CoT 流程倒过来：先让模型直接产出 draft answer，再把这个草稿作为条件输入，让模型在 on-policy 阶段对其进行反思、纠错。为了判断 draft 是否可信，作者把连续 embedding 作为推理期 contrastive verifier — 对同一段 token，分别以离散 token 输入和连续 embedding 输入算 likelihood，序列级的差值给出置信度。无需额外验证器即可避免 performative reasoning 带来的多余 token 成本，论文报告 token 用量大幅降低且 agentic reasoning 任务的准确率不下降。</p><p><strong>Key insight:</strong> 对搜索/推荐 agent 直接可借鉴：把昂贵的多步 reasoning 改成 draft → 自检 → 修正，模型自己决定哪些 query 不需要展开复杂规划。线上典型 query 短 + 高 QPS 场景里，先出 draft 召回排序结果、再对置信度低的 query 触发完整 agentic RAG，本质上是把 reasoning 预算按 query 难度分配。连续 embedding contrastive verifier 的设计也提供了一个不依赖外部 reward model 的轻量自验证路径。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-21/agentic/report.html#dr-hf-2605-20075">2026-05-21 · Agentic (4.20)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">HuggingFace</span>
+          <a href="https://huggingface.co/papers/2605.20075" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>CopT 直击主流 chain-of-thought (CoT) 推理范式中一个被普遍忽视的低效现象：模型常常在内部其实已经能识别出答案的情况下，仍然机械地走完冗长的 thinking 步骤，作者称之为 &quot;performative reasoning&quot;。论文给出的直接数字证据是在 GSM8K 上，标准 CoT 用约 2,100 tokens 才达到 95.75% 准确率，而 CopT 仅用约 960 tokens 就达到 96.36% — token 量直接砍掉 55% 而准确率反而提升 0.61 个百分点。在更复杂的 LeetCode-Contest 上差距更大，CoT 59.44% 而 CopT 提升到 66.11%。</p>
+<p>这个问题对生产环境意义重大：on-line agentic search 类应用对延迟和 token 成本极其敏感，但目前没有可靠的 inference-time 信号告诉模型 &quot;这个 query 不需要再多想了&quot;。已有的 latent CoT (SwiReasoning、Soft-Thinking) 试图用连续 embedding 直接生成，牺牲了可读性，CopT 给出了第三条路：保留显式 CoT 的可读性，同时用 continuous embedding 当作 inference-time 验证器。</p>
+<h2>2. 方法详解</h2>
+<p>CopT 把推理流程倒过来：先 draft answer，再按需 on-policy thinking。整体由两个阶段、两个 contrastive 量决定。</p>
+<p><strong>Stage 1 — Draft Answer</strong>: 强制模型跳过 thinking 直接产出答案 a₁:Tₐ（数学任务限 1024 token，多轮限 512）。在生成过程中并行计算 reliability estimator：</p>
+<p>  κₐ(a₁:Tₐ) = (1/Tₐ) Σₜ [log p_θ(aₜ | q, a&lt;t) − log p_θ(aₜ | q, e&lt;t)]</p>
+<p>其中 e_t = Σ_v p_θ(v | q, a&lt;t) · E(v) 是按下一 token 分布加权的 embedding 期望，相当于把不确定性以连续向量形式注入 prefix。κₐ 在理论上等价于离散 prefix 与连续 prefix 下答案分布的 reverse KL；作者在 mixture-linear 假设下证明它的期望恰好等于潜在推理状态 S 与答案 token A 之间的互信息 I(S;A)，所以这个量度量的是 &quot;answer-relevant uncertainty&quot; 而不是任意 embedding entropy。</p>
+<p><strong>Stage 2 — On-Policy Thinking（条件触发）</strong>: 仅当 κₐ &gt; τₐ（reliability 阈值）时才启动反思链。反思过程以 chunk 为单位（chunk 大小 max(1, ⌊Tₐ/4⌋)），每个 chunk 用类似形式的 κᵣ^(k) 度量当前 thinking chunk 在看 / 不看 draft answer 时的稳定性差异：</p>
+<p>  κᵣ^(k) = (1/C) Σₜ [log p_θ(rₜ | …) − log p_θ(rₜ | …, e_{sₖ:t−1})]</p>
+<p>当 κᵣ^(k) &lt; τᵣ（稳定阈值）时把 draft answer 在下一个 chunk 暴露给模型，否则继续隐藏，让模型独立思考再合并。最终输出由 thinking 结束后的修正答案给出。</p>
+<p><strong>关键设计要点</strong>：(1) 训练 free，纯 inference-time。(2) 仅需要可获取 next-token 概率分布，与开源模型完全兼容；闭源 API 不能用。(3) 用 expected embedding 而非采样，保留概率分布而非塌缩成一个 token，这是连续 verifier 优于 token-level reflection 的关键。(4) 阈值 τₐ、τᵣ 任务可调（BFCL 上 τₐ=0.3，ZebraArena 上 τₐ=1.5）。</p>
+<p>训练设置：作者在 Qwen3 (2B / 8B / 35B) 与 Qwen3.5 (2B / 35B-A3B Gated-DeltaNet) 上做实验，单 H200 GPU，采样 temperature 0.6 / top-p 0.95 / top-k 20。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(1) <strong>Performative reasoning 的可量化诊断</strong>：κₐ 在识别错误 draft 的实证 precision 达到 80–90%，相比均匀 baseline 的 10–15% 是数量级提升 — 这意味着 &quot;什么时候停止想&quot; 第一次有了可靠的 inference-time 信号。</p>
+<p>(2) <strong>连续 embedding 作为 verifier 而非 generator</strong>：以往 latent CoT (SwiReasoning、Soft-Thinking) 都把 embedding 作为生成空间，必然牺牲可读性。CopT 的洞见是 embedding 真正的价值是 &quot;保留分布的不确定性&quot;，把它当作 contrastive 参考量比当生成媒介更合理。表 2 显示 CopT 比 SwiReasoning 平均 +0.30~0.61% 准确率同时还少用 8–36% token。</p>
+<p>(3) <strong>Visibility control for self-correction</strong>：分 chunk 的 κᵣ 实现了一种 &quot;独立思考 vs 看草稿&quot; 的自适应切换，避免模型一开始就被错误 draft 锚定。消融显示更严格的 τᵣ 提升 draft 修正率但增加 thinking token，这是显式 trade-off。</p>
+<p>(4) <strong>数学证明 contrastive 估计的语义性</strong>：在 mixture-linear 假设下证明 E[κₐ] = I(S;A)。这把一个看似 ad-hoc 的工程量提升到了信息论解释，理论稳健。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>数学 &amp; 编程任务（Qwen3-8B）</strong>：</p>
+<table><thead><tr><th>Benchmark</th><th>CoT 准确率</th><th>CopT 准确率</th><th>Token 变化</th></tr></thead><tbody><tr><td>GSM8K</td><td>95.75%</td><td>96.36%</td><td>−55.1%</td></tr><tr><td>Math500</td><td>96.00%</td><td>97.60%</td><td>−2.7%</td></tr><tr><td>AIME 2024</td><td>75.83%</td><td>79.17%</td><td>−4.6%</td></tr><tr><td>HumanEval</td><td>92.68%</td><td>96.34%</td><td>−22.2%</td></tr><tr><td>LeetCode-Contest</td><td>59.44%</td><td>66.11%</td><td>+4.1% (准确率 +6.67%)</td></tr></tbody></table>
+<p>GSM8K 的极端 token 节省（55%）说明在简单数学题上 performative reasoning 现象最严重 — 直觉合理。LeetCode-Contest 上 token 略增但准确率大涨，说明对真正困难任务 CopT 在节省与正确之间做出了合理偏向，没有为了省 token 牺牲难题正确性。</p>
+<p><strong>Agentic 任务（BFCL v4 &amp; ZebraArena）—这是与搜索/推荐场景最相关的部分</strong>：</p>
+<ul>
+<li>BFCL v4 (single-turn function calling)：Qwen3.5-2B 上 +0.84% 准确率 / −29.9% token；35B-A3B 上 +0.68% / −28.5%。</li>
+<li>ZebraArena (multi-turn) Large split：CoT 59.21% → CopT 82.24%，提升 23.03 个百分点；Medium split 也有 +13.14。</li>
+</ul>
+<p>ZebraArena 上随任务难度增加 CopT 收益放大（Small +2.98 / Medium +13.14 / Large +23.03），强烈说明 on-policy thinking 的核心价值在 hard cases — 这与作者宣称的 &quot;easy 走 draft，hard 才 think&quot; 的设计哲学完全吻合。</p>
+<p><strong>Latency</strong>：实际 wall-clock 时间在 GSM8K −37% / Math500 −20% / HumanEval −69%，对生产部署直接有价值。</p>
+<p><strong>消融重要观察</strong>：(1) κₐ 仅对答案 span 计算比对整段答案计算多 7–10% 效率提升，准确率几乎不变 — 实践中可只在 answer extraction 区域算。(2) 最大 draft 长度超过 2,048 后无收益 — 给出了实际部署上限。(3) τᵣ 更严能提高 draft 修正率但增加 thinking token，可作为按业务 tradeoff 调参点。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者自述的局限主要有三：</p>
+<p>(1) <strong>方差</strong>：KL 估计仅基于单条轨迹，没有多采样平均，token-level 平均缓解了方差但仍高于 ensemble 方案。</p>
+<p>(2) <strong>API 兼容性</strong>：必须能拿到 next-token 概率分布，纯文本输出的闭源 API 不能用。作者把这列为重要的未来方向。</p>
+<p>(3) <strong>校准问题</strong>：某些 reasoning-tuned 的 LLM 在 &quot;直接给答案不思考&quot; 模式下校准变差，draft 阶段会出现重复输出，目前靠 length cap 兜底，但不是根本解法。</p>
+<p>未做但显而易见的 follow-up：(a) 把 τₐ / τᵣ 改成 query-conditional 学习而非全局阈值；(b) 把 contrastive 信号纳入 RLVR 训练阶段而不仅仅是 inference；(c) 把 verifier 蒸馏到一个小模型避免主模型自己跑两次。</p>
+<h2>6. 工业实践意义</h2>
+<p>对做社区搜索 / agentic search 的团队，CopT 是少数能直接落地的 inference-time 推理优化：</p>
+<p>(1) <strong>直接落地的 token 经济</strong>：BFCL v4 上 single-turn function call 节省 28–30% token，这对每天数百万次 agent 调用的成本意义巨大。社区搜索 agent 链路里 query rewrite → tool selection → answer 这三步都可以套用：每步先 draft，再用 κₐ 判断是否触发反思，预算按 query 难度自适应分配。</p>
+<p>(2) <strong>不需要训练，第一周就能上线</strong>：相比 RLVR 或 SFT，CopT 是 plug-in 的，只要后端模型自部署（能拿到 token 概率）即可立刻接入。这是与 GoLongRL 等需要大规模训练的方法相比的最大优势。</p>
+<p>(3) <strong>对高 QPS、短 query 场景特别合适</strong>：社区搜索 query 大多是短 UGC 查询，绝大多数不需要复杂多步推理。CopT 在 GSM8K 上 55% token 节省的现象暗示在 &quot;简单 query 偏多&quot; 的工业场景节省比例会更高。</p>
+<p>(4) <strong>多轮 agent 任务上的爆发性收益</strong>：ZebraArena Large 上 +23 个百分点的提升说明对 deep research / 多轮工具调用类任务收益最大 — 正好是社区里 &quot;为我找到关于 X 的所有相关帖子并总结&quot; 这类多轮 agent 检索的形态。</p>
+<p>(5) <strong>部署考量</strong>：(a) 需要主模型暴露 logits / token-level 概率，闭源 API 路径暂时无解。(b) 阈值 τₐ / τᵣ 需要离线在自家评测集上调，不同任务最佳值差几倍。(c) draft 阶段 length cap 必须设，避免某些模型校准差导致重复输出。(d) latency 节省 20–70% 对在线服务 SLA 直接友好，不引入额外服务依赖。</p>
+<p>(6) <strong>可借鉴的范式</strong>：哪怕不直接用 CopT 算法，&quot;connecting continuous-embedding distribution to discrete-token output 作为不确定性 verifier&quot; 这个思路对自研 ranker / re-ranker 的置信度估计有启发 — 用对比两种 prefix encoding 下的 likelihood 差异作为不确定性，比 softmax max-prob 更稳。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

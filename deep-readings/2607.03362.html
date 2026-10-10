@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — HGenPush: A Heterogeneous Generative Recommendation Architecture for Industrial Push Notification Systems</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>HGenPush: A Heterogeneous Generative Recommendation Architecture for Industrial Push Notification Systems</h1></div>
+          <div class="card-actions"><span class="badge badge-green">5.00</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 5 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 这篇论文面向快手短视频 Push 场景，解决生成式推荐只能生成单一内容类型、语义 ID 自回归生成效率低的问题。HGenPush 将多场景、多视角用户行为理解，与视频推荐和作者推荐的双分支异构生成模块合并到端到端框架中，并用多 token 预测替代逐步自回归生成。论文报告已部署在快手 Push 通知系统，带来日活用户数 0.181% 的显著提升。</p><p><strong>Key insight:</strong> 对社区/内容平台个性化推荐来说，HGenPush 的启示是不要只把用户兴趣建模为“下一个内容”，还要把可信作者、场景和消费偏好放进同一个生成空间。多 token 预测降低生成式推荐的服务成本，反馈奖励对齐则把长期体验信号接回模型训练，适合作为 Push、关注流和短内容推荐的下一代候选生成方案。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-08/personalization/report.html#dr-arxiv-oai-arXiv-org-2607-03362">2026-07-08 · Personalization (5.00)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2607.03362" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>HGenPush 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>这篇论文来自快手 Push 通知系统，核心问题不是“再做一个序列推荐模型”，而是工业 Push 场景里推荐对象天然是异构的：用户既消费视频内容，也会对作者形成长期信任。传统生成式推荐大多把目标简化成单一 item 的语义 ID 生成，例如只生成视频 ID；这会遗漏“我愿意持续看某个作者”的偏好结构。论文把这个问题放在短视频平台中解释：用户被好内容吸引，也会追随人格化作者；新闻、电商等内容平台同样存在“内容 + 来源/商家/作者”的联合需求。</p>
+<p>第二个动机是部署效率。TIGER、OneRec 等语义 ID 生成方法通常采用自回归范式，一个语义 ID 的多级 codebook token 需要逐步生成，在线服务中会增加多轮前向和延迟。Push 通知链路对吞吐和时延非常敏感，生成式召回如果不能绕开重预排序成本，很难替代生产级候选生成。第三个动机是点击标签不足以代表满意度：用户点击 Push 后是否长播、点赞、转发，才更接近内容价值和长期留存。HGenPush 因此把异构生成、并行/链式多 token 预测、消费反馈强化学习放在一个框架里。</p>
+<h2>2. 方法详解</h2>
+<p>整体架构是 decoder-only 的端到端异构生成推荐模型，输入由多场景行为序列和静态特征组成，输出视频与作者两类候选。用户行为理解模块把 feed 长期行为、feed 短期行为、Push 点击序列、Push 发送序列，以及年龄、性别等静态特征统一映射成序列表征。每个视频由语义 ID、作者 ID、topic tag、playtime 等特征拼接后投影；Push 点击序列额外加入通知类型特征，用来学习用户对不同通知形态的接受度。序列末尾加入两个特殊 token，分别服务作者分支和视频分支，相当于为两个任务提供全局兴趣摘要。</p>
+<p>视频分支的关键是 Chained Multi-token Prediction。设一个视频语义 ID 由多个 codebook token 构成，HGenPush 不再像自回归模型一样逐个 token 前向，而是用用户兴趣表征作为稳定上下文，再用前序语义 token 的累积 embedding 建模层级依赖。第 k 级 token 的概率由全局兴趣向量和前 k-1 级 codebook embedding 的累积表示共同决定，训练目标是各级 token 的交叉熵。这样保留了语义 ID 层级之间的条件关系，同时避免 Transformer 级联解码。</p>
+<p>作者分支先学习作者表示与用户兴趣表示的对齐。作者特征经过投影后，与用户兴趣向量进入统一空间，并用 InfoNCE 对比损失拉近真实点击作者、拉远负样本作者。随后使用 RQ-KMeans 将作者表示离散成作者语义 ID，并用 SimVQ 稳定码本，减少 codebook collapse。最终生成目标是混合语义 ID：作者语义 ID 加上目标视频的首级语义 ID，既表达“推荐哪个作者”，也表达“这个作者的哪类内容更符合用户”。</p>
+<p>偏好对齐模块 UCPA 使用用户点击后 session 中的视频消费行为构造 reward。每个 session 内视频根据播放、点赞、转发等规则累计奖励，再按组归一化形成 relative advantage。优化方法 GSISPO 借鉴 GSPO/CISPO 的思想，在序列级计算重要性采样权重，并把 clipping 放在 importance weight 上，避免 token 级优化破坏完整语义 ID，也避免小众高价值行为的梯度被抹掉。训练上，HGenPush 同时优化视频生成、作者生成、作者码本和偏好对齐损失；推理时通过 Beam Search 生成候选，候选可绕过传统预排序直接进入排序模型。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，论文把生成式推荐从同质 item 推荐扩展到异构推荐。视频和作者不是两个独立召回器，而是共享用户兴趣理解模块，并通过视频语义 ID、作者语义 ID 和混合语义 ID 在统一生成框架中协同训练。这比“视频召回 + 作者召回”两个模型拼接更容易让排序前的候选空间表达用户对内容源的信任。</p>
+<p>第二，Chained-MTP 给语义 ID 生成提供了更可部署的路径。Parallel-MTP 完全独立预测各级 code 会损失层级依赖；DeepSeek-MTP 这类层级 Transformer 又吞吐低。HGenPush 的累积 codebook embedding 是折中：它用简单前馈结构保存层级条件关系，让生成吞吐接近并行方法，同时效果接近复杂级联方法。</p>
+<p>第三，作者推荐分支使用行为对齐而非纯作者属性聚类。作者的文本/视频属性相似，不代表同一个用户都会信任；InfoNCE 将作者向量对齐到用户兴趣空间，再离散成语义 ID，能把“愿意持续关注谁”的行为偏好编码进生成目标。</p>
+<p>第四，UCPA 把点击后的消费质量接入生成式召回。论文显示直接按 watch time 做样本重加权会破坏主任务，而 session 级 relative advantage 更适合生成模型的策略优化。这对生产系统很关键：召回阶段若只追点击，排序阶段再纠偏会很吃力；HGenPush 在候选生成阶段就开始偏好高价值内容。</p>
+<h2>4. 实验结果分析</h2>
+<p>论文使用快手 Push 通知系统的真实在线流数据，覆盖超过 4 亿日活用户。离线评价指标是 HitRate@100，核心对比结果如下：</p>
+<table><thead><tr><th>模型</th><th>视频分支 HitRate@100</th><th>作者分支 HitRate@100</th></tr></thead><tbody><tr><td>SASRec</td><td>0.3093</td><td>0.3495</td></tr><tr><td>TIGER</td><td>0.3802</td><td>0.4677</td></tr><tr><td>HGenPush</td><td>0.3915</td><td>0.4848</td></tr></tbody></table>
+<p>这说明语义 ID 生成相对 SASRec 有明显优势，而 HGenPush 又比 TIGER 更适合异构 Push 推荐。架构消融中，decoder-only 以 0.016B 参数达到 0.3432 HitRate@100，而 encoder-decoder 是 0.026B 参数、0.3400 HitRate@100，说明简化结构不仅更小，效果也没有受损。</p>
+<p>多 token 预测实验更能解释部署价值：</p>
+<table><thead><tr><th>方法</th><th>HitRate@100</th><th>单设备最大 QPS</th></tr></thead><tbody><tr><td>Parallel-MTP</td><td>0.1150</td><td>2.40k</td></tr><tr><td>DeepSeek-MTP</td><td>0.3954</td><td>1.27k</td></tr><tr><td>Chained-MTP</td><td>0.3915</td><td>1.70k</td></tr></tbody></table>
+<p>Parallel-MTP 吞吐高但效果崩塌，说明语义 ID 各级 code 不能独立预测；DeepSeek-MTP 效果略高但 QPS 低。Chained-MTP 相比 DeepSeek-MTP 吞吐高 33.86%，HitRate 只低 0.0039，工程取舍合理。模型规模实验显示，HitRate@100 从 0.016B 的 0.3432 提升到 0.064B 的 0.3915，再到 0.170B MoE 的 0.4043，第一阶段相对提升 14.07%，第二阶段提升 3.27%，符合边际收益递减。</p>
+<p>UCPA 的消融显示，单纯按消费时长 sample reweight 会把 HitRate@100 从 0.3964 拉低到 0.3394；UCPA 保持在 0.3915，同时改善消费指标。在线消费指标中，Push Play Duration +0.43%、Valid Play Rate +0.37%、Long Play Rate +0.57%、Complete Play Rate +0.90%、Like Rate +0.75%、Forward Rate +7.57%。最终在线 A/B 中，完整 HGenPush 相比生产多阶段架构 DAU +0.181%、CTR +1.577%、App Usage Duration +0.148%；其中 v1 视频分支已有 DAU +0.126%、CTR +0.998%，v2 加 UCPA 后 DAU +0.153%、CTR +1.075%，v3 加作者分支后继续提升。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文没有单独的 limitations 章节，但从方法和实验可以看到几个边界。第一，所有强证据来自快手 Push 通知系统，虽然作者类比了新闻、电商等平台，但跨平台泛化仍需要验证。Push 场景的用户反馈密度、通知约束、作者关注关系，与社区搜索或电商 Feed 不完全相同。</p>
+<p>第二，作者分支依赖作者级行为和作者特征，如果平台没有清晰 author/merchant/source 结构，异构生成的收益可能下降。第三，UCPA 的 reward 由固定规则定义，播放、点赞、转发等信号的权重如何设定会影响策略目标；若 reward 被短期互动或内容安全策略污染，生成候选也会被带偏。第四，论文没有披露学习率、权重衰减等具体数值，只说明优化器、batch size、层数、hidden size、codebook 规模和 GPU 类型，复现完整工业结果仍依赖内部数据与工程栈。</p>
+<p>未来方向可以沿三条线推进：一是把异构对象扩展到 topic、collection、商家、社群等更多实体；二是将 UCPA 的固定规则 reward 替换为更稳健的长期价值模型；三是在多场景之间做统一生成，例如 Push、Feed、搜索候选共享语义 ID 空间，但使用场景特定约束控制频率和打扰。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索/推荐从业者，HGenPush 最值得借鉴的是“异构对象生成 + 下游排序直连”。在 UGC 社区中，用户不只搜索/消费单篇帖子，也会对作者、话题、圈子、商家形成长期偏好。候选生成阶段如果只输出帖子 ID，排序层很难凭空恢复这些来源偏好。可以参考 HGenPush：为内容、作者/来源分别建立语义 ID，通过共享用户兴趣模块和特殊任务 token 同时生成多类候选。</p>
+<p>第二，Chained-MTP 是适合生产落地的生成式推荐组件。它不要求在线调用大模型，也不需要多轮自回归生成，适合在召回或轻量预排序阶段服务。对于已有语义 ID 系统的团队，可以先做离线 replay：比较 Parallel-MTP、自回归生成、Chained-MTP 在 QPS、HitRate、候选多样性上的差异，再决定是否替换现有生成模块。</p>
+<p>第三，偏好对齐应从点击后行为入手。很多平台的召回模型只吃点击或曝光日志，结果产生 clickbait 候选，排序再花力气过滤。HGenPush 的 UCPA 说明，可以把 session 内完播、长播、点赞、转发等信号转换成组内相对奖励，用强化学习方式微调生成策略，避免直接样本重加权破坏主预测任务。</p>
+<p>部署上需要注意三点：语义 ID 码本和作者码本要稳定更新，避免新内容/新作者冷启动时 ID 漂移；生成候选绕过预排序进入排序模型，必须有召回量、质量和安全阈值保护；reward 规则要通过长期留存、负反馈和内容安全监控校准，不能只看转发或时长。总体看，这篇论文提供了一个可用于 Push、Feed 和关注流的工业级生成式个性化架构蓝本。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

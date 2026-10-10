@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — CoHyDE: Iterative Co-Training of LLM Rewriter &amp; Dense Encoder for Tool Retrieval</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>CoHyDE: Iterative Co-Training of LLM Rewriter &amp; Dense Encoder for Tool Retrieval</h1></div>
+          <div class="card-actions"><span class="badge badge-orange">3.80</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 4 | Timely 2</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> CoHyDE 针对用户口语化、工具目录技术化导致的工具检索错配，联合训练 LLM query rewriter 与 dense encoder：encoder 用重写后的目录式描述做 InfoNCE，rewriter 再根据检索分数做 DPO 对齐。ToolBench 约 10K 工具子集上，三轮协同训练使标准查询 NDCG@5 提升 2.5 个百分点，模糊查询提升 6.3 个百分点，最难层级最高提升 8 个百分点。</p><p><strong>Key insight:</strong> Agentic 搜索的工具选择可以沿用“重写器—检索器共同进化”的思路：用线上失败的工具调用和后续成功轨迹反哺目录编码，而不是只靠静态工具描述做向量匹配。对社区搜索，可把 query 改写、过滤器和排序器放进同一反馈闭环，并单独评估口语、别名和短 query 的召回。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-13/agentic/report.html#dr-web_search-arxiv-2605-29271">2026-08-13 · Agentic (3.80)</a> <a href="../reports/2026-06-01/retrieval/report.html#dr-arxiv-2605-29271">2026-06-01 · Retrieval (4.40)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2605.29271" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>CoHyDE: Iterative Co-Training of LLM Rewriter &amp; Dense Encoder for Tool Retrieval — 深度解读</h1>
+<blockquote><p>作者: Vaishali Senthil, Ashutosh Hathidara, Sebastian Schreiber｜分类: cs.AI / cs.IR / cs.LG｜arXiv:2605.29271<br>说明: 本文基于 arXiv 全文页（arxiv.org/html/2605.29271）抓取内容撰写；论文未在抓取页面披露的训练超参（batch size、硬件、步数等）不做臆测，相应处仅作方法层面分析。</p></blockquote>
+<h2>1. 问题与动机</h2>
+<p>论文聚焦 LLM agent 的「工具检索」(tool retrieval)：给定用户 query，从工具库中召回正确的 API/工具。作者指出现有两条路线各有失败模式。其一，<strong>微调稠密编码器</strong>（dense encoder）擅长匹配 query 与工具描述的「表面词形」，但面对<strong>欠规约 / 模糊 query</strong>（underspecified / vague）时召回急剧下降——用户往往不会用工具文档里的术语来表达需求。其二，<strong>冻结 LLM 的 query 扩展</strong>（HyDE 式，生成假想工具描述再检索）能更好地理解模糊意图，却会产生与工具库<strong>词表不匹配</strong>(vocabulary mismatch)的描述，即「想对了但说的词不对」。两条路线的割裂正是动机：改写器懂意图但不懂库，编码器懂库但不懂模糊意图。这一矛盾在工具检索里尤为尖锐，因为工具库术语高度规范、而 agent 转写的用户意图高度自由。</p>
+<h2>2. 方法详解</h2>
+<p>CoHyDE 的核心是把 <strong>LLM 改写器</strong>与<strong>稠密编码器</strong>当作一个<strong>共同演化的系统</strong>做<strong>迭代协同训练</strong>，而不是各自独立训练后拼接。流程可拆为：</p>
+<ul>
+<li><strong>Warm-start（冷启动）</strong>：两个组件都先在<strong>工具库目录</strong>(tool catalog)上初始化，让编码器先学会工具描述的表示、让改写器先见过库内术语分布。</li>
+<li><strong>HyDE 式改写</strong>：改写器为 query 生成「假想工具描述」，把短而模糊的 query 投射到接近工具库的语义/词表空间，再交给编码器检索。</li>
+<li><strong>编码器更新</strong>：用 <strong>InfoNCE 对比损失</strong>在检索正负样本上重训编码器，使其表示对齐改写后的 query 分布。</li>
+<li><strong>改写器更新</strong>：用 <strong>DPO（Direct Preference Optimization）</strong>对齐改写器——偏好信号来自检索结果的好坏（能召回正确工具的改写优于不能的），从而让生成的改写「对检索有用」而非仅「读起来合理」。</li>
+<li><strong>迭代</strong>：编码器变了，改写器的最优改写也随之变；改写器变了，编码器的最优表示又变。两者交替更新、互为对方的训练信号，逐轮收敛到协同最优。</li>
+</ul>
+<p>关键设计在于「闭环对齐」：改写器的奖励直接绑定下游检索效果（经 DPO），编码器的目标直接绑定改写后的 query（经 InfoNCE），从而消解了「懂意图」与「懂库」之间的鸿沟。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>协同训练范式</strong>：把 HyDE（query 扩展）从「冻结、外挂」变为「可训练、与编码器联合优化」，解决词表不匹配。机制上，DPO 用检索成败作偏好，使改写从「语言流畅」转向「检索有用」。</li>
+<li><strong>以检索反馈对齐改写器</strong>：相比纯 prompt 或 SFT 改写，用偏好优化把下游召回收益反传到生成端，对模糊 query 的增益最大。</li>
+<li><strong>catalog warm-start + 迭代</strong>：用工具库自身做冷启动并迭代协同，缓解了「编码器与改写器分布漂移」的冷启动难题。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<ul>
+<li><strong>数据</strong>：ToolBench 约 1 万工具的子集。<strong>指标</strong>：NDCG@5。</li>
+<li><strong>主结果</strong>：相对最强基线，标准 query 的 NDCG@5 提升 <strong>+2.5 个百分点</strong>；<strong>模糊 query 提升 +6.3 个百分点</strong>；最难的一档模糊 query 提升达 <strong>+8 个百分点</strong>。增益随 query 模糊程度单调放大，印证了方法专攻「欠规约 query」的设计意图。</li>
+<li><strong>消融</strong>：<strong>协同训练是必要的</strong>——只用编码器或只用改写器（去掉协同）都会明显变差，在模糊 query 上的损失最高达 <strong>-8 个百分点</strong>。这说明收益主要来自两组件的「互相对齐」，而非任一单点改进。</li>
+<li><strong>解读</strong>：标准 query 上微调编码器本就够强，故增益有限（+2.5pp）；真正的价值在长尾/模糊 query。这与社区搜索「头部 query 已被现有相关性模型吃透、增量空间在长尾」的经验一致。</li>
+</ul>
+<h2>5. 局限与未来方向</h2>
+<p>论文证据集中在 ToolBench 单一基准、单一指标（NDCG@5），缺少跨数据集与线上 A/B 验证，外推到通用文档检索/社区搜索需谨慎。抓取页未充分披露训练成本（迭代轮数、算力、改写器规模），而<strong>迭代协同 + DPO</strong> 的训练开销与收敛稳定性是落地的关键未知量。改写器在线引入的<strong>额外延迟</strong>（生成假想描述）也未给出端到端时延分析。未来方向自然包括：减少迭代轮数的高效协同、改写器蒸馏以降延迟、以及把「检索反馈作偏好」推广到非工具检索场景。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区/UGC 短文本搜索的启示明确：<strong>头部 query 靠现有稠密召回已足够，增量在模糊与长尾 query</strong>，而 CoHyDE 给出的「改写器 + 编码器联合训练、以召回成败为偏好」正是攻这块的可行范式。可借鉴点：(1) 不要把 query 改写当成与召回无关的前置黑盒，用线上召回/点击信号经 DPO 反向对齐改写器；(2) 改写器与召回编码器若分属两个团队，需要建立联合迭代的训练闭环，避免目标错位；(3) 工程上要权衡在线改写带来的延迟——可考虑离线对高频模糊 query 预生成改写、或把改写器蒸馏成小模型。落地前应自建带「模糊度分层」的评测集，复现「增益随模糊度放大」这一现象，再决定是否上在线改写链路。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

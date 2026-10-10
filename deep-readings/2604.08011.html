@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Beyond Dense Connectivity: Explicit Sparsity for Scalable Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Beyond Dense Connectivity: Explicit Sparsity for Scalable Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.30</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 发现工业 CTR 模型中大部分学到的连接权重趋向于零、仅少数权重显著，揭示了稠密架构与稀疏推荐数据之间的结构性失配。提出 SSR (Explicit Sparsity for Scalable Recommendation)，采用 filter-then-fuse 机制：Static Random Filter 实现高效结构稀疏，Iterative Competitive Sparse (ICS) 实现自适应维度选择。在公开数据集和 AliExpress 十亿级数据集上验证，SSR 超越基线模型，且在模型规模增大时保持优于稠密模型的 scaling 特性。</p><p><strong>Key insight:</strong> SSR 揭示了一个重要发现：工业推荐模型的稠密连接多数是冗余的，稀疏化不仅不损失精度还能带来更好的 scaling 特性。filter-then-fuse 的两阶段稀疏策略提供了一种实用的模型瘦身方案：先用随机过滤快速筛除无效连接，再用竞争稀疏精选重要维度。对于需要持续扩大模型规模的排序系统，这一方法可显著降低计算开销同时保持甚至提升效果。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-04-13/personalization/report.html#dr-arxiv-2604-08011">2026-04-13 · Personalization (4.30)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2604.08011" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>工业 CTR 模型普遍采用稠密 MLP 架构（Wide&amp;Deep、DLRM、AutoInt 等），但论文通过对工业级模型的权重分析发现了一个关键事实：92% 的权重被抑制到接近零（&lt;10⁻³），80% 的权重能量集中在仅 4% 的维度上。这揭示了稠密架构与稀疏推荐数据之间存在根本性的结构失配。现有方法的问题在于：自注意力通过 softmax 保持严格正权重维持全连接图，后剪枝方法在稠密交互已发生后才移除冗余，而简单增大稠密模型规模往往收益递减甚至性能退化。</p>
+<h2>2. 方法详解</h2>
+<p><strong>SSR 框架：Filter-then-Fuse 范式</strong></p>
+<p>SSR 采用两阶段设计：先通过多视角稀疏过滤选择有效信号维度，再在过滤后的低维子空间内进行稠密融合。</p>
+<p><strong>阶段一：多视角稀疏过滤</strong>。将输入 x ∈ ℝ^{d_in} 分解为 b 个并行视角，每个视角 i 通过过滤算子 ℱᵢ 提取纯化表征 hᵢ ∈ ℝ^{d_v}。提供两种实例化策略：</p>
+<ul>
+<li><strong>SSR-S（静态随机过滤）</strong>：使用二值选择矩阵 Mᵢ ∈ {0,1}^{d_in×d_v}，每列为 one-hot，从输入维度中均匀无放回采样 d_v 个维度。跨视角独立采样产生 Feature Bagging 效应。实现为零 FLOP 的并行 gather 操作，在计算前即完成硬维度缩减。</li>
+</ul>
+<ul>
+<li><strong>SSR-D（迭代竞争稀疏 ICS）</strong>：动态机制，使用可学习投影后通过 ICS 过滤。ICS 将稀疏化建模为离散时间非线性动力系统：初始化 x⁰ ← ReLU(z)，T 次迭代中每步计算全局抑制场 μ = Mean(x^t)，更新 x^{t+1} ← ReLU(x^t - αₜ·μ)（αₜ 为可学习消亡率），保证序列单调非增 |x^{t+1}|₁ ≤ |x^t|₁，最后通过可学习缩放 γ 恢复信号。T=5 为最优设置，达到约 91% 稀疏率。</li>
+</ul>
+<p><strong>阶段二：视角内稠密融合</strong>。应用块对角权重矩阵 W_block = diag(V₁,...,Vₑ)，每个视角由独立参数 Vᵢ ∈ ℝ^{d_v×d_v} 变换，输出拼接并 LayerNorm。参数复杂度从 O((b·d_v)²) 降至 O(b·d_v²)，缩减因子为 1/b。</p>
+<p><strong>训练设置</strong>：Embedding 维度 16，Adam 优化器，batch size 1024，早停策略。ICS 超参数：T=5，αₜ 初始化 0.1 每步可学习，γ 初始化全 1 每维度可学习。硬件为 NVIDIA A100 集群，TensorFlow 实现。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(1) <strong>范式转变：从隐式权重抑制到显式信号过滤</strong>。SSR 在稠密交互之前就阻断噪声维度，而非依赖模型自行学习抑制无关连接。这从根本上改变了推荐模型的设计思路——不是让网络学会忽略 92% 的无用连接，而是在计算前就移除它们。</p>
+<p>(2) <strong>生物启发的竞争稀疏机制 ICS</strong>。模拟&quot;适者生存&quot;的全局抑制场竞争，相比 STE-based Top-k 方法消除了梯度不匹配问题且避免 O(N log N) 排序复杂度。ICS 是可微分的，允许端到端训练。消融显示 ICS 比 Top-k(STE) 高 0.18-0.29 AUC (×10⁻²)。</p>
+<p>(3) <strong>可扩展架构设计</strong>。多视角分解提供三个正交扩展维度（深度 L、宽度 b、子空间 d_v），实验证明视角宽度 b 是大规模数据上最优的扩展方向，b=64 时仍未饱和呈线性增长。</p>
+<p>(4) <strong>静态+动态双模式</strong>。SSR-S 适合对延迟极度敏感的场景（零 FLOP 过滤），SSR-D 适合追求极致精度的场景，两者可根据业务需求灵活选择。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>工业数据集（10亿+ 样本，300+ 特征字段）</strong>：SSR-S 以 57M 参数、1.4G FLOPs 达到 Click AUC 0.6644，超越 RankMixer (101M, 3.2G FLOPs) 的 0.6621，参数少 44%、FLOPs 少 56%。SSR-D 以 100M 参数达到最优 0.6667，Pay AUC 0.8194 vs RankMixer 0.8122 (+0.72%)。</p>
+<p><strong>公开基准</strong>：Avazu 上 SSR-D AUC 0.7835 vs RankMixer 0.7772 (+0.63%)；Alibaba 上 0.6844 vs 0.6801 (+0.43%)；Criteo 上 0.8096 vs 0.8092 (+0.03%)。</p>
+<p><strong>Scaling 分析</strong>（关键发现）：在 5M-900M 参数范围内，SSR 保持更陡的性能增长曲线。稠密 MLP 出现过早饱和，SSR 持续上升且与基线的差距随规模增大而拉大。视角数 b 扩展在工业数据集上到 b=64 仍保持线性增长无饱和，而深度 L 扩展收益最低。</p>
+<p><strong>消融分析</strong>：稀疏过滤是最重要组件（移除后 AUC 下降 0.37-0.50×10⁻²）；多视角策略贡献 0.15-0.22×10⁻²；ICS 比 Top-k 好 0.18-0.29×10⁻²；SSR-S 比 Dropout 好 0.32-0.45×10⁻²。ICS 训练动态显示第 1 层约 75% 稀疏率、第 2 层约 90% 稀疏率，视角间余弦相似度持续低位证明多视角学到互补子空间。</p>
+<p><strong>线上 A/B 测试</strong>（AliExpress，2 周）：延迟 26ms (+1ms 可忽略)，CTR +2.1%、订单/用户 +3.2%、GMV +3.5%。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文未设独立局限性章节，但隐含的局限包括：(1) ICS 的 T 次迭代在训练时引入额外计算开销，虽然推理时开销可控；(2) 仅验证了 CTR 预估场景，在序列/会话推荐等其他任务上的适用性未探讨；(3) 特征 embedding 质量对稀疏过滤效果的影响���深入分析。未来方向包括设计与稀疏组合特性对齐的推荐基础模型、将显式过滤机制扩展到 CTR 以外的任务。</p>
+<h2>6. 工业实践意义</h2>
+<p><strong>直接可采纳</strong>：(1) SSR-S 的零 FLOP 随机过滤——在现有 CTR 模型中添加 Feature Bagging 式的随机维度选择层，不增加推理延迟即可提升效果，实现成本极低。(2) Filter-then-Fuse 的架构设计原则——在特征交互之前先做稀疏选择，而非让网络自己学会忽略无用连接。(3) 视角扩展策略——扩模型时优先增加并行视角数 b 而非层数 L。</p>
+<p><strong>部署考量</strong>：SSR-S 仅增加 1ms 延迟（25→26ms），适合在线服务严格延迟约束。AliExpress 的线上验证（CTR +2.1%、GMV +3.5%）证明了工业可行性。对于社区搜索的 UGC 排序场景，稀疏推荐数据（大量 UGC 长尾内容、稀疏用户交互）恰好是 SSR 方法论最适用的场景——稠密模型在这类数据上浪费了大量计算在无效连接上。</p>
+<p><strong>核心 takeaway</strong>：92% 权重趋零的发现是一个强有力的实践论据，支持在所有推荐排序模型中审视稠密连接的必要性。即使不使用完整 SSR 框架，仅引入维度选择/稀疏化机制即可获得显著收益。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

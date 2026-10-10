@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — From Item-Only to Query-Item: Query-Conditioned Generative Search with QGS in Quark</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>From Item-Only to Query-Item: Query-Conditioned Generative Search with QGS in Quark</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.40</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 生成式序列模型在推荐里已有成熟方案，但搜索是 query-driven 的——每次切换 query 都会引入剧烈话题跳变。现有方法把 query 与 item 拍平到单一 token 序列，无法区分 query 边界，导致监督信号被噪声污染。Quark 团队提出 QGS：把每次交互编码为 (query, item) 配对 token，用 query-conditioned next-item 目标训练，使预测目标从有噪声的 P(item_{t+1}|context) 变成清洁的 P(item_{t+1}|context, query_{t+1})；同时引入压缩注意力机制处理长交互历史。</p><p><strong>Key insight:</strong> 把“生成式推荐”照搬到搜索的最大坑是 query 切换引起的话题断裂，QGS 用 (query,item) pair token + query-conditioned 监督直接消除了这种语义不连续。这套范式对社区搜索的 session 级建模非常有借鉴价值——同一个用户在“健身”、“电影”、“地推”之间频繁切换 query 时，引入显式的 query 条件能避免“健身偏好”污染“电影排序”。可以作为 LLM-based 生成式重排在社区场景的最小可行落地起点。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-27/personalization/report.html#dr-arxiv-oai-arXiv-org-2605-25514">2026-05-27 · Personalization (4.40)</a> <a href="../reports/2026-05-27/generative/report.html#dr-arxiv-2605-25514">2026-05-27 · Generative (4.45)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.25514" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>生成式序列模型 (HSTU、TIGER、HLLM 等) 在推荐场景已经被证实有效，但搬到搜索场景时存在一个被现有方法系统性忽略的问题：搜索行为是 query-driven 的，每个新 query 都会触发一组全新的候选集合，相邻 item 之间会出现剧烈的话题跳变。当把 query 和 item flatten 成单一 token 序列、做 next-item 预测时，模型会被迫去学习这种&quot;不可解释的语义不连续&quot;，监督信号变得极其嘈杂。论文 Figure 3 直接给出量化证据：item-only 目标的训练 loss 在整个训练过程中显著更高、波动更大，而启用 query-conditioning 之后 loss 急剧下降并平滑收敛。这背后的根因在概率层面也很清晰——item-only 训练学的是有噪声的边际概率 P(item_{t+1}|context_{≤t})，里面把多个 query 意图杂糅在一起；而搜索的真实目标应该是 query-conditioned 的条件概率 P(item_{t+1}|context_{≤t}, query_{t+1})。Quark 搜索本身是亿级 DAU 的入口产品，把生成式范式落地到这种 query 切换频繁的场景对工业界有直接价值。</p>
+<h2>2. 方法详解</h2>
+<p><strong>(query, item) 对 token 构造</strong>：每次历史交互不再是孤立的 item token，而是一个 (query, item) pair。具体做法：把 query 文本和点击的 doc 文本拼接送入预训练 BERT，取 [CLS] token 输出 e^cls (64 维) 作为 item 语义 embedding，取第一个 [SEP] token 输出 e^sep 作为 query 语义 embedding；再收集 numerical/categorical 上下文特征 f (151 维)。pair token 的内容是 x_t = [f_t || e^cls_t] ∈ R^215，经过一层投影 W_proj 映射到 hidden 维 d_h=512。</p>
+<p><strong>Query-Conditioned Next-Item 目标</strong>：预测下一个 item 时显式注入下一个 query 的 e^sep 信号——预测头是 z_t = PredictHead([h^(N)_t || e^sep_{t+1}])，正样本目标 v_{t+1} = W_tgt · x_{t+1}。损失函数用 InfoNCE：s^(b,c)_t = (z̄^(b)_t · v̄^(c)_{t+1}) / τ，τ=0.1，再做 batch 内的 log-softmax 对比学习。同时用 padding mask 排除无效 token，用 collision mask 排除跨序列的重复 item。</p>
+<p><strong>Linear HSTU Encoder (O(L)) 复杂度</strong>：标准 HSTU 用完整 attention 矩阵 (O(L²) 复杂度) 处理长序列代价过高，作者把它改写成线性 recurrence——Q、K、V、U 投影后保留 SiLU 激活和 softmax-free 设计，把 attention 重写为 S_t = K_t ⊙ V_t (element-wise multiplication) 和 C_t = γ · C_{t-1} + S_t (因果累加，γ 可学习的 exponential decay)，最后输出 O_t = Q_t ⊙ C_t ⊙ U_t (Q、C、U 三门控)，加 residual。整体 12 层、hidden 512、每层去掉 FFN (FFN 只保留在 HFG-Attention 里)。这套设计在序列长度 100→1000 扩展时显存和延迟都线性可控。</p>
+<p><strong>HFG-Attention 上下文特征聚合</strong>：把异质稀疏特征 (上百维 numerical + 多种 categorical) 先 group 成 G 个语义组，每组投影到 d_e=16 维统一表示，附加一个 global context token h̃_dnn，过一层 8-head HSTU attention，保留 FFN (中间维 64)，输出 128 维。这个 block 复杂度只有 O(G²)，几乎不影响整体延迟。</p>
+<p><strong>训练配置</strong>：488M 曝光 × 37.87M 用户的 18 天数据，Adagrad、lr=0.01、batch=100，8× NVIDIA A800，最大序列长 L_max=1000，BERT 输入最大 180 token。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>Query-Conditioned Next-Item Prediction</strong>：把生成式推荐里默认的 item-only marginal 目标改造成 query-conditioned 条件目标，这是论文最核心的、概念上最干净的贡献。机制上看，e^sep_{t+1} 在预测时作为 condition 注入，直接消除了 query 切换带来的 supervision 噪声。消融实验显示去掉这一项 GAUC 跌 1.91 个点 (0.7573→0.7382)，是所有组件中影响最大的。</li>
+</ol>
+<ol>
+<li><strong>Linear HSTU Encoder</strong>：把 HSTU 的 O(L²) attention 改写成线性 recurrence，且完全保留 HSTU 的 softmax-free 设计和 U-gating。这允许把序列长度从 100 扩到 1000 而几乎不增加延迟——消融显示用原始 HSTU 训练同样的设置延迟增加 37% 但 GAUC 几乎持平 (0.7575 vs 0.7573)，证明 Linear HSTU 在效率-效果折中上是更好的工业方案。</li>
+</ol>
+<ol>
+<li><strong>HFG-Attention</strong>：把异质稀疏 contextual feature 用 group-level attention 融合进序列表征，去掉这一项 GAUC 跌 1.63 个点，是第二大贡献组件。</li>
+</ol>
+<ol>
+<li><strong>大规模工业验证</strong>：在 Quark 搜索 2% 流量、连续 7 天 A/B，CTR +0.62%、Click-Search Ratio +0.38%、PV Duration +3.55%，统计显著 (p&lt;0.05)。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<p><strong>离线主表 (Table 2)</strong>：在 27.14M 曝光的测试集上对比三个 baseline：</p>
+<table><thead><tr><th>模型</th><th>GAUC</th><th>AUC</th></tr></thead><tbody><tr><td>Base (BERT+DNN 判别模型)</td><td>0.7140</td><td>0.8040</td></tr><tr><td>HSTU</td><td>0.7412</td><td>0.8371</td></tr><tr><td>HLLM</td><td>0.7436</td><td>0.8394</td></tr><tr><td>QGS</td><td><strong>0.7573</strong></td><td><strong>0.8541</strong></td></tr></tbody></table>
+<p>QGS 比生产 baseline GAUC +4.33 个点 (+6.06%)、AUC +5.01 个点 (+6.23%)；比当前最强的 generative baseline HLLM 也有 GAUC +1.37、AUC +1.47 的提升。这个 gap 在工业 ranking 上算相当显著。</p>
+<p><strong>消融实验 (Table 3)</strong>：</p>
+<ul>
+<li>w/o Query-conditioned objective: GAUC 0.7382 (-1.91)，最大幅度下降，验证 query conditioning 是核心。</li>
+<li>w/o HFG-Attention: GAUC 0.7410 (-1.63)，第二大组件。</li>
+<li>w/o Contextual features: GAUC 0.7549 (-0.24)，影响相对小。</li>
+<li>Original full HSTU vs Linear HSTU: GAUC 0.7575 vs 0.7573 (几乎无差异)，但 latency +37%。这是一个对工业部署非常重要的数据点——Linear HSTU 不是效果妥协，是免费午餐。</li>
+</ul>
+<p><strong>扩展性 (Table 4)</strong>：</p>
+<ul>
+<li>序列长度 100→1000: GAUC +0.31、AUC +0.26，长序列受益明显。</li>
+<li>网络深度 4→12 层: GAUC +0.80，深度收益较大。</li>
+<li>Hidden 宽度 128→512: GAUC +0.57，宽度也有显著贡献。</li>
+</ul>
+<p>这三个 scaling 维度的稳定收益是 QGS 区别于一般 SOTA 论文的关键——证明这套范式具备 scaling law 性质，不是过拟合特定 setting。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确说明了两个限制：(1) 当前框架专注 group-level 的语义融合做 cross-feature 建模，尚未探索更细粒度的 token-level 特征交互范式 (如 RankMixer)，这可能是下一版的优化方向；(2) 评测限定在固定长度的近期行为窗口 (最长 1000)，对超长用户终身行为序列 (lifetime history, 10K+) 的有效性还未验证。</p>
+<p>另一个值得注意的隐含局限是：QGS 在 generative search 里其实是判别式训练 (InfoNCE 对比学习)，而不是真正的自回归生成——它没有 beam search 推理过程。从严格意义上看它是&quot;用生成式架构 (HSTU) 做判别式 ranking&quot;，跟 TIGER/HSTU 用 next-token 做检索的范式有本质区别。这不是缺点，但读者需要知道 QGS 不能直接替换 TIGER 这类纯生成召回。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索团队的最直接启示：<strong>如果你要把 HSTU/TIGER 这类生成式范式从推荐迁移到搜索，第一件事就是把 next-item 目标改成 query-conditioned 目标</strong>。这是一个完全不改架构、只改 input/target 的小改动，但 GAUC 收益是其他工程优化的几倍。对社区搜索 (UGC 短文本搜索) 这种 query intent 切换非常剧烈的场景 (用户从&quot;如何选护肤品&quot;瞬间跳到&quot;今天天气如何&quot;)，QGS 的核心思想几乎是必选项。</p>
+<p><strong>Linear HSTU 的工业价值</strong>：在效果几乎不损失的情况下把 HSTU attention 的延迟降 37%，对粗排、精排都有直接借鉴价值。社区搜索粗排延迟预算紧张时，Linear HSTU 的 recurrence 形式比 full attention 更友好——可以增量更新 cumulative state C_t，进一步压低在线推理 cost。</p>
+<p><strong>部署细节</strong>：QGS 在 Quark 是用 2% 流量做的 A/B，CTR +0.62%、PV Duration +3.55%，PV Duration 大幅提升说明排序质量提升能直接转化为用户停留时长。这个观察对短文本社区搜索很重要——CTR 提升 0.6% 可能看着平平，但 PV Duration +3.5% 这种&quot;用户更愿意继续刷&quot;的信号才是用户体验质量的真正指标。</p>
+<p><strong>避坑提醒</strong>：(1) 不要直接把 query 和 item flatten 进同一个 token 序列，QGS 已经证明这种朴素做法 GAUC 会差 1.9 个点；(2) e^sep (BERT [SEP] token) 作为 query embedding 是个低成本但被低估的选择，比训练独立的 query encoder 简单很多；(3) 上下文特征 group-level 融合是必要的——单纯 concatenate dense feature 会导致 GAUC 跌 1.63 个点。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

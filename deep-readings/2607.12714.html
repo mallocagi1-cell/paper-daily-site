@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Learning to Forget: Satiation-Aware Long-Sequence Transducers for Mitigating Post-Purchase Redundancy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Learning to Forget: Satiation-Aware Long-Sequence Transducers for Mitigating Post-Purchase Redundancy</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> SAM 针对购买后仍反复推荐同类商品的“兴趣退出”问题，用双路交叉注意力压制已满足意图、用时间敏感门控逐步唤醒补购需求，并通过下一次购买时间自监督任务学习商品生命周期。工业离线实验和线上 A/B 测试显示，购买后重复推荐率降低超过 60%。</p><p><strong>Key insight:</strong> 购买并不总是更强的正反馈，它常常意味着当前需求已经终止。推荐系统应把行为类型与兴趣生命周期联合建模：短期抑制已完成意图，长期依据个体补购周期恢复权重；这一机制也可迁移到社区内容中的“看完即满足”主题，减少重复曝光。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-16/personalization/report.html#dr-arxiv-oai-arXiv-org-2607-12714">2026-07-16 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2607.12714" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>SAM 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>主流序列推荐把点击、加购、购买等交互统一当作兴趣增强信号，但在电商里购买常意味着某个意图已经完成。用户刚买冰箱后继续看到冰箱，或刚补货纸巾后仍被同类商品轰炸，就是论文所称的 Action–Intent Asymmetry：模型看到的是强正反馈，用户状态却已经从“需要”切换为“满足”。DIN、HSTU、OneTrans 等模型越擅长捕捉长历史，越可能把购买事件反复放大，造成购买后重复推荐。</p>
+<p>简单固定窗口过滤并不能解决问题，因为商品生命周期和个体节奏差异很大。冰箱的合理复购间隔可能超过 300 天，纸巾约 15–30 天；同一用户还会在预计补购前提前浏览。统一屏蔽窗口会误杀补购前的“lead-in”行为。论文在天猫日志上进一步展示，DIN+固定窗口虽把 PPRR 从 15.5% 降到 7.7%，但 GAUC 从 0.674 降到 0.670，线上 CTR -0.2%、GMV -0.3%。因此，系统不仅要知道“忘掉什么”，还要为每个用户—品类估计“忘多久、何时重新唤醒”。</p>
+<h2>2. 方法详解</h2>
+<p>SAM 是接在工业精排模型上的兴趣饱和模块。输入包括用户静态画像、最长 500 的点击/购买混合序列、只保留购买事件的长期序列，以及当前候选商品。它用双路交叉注意力分别解决意图定位和补购节奏估计，两路共享 query/key 投影，使“哪些历史点击属于本次购买意图”和“该品类多久会再买”处在同一语义空间。</p>
+<p>意图定位路径把最近购买品类 embedding 作为 query，与历史每个节点的品类 embedding 做缩放点积，再过 Sigmoid 得到归因权重 a_j。这里刻意不用 Softmax：在长度 500 的序列中，一个购买可能同时结束多条同类探索行为，Softmax 会让它们竞争总概率而稀释抑制强度；逐点 Sigmoid 允许多个相关节点都接近 1。</p>
+<p>节奏检索路径在长期购买序列上做 target-aware Softmax 注意力，value 是历史购买间隔的 embedding。加权结果经 MLP 和 Softplus 解码成正数周期 c（天）。随后 ASGU 生成软门控：m_ij = 1 - a_j·sigmoid(k·(α-Δt_ij/c))。购买刚发生时 Δt≈0，同意图节点 m 接近 0；随着时间逼近 αc，屏蔽逐渐解除；超过阈值后 m 接近 1。α 是提前量（示例 0.8），用于在真正复购周期前恢复浏览兴趣，k 控制曲线陡峭程度。</p>
+<p>门控不是直接乘 embedding，而是以 log(clip(m, ε, 1)) 加到注意力 logit。这样 m→0 时对应注意力权重稳定趋近 0，同时避免直接相乘造成尺度漂移。周期 c 由 Time-to-Next-Purchase（TTNP）辅助任务监督：对同品类相邻购买间隔 Δt，最小化 log(c+1) 与 log(Δt+1) 的平方误差。只有一次购买的右删失样本，用 max(观测窗剩余时间, 该品类平台平均周期) 作为下界式插补。总损失为 CTR 损失加 λ 倍 TTNP 损失。</p>
+<p>实验数据来自天猫 2025-06-07 至 2025-11-07 的线上日志，前五个月训练、最后一个月测试；只保留至少 20 次交互的活跃用户，序列截断为 500。训练集含 1152 万用户、782 万商品、1.9033 亿行为和 906 万购买；测试集含 613 万用户、465 万商品、5274 万行为和 322 万购买。论文未公开优化器、学习率、batch size、训练硬件或训练步数，这些是实现复现的主要缺口。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，SAM 把购买从普通正反馈改写为兴趣生命周期的状态转换，并通过双路结构同时建模“意图簇”与“补购节奏”。这比在重排末端套固定过滤规则更强，因为抑制对象和持续时间都由行为数据学习，并能随用户与品类变化。</p>
+<p>第二，逐点 Sigmoid 意图归因适配“一次购买结束多条探索行为”的多对一结构，解决长序列 Softmax 权重稀释；共享投影又保证意图定位与节奏检索对品类相似性的理解一致。消融中移除双路节奏检索后，GAUC 从 0.691 降到 0.682，PPRR 从 4.1% 激增到 12.9%，是影响最大的组件。</p>
+<p>第三，ASGU 用连续可学习的饱和曲线取代硬屏蔽，并用 TTNP 让时间尺度具有物理意义。移除 TTNP 后 GAUC 变为 0.688、PPRR 8.4%；改用硬 mask 虽保持 4.0% PPRR，却把 GAUC 降到 0.685，证明提前恢复的 lead-in 阶段对捕捉补购前浏览至关重要。</p>
+<h2>4. 实验结果分析</h2>
+<p>离线实验重复 5 次，线上模型服务 1% 实时流量。准确率使用 AUC/GAUC，冗余使用购买后同叶子品类曝光率 PPRR；线上还监控 CTR、GMV 和用户负反馈中“已经买过”的 Bad-Case 比例。</p>
+<table><thead><tr><th>模型</th><th>AUC</th><th>GAUC</th><th>PPRR</th><th>线上 CTR</th><th>线上 GMV</th><th>Bad-Case</th></tr></thead><tbody><tr><td>DIN 基线</td><td>0.749</td><td>0.674</td><td>15.5%</td><td>0</td><td>0</td><td>0</td></tr><tr><td>DIN + 固定窗口</td><td>0.745</td><td>0.670</td><td>7.7%</td><td>-0.2%</td><td>-0.3%</td><td>-31.9%</td></tr><tr><td>HSTU</td><td>0.758</td><td>0.684</td><td>15.2%</td><td>+0.8%</td><td>+0.4%</td><td>+11.0%</td></tr><tr><td>OneTrans</td><td>0.762</td><td>0.689</td><td>15.8%</td><td>+1.1%</td><td>+0.6%</td><td>+10.2%</td></tr><tr><td>SAM</td><td>0.763</td><td>0.691</td><td>4.1%</td><td>+1.1%</td><td>+0.9%</td><td>-74.5%</td></tr></tbody></table>
+<p>结果揭示一个重要反常现象：更强的长序列模型提升 GAUC，却没有降低冗余。OneTrans 的 GAUC 达 0.689，但 PPRR 15.8%，甚至略高于 DIN；其“已购买”负反馈还增加 10.2%。SAM 的 GAUC 进一步升至 0.691，同时将 PPRR 降到 4.1%，相对 OneTrans 减少约 74%，并让 Bad-Case 下降 74.5%。CTR 与 OneTrans 同为 +1.1%，GMV 则从 +0.6% 提升到 +0.9%，说明释放重复曝光后，跨品类探索带来了额外交易价值。</p>
+<p>消融排序为双路节奏检索 &gt; TTNP &gt; 自适应门控。无双路检索时 PPRR 回到 12.9%，说明历史购买间隔是决定停止时长的主信号；无 TTNP 时模型无法区分耐用品和高频消耗品；硬 mask 的 PPRR 甚至略低于完整 SAM，但 GAUC 明显变差，印证“冗余最低”并非最终目标，必须同时保护真实补购意图。论文还报告模型学到冰箱平均超过 300 天、纸巾约 15–30 天的周期，表明时间预测具有业务可解释性。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文没有独立的 Limitations 章节，结论主要强调工业有效性。正文可确认的限制包括：只在天猫单一平台、活跃用户（至少 20 次行为）和叶子品类层面评估，因此新用户、跨平台迁移以及同品类内替代/互补关系尚未验证；PPRR 的统计窗口依赖平台已有的品类复购周期表，评估本身并非完全无先验；右删失样本用全局品类均值插补，可能低估小众用户的超长周期。</p>
+<p>作者在消融中间接指出，TTNP 和历史节奏检索对稀疏品类仍敏感。未来可采用生存分析或删失似然替代均值插补，引入价格、库存、季节、家庭共享购买等外生变量，并把“兴趣退出”扩展到服务完成、内容看完、事件结束等非购买动作。还应分别报告新用户、低频品类和不同价格带的公平性，避免模型只对高活跃主流用户学得准确周期。</p>
+<h2>6. 工业实践意义</h2>
+<p>SAM 最适合作为现有 DIN/HSTU/Transformer 精排的可插拔分支，而非重建整套推荐链路。团队可先构建三个输入：混合行为长序列、购买专用长序列、候选品类；再离线增加 PPRR 与“已经买过”负反馈率，避免只看 AUC/GAUC。首版可以用平台品类平均周期初始化 c，再逐步启用个体节奏检索和 TTNP。门控应注入 attention logit，并保留 clip ε，防止数值不稳定。</p>
+<p>线上实验必须同时观察 CTR、GMV、跨品类覆盖、负反馈和复购召回。固定窗口过滤可作为对照，但不宜直接上线全量：论文已经显示它虽然减少冗余，却伤害 GAUC 和 GMV。更安全的发布顺序是先在耐用品、已知周期稳定的品类上使用软门控，以 1% 流量验证；再扩大到高频消耗品，并针对预计周期前的 lead-in 流量检查是否错误抑制。</p>
+<p>对社区搜索/推荐，购买可映射为“意图完成”事件，例如用户完整看完教程、报名活动、解决问答或明确点选“不再推荐”。双路思想仍成立：一路找出属于同一已满足主题的历史点击，另一路估计该主题再次需要的时间。应避免把所有强互动都永久累加为兴趣，也不要把一次完成动作变成永久黑名单。真正可借鉴的是把兴趣表示从静态强度升级为带进入、满足、休眠、恢复阶段的状态机，并用可学习软门控在相关性与新颖性之间做连续权衡。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

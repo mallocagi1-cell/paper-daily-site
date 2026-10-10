@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — EKTM: Effective Knowledge Transfer for Multi-Task Recommendation Models</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>EKTM: Effective Knowledge Transfer for Multi-Task Recommendation Models</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.40</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 3 | Practical 5 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> EKTM 针对 CVR 预估在多任务排序框架中的数据稀疏问题，提出有效跨任务知识迁移方法。引入 router 模块按任务相关性分发共享表示，并通过 transmitter 模块做任务特定的特征变换后再融入目标任务，避免硬共享带来的负迁移。在线上 A/B 测试中带来 3.93% 的 eCPM 提升，已在某商业广告平台的两个主流量场景部署。</p><p><strong>Key insight:</strong> EKTM 揭示了多任务推荐里被忽视的细节：CVR 样本极少时，单纯共享底层 embedding 会让强势任务的梯度淹没弱势任务。router+transmitter 的双层路由相当于在 MMoE 之上加了一层任务特定的&#x27;整形&#x27;，比直接共享专家更安全。对社区 UGC 平台多目标排序（点击、停留、互动、转化）有直接借鉴价值：先用 router 做知识分发，再用 transmitter 做任务自适应变换，是缓解长尾任务负迁移的实用 pattern。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-11/personalization/report.html#dr-arxiv-2605-05730">2026-05-11 · Personalization (4.40)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.05730" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>EKTM：多任务推荐的有效知识迁移</h1>
+<h2>1. 问题与动机</h2>
+<p>EKTM 直击工业推荐多任务学习 (MTL) 中 CVR 任务的&quot;双重数据稀疏&quot;问题：作者在 AliExpress 数据集量化了 CTR vs CVR 的不平衡——CTR 任务的正样本率 1.5-3.63%，而 CVR 仅 0.035-0.088%，相差约 50 倍。这一稀疏性使得 CVR 塔难以学到稳定表征，是工业广告/电商场景中转化预估长期未解的难题。</p>
+<p>更关键的是作者指出现有 MTL 方法（MMoE、PLE、ESMM、STEM）的共同局限：它们做的知识共享主要在共享底层 (Shared-Bottom) 或专家层 (Expert)，而越靠近输出层信息越丰富——&quot;representations closer to the output layer contain richer information&quot;。但直接共享靠近输出的高级表征又会带来三重风险：(a) 强势任务（CTR）的梯度淹没 CVR 任务；(b) 不同任务输出尺度差异巨大（CTR vs 时长预估），共享标量输出无意义；(c) 负迁移——任务相关性不足时硬共享反而损害目标任务。</p>
+<p>EKTM 的目标是在共享高级表征的同时控制负迁移，让 CVR 任务能&quot;挑选性地&quot;利用其他任务的高级语义。</p>
+<h2>2. 方法详解</h2>
+<p>EKTM 在已有 MTL 框架（MMoE/PLE/STEM/Shared-Bottom）顶部插入两个新模块：</p>
+<p><strong>(1) Router 模块</strong>：负责&quot;知识聚合&quot;。对目标任务 i (CVR)，先计算它与每个辅助任务 t 的归一化余弦相似度 ŝ_{i,t} = softmax_t(cos(f_cvr^i, f_cvr^t))，再做加权聚合 F_i = mean(f_ctr, ŝ_{i,1}·f_cvr^1, ..., ŝ_{i,T}·f_cvr^T)。直觉：相似度高的任务表征获得更高权重，避免&quot;无差别共享&quot;。f_ctr 永远以 mean 中无加权权重出现，是因为 CTR 是 CVR 的天然前置信号（ESMM 思路）。</p>
+<p><strong>(2) Transmitter 模块</strong>：负责&quot;知识过滤&quot;。聚合后的 F_i 需要再做任务自适应整形才能注入到 CVR 塔——直接相加会引入辅助任务的偏置。Transmitter 用多头交叉注意力 (MHCA)：query/key 来自 F_i，value 来自当前任务的 CVR 主表征 f_ctr；输出经 LSTM-style 门控 g = σ(MHCA(F_i)^T w_f + b_f)，再与 f_ctr 逐元素相乘。门控让模型自动决定每一维的迁移强度，避免硬注入。</p>
+<p><strong>(3) Calibration Loss</strong>：核心损失设计是关键防负迁移机制：</p>
+<p>ℒ = ℒ_ctr + Σ_i [(1-α) ℒ_o^(i) + α · max(0, ℒ_t^(i) - ℒ_o^(i))]</p>
+<p>其中 ℒ_o 是不用 EKTM 的原始 CVR 损失，ℒ_t 是经 EKTM 转换后的损失。max 算子保证：只有当 EKTM 转换降低 loss 时才参与训练；若升高 loss 则梯度为 0。这相当于一个&quot;安全护栏&quot;，从理论上排除了 EKTM 比 baseline 更差的可能。α 是混合系数，超参搜索范围 [0.01, 0.1, 1.0]。</p>
+<p><strong>训练配置</strong>：batch=12,000，lr=1e-3，50 epochs；与已有 MTL 框架 (MMoE/PLE/STEM) 即插即用，不修改 backbone。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(a) <strong>靠近输出层的知识共享</strong>：以往 MMoE/PLE 在 expert 层共享专家，PLE 才显式区分共享/独立专家。EKTM 进一步把共享下沉到任务塔输出附近，能利用更高层语义。</p>
+<p>(b) <strong>Router 用任务相似度做软聚合</strong>：相似度是数据驱动的（cosine sim），不需要手工指定任务关系图。比 PLE 的固定专家分配更灵活。</p>
+<p>(c) <strong>Transmitter 用 cross-attention + 门控防过冲</strong>：多头注意力天然支持选择性融合；LSTM 门控提供二次过滤。两层选择性保证迁移精准。</p>
+<p>(d) <strong>Calibration Loss 的 max 安全护栏</strong>：是工业落地最关键的设计——它把&quot;迁移失败时不损害目标任务&quot;做成数学约束，免除了 MTL 调参中的负迁移风险。</p>
+<p>每个贡献都对应了与 prior work 的具体改进：相比 MMOE baseline 在 AliExpress US 数据上 CTR AUC 从 0.7092 提到 0.7139 (+0.66%)，CTCVR 0.8717→0.8738 (+0.24%)。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>公开数据集 (AliExpress)</strong>：在 4 个国家 (US/NL/FR/ES) × 2 任务 (CTR/CTCVR) × 4 个 backbone (Shared-Bottom/MMoE/PLE/STEM) 共 32 个 setting 上，EKTM 几乎全部带来提升。MMOE+EKTM (US): CTR 0.7139 (vs MMOE 0.7092)；PLE+EKTM (NL CTCVR): 0.8653 (vs PLE 0.8639)。</p>
+<p><strong>公开数据集 (KuaiVideo)</strong>：3 个任务 (Follow/Like/Click)，EKTM 在 Follow 任务 STEM baseline 上从 0.7803 提到 0.7910 (+1.37% AUC)——比 CTR 任务更大，因为 Follow 是稀疏任务，正是 EKTM 设计针对的场景。</p>
+<p><strong>消融研究</strong>：线性投影 baseline AUC 0.7017；加 Transmitter 0.7102 (+1.21%)；加 Calibration loss 0.7139 (+0.53%)——两个模块都有独立贡献，且互补。</p>
+<p><strong>线上 A/B</strong>：在某商业平台两个主流量场景灰度发布，5%→20%→50%→100% 渐进放量，最终全量 eCPM +3.93%。</p>
+<p><strong>关键观察</strong>：(1) EKTM 在 STEM/PLE 等已经做了任务区分的 backbone 上仍能带来增益，说明它捕获了 prior MTL 未利用的信号；(2) 稀疏任务（CVR、Follow）的增益显著大于稠密任务，与设计目标一致；(3) 没有任何 setting 出现负向——印证 Calibration loss 的安全性设计。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文未明写局限。可推断：</p>
+<p>(1) <strong>任务相关性假设</strong>：Router 默认所有辅助任务都对目标任务有用，只调权重。若辅助任务与目标完全不相关（例如点击 vs 退订），软聚合可能引入噪声——calibration loss 能屏蔽损害但不能消除计算开销。</p>
+<p>(2) <strong>多头注意力延迟成本</strong>：每个任务 i 都要做一次 MHCA，对 T 个任务复杂度 O(T·d²)。论文未给出 serving 延迟数字，工业大规模部署需要量化。</p>
+<p>(3) <strong>超参敏感性</strong>：α ∈ [0.01, 0.1, 1.0] 的搜索粒度粗，不同场景可能需要重调；缺少 α 与任务稀疏度的关系分析。</p>
+<p>(4) <strong>CVR 长链路问题</strong>：EKTM 把 CTR 作为前置信号（mean 中无加权），但工业场景下 CTR→CVR 链路还有曝光、加购等中间步骤，纯 CTR 信号未必最优。</p>
+<h2>6. 工业实践意义</h2>
+<p>EKTM 对社区/UGC 平台多目标排序的启示：</p>
+<p><strong>(a) 即插即用替换 MMoE/PLE 顶层</strong>：EKTM 不改 backbone，只在任务塔输出之前插入 Router+Transmitter。社区平台典型的多目标（点击、停留、点赞、收藏、转发、关注）排序如果当前用 MMoE/PLE，可以直接试 EKTM 而不需要重训 backbone。预期对长尾任务（关注、转发）提升更明显。</p>
+<p><strong>(b) Calibration loss 是低风险高 ROI 改造</strong>：max(0, ℒ_t - ℒ_o) 保证最坏情况不退步，是 MTL 模型迭代里少见的&quot;零风险&quot;改造。建议作为 MTL baseline 的标配引入。</p>
+<p><strong>(c) Router 的相似度计算可复用</strong>：cosine sim 计算的任务相似度矩阵本身就是宝贵的诊断信号——可以离线观察各任务间相似度变化，判断什么时候新增/废弃任务。</p>
+<p><strong>(d) 部署考虑</strong>：论文报告 batch=12,000、lr=1e-3、50 epochs 训完；线上灰度 5%→20%→50%→100% 渐进放量是稳妥范式；MHCA 计算成本需要在 GPU/CPU 集群上量化，必要时可降为单头注意力做 trade-off。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

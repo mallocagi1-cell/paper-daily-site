@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Reward Guided Decoding for Generative Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Reward Guided Decoding for Generative Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对生成式推荐只按序列概率做束搜索、导致高业务价值候选被过早剪枝的问题，RGD 将解码写成带 KL 约束的奖励最大化，并在每个 SID 层注入奖励模型。三组 Amazon 数据上 Recall@10、NDCG@10 最高提升 11.49% 和 8.30%；快手两周 A/B 中页面 CTR、直播时长分别提升 0.392% 和 0.689%。</p><p><strong>Key insight:</strong> 价值对齐不一定要重训生成器：把基础生成器固定为参考策略，用轻量 Bottleneck MLP 在首层预合并、后续层后合并，可在成本可控时改变搜索轨迹。对社区搜推，可把点击、停留和内容质量奖励做成可切换控制器，避免离线重排无法救回已剪枝候选。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-30/generative/report.html#dr-arxiv-oai-arXiv-org-2607-25344">2026-07-30 · Generative (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2607.25344" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>Reward Guided Decoding for Generative Recommendation 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>生成式推荐把每个物品编码为多层 Semantic ID（SID），再像语言模型一样逐 token 预测下一个物品。这个范式虽然把召回和生成统一起来，却把一个重要假设带进了线上：束搜索默认「生成概率最高」就等价于「业务价值最高」。论文指出两者并不一致。生成概率主要复现历史行为相关性和热门惯性，平台真正优化的却是点击、长观看、关注、送礼等干预后的增量价值；一个点击潜力高但生成概率稍低的候选，可能在 SID 第一层就被剪掉，事后的重排器再强也无法把它找回来。</p>
+<p>作者把现有方案的缺口分成两类。PROMISE 一类后验重排方法只处理已完成的候选，介入太晚；DPO、GRPO 一类训练期偏好优化会把业务偏好写入生成器参数，目标一变就要重新训练，并可能因策略分布漂移损害原有生成能力。快手直播场景每天约覆盖 4 亿用户、300 万创作者和数十亿条点击、长观看、关注、送礼记录，数据以 30 秒滑窗连续学习，目标频繁变化，因此需要一个能在不改生成器的前提下，于搜索过程早期注入价值信号的控制层。RGD 的核心问题正是：如何让奖励参与每一层 SID 解码，同时严格限制新分布偏离原生成器的程度。</p>
+<h2>2. 方法详解</h2>
+<h3>2.1 从 KL 约束得到闭式解码规则</h3>
+<p>设基础生成器在当前用户上下文和 SID 前缀下给候选码 j 的分布为 P(j)，奖励模型输出业务价值 R(j)。RGD 寻找新分布 Q，使期望奖励最大，同时用 KL 散度约束它不要偏离 P：目标可口述为「最大化 Q 下的平均奖励，减去 β 乘以 KL(Q‖P)」。β 是保守程度：β 小时奖励主导，β 大时逐渐退化为原始似然解码。</p>
+<p>对这个目标做拉格朗日求解，可得到唯一闭式最优解 Q*(j) ∝ P(j)·exp(R(j)/β)。束搜索不必真的计算归一化常数，只需按 log P(j)+R(j)/β 排序。这个推导比手工把概率分与奖励分线性相加更干净：它说明 R 必须进入与 log P 一致的对数空间，并给出「在同一 KL 预算内期望奖励最高」以及「达到同一奖励时离基础分布最近」的最优性保证。论文还观察到 Q 的熵随 β 单调增大并回到 P；β 过小会破坏可靠语义结构，过大则无法修正概率—奖励错配，中等 β 在多个数据集上最好。</p>
+<h3>2.2 奖励模型结构与训练</h3>
+<p>RGD 复用并冻结基础生成器的解码表示，避免再跑一套完整大模型。对第 l 层候选码，模型拼接先前层缓存表示与当前候选表示，经 down-projection、ReLU、up-projection 形成小瓶颈特征，再用三层 MLP 输出 0 到 1 的行为概率。由于解码公式需要无界的对数奖励，作者对 sigmoid 概率做 log-odds 变换 R=log(p/(1-p))，于是奖励可解释为正负反馈的对数似然比，也能与 log P 直接相加。</p>
+<p>生成器与奖励头在相同 batch 上联合计算，但梯度严格分离：生成损失仍是 next-token 交叉熵，奖励损失只更新打分组件。单目标版本分别训练 CTR、长观看率 LVTR、关注率 WTR、送礼率 GTR 四个头，并在每个 SID 层用加权二元交叉熵监督；正样本是发生目标行为的曝光，负样本是有效曝光或观看但未发生该行为的样本。多目标 LTR 头则用业务权重 α 汇总四类逐层 BCE，输出一个可直接控制解码的综合价值。</p>
+<h3>2.3 三种束搜索注入方式</h3>
+<p>预合并模式在每条 beam 的 top-M 扩展合并前逐一算奖励，能最早救回高价值分支，效果最好但计算最多。后合并模式先按 log P 合并并保留扩展池，再统一打奖励，调用次数低，却仍可能漏掉合并前已剪枝的候选。混合模式只在第一层预合并，后续层使用后合并；工业部署取第一层作为关键扩展点，使效果接近全预合并、延迟接近后合并。每次 beam 重排时，奖励模型的因果历史缓存必须与生成器 KV cache 使用同一置换，否则候选会拿到错误祖先的奖励上下文。</p>
+<h3>2.4 训练与实验配置</h3>
+<p>公开实验使用 Amazon Sports、Beauty、Toys，分别有 35,598、22,363、19,412 名用户，交互数 296,337、198,502、167,597，稀疏度均超过 99.9%，采用 leave-last-out。物品编码统一用 sentence-t5-base，再接 RQ-VAE 或 Res-KMeans；SID 为 3 层、每层码本 256，生成器是 4 层、隐藏维 64 的 T5 编解码器。初始学习率 5e-4、余弦衰减，最多训练 200 epoch，early-stopping patience 为 20，beam size 为 20，公开实验采用预合并推理并用 PyTorch 实现。论文没有披露 optimizer 名称、batch size、训练硬件、训练时长或随机种子，这些信息不足以完整复现实验成本。工业侧以已部署的 OneLive 为基础，采用连续在线学习；论文披露数据规模和 30 秒滑窗，但同样未给出模型参数量、GPU 配置与绝对 P99 延迟。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>把业务对齐变成可证明的局部策略改进。</strong> RGD 不是另训一套策略，而是在每个有限 SID 码本上直接求 KL 正则目标的闭式最优分布。它把 RLHF 中「奖励提升但别偏离参考策略」的思想压缩成一条解码公式，省去 rollout、奖励反传和生成器重训，同时保留可解释的 β 控制旋钮。</li>
+</ol>
+<ol>
+<li><strong>奖励从重排末端前移到搜索路径内部。</strong> 与只给完成候选打分的后验 ranker 不同，RGD 在 SID 第一层就能提高低概率、高奖励分支的存活率。概率—奖励密度图显示，TIGER 的候选集中在高概率区，而 RGD 把质量分布拓展到较低概率但更高奖励的区域；这正是 Recall 与业务奖励同时改善的机制，而不只是末端次序微调。</li>
+</ol>
+<ol>
+<li><strong>一套冻结生成器支持多目标快速切换。</strong> CTR、长观看、关注、送礼可各自作为控制头，也可用 LTR 组合成综合奖励。工业表中，CTR 引导使 CTR Reward@604 提升 3.23%，LVTR 引导使 LVTR Reward 提升 4.51%，GTR 引导使送礼 Reward 提升 5.66%；LTR 则让 HitRate@604 提升 1.09%、送礼 Reward 提升 4.52%，显示目标切换无需改基础模型。</li>
+</ol>
+<ol>
+<li><strong>提供效果—成本可落地的结构。</strong> 瓶颈 MLP 相比轻量 Decoder 的 CTR Reward 仅下降 0.27%，QPS 却提升到 1.28 倍；混合注入把关键的首层搜索与后续低成本筛选结合起来。论文因而不只提出目标函数，还给出了缓存同步、候选扩展和服务架构层面的实现路径。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<p>公开数据上，RGD 在三组数据、Recall@5/10 与 NDCG@5/10 的 12 个指标中全部最佳，且相对基线差异通过配对 t 检验达到 p&lt;0.05。下表摘录最能体现束搜索收益的 Recall@10：</p>
+<table><thead><tr><th>模型</th><th>Sports R@10</th><th>Beauty R@10</th><th>Toys R@10</th></tr></thead><tbody><tr><td>TIGER</td><td>0.0400</td><td>0.0648</td><td>0.0712</td></tr><tr><td>PROMISE</td><td>0.0444</td><td>0.0775</td><td>0.0739</td></tr><tr><td>RGD</td><td><strong>0.0495</strong></td><td><strong>0.0827</strong></td><td><strong>0.0766</strong></td></tr></tbody></table>
+<p>RGD 相对最强对照的 Recall@10 最高提升 11.49%，NDCG@10 最高提升 8.30%。它超过 PROMISE 的关键不是奖励模型一定更准，而是奖励在 beam 扩展时就改变搜索空间，PROMISE 的完成后重排无法恢复早期丢失项。扩大 beam 的附录实验也支持这一点：基础模型把 beam 从 302 增到 604 后，CTR Reward 从 0.0557 降至 0.0550；RGD 在 604 beam 下 HitRate@604 为 0.8229、CTR Reward 为 0.0559，说明更大搜索空间只有配合价值导向才不会退化成「探索更多高似然但低价值候选」。</p>
+<p>工业离线表揭示了单目标优化的真实代价。CTR 引导把 CTR Reward 提高 3.23%，但 HitRate 下降 0.37%；GTR 引导把送礼 Reward 提高 5.66%，CTR Reward 反而下降 0.62%。这不是简单的全面胜利，而是可控的目标迁移。LTR 综合头较好地折中：HitRate 提高 1.09%，MRR 基本持平（+0.03%），四类奖励中 CTR、LVTR、WTR、GTR 分别为 +0.86%、+0.24%、+0.75%、+4.52%。作者选择 CTR 做线上 A/B，是因为点击更稠密、更稳定且处于直播漏斗上游；两周实验最终得到页面 CTR +0.392%、直播观看时长 +0.689%、观看次数 +0.349%。</p>
+<p>消融/分析结果中最重要的不是某一小组件删掉多少，而是三组边界条件。其一，中等 β 最佳，太小破坏语义先验、太大近似无奖励；其二，预合并效果最佳但成本高，混合模式在效果和延迟之间更适合生产；其三，瓶颈 MLP 用 0.27% 奖励损失换取 28% QPS 增益。论文没有报告线上显著性区间、流量比例、绝对延迟和长期留存，因此线上增益虽有说服力，仍不能判断成本收益在其他业务中的稳定性。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者没有单列 Limitations 章节，但正文明确给出几项边界。第一，β 很敏感：奖励过强会让生成偏离 SID 的可靠语义结构，过弱又无法纠偏。第二，全预合并要为更多候选计算奖励，在线开销高；后合并省成本却可能再次失去早期高价值分支，混合策略只是当前折中。第三，公开 Amazon 数据只有隐式 next-item 信号，无法验证多目标反馈；工业结论依赖快手直播的特定行为漏斗。第四，单目标引导会牺牲 HitRate 或其他奖励，表明奖励之间存在真实冲突。</p>
+<p>论文未充分讨论的限制还包括：奖励模型由曝光日志训练，可能继承曝光偏差和流行度偏差；工业 Reward 指标使用已部署 ranker 给候选打分，存在以教师偏好验证学生的闭环；没有提供奖励校准、分群公平性、冷启动和对抗操纵分析；也未披露硬件、batch size、参数量、绝对延迟、A/B 置信区间或代码。后续研究应加入反事实/去偏奖励、约束式多目标优化、按用户或场景自适应 β，以及长期价值和安全约束的在线评估。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索与推荐团队，RGD 最值得采用的是「冻结主干＋外置控制器」的渐进式路线。第一阶段不要直接替换现有生成器：在离线 beam 日志上训练 CTR 或相关性奖励头，验证低概率高奖励候选是否真实存在，并监控 log P、log-odds reward、最终得分三者的分布。第二阶段只在首层 SID 开启预合并，后层用后合并；用影子流量测 QPS、P50/P99、cache 重排正确性和候选覆盖，再逐步扩大 beam。第三阶段才引入停留、互动质量、投诉率等多目标 LTR，明确业务权重并保留每个单目标的护栏指标。</p>
+<p>社区 UGC 搜索可把 P 理解为生成式召回对帖子 SID 的相关性先验，把 R 设为 CTR、长点击、收藏、内容质量或时效性的校准值。与完成后重排相比，首层奖励能救回语义相关但因长尾、冷启动而概率偏低的帖子；与 DPO/GRPO 相比，热点事件或治理策略变化时只需切换奖励头和 β，不必重训大模型。上线时应强制设置 KL/熵监控、每目标最小护栏、奖励分数校准和回滚开关，特别防止 CTR 奖励把标题党或高争议内容提前放大。</p>
+<p>资源方面，论文给出的可行参考是瓶颈 MLP：相对 Lite Decoder 获得 1.28 倍 QPS，奖励仅损失 0.27%。但团队不能直接套用这一比例，因为论文未披露绝对延迟和硬件。更稳妥的验收标准应同时包含 nDCG/Recall、CTR/长点击、候选新颖性、尾部内容曝光、P99 和单位请求成本，并做至少两周 A/B；若 CTR 上升但 HitRate、内容质量或长期留存恶化，就应提高 β、降低奖励权重或退回多目标约束版本。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — DADF: A Distribution-Aware Debiasing Framework for Watch-Time Regression in Recommender Systems</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>DADF: A Distribution-Aware Debiasing Framework for Watch-Time Regression in Recommender Systems</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.45</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> DADF 针对观看时长回归中短样本高估、长样本低估的局部均值收缩，在冻结的一阶段模型上增加乘性残差校正，并按视频时长路由专家、引入互动任务表征。两套公开数据与 7 个骨干上平均 MAE 降低 4.33%、XAUC 提升 4.01%；生产 MAE 降低 12.57%，全量排序 A/B 的设备时长提升 0.649%。</p><p><strong>Key insight:</strong> 成熟排序模型不一定需要整体重训；若误差在标签区间或内容时长上呈稳定结构，可用保持接口不变的二阶段校正器低风险修复。社区内容可把停留时长、完读、点赞等多任务表征作为残差特征，同时严格区分“可预测偏差”与不可约噪声，避免简单按时长分桶造成过校正。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-03/personalization/report.html#dr-arxiv-oai-arXiv-org-2605-17863">2026-08-03 · Personalization (4.45)</a> <a href="../reports/2026-05-20/personalization/report.html#dr-arxiv-oai-arXiv-org-2605-17863">2026-05-20 · Personalization (4.35)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.17863" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>DADF 深度解读：短视频时长回归的分布感知二阶段去偏框架</h1>
+<h2>1. 问题与动机</h2>
+<p>观看时长预测是短视频推荐的核心回归任务，但标签高度长尾——「most impressions correspond to short views or quick skips, while only a small fraction lead to long consumption」。论文指出一个被长期忽视的「伪平衡（pseudo-balance）」陷阱：模型可能整体 calibrated（全局 y/ŷ 比值≈1.0），但同时<strong>系统性高估短播放、低估长播放</strong>，因为正负残差在聚合时相互抵消。Figure 1(a) 给出定量证据：已部署预测器在各 watch-time 桶上「consistently overestimates short views and underestimates long views」，而全局比值仍接近 1.0。更深一层的根因是：乘性 bias factor b=y/ŷ 继承了原始时长分布的长尾性（Appendix A.1 给出理论刻画），导致直接对 b 做回归不稳定。</p>
+<p>这一陷阱对任何回归型排序目标（时长、停留、转化时长）都成立，社区搜索的 dwell-time 排序同样会「整体校准但分区间互相抵消」。已有方法多在第一阶段时长预测器上改进，残差分布偏差仍未被充分纠正——这正是 DADF 切入点：不动主模型，在其之上挂一个分布感知的二阶段乘性残差校正。</p>
+<h2>2. 方法详解</h2>
+<p><strong>二阶段乘性校正框架。</strong> 设冻结的一阶段预测为 ŷ₀，校正标签 b=y/(sg(ŷ₀)+ε)（sg 为 stop-gradient），最终预测 ŷ=ŷ₀·b̂=ŷ₀·T_λg⁻¹(F_θ(x, ℓ₀, π(d), ha))。即学习一个对 b 的校正而非替换 ŷ₀。三大组件：</p>
+<p><strong>A. 动态分布感知模块。</strong> 对乘性校正因子做分组 Box–Cox 变换：T_λg(b)={(b+ε)^λg−1}/λg（λg≠0），log(b+ε)（λg=0），其中 λg 是每个时长分组可学习的变换参数；推理时用解析逆变换 T_λg⁻¹ 还原。作用是把长尾、异方差的校正目标拉成更接近正态、可稳定回归的空间——这是全框架最关键的设计（消融显示移除它 MAE 退化最大）。</p>
+<p><strong>B. Debias-factor-aware 模块。</strong> 硬路由：每个样本按时长分组 g=π(d) 选择专家网络 E_g，融合信号 h=Fusion(x, ℓ₀, g, ha)，预测变换空间校正量 ẑ=E_g(h)。理论依据用全方差定律证明分组后 oracle 风险满足 R<em>_G ≤ R</em>₀，即按时长分桶建模能降低不可约不确定性。</p>
+<p><strong>C. Multi-label-aware 模块。</strong> 三路辅助信息：context 分支 hc=MLP([ℓ_play, xc])；logit 注意力 h_ℓ=SelfAttention(Φ₁(ℓ₁),…,Φ_M(ℓ_M))；tower 表示 hr=TokenMixer(r₁,…,r_M)，拼接成 ha=MLP([hc,h_ℓ,hr])。即复用多任务 engagement 头的 logits 与表示作为去偏辅助信号。</p>
+<p><strong>训练目标。</strong> L_DADF=α·L_trans+β·L_abs+η·L_reg，其中 L_trans 是变换空间 MSE、L_abs 是原空间 Huber、L_reg 对每个时长分组的均值/方差/偏度做正则；超参 α=1.0、β=0.8、η=0.10。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(1) <strong>不替换已部署预测器的分布感知二阶段去偏</strong>：直接建模乘性 bias factor，是对现有时长预测管线的「model-agnostic plug-in」，落地侵入性极低。</p>
+<p>(2) <strong>分组条件建模</strong>：用时长分桶 + 专家硬路由把异质残差模式拆开，并以全方差定律给出 oracle 风险下界证明（R<em>_G≤R</em>₀），让「分桶」有理论支撑而非纯工程经验。</p>
+<p>(3) <strong>异质变换设计</strong>：每个时长 regime 学独立 Box–Cox 参数 λg，针对短/中/长播放的不同残差分布分别拉正态。</p>
+<p>(4) <strong>多任务辅助信号融合</strong>：把 engagement 头的 logit 与 tower 表示引入去偏，复用既有多任务结构而非额外造特征。</p>
+<p>(5) <strong>理论刻画</strong>：附录证明 bias factor 的长尾继承性与分组降风险，是该工作区别于纯经验去偏的亮点。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>离线（Table 1）。</strong> 跨 7 个 backbone（VR/WLR/TPM/D2Q/CREAD/D2CO/EGMN）× 2 数据集（KuaiRec/WeChat21）一致提升。KuaiRec 上 WLR：MAE 4.414→4.172、XAUC 0.5941→0.6227；D2CO：MAE 4.613→4.168、XAUC 0.5687→0.6233（提升幅度最大的一档）。WeChat21 上 VR：MAE 18.681→17.912、XAUC 0.6766→0.6902。<strong>平均「reduces MAE by 4.33% and improves XAUC by 4.01%」覆盖所有 backbone-数据集组合</strong>，说明它是 backbone 无关的通用增益层。</p>
+<p><strong>线上 A/B（Table 2，快手 Kwai 平台）。</strong> App 总时长 +0.356%、单设备人均时长 +0.347%、单设备播放数 +0.120%、7 日留存 +0.054%、完播率 +0.215%、有效播放率 +0.312%、长播率 +0.351%、短播率 −0.273%，全部 p&lt;0.05；生产离线 WUAUC +1.88pp、MAE 降 12.57%。短播率下降 + 长播率上升的方向，正好印证它纠正了「高估短播、低估长播」的伪平衡。</p>
+<p><strong>消融（Table 3, WLR）。</strong> 移除分布模块（w/o Dist.）KuaiRec MAE 4.1723→4.1901 退化最大；移除辅助模块（w/o Aux.）对 XAUC 冲击最大（WeChat21 XAUC 0.6934→0.6920）。<strong>分桶分析（RQ4）</strong>最有说服力：分时长桶 MAE 降幅 [0,20)s 5.5%、[20,40)s 7.0%、中长桶 &gt;15%、[180,200) 峰值 23.8%、[200,+) 18.2%；尾部切片 Tail-10% MAE 降 10.43%、XAUC 升 7.98%——证明收益主要来自长尾/长播放区间，恰是伪平衡受害最重的地方。桶数 K 在 2~8 范围稳定。证据质量很高（多 backbone、多数据集、线上多指标显著、细粒度偏差分析）。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者<strong>未显式设置 limitations 章节</strong>（这是该论文的一个不足）。从方法可推出的隐含约束：(1) 依赖推理期可观测的 duration 作为 debias factor，若 duration 不可得则路由失效；(2) 冻结一阶段预测器假设，无法与主预测器联合自适应；(3) 分组变换需每组足够样本，长尾极稀疏分组的 λg 估计可能不稳；(4) 依赖多任务 engagement 头的 logits/表示作为辅助信号，单任务时长模型无法直接套用。这些边界在迁移到社区 dwell-time 场景时需逐一核对，尤其辅助信号依赖会限制无多任务结构系统的复用。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区搜索/推荐团队，DADF 的最大价值是<strong>几乎零侵入的纠偏旁路</strong>。<strong>应采纳</strong>：「整体校准但分区间互相抵消」是 dwell-time/转化时长排序的通病，先用 DADF 的分桶残差诊断（按目标值分桶看 y/ŷ 是否系统性偏移）做体检，再决定是否上二阶段乘性校正——这套诊断方法本身就值得纳入排序模型上线 checklist。<strong>应尝试</strong>：在已上线时长/停留预测器之上挂二阶段乘性校正（不动主模型），按目标值分 3~4 桶 + 分组 Box–Cox，线上以旁路插件灰度，风险远低于重训第一阶段预测器；快手线上 7 日留存 +0.054%、长播率 +0.351% 且全显著，收益方向明确。<strong>应警惕</strong>：辅助模块强依赖多任务 engagement 头，单塔系统需先补多任务结构或裁剪该模块（消融显示去掉 Aux. 主要损 XAUC、MAE 影响小，可接受降级）；分组需足量样本，极稀疏长尾桶要合并；线上分桶建议用「historical traffic statistics and production experience」定固定边界而非等频，避免线上线下桶不一致。部署上仅需 ranking 特征 x、duration d、原始时长输出 ℓ₀、辅助表示 ha，无显式额外延迟，属轻量级改造。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

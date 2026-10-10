@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — AgentLens: Revealing the Lucky Pass Problem in SWE-Agent Evaluation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>AgentLens: Revealing the Lucky Pass Problem in SWE-Agent Evaluation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.20</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对 SWE Agent 评测「只看最终补丁是否通过测试」的二值信号会把原则性求解与盲目试错视为等价的问题，论文系统分析了 2614 条 OpenHands 轨迹（覆盖 8 个模型后端、60 个 SWE-bench Verified 任务），发现在通过率达标的样本里有 10.7%属于 Lucky Pass：表现为回归循环、盲目重试、缺失验证或时序错乱。作者提出AgentLens，一个面向轨迹过程的评估框架，并发布 AgentLens-Bench（1815 条标注轨迹），用 Prefix Tree Acceptor 构造 47 个任务级过程参考，给出质量分、浪费信号、发散点等多维过程指标。</p><p><strong>Key insight:</strong> 论文最重要的启示是：Agent 评测必须从「outcome」转向「process」，否则会高估依赖随机性恢复的脆弱方案。对搜索/RAG Agent 的实践意义在于：线上 Agent 的失败模式往往是「答对了但路径荒诞」，单看最终回答指标会埋下风险。借鉴AgentLens 的 PTA 思路，可以为常见 Query 构造「合理检索路径模板」，把模板覆盖度、检索步数、回退次数等过程指标纳入离线评测与线上质量监控，从根本上暴露 Lucky Pass 隐患。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-15/agentic/report.html#dr-hf-2605-12925">2026-05-15 · Agentic (4.20)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">HuggingFace</span>
+          <a href="https://huggingface.co/papers/2605.12925" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>AgentLens 切入的问题非常具体且工程化：当前对 SWE-Agent 的评测被「最终补丁是否通过测试」这一二值信号所主导。论文用 OpenHands 框架在 SWE-bench Verified 上跑了 8 个模型后端（涵盖 GPT-4.1、GPT-4o、GPT-5.2/5.3-Codex、Claude Sonnet/Opus、Gemini 2.5），共采集 2614 条轨迹；其中 1136 条最终通过，但作者发现里面有 10.7%（122 条）属于 Lucky Pass：表现为「回归循环、盲目重试、跳过验证、时序错乱（实现先于探索、验证缺位）」等行为。Lucky Pass 的存在意味着：一个看起来 pass rate 更高的模型，可能其实是「靠反复试错碰运气」而非「按合理流程一次完成」。当 Agent 被部署到大仓库、贵 CI、动作不可逆的场景时，这种隐患可能造成线上事故。论文用这一观察论证：评测必须从「outcome」走向「process」。</p>
+<h2>2. 方法详解</h2>
+<p>AgentLens 的核心是把每个任务从「单一参考轨迹」升级为「一组等价正确路径」并基于这组路径打过程分。流程上分两步：</p>
+<p><strong>意图阶段标注 (Intent-stage labeling)</strong>：每个动作不再用工具名直接归类，而是按上下文敏感的规则映射到四个认知阶段——Exploration、Implementation、Verification、Orchestration。七名独立标注者达到 Fleiss&#x27; κ = 0.933、原始一致率 96.0%。</p>
+<p><strong>PTA (Prefix Tree Acceptor) 构造</strong>：对每个有至少 k ≥ 2 条通过轨迹的任务，将这些通过轨迹按动作序列合并为一个有向无环图，节点是状态（动作前缀的等价类），边是阶段化动作。这样一个任务就被表达为一族「正确行为的空间」，而不是单一示例。论文最终为 47 个任务构造了任务级 PTA。</p>
+<p><strong>四维过程评分</strong>：基于 PTA，对任一轨迹 τc 计算 4 个互补信号：</p>
+<ul>
+<li>Φstruct（结构对齐）：轨迹与 PTA 中存在的路径的匹配程度；</li>
+<li>Φcov（集合覆盖）：轨迹覆盖到了 PTA 中多少正确节点/动作模式；</li>
+<li>Φcoh（轨迹连贯性）：动作阶段序列是否符合「探索 → 实现 → 验证」的合理时序；</li>
+<li>Φtemp（时序剖面散度）：阶段时序剖面与 PTA 经验分布的散度。</li>
+</ul>
+<p>加权汇总公式为：f(τc, 𝒢) = 0.20·Φstruct + 0.15·Φcov + 0.30·(100·Φcoh) + 0.35·(100·Φtemp)。权重在论文中固定，目的是让 benchmark 保持确定性，而非按部署场景调参。整个评分流水线被打包成 SDK，无需 LLM 调用或外部 API，纯确定性运行。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>Lucky Pass 五类分类与量化</strong>：在通过样本中将「弱成功」进一步细分为 Minimal &amp; Unverified (15.6%)、Brute-Force Convergence (34.4%)、Incomplete Implementation (33.6%)、Excessive Exploration (4.1%)、Divergent-but-Valid (12.3%)。这一拆解让「通过但脆弱」的失败模式从抽象现象变成可统计、可监控的具体类别。</li>
+</ol>
+<ol>
+<li><strong>PTA 抽象本身</strong>：把传统 IL/RL 里的「专家轨迹 = 单条参考」升级为「一族正确轨迹的图结构表达」，既能容忍合理的方案差异，又能识别明显偏离正轨的行为。</li>
+</ol>
+<ol>
+<li><strong>意图阶段而非工具名标注</strong>：常见的 trace 分析只看调用哪个工具，论文用上下文规则把同一个工具调用分到不同阶段（例如读文件可能是探索、也可能是验证），更贴近人类研发流程。</li>
+</ol>
+<ol>
+<li><strong>过程分与正确性的实证耦合</strong>：通过分 vs. 不通过分布的 AUROC 0.766、Accuracy 72.0%、F1 0.723、KS 检验 p = 0.0017，证明过程分不仅在概念上合理，在实证上也能与功能正确性强相关而非冗余。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<p><strong>评估集与 Lucky Pass 占比</strong>：</p>
+<table><thead><tr><th>Tier</th><th>数量</th><th>占比</th></tr></thead><tbody><tr><td>Ideal</td><td>229</td><td>20.2%</td></tr><tr><td>Solid</td><td>785</td><td>69.1%</td></tr><tr><td>Lucky</td><td>122</td><td>10.7%</td></tr></tbody></table>
+<p>按模型分解，Lucky 占比差异巨大：Claude Opus 4.5 只有 0.5%，而 GPT-4.1 高达 23.2%，差异极显著（χ²(28) = 102.47，p &lt; 0.0001）。这说明 Lucky Pass 不是噪音，而是不同 Agent 风格的系统性差异。</p>
+<p><strong>排名重排</strong>：用过程分对 8 个模型重新排序后，所有模型的排名都与 pass rate 排名不一致：GPT-4o 从 pass rate 第 8 升到 quality rank 第 3；Opus 4.6 从第 3 降到第 6。说明「评测话语权」会因为评价维度的切换而显著变化。</p>
+<p><strong>失败可恢复性</strong>：在不通过轨迹中，54.9% 仍然「足够接近已知正确流程」可被结构性挽救——这是给训练/curriculum 设计的强信号：可优先从这部分轨迹中挖掘 near-miss 样本做监督或 RL 微调。</p>
+<p><strong>评分一致性</strong>：四维信号组合后与功能性通过的相关性 AUROC = 0.766，远超随机；KS 检验 p = 0.0017 显示通过/不通过分布显著可分。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确给出的局限包括：(a) 评测对象限定于 OpenHands 风格在 SWE-bench Verified 上的编码 Agent，泛化到其它 agent 框架/任务族需要 trace 适配层或 ATIF 转换；(b) 评分权重为固定值以保证 benchmark 确定性，未对不同部署场景做权重学习；(c) 过程分是补充诊断，而非功能正确性、安全审计或人工判定的替代品。除此之外，PTA 的构造依赖至少 2 条通过轨迹，对 long-tail 任务覆盖偏少；以及四个过程信号目前仍是手工设计的 heuristic，对新型 Agent 行为可能滞后。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索/推荐 / Agent RAG 团队，AgentLens 给出了几个非常具体的可落地方向：</p>
+<ol>
+<li><strong>评测必须看过程</strong>：线上多步检索/导购/客服 Agent 的「成功率」通常被嵌入到核心指标，但 Lucky Pass 的存在说明同样的成功率背后藏着不同的脆弱度。借鉴 PTA，可以为常见高频 query 构造「合理检索路径模板族」，把过程匹配、阶段覆盖、回退次数纳入离线评测和线上质量监控。</li>
+</ol>
+<ol>
+<li><strong>训练信号升级</strong>：过程分可直接作为 RL 的稠密奖励，缓解 RLVR/RLHF 在长时序任务中稀疏 outcome 反馈的痛点。同时 54.9% 的「可挽救失败」是低成本的训练数据来源——优先从中挑选 near-miss 样本做 DAgger / process-reward 训练，与同期发表的 Revisiting DAgger 思路天然契合。</li>
+</ol>
+<ol>
+<li><strong>模型选型反转</strong>：pass rate 高的模型未必是部署首选。论文显示，Opus 4.6 在严格过程标准下排名下降，而 GPT-4o 上升。对线上 Agent 选型，应结合过程分而非单看任务成功率，尤其在动作不可逆/代价高昂场景。</li>
+</ol>
+<ol>
+<li><strong>部署门槛友好</strong>：AgentLens SDK 不依赖 LLM 调用，纯确定性、可在 CI 持续运行；这意味着可以把它直接接入线上 trace 流水线做实时 Lucky Pass 检测告警，工程化成本低，与现有 OpenHands、Codex 等编码 Agent 生态可平滑集成。</li>
+</ol></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

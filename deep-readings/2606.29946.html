@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — POEM: Partial-Order Enhanced Real-Time Sequential Modeling for Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>POEM: Partial-Order Enhanced Real-Time Sequential Modeling for Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.40</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> POEM 针对实时推荐中用户兴趣漂移和上下文变化的问题，把多阶段排序链路里的预测 CTR、预测观看时长等上游分数转成动态偏序序列。方法包含按实时排序分动态分组采样、多目标分数融合、层次化样本学习、图挖掘 hard negative 与 margin pairwise loss，使序列模型不只依赖静态点击历史。论文直接面向工业推荐级联链路，适合短视频、信息流和社区内容推荐中的实时重排场景。</p><p><strong>Key insight:</strong> 对个性化系统的启示是：用户序列不必只按时间排序，线上排序系统已经产生了高价值的偏序监督信号。把 pCTR、观看时长等多目标分数压缩成统一表示，再用用户真实正反馈和系统偏好高排样本共同训练，可以减少训练目标与线上排序目标的错位。社区 UGC 场景可借鉴其“请求级重构用户兴趣”的做法，用实时候选分和近期行为共同驱动精排。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-06/personalization/report.html#dr-arxiv-2606-29946">2026-07-06 · Personalization (4.40)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2606.29946" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>POEM: Partial-Order Enhanced Real-Time Sequential Modeling for Recommendation 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>POEM 解决的是工业推荐中一个很具体的错位：序列推荐模型通常只看用户已经点击或观看过的静态时间序列，而真实的线上推荐系统每次请求都会由召回、粗排、精排产生大量实时排序信号，例如 pCTR、pCVR、观看时长预估和其他业务目标分。这些信号本质上表达了系统对用户当前偏好的“偏序判断”，但传统 SASRec、BERT4Rec、DIN/DIEN/MIMN 等模型只把新点击当作更新触发器。论文指出这会带来两个问题：第一，系统内部的多目标排序知识没有被召回模型使用；第二，用户兴趣在没有新点击时也会因候选池、上下文和排序策略变化而漂移，静态序列会滞后。作者把核心命题改成：用上一刷请求中 top-ranked candidate 的多目标分数来构造当前请求的输入序列，使用户向量每次请求都被重新评估。这个问题在短视频流和 UGC 信息流里尤其重要，因为内容池变化快、隐式反馈延迟明显，单靠历史点击序列会错过当前候选环境中的细粒度偏好。</p>
+<h2>2. 方法详解</h2>
+<p>POEM 的系统由双序列编码、动态偏序序列构造、多目标分数融合、层次化学习目标和实时 serving 闭环组成。训练和 serving 都使用两条序列：一条是用户最近行为构成的 historical interaction sequence，另一条是由上一刷请求的 top-ranked items 及其排序分构成的 dynamic partial-order sequence。对上一刷候选集合中的每个 item，系统拿到多个实时排序分，例如 CTR、CVR、watch time 等。由于不同目标量纲不同，作者没有直接平均，而是先对每个目标内部按分数排序，把名次转换成 inverse-rank utility，再按目标权重融合得到 fused score。候选按 fused score 排序后，被切成若干连续 group，并从每个 group 内随机采样，形成长度为 64 的偏序序列。这样既保留全局偏序，又避免完全确定排序导致的多样性不足。</p>
+<p>序列表示上，每个偏序 item 被编码成 quintuple，其中包含 item id 与多目标相关连续特征；连续特征经线性投影，item id 查 embedding 表，然后送入 Transformer encoder。历史行为序列也由独立 Transformer encoder 编码，两边都追加 special token 聚合序列级信息。两个 encoder 不共享参数，最终把两个 special token 输出 concat 后过两层 MLP，得到最终用户向量，用于 ANN 召回。训练目标是 hierarchical objective：正样本既包括真实用户反馈正样本，例如长播视频，也包括系统偏好的 top-ranked item；负样本除 in-batch negatives 外，还从离线 Swing item-item 图中围绕正样本动态挖 hard negatives。损失由带采样偏差校正的 cross-entropy 和 margin-based pairwise loss 组成，让模型同时对齐真实满意度和下游排序器偏好。</p>
+<p>Serving 设计强调因果性和低延迟。当前请求只读取用户历史序列和“上一刷”的 top-ranked item 及分数，这些信息存 Redis 等低延迟缓存；模型生成实时用户向量后做 ANN retrieval；当前请求经过下游排序后，再把结果和分数写回缓存，供下一刷使用。这个一请求周期的反馈闭环避免了使用未来信息，同时让用户向量在没有新点击时也会随候选池和排序信号变化而变化。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，POEM 把排序信号从“监督目标”提升为“输入构造的结构先验”。以往使用 ranker 信号常见于蒸馏、listwise loss 或采样偏差校正，仍然是在训练目标层面对齐；POEM 直接用 ranker 产生的偏序来重写召回阶段的用户序列，使召回向量具有 cascade awareness。</p>
+<p>第二，多目标融合采用 rank-weight 而非 raw score average，解决 CTR、CVR、watch time 等分数尺度不一致的问题。消融显示 Multi-Avg 的 HR@50 只有 0.5224，甚至低于 Single-WT 的 0.5820；Multi-Rank 达到 0.6661，说明排序名次归一化比简单均值更适合多目标系统信号。</p>
+<p>第三，层次化正样本同时纳入 user-feedback positive 和 system-preferred positive。只用用户反馈会受曝光和延迟影响，只用系统偏好又可能只模仿 ranker；Dual-Pos 在 HR@50、NDCG@50、online gain 和 delivery rate 上都优于单一路径。第四，图挖 hard negative 让模型在相似 item 间学习细粒度边界，而不是只靠容易的随机负样本。</p>
+<h2>4. 实验结果分析</h2>
+<p>论文使用快手大规模工业数据，覆盖 1.08 亿用户、4200 万 item、27 亿训练样本、1300 万 1-hour test 样本和 4.57 亿 1-day test 样本。所有模型用 TensorFlow，在相同软硬件环境训练；AdamW 初始学习率 0.001，cosine annealing，batch size 1024；POEM Transformer 为 4 层、hidden dimension 128、1 个 attention head，偏序序列长度 64。</p>
+<p>主表中，1-hour test 上 DSSM 的 HR@50/NDCG@50 为 0.4703/0.1778，SASRec 为 0.5267/0.2092，CAIN variant 为 0.5749/0.2371，POEM 达到 0.6661/0.3080；相对第二强 CAIN，HR@50 提升 15.9%，NDCG@50 提升 29.9%。在 1-day test 上，POEM HR@50/NDCG@50 为 0.4879/0.2100，相对 CAIN 的 0.4700/0.1923 提升 3.81% 和 9.19%。时间间隔分析显示，POEM 对实时性最敏感：[1h,2h) 的 HR@50 是 0.6661，对 CAIN 0.5749 提升 15.9%；到 [12h,24h) 时 POEM 0.4801、CAIN 0.4694，提升缩小到 2.29%。这证明上一刷偏序信号越新，价值越高。</p>
+<p>线上 A/B 是 7 天实验，实验组和对照组各 5% 流量，对照为生产模型 Kuaiformer。KS Single Page 上 Total App Usage Time +0.254%、Usage Time per User +0.249%、Video Watch Time +0.237%；KS Lite Page 上分别为 +0.158%、+0.213%、+0.335%，且论文称均有统计显著性。消融方面，Hist-Only HR@50/NDCG@50 为 0.5808/0.2531，RankSig-Only 为 0.6511/0.3238，完整 POEM 为 0.6661/0.3079。RankSig-Only 的 NDCG 更高，说明它更像下游 ranker；完整 POEM 的 HR 更高，说明融合历史行为能扩大召回覆盖。正样本消融中，Only-FB HR@50 0.5661、online gain +0.161%、delivery rate 1.052%；Only-Sys HR@50 0.5966、online gain +0.132%、delivery rate 1.472%；Dual-Pos HR@50 0.6661、online gain +0.254%、delivery rate 1.845%。案例分析中，即便连续两刷之间没有新点击，偏序输入序列 diff ratio 达 96.8%，最终召回结果差异 86.2%，显示模型确实能随系统当前理解变化。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文没有单独的 limitations section，但从正文可以归纳出几类明确限制。第一，POEM 强依赖上一刷排序结果和多目标分数缓存，如果用户请求间隔过长或排序策略快速变化，偏序信号会过时；时间间隔实验中增益从 15.9% 降到 2.29% 已经说明这种衰减。第二，方法依赖完整的工业级排序级联与 Redis 类低延迟缓存，对只有简单召回/排序链路的小团队部署成本较高。第三，论文公开了大量指标，但没有开放数据和实现，外部复现难度大。第四，偏序序列来自已有 ranker，可能继承 ranker 的偏差；虽然历史序列能缓和纯模仿问题，但如何避免把旧 ranker 的流量分配偏差固化到召回阶段，仍需要额外探索。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索/推荐从业者，POEM 最直接的启发是：召回模型可以消费排序链路已经产生的实时知识，而不必等用户产生下一次点击。UGC 社区搜索/推荐中，每次请求的候选集、query/session 上下文和内容新鲜度都在变，上一刷的 pCTR、完播、互动、质量分可以构造偏序序列，辅助生成更贴近当前会话的用户向量。落地时不必一次复刻 POEM 全部组件，可以先做三个小试验：一是缓存上一刷 top candidates 及多目标 rank；二是用 rank-normalized fusion 替代 raw score average；三是在召回训练中加入 system-preferred positive，看 delivery rate 和 downstream ranker 接受率是否提升。</p>
+<p>部署上需要关注延迟、缓存一致性和目标漂移。POEM 的 serving 只用上一刷结果，工程上合理，但要求每次请求都能稳定写入和读取上一刷候选及分数；如果用户跨设备、跨场景行为混杂，还要设计场景隔离和过期策略。对业务指标而言，论文的线上增益看似小于 0.3%，但在 4 亿 DAU 级平台上已经很有价值；对中小规模系统，应该同时观察 CTR/nDCG、时长、内容多样性和长尾曝光，避免只优化 ranker 一致性而牺牲探索。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

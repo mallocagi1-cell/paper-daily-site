@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — CoRe: A Continuously Reward-Finetuned LLM Query Rewriter for Multi-Stage Context-Aware Relevance in Web-Scale Video Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>CoRe: A Continuously Reward-Finetuned LLM Query Rewriter for Multi-Stage Context-Aware Relevance in Web-Scale Video Search</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.50</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对生产环境 LLM query 改写器的两难——奖励要反映改写如何被线上排序器消费，训练又必须便宜到能随数据漂移持续重训——提出 CoRe，已在某大型短视频搜索引擎按周重训上线超过 5 个月。奖励直接取自已部署的多模态相关性模型，并采用与生产融合公式一致的乘性比值形式，消除离线奖励代理与线上的偏差；半在线 Mixed Preference Optimization 用 DPO 式成对目标只对采样轨迹的 top-k/bottom-k 子集回传梯度，配合分阶段结构把训练器/推理服务的参数同步从每步降到每阶段，使百万级周训练量可承受。</p><p><strong>Key insight:</strong> 这是少见的把 RL query 改写做到长期线上、按周迭代的工业系统。关键设计是让奖励复用已部署的相关性模型并复刻线上融合代数，避免离线指标与线上脱节；再用 top-k/bottom-k 子集采样加分阶段同步把成本压到可持续重训。社区搜索做 LLM query 改写/扩展时，可直接参考以线上排序器为奖励源、半在线偏好优化为训练方式的做法来对齐训练目标与线上相关性。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-06-16/agentic/report.html#dr-arxiv-2606-14127">2026-06-16 · Agentic (4.50)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2606.14127" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>CoRe: 持续奖励微调的 LLM Query 改写器（TikTok / ByteDance）深度解读</h2>
+<h3>1. 问题与动机</h3>
+<p>生产环境的 LLM query 改写器有一个根本张力：训练奖励必须反映&quot;改写最终如何被线上 ranker 消费&quot;，但训练过程又要便宜到能随数据漂移做持续重训。短视频搜索的场景尤其特殊——用户往往在刷到某条内容后立即发起搜索，上下文很窄（仅最后浏览的文档 d_last），但有密集的后验反馈（展示结果上的点击/划走）。此前一代方法 SAR 用粗粒度的群体聚合信号改善排序，rewrite improvement rate（RIR）只有 47.4%，朴素 7B baseline 也仅 47.6%。CoRe 的出发点是：用一个与生产排序融合代数同构的奖励来训练 7B LLM 改写器，并把它做成可按周持续重训上线的系统，已在 TikTok 短视频搜索连续运行超过 5 个月（2025-12 至 2026-05）。</p>
+<h3>2. 方法详解</h3>
+<p><strong>奖励设计（核心）</strong>：奖励源直接取自已部署的多模态相关性模型（文本/多模态分量权重 0.33/0.67），采用乘性比值形式（Eq.2）以复刻线上 ranking-fusion 代数：硬负例比值 S_pos(q̃)^(1+γ)/S_neg(q̃) 与易负例比值 (S_pos/S_rand)^αR 相乘，γ=0.1、αR=0.05、clip 到 [0.05, 20]。文档池分三类：严格点击正例 D⁺（按 strictCTR 加权）、用户看到却未操作的硬负例 D⁻（按 noActionRate 加权）、5 篇随机语料作易负例 D^rand（不加权）。为防止&quot;啰嗦刷分&quot;的 reward hacking，加了长度-停止惩罚 min(L_target/L,1)^λL × β_cut^𝟙_cut（λL=0.05、β_cut=0.98、L_target=25、L_max=30 tokens），并按四个内容安全分剔除正例池前 2%。</p>
+<p><strong>半在线 Mixed Preference Optimization（MPO）</strong>：训练分阶段（初始 PP=4 个 phase），每个 phase 内：① 对每条训练实例从 π_{θ_{p-1}} 采样 N=30 条改写；② 在奖励下打分；③ 用拒绝采样抽偏好对——默认取 top-k vs bottom-k（k=2）并过滤 margin δ_pair，若原始 query 反超改写超过 δ_raw 则把原始 query 与 k² 条采样改写配对；④ 跑一个 MPO epoch；⑤ phase 边界做 cosine warm restart。效率关键在于：GRPO 要对全部 N 条 rollout 算策略梯度，而 DPO 式成对目标只回传 top-k/bottom-k 子集——这是训练提效的主因；分阶段结构把参数同步从 O(steps) 降到 O(phases)，便于把 reward 调用批到低峰期。</p>
+<p><strong>MPO 损失（Eq.4）</strong>三项：DPO 项 -log σ(β[r_θ(q̃⁺)-r_θ(q̃⁻)])、BCO 绝对校准项（防止 chosen/rejected 一起被压低）、SFT 正则（把策略锚在高奖励改写附近），权重 (w_p,w_q,w_g)=(1.0,0.1,0.1)、β=0.1。</p>
+<h3>3. 核心技术贡献</h3>
+<p>（1）<strong>生产对齐的奖励</strong>：把奖励直接锚在已部署的多模态相关性模型上，并用与线上融合公式同构的乘性比值形式，从根上缩小了&quot;离线代理奖励 vs 线上消费&quot;的仿真-生产差距——这是离线 reward proxy 一直补不上的缺口。（2）<strong>半在线 MPO 把成本压到可承受</strong>：DPO 式只回传 top-k/bottom-k 子集 + 分阶段参数同步，使每周百万级实例（单区约 2.4×10⁶）的重训在算力上可行；并用 MPO 而非纯 DPO 解决了 joint-suppression（受控对比中纯 DPO 在 10K 步把 chosen log-prob 从 -20 拉到 -100，MPO 只到 -10）。（3）<strong>自动晋级门控</strong>：3 个 reward-like 指标（r_main、S_pos、r_rand）必须全部严格变好，且 4 个稳定性指标（top10 熵、surprisal、平均 token 长、stop_rate）必须在界内，才允许晋级——把&quot;靠刷头部奖励却牺牲稳定性&quot;的候选挡在门外。</p>
+<h3>4. 实验结果分析</h3>
+<p><strong>离线（4 个前置 phase）</strong>：reward 从 SAR 的 1.055 提升到 Phase4 的 1.231，RIR 从 47.4% 提升到 58.9%，每个 phase 增量大致相等。<strong>线上 A/B</strong>：配置 A（Finerank 上线）在 strict CTR、long-click CTR、人工 side-by-side 偏好、平均相关性因子、画面负面安全等指标上均显著为正，且 change-query ratio（用户改写 query 的比例）显著下降；配置 B（Recall+Rawrank，叠加在 A 之上）进一步全面提升。<strong>消融</strong>：① 长度-停止惩罚把平均 token 长 27.56→22.89、stop_rate 0.82→0.38，同时 r_main 1.334→1.352、S_pos 0.374→0.394；② 损失形式（7B backbone）Vanilla reward 1.60/RIR 60.3%、DPO 1.89/63.9%、SFT-DPO 1.88/64.2%、MPO 1.93/66.4%（生产选择）——值得注意的是 SFT-then-DPO 反而不如纯 DPO，作者认为 SFT 预训练阶段过早约束了探索；③ γ=0 使平均相关性因子掉 0.71%，去掉安全过滤会使 safety-flag 率升 0.5%，纯文本相关性奖励会让 finerank 收益减半；④ 7B 反而优于 24B（reward 1.60 vs 1.40）。生产记录：20 次周度重训晋级 16 次（80% 接受率），其中 3 次仅被稳定性指标拦下、1 次因主奖励回退被拒。</p>
+<h3>5. 局限与未来方向</h3>
+<p>作者明确指出：（1）<strong>奖励目标会漂移</strong>——用已部署相关性模型当奖励源虽然缩小了仿真-生产差距，但也把奖励目标的控制权让了出去，线上模型升级会移动奖励值（3 月一次升级造成 Δr_main≈+0.07、Δr_rand≈-0.6 的单周扰动，下一周自愈）；（2）应引入 <strong>engaging-aware 项</strong>，把策略同时推向&quot;相关性模型给高分且用户确实互动&quot;的文档；（3）<strong>瓶颈与工作负载相关</strong>——本场景以逐步梯度计算为主、reward 调用调度为辅，若 reward 调用本身才是主成本，则两者主次互换；（4）稳定性指标需精心设计——附录中的 verbosity reward-hacking 完全是 reward-like 指标看不见的，必须靠结构化稳定性指标兜底。</p>
+<h3>6. 工业实践意义</h3>
+<p>对搜索/推荐从业者，CoRe 给出几条可直接借鉴的设计：（1）<strong>让奖励复刻线上消费方式</strong>——用与生产融合公式同构的乘性比值奖励、并直接取线上相关性模型为奖励源，比离线代理更贴近真实收益；（2）<strong>大规模偏好优化用 top-k/bottom-k 成对 + 分阶段同步</strong>控成本，是把 RLHF 类训练做到每周百万级可持续重训的务实路径；（3）<strong>晋级必须同时卡奖励和稳定性</strong>——本案例 80% 接受率里有 3 次仅靠稳定性指标拦截，说明只看头部指标会放过 reward hacking。部署上，CoRe 采用近线（near-line）架构：7B 改写器在专用推理实例上异步生成、结果进内存 KV cache（稳态命中 &gt;90%），线上排序查 cache、miss 则回退原始信号；且改写以<strong>加性并行路</strong>接入（Recall 召回并集、Rawrank 作为 L0/L1 融合因子相乘、Finerank 喂入全相关性因子），从不替换原有相关性机制——&quot;加了改写在极限情况下也不会比不加更差&quot;，把故障爆炸半径控制住。对社区 UGC 短文本搜索，这套&quot;生产对齐奖励 + 持续重训 + 稳定性门控 + 加性接入&quot;的范式，对 query 理解链路的长期迭代很有参考价值。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

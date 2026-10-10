@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — IDProxy: Cold-Start CTR Prediction for Ads and Recommendation at Xiaohongshu with Multimodal LLMs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>IDProxy: Cold-Start CTR Prediction for Ads and Recommendation at Xiaohongshu with Multimodal LLMs</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.40</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 利用多模态大语言模型为新物品生成代理 ID 嵌入，解决广告和推荐中冷启动 CTR 预估问题。</p><p><strong>Key insight:</strong> 通过将 MLLM 生成的内容特征显式对齐到已有 ID 嵌入空间，可以在无交互数据的情况下为新物品生成高质量的代理嵌入，实现端到端与排序模型联合优化。这为冷启动场景提供了一个即插即用的工业级解决方案。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-03-04/personalization/report.html#dr-arxiv-2603-01590">2026-03-04 · Personalization (4.40)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2603.01590" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><p>warn: CPU lacks AVX support, strange crashes may occur. Reinstall Bun or use *-baseline build:<br>  https://github.com/oven-sh/bun/releases/download/bun-v1.3.11/bun-darwin-x64-baseline.zip</p>
+<h1>IDProxy 深度解读：小红书基于多模态大模型的冷启动 CTR 预估</h1>
+<blockquote><p><strong>论文</strong>: IDProxy: Cold-Start CTR Prediction for Ads and Recommendation at Xiaohongshu with Multimodal LLMs<br><strong>作者</strong>: Yubin Zhang, Haiming Xu, Guillaume Salha-Galvan 等<br><strong>机构</strong>: 小红书<br><strong>发表</strong>: 2026年3月</p></blockquote>
+<hr>
+<h2>问题与动机</h2>
+<p>工业级推荐和广告系统中，CTR 预估模型严重依赖<strong>物品 ID 嵌入（Item ID Embedding）</strong>——这些嵌入从海量用户交互的协同信号中学得，编码了丰富的行为模式。然而，对于<strong>新物品（冷启动场景）</strong>，由于缺乏足够的交互数据，ID 嵌入要么不存在、要么质量极低，导致 CTR 预估严重退化。</p>
+<p>这个问题在小红书这样的平台上尤为突出：</p>
+<ul>
+<li>平台内容生态活跃，<strong>每天有大量新笔记和新广告上线</strong>，冷启动物品占比不可忽视</li>
+<li>冷启动预估不准直接影响新内容的分发效率、创作者激励、以及广告主的投放效果</li>
+<li>传统方法（如用内容特征做简单 MLP 映射）在工业场景下效果有限，因为工业级 ID 嵌入的分布往往是<strong>不规则的、非聚类的</strong>（受特征稀疏性和复杂交互模式影响），简单映射难以逾越这一异构空间鸿沟</li>
+</ul>
+<p>此外，现有方法还面临两个工程层面的关键痛点：（1）排序模型持续更新，但冷启动模块的对齐目标是静态的，导致<strong>长期优化不稳定</strong>；（2）未能复用排序模型已有的结构先验（如 ID embedding 的 slot 结构），限制了效果上限。</p>
+<h2>方法概述</h2>
+<p>IDProxy 提出了一个<strong>两阶段粗到精（Coarse-to-Fine）</strong>的对齐框架，利用多模态大语言模型（MLLM）从物品的图文内容中生成&quot;代理 ID 嵌入（Proxy Embedding）&quot;，替代真实 ID 嵌入注入排序模型。</p>
+<p><strong>整体思路</strong>：不是让内容特征去&quot;替代&quot; ID 嵌入，而是让 MLLM 学会在 ID 嵌入空间中&quot;模仿&quot;已有热门物品的 ID 嵌入分布，为新物品生成一个&quot;伪 ID&quot;。</p>
+<h3>Stage 1：基于 MLLM 的粗粒度代理生成</h3>
+<ol>
+<li><strong>ID 嵌入预处理</strong>：对已有 ID 嵌入做频率过滤（阈值 τ 过滤低频物品）+ L2 归一化</li>
+<li><strong>多模态编码</strong>：用 InternVL 作为 MLLM，输入物品的图片和文本，通过特殊 prompt 模板（含 <code>[EMB]</code> 压缩 token）提取隐层表示</li>
+<li><strong>注意力池化</strong>：对 token 级隐层状态做 attention-based aggregation，得到物品级表示 z_i</li>
+<li><strong>对齐训练</strong>：通过 MLP 投影 + L2 归一化后，用<strong>对比学习损失（PAL）</strong>将代理嵌入拉向对应的真实 ID 嵌入，同时推离其他物品</li>
+</ol>
+<h3>Stage 2：CTR 感知的精细调优</h3>
+<ol>
+<li><strong>层级表示提取</strong>：通过 K-means 聚类从 MLLM 的多层 transformer 中提取三组层级子组（浅层/中层/深层），捕获不同粒度的语义信息</li>
+<li><strong>多粒度适配器</strong>：将三组层级表示拼接后通过轻量 MLP，结合残差门控机制与 Stage 1 的粗粒度代理融合</li>
+<li><strong>端到端联合训练</strong>：冻结 MLLM 参数，仅训练适配器和门控参数，与 CTR 排序模型联合优化二元交叉熵损失</li>
+<li><strong>结构复用（Structure Reuse）</strong>：将代理嵌入直接注入排序模型的原子 ID slot，继承排序模型已训练好的结构先验</li>
+</ol>
+<h2>核心技术贡献</h2>
+<p><strong>1. MLLM 作为内容-ID 空间的桥梁</strong></p>
+<p>与传统方法用小型 MLP 做特征映射不同，IDProxy 利用 MLLM（InternVL）强大的多模态理解能力来弥合内容空间和 ID 空间的巨大鸿沟。MLLM 能从图文内容中提取远比传统特征工程更丰富的语义信号。</p>
+<p><strong>2. 粗到精的两阶段对齐策略</strong></p>
+<ul>
+<li>Stage 1 通过对比学习建立全局对齐，让代理嵌入在分布层面接近真实 ID 嵌入空间</li>
+<li>Stage 2 通过端到端 CTR 优化进一步精调，确保代理嵌入在下游任务层面也是最优的</li>
+</ul>
+<p>这种分阶段策略避免了直接端到端训练可能导致的不稳定性。</p>
+<p><strong>3. 多粒度层级表示 + 残差门控</strong></p>
+<p>从 MLLM 不同深度的层中提取信息（浅层捕获低级视觉/文本特征，深层捕获高级语义），通过门控机制自适应控制精细信号的贡献比例：</p>
+<pre><code>p_fine = W_c · p_coarse + r ⊙ p_raw_fine
+其中 r = σ(W_g [p_coarse, p_raw_fine])</code></pre>
+<p><strong>4. 结构复用（Structure Reuse）</strong></p>
+<p>这是本文效果提升最关键的设计：将代理嵌入直接插入排序模型中 ID 嵌入所在的 slot 位置，而非作为额外特征拼接。这样代理嵌入可以直接继承排序模型围绕 ID 嵌入构建的全部交叉结构和参数先验。消融实验显示，从 v4（无结构复用，+0.08% AUC）到 v5（有结构复用，+0.14% AUC），<strong>结构复用贡献了近 75% 的额外提升</strong>。</p>
+<p><strong>5. 与现有方法的关键区别</strong></p>
+<table><thead><tr><th>维度</th><th>现有方法</th><th>IDProxy</th></tr></thead><tbody><tr><td>特征提取器</td><td>小型 MLP / 预训练 CV/NLP 模型</td><td>多模态大语言模型 (InternVL)</td></tr><tr><td>对齐方式</td><td>回归损失 / 简单对比学习</td><td>两阶段粗到精对齐</td></tr><tr><td>与排序模型关系</td><td>独立训练，静态目标</td><td>端到端联合优化，动态跟随</td></tr><tr><td>嵌入使用方式</td><td>额外特征拼接</td><td>直接替换 ID slot（结构复用）</td></tr></tbody></table>
+<h2>实验结果分析</h2>
+<h3>离线实验</h3>
+<table><thead><tr><th>模型变体</th><th>ΔAUC</th></tr></thead><tbody><tr><td>生产基线</td><td>0</td></tr><tr><td>Notellm2-Like（现有方法复现）</td><td>+0.015%</td></tr><tr><td>静态 MLP 映射</td><td>+0.02%</td></tr><tr><td>Stage 1 Only（粗粒度对齐）</td><td>+0.05%</td></tr><tr><td>Stage 1+2（无结构复用）</td><td>+0.08%</td></tr><tr><td><strong>Full IDProxy</strong></td><td><strong>+0.14%</strong></td></tr></tbody></table>
+<p>在工业级 CTR 模型中，<strong>+0.14% AUC 是非常显著的提升</strong>（通常 +0.05% 即可上线）。</p>
+<h3>在线 A/B 实验</h3>
+<p><strong>AUC 提升（5天测试）</strong>：</p>
+<ul>
+<li>全量笔记：+0.12% ~ +0.15%（稳定提升）</li>
+<li><strong>新笔记（24h 内）</strong>：+0.23% ~ +0.32%（约为全量提升的 <strong>2 倍</strong>，直接验证了冷启动场景的针对性效果）</li>
+</ul>
+<p><strong>业务指标提升</strong>：</p>
+<table><thead><tr><th>场景</th><th>指标</th><th>提升</th></tr></thead><tbody><tr><td>内容推荐流</td><td>用户停留时长</td><td>+0.22%</td></tr><tr><td>内容推荐流</td><td>阅读量</td><td>+0.39%</td></tr><tr><td>内容推荐流</td><td>互动量</td><td>+0.50%</td></tr><tr><td>展示广告</td><td>曝光量</td><td>+1.28%</td></tr><tr><td>展示广告</td><td>广告主价值</td><td>+1.93%</td></tr><tr><td>展示广告</td><td>广告消耗</td><td>+1.73%</td></tr><tr><td>展示广告</td><td>CTR</td><td>+0.23%</td></tr></tbody></table>
+<p>广告场景的提升尤为突出——<strong>广告主价值提升近 2%</strong>，这在商业化场景中是极具说服力的数字。</p>
+<h3>消融实验关键发现</h3>
+<ul>
+<li>MLLM 相比传统多模态编码器有明显优势（v1/v2 vs v3）</li>
+<li>端到端 CTR 优化相比纯对比学习对齐有显著增益（v3 vs v4）</li>
+<li>结构复用是效果飞跃的关键（v4 vs v5，从 +0.08% 到 +0.14%）</li>
+</ul>
+<h2>局限与未来方向</h2>
+<h3>当前局限</h3>
+<ol>
+<li><strong>MLLM 推理成本</strong>：虽然论文提到适配器是&quot;轻量级&quot;的，但 InternVL 级别的 MLLM 在线推理成本仍然不低。当前方案是离线生成代理嵌入后写入存储，这引入了额外的延迟（新物品上线到代理嵌入生效之间存在时间差）</li>
+</ol>
+<ol>
+<li><strong>对 MLLM 质量的依赖</strong>：代理嵌入的质量上限受限于 MLLM 的内容理解能力，对于 MLLM 难以理解的物品类型（如高度专业化内容），效果可能打折扣</li>
+</ol>
+<ol>
+<li><strong>静态代理 vs 动态演化</strong>：代理嵌入一旦生成就是静态的，而真实 ID 嵌入会随用户交互持续演化。论文未讨论何时从代理嵌入切换到真实 ID 嵌入的策略</li>
+</ol>
+<ol>
+<li><strong>冷启动定义的边界</strong>：论文聚焦&quot;新物品&quot;冷启动，未涉及&quot;新用户&quot;冷启动，也未讨论对长尾物品（有少量交互但不足以学好 ID 嵌入）的效果</li>
+</ol>
+<h3>未来方向</h3>
+<ul>
+<li><strong>代理嵌入的渐进式退出策略</strong>：设计从代理嵌入到真实 ID 嵌入的平滑过渡机制</li>
+<li><strong>轻量化 MLLM 蒸馏</strong>：将大模型的对齐能力蒸馏到更轻量的模型中，降低部署成本</li>
+<li><strong>用户侧冷启动</strong>：将类似思路推广到用户冷启动场景</li>
+<li><strong>跨域迁移</strong>：利用 MLLM 的通用理解能力，在不同业务场景间迁移代理嵌入生成能力</li>
+</ul>
+<h2>工业实践意义</h2>
+<h3>1. 冷启动问题的新范式</h3>
+<p>IDProxy 为工业界提供了一个清晰的冷启动解决范式：<strong>不要试图绕过 ID 嵌入，而是用强大的内容理解模型去&quot;伪造&quot;高质量的 ID 嵌入</strong>。这个思路可以推广到任何依赖 ID 嵌入的系统。</p>
+<h3>2. &quot;即插即用&quot;的工程友好性</h3>
+<p><strong>结构复用</strong>的设计使得 IDProxy 不需要修改现有排序模型的架构——代理嵌入直接替换 ID slot，下游所有交叉结构和网络参数原封不动。这极大降低了工业系统的集成成本，是该方案能在小红书大规模落地的关键。</p>
+<h3>3. LLM 在推荐系统中的务实落地路径</h3>
+<p>相比学术界流行的&quot;LLM 做推荐&quot;方案（让 LLM 直接做排序/生成推荐），IDProxy 展示了一条<strong>更务实的路径</strong>：用 LLM 生成中间表示（嵌入），注入到传统推荐模型中。这避免了 LLM 在线推理的延迟和成本问题，同时充分利用了 LLM 的理解能力。</p>
+<h3>4. 广告场景的价值验证</h3>
+<p>广告主价值 +1.93% 的提升表明，冷启动优化不仅改善用户体验，还直接提升商业化效率。对于新广告（新广告主的创意素材天然是冷启动的），更准确的 CTR 预估意味着更合理的竞价和更好的 ROI，这对广告平台的供给侧生态有长期正向影响。</p>
+<h3>5. 对搜索系统的启示</h3>
+<p>虽然论文聚焦推荐和广告，但同样的思路适用于搜索场景中的新文档冷启动（如新商品上架后的搜索排序）。搜索系统中的 document ID 嵌入同样面临冷启动问题，用 MLLM 从文档内容生成代理嵌入是一个值得尝试的方向。</p>
+<h3>6. 两阶段训练策略的通用性</h3>
+<p>粗粒度对比对齐 → 精细端到端联合优化的两阶段策略，在任何涉及<strong>异构空间对齐</strong>的场景中都有参考价值，例如：多模态检索中的文本-图像对齐、跨语言检索中的语义空间对齐等。</p>
+<hr>
+<p><strong>总结</strong>：IDProxy 是一篇典型的<strong>工业界高质量系统论文</strong>，核心贡献不在于提出了某个全新的学术概念，而在于提供了一套<strong>完整的、经过大规模线上验证的冷启动解决方案</strong>。其&quot;MLLM 生成代理嵌入 + 结构复用 + 端到端联合优化&quot;的技术路线，为搜推广领域的冷启动问题树立了新的工业标杆。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Towards a Densing Law for User Representation Learning at Billion-Scale Capacity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Towards a Densing Law for User Representation Learning at Billion-Scale Capacity</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 5 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 论文在十亿级支付宝用户行为数据上研究用户表示学习的扩展瓶颈：原始行为文本继续扩展时收益递减，而 token 化容量如何随数据规模增长缺乏定量规律。作者提出 User Behavioral Densing Law，发现最小充分 token 化容量与输入 token 数的对数近似线性，并据此设计自适应变长 token 化方法 ALGN；实验覆盖多种数据源、token 化方式和下游任务，ALGN 优于既有基线。</p><p><strong>Key insight:</strong> 工业用户建模的关键不只是堆长序列和大模型，而是让 token 化容量与行为数据规模匹配。对社区 UGC 推荐，可先按用户活跃度和行为来源估计最小充分容量，再用变长历史压缩替代一刀切的截断；这能把表示能力扩展与线上内存、序列长度预算绑定起来。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-26/personalization/report.html#dr-arxiv-oai-arXiv-org-2608-23392">2026-08-26 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2608.23392" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>1. 问题与动机</h1>
+<p>这篇技术报告研究的是工业用户表示学习在“越多数据、越大模型、越长历史”路线上的扩展墙。用户 embedding 已经同时服务于推荐、CTR/CVR 预估、用户召回、广告定向和风控，但行为日志具有强烈的重复性：日常习惯不断重复，新增的原始事件数量增长很快，真正新增的任务相关信息增长却很慢。论文在支付宝 PayBill 生产数据上把问题明确化为 raw behavioral scaling wall：继续扩大用户数、观察窗口或 encoder 参数，训练损失还会下降，下游表示质量却趋于平台。</p>
+<p>正文给出几个关键量化观察。用户规模超过约 0.03B、历史窗口超过 60 天后，分类 probing 的 AUC、KS 和 Accuracy 都出现明显变平；在固定数据量下，encoder 从 0.2B 增加到 0.4B 参数，主要是在拟合冗余行为细节，下游准确率几乎不变。沿时间维度，约 64 天后 tokenized 表示开始超过 raw baseline；沿用户规模维度，约 1.2×10^7 用户之后 tokenized 表示持续领先。作者据此把瓶颈从“模型还不够大”改写为“每个输入 token 携带的有效信息密度不够高”。</p>
+<p>传统做法通常把更长的原始序列直接送入更大的 Transformer，忽略了两类成本：序列长度让训练和 serving 线性变贵，重复行为占据 context 又会挤掉真正有区分度的事件。已有 tokenization 工作往往只回答“如何压缩”，没有回答“当用户规模、窗口和来源变化时，应该配置多大的码本和多少个 residual stage”。论文因此提出 Behavioral Densing Law，用性能—成本 Pareto 轨迹估计 minimal sufficient tokenization capacity，再提出 ALGN 将全局容量选择落到样本级的变长分配。</p>
+<h1>2. 方法详解</h1>
+<p>论文先定义三个可扩展维度：用户规模 N、行为时间窗口 D 和模型容量 M。下游任务不是直接看语言生成，而是用冻结的用户 encoder 做三种实用评估。第一是 classification：冻结用户向量后只训练线性分类器，报告 AUC、KS 和 Accuracy。第二是 text-based retrieval：用自然语言 query 的 embedding 与用户 embedding 做 cosine 相似度，判断用户是否属于目标人群，报告 AUC、Precision、Recall。第三是 U2U retrieval：给少量 seed users，通过 prompt-tuning 学习上下文，再检索兴趣相近的用户，同样报告排序与覆盖指标。这让 tokenization 的价值直接对应到推荐、广告和用户定向的下游工作流。</p>
+<p>在表示侧，作者使用 RQ-VAE、VQ-VAE 和 SARQ 把行为表示压成离散 semantic IDs。RQ-VAE 通过多个 residual quantization stage 复用 codebook 组合，理论表示空间为 K^M；VQ-VAE 容易为相似表示保存重复的完整 SID，SARQ 则试图减少激活空间中的冗余。论文不把“容量”简单等同于 token 个数，而是把 codebook size K、residual stage 数 M、embedding 维度 d 和输出长度 H 组合成配置 κ，再测量在给定数据规模下获得目标下游效用所需的最小容量。</p>
+<p>Behavioral Densing Law 被写成一个带成本权重的 Pareto 问题。令 φ 是表示变换，U(φ,s) 是数据规模状态 s 下的下游效用，C(φ) 是表示成本，lambda 控制对成本的敏感度，则最优表示为 φ<em>(lambda,s)=argmax[U(φ,s)-lambda C(φ)]。作者还定义行为密度 rho</em>(s)=C_raw_hat(s)/C*(s)，其中 C_raw_hat 是 raw sequence 达到同等效用的有效成本。这个定义强调 densing 不是追求最大压缩率，也不是盲目增大码本，而是在当前用户量、窗口和应用目标下找到最小充分容量。</p>
+<p>在不同来源、不同任务和不同 tokenizer 的 Pareto 前沿上，作者观察到 ln(C*) 与 ln(s) 近似线性，因此可以在 tokenizer 方法校准后，用轻量统计估计新数据规模所需容量。斜率受 tokenizer 的表示空间冗余影响：VQ-VAE 的斜率较高，RQ-VAE 利用 compositional reuse 降低冗余，SARQ 的斜率最低；同一 tokenizer 下，不同数据源的斜率与 intra-source uniqueness 的平方近似相关，三个来源的斜率比约为 1:1.15:0.92，而唯一性比约为 1:1.07:0.96，误差在 10^-2 数量级。</p>
+<p>ALGN 是第二层贡献，把“数据规模级别的容量曲线”转成“单个行为片段的变长容量”。固定长度 RQ-VAE 给每个片段相同的 residual 深度，但用户历史中高熵、含歧义的行为需要更多 code，规律性强的重复行为不应继续编码。ALGN 在每个 quantization level l 计算残差范数 R_l=||r_(l-1)-e_(l,m)||_2，反映当前 code 仍未解释的内容；再计算累计 code uncertainty E_l=-sum_k log p(m_k|m_&lt;k)，反映当前路径的歧义程度。续接概率为 g_l=sigmoid(sp(w_R)R_l+sp(w_E)E_l-sp(w_C)c_l+b)，其中 Softplus 保证权重为正，c_l 是新增 code 的边际成本。第一次 g_l 小于阈值 theta 时停止，得到 L_act；如果一直不低于阈值，则使用最大长度 L_max。</p>
+<p>ALGN 的 tokenizer 训练损失是激活层上的重构损失加长度分布正则：L=L_rec^act+lambda KL(P_len||Q)。作者使用几何先验 Q(l)=(1-gamma)^(l-1)gamma，并在对比实验中取 gamma=0.3。分布级先验比逐样本硬惩罚长度更灵活，既避免所有样本都激活全部 residual level，也允许真实用户行为呈现长尾长度分布。</p>
+<h1>3. 核心技术贡献</h1>
+<p>第一，论文把“扩展不再有效”从经验现象变成可测量的 raw scaling wall。它用 matched token/compute budget 对照 raw 与 tokenized 输入，证明 tokenization 在 raw 数据进入饱和区后才会产生越来越大的正收益，而不是把短输入天然当成优势。</p>
+<p>第二，Densing Law 给出了容量配置轨迹。既有工作通常固定 codebook 或凭经验选 token 长度，本报告用 Pareto 前沿和 log-scale 近似关系把用户规模、窗口、来源唯一性与最小充分容量关联起来，允许工程团队先校准 tokenizer，再为增长后的用户池估算配置，而非等到线上内存或训练成本爆炸后被动截断。</p>
+<p>第三，ALGN 同时看 residual 信息、semantic uncertainty 和新增 code 成本。只看剩余范数会遗漏“重构误差小但语义不确定”的行为，只看熵又会把重复但高频的路径误判为重要；三个信号通过带正约束的 sigmoid gate 组合，形成一个近似边际效用大于边际成本才继续编码的规则。</p>
+<p>第四，方法不局限于单个 CTR 任务。作者在 classification、文本用户召回和 U2U retrieval 上观察到相同的容量趋势，并让离散 token 可以复用于用户定向、CTR 估计和推荐召回，强调 tokenizer 的一次训练成本可以在多个应用之间摊销。</p>
+<h1>4. 实验结果分析</h1>
+<p>规模分析首先显示，扩大 raw 行为只在数据尚未饱和时有价值。0.03B 用户和 60 天附近出现明显平台；参数从 0.2B 继续增大也不能补救重复行为造成的信息瓶颈。时间窗口约 64 天以后 tokenized 曲线开始领先，用户数约 1.2×10^7 以后 tokenized 曲线持续领先，这给“何时值得做行为压缩”提供了具体触发点。</p>
+<p>容量规律在 Paybill、SPM 和 Miniprogram 三种行为来源上验证，同时比较 RQ-VAE、VQ-VAE 和 SARQ，并覆盖三类下游任务。对相同 180 天窗口、0.1B 用户设置，作者报告分类 probing 的比较如下：</p>
+<table><thead><tr><th>方法</th><th>SID 容量使用率（越低越好）</th><th>AUC（%）</th><th>KS（%）</th><th>Accuracy（%）</th></tr></thead><tbody><tr><td>RQ-VAE</td><td>100.00</td><td>74.56</td><td>39.02</td><td>82.44</td></tr><tr><td>VQ-VAE</td><td>316.23</td><td>73.45</td><td>37.95</td><td>82.47</td></tr><tr><td>RQ-Kmeans</td><td>100.00</td><td>73.77</td><td>38.34</td><td>82.85</td></tr><tr><td>SARQ</td><td>76.24</td><td>75.36</td><td>41.28</td><td>83.16</td></tr><tr><td>ALGN</td><td>63.47</td><td>76.43</td><td>43.31</td><td>83.52</td></tr></tbody></table>
+<p>ALGN 相对最强固定/自适应基线 SARQ，AUC、KS、Accuracy 分别提升 1.07、2.03、0.36 个百分点，同时容量再节省 13.23%。相对 RQ-VAE，ALGN 在容量使用从 100.00% 降到 63.47% 的情况下，AUC 从 74.56 提升到 76.43，KS 从 39.02 提升到 43.31，Accuracy 从 82.44 提升到 83.52。VQ-VAE 的容量为 316.23%，但 AUC 只有 73.45，说明“占更多 code 空间”不是有效信息密度的替代物。</p>
+<p>消融实验说明 ALGN 的两个信息信号和长度先验各自有贡献。启发式变长 baseline 容量 86.91%、AUC 74.43、KS 38.10、Accuracy 82.39；去掉 uncertainty signal 后容量 77.83%、AUC 75.11、KS 40.21、Accuracy 82.77；去掉 residual signal 后容量 76.24%、AUC 75.36、KS 41.28、Accuracy 83.16；完全去掉正则时容量 73.42%、AUC 76.01、KS 42.21、Accuracy 83.35。加入逐样本 SID length regularization 虽把容量降至 63.16%，但低于 ALGN 的 AUC 76.43；随机分布正则也略逊于几何先验。作者因此认为要同时保留“剩余信息量、路径不确定性、边际成本”三个维度。</p>
+<p>值得注意的是，Densing Law 的主要结果是趋势规律而非单一 SOTA 数字。不同 tokenizer 的斜率不同，来源内唯一性也会改变斜率；这意味着不能把一个业务的容量公式直接复制到另一个业务。论文还承认目前公共 benchmark 的覆盖仍在补充，已有验证以单平台 PayBill 系列数据为主。</p>
+<h1>5. 局限与未来方向</h1>
+<p>作者明确写出当前研究聚焦单一数据模态，Densing Law 是否能泛化到视频消费等其它行为模态仍待验证；他们也在继续用公共 benchmark 检查单平台结论的稳健性。单平台数据带来的用户分布、事件语义和日志质量偏差可能影响 log-scale 斜率。固定 tokenizer 的 codebook 冗余和 ALGN 的停止阈值仍需要新来源重新校准，论文没有给出跨平台无需调参的通用公式。未来方向包括多模态 density estimation、自适应 tokenization 的理论基础，以及把信息密度作为模型容量和数据量之外的一等设计目标。</p>
+<h1>6. 工业实践意义</h1>
+<p>对社区 UGC 搜索与推荐，这篇报告最具体的动作不是立刻训练一个更大的 user encoder，而是先画出自己的 scaling surface。可以按用户规模 N、历史窗口 D、行为来源和 encoder M 做小规模网格实验，观察 nDCG/CTR、用户召回 AUC/Recall 和训练/serving 成本何时进入平台；如果出现“0.2B 到 0.4B 只降 loss、不升下游”的现象，就应转向信息密度，而不是继续加参数。</p>
+<p>落地路径可以分三步。第一，用社区帖子点击、停留、收藏、关注、搜索 query 等事件训练 RQ-VAE，并按时间和用户活跃度切分，防止把高频重复曝光当成新信息。第二，用 fixed-length RQ-VAE 与 ALGN 做 matched-token、matched-compute 对比，至少报告 CTR/GAUC、短文本召回 Recall、用户定向 Precision/Recall、平均 token 数和 P99 user-vector 读取成本。第三，按来源唯一性和行为熵重新拟合容量曲线，让冷启动用户、重度用户和兴趣快速变化用户使用不同的最大长度。</p>
+<p>ALGN 的 residual norm、uncertainty 和 code cost 很适合映射到 UGC 场景：高熵的新话题、跨圈层行为和短期兴趣得到更多 token，重复浏览同一主题只保留较短 code。这样可以把长期稳定画像和短期动态画像放在同一用户表示接口里。由于论文显示 tokenized 表示可服务 text-based retrieval、U2U retrieval、CTR 与风险分类，工程上可以共享一套用户 tokenizer，摊薄离线训练与索引成本。</p>
+<p>需要避免两种误用。第一，不能把 Densing Law 当作“所有用户都压成固定长度”的理由；论文的核心恰恰是 minimal sufficient capacity 和实例级变长分配。第二，不能把容量节省当唯一目标，必须在相同 token/compute 预算下验证相关性、覆盖和长期指标。对社区平台还应保留内容时效、作者多样性和安全事件等 guardrail，因为一个看似信息密度高的历史表示可能放大兴趣茧房。最终上线前要做跨天、跨用户活跃度和新内容分层 A/B，检查 token 压缩是否牺牲探索和长尾内容发现。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

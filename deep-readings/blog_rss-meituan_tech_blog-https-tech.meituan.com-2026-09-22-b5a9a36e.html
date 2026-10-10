@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — MTFM：美团统一推荐基座大模型在外卖多业务场景的落地实践</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>MTFM：美团统一推荐基座大模型在外卖多业务场景的落地实践</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.50</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 美团面向外卖多业务精排，提出统一推荐基座 MTFM，以异构 Tokenizer、动态掩码和混合注意力共享用户行为建模，保留业务独立任务塔。官方实践报告显示，多业务订单量提升 2.06%–6.68%，推理成本下降 24%；Target 与 Full Attention 按 3:1 堆叠时，样本吞吐达到全注意力架构的 2.9 倍。</p><p><strong>Key insight:</strong> 社区帖子、问答和评论可共用用户长短期行为编码，同时保留各场景 CTR 任务塔和独立特征入口。最值得借鉴的是用户粒度训练与曝光时间掩码：前者复用长序列计算，后者防止未来点击泄漏；上线前需单独验证社区搜索 nDCG，不能把外卖订单增幅直接外推。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-09-25/personalization/report.html#dr-blog_rss-meituan_tech_blog-https-tech-meituan-com-2026-09-22-meituan-foundation-model-for-recommendation-html">2026-09-25 · Personalization (4.50)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">blog_rss</span>
+          <a href="https://tech.meituan.com/2026/09/22/Meituan-Foundation-Model-for-Recommendation.html" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>美团这项工作的直接问题是外卖多个业务各自维护精排模型：用户相同，行为却被分散存储和训练；业务特征结构不同，强行套一张统一特征表又容易损失信息。官方文章明确把挑战分为模型规模扩展、场景接入和计算效率三个方面。其任务仍是 CTR、CTCVR 等目标预测，因此本日报归入个性化排序。判断依据是最终任务与模型接口，而不是文中使用了“生成式”或“基座模型”的名称。</p>
+<p>此前 MTGR 已在单场景验证大模型的收益，但多个业务独立扩容会重复消耗长序列计算。MTFM 的目标是让用户行为形成公共表示，再由各业务保留目标特征与预测头。它继承 HSTU 类骨干、MTGR 的交叉特征和掩码设计，也吸收多域推荐中共享参数与业务参数分离的思想。相较只把知识蒸馏给不同专家模型，该方案把多业务学习放进一张训练图，直接检验统一模型是否能够服务不同流量规模的业务。</p>
+<p>这里也存在可量化的工程动机：模型单样本计算达到 192 GFLOPs，传统逐曝光计算很难承受；而多业务训练初期的随机实验 AUC 波动超过 0.4 个百分点，足以掩盖不少常规排序优化。文章的价值在于同时交代模型表示、样本组织和训练稳定性，便于判断线上收益来自哪些配套条件。</p>
+<h2>2. 方法详解</h2>
+<p>输入按三类 token 组织。H 表示全业务共享的历史商家、商品行为；R 表示按时间排列的近实时点击和加购等行为；T 表示待预估目标，包含用户上下文、物品和交叉特征。H、R 由相应序列的独立 tokenizer 编码；T 使用业务独立 tokenizer。编码后维度统一，送入共享骨干，因此业务不需要在原始特征字段上逐项对齐。这不代表上游数据不需要治理：共享行为的实体、时间戳和语义仍必须可靠。</p>
+<p>动态掩码约束可见关系。历史 token 作为公共上下文，实时序列内部遵守因果次序，每个曝光目标只能读取曝光发生之前的实时行为；目标之间不能互相感知。用户级样本把一天多个曝光合在一起后，这个约束尤其关键，否则后一次点击会泄漏给前一次曝光标签。落地时应把掩码视为样本协议的一部分，与离线特征回放一起检查。</p>
+<p>V1 用 16 层混合注意力，分成 4 个 block，每块包括 1 层 Full Attention 与 3 层 Target Attention。前者更新全局依赖，后者主要让目标从用户序列读取信息，并结合 GQA 控制开销。V2 进一步缓解目标特征压缩：经 AutoSplit 把一个目标映射成 4 个 token，各自使用独立 Q 投影和 SwiGLU FFN；目标侧与自注意力侧参数分开。目标 token 再通过 RankMixer 式混合交换信息，以免面对同一组用户 KV 时学成相似向量。最终的业务目标表示经过 MMoE 和独立任务塔完成预测。</p>
+<p>训练以用户为单位合并当天跨业务曝光，多目标共享长序列计算；推理则以当前业务请求聚合候选，只导出共享基座和当前业务所需塔。损失从“每个业务先平均，再相加”改成全 batch 的有效曝光统一归一化，避免极少样本业务的梯度被过度放大。没有对应业务样本时，对相关参数跳过零梯度下的权重衰减，并采用 2 步梯度累积。部分 HSTU 投影矩阵改用 Muon，其他参数不能据此推断全部切换；文章强调只覆盖 UQKV 与输出投影的组合更合适。</p>
+<p>初始化按网络深度缩放残差输出投影的标准差，以限制残差逐层累积。公开文章给出了结构层数、token 数、相对吞吐与若干优化器细节，但没有完整公开训练样本总量、GPU 型号数量、学习率、绝对 batch size 或训练步数；因此这些参数不能从行业惯例补写成作者配置。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，异构输入与共享计算分开设计。业务特征可以保持独立编码，而跨业务行为进入统一序列；这把“特征模板相同”从多场景联合训练的前提中移除。较小业务能够获得其他业务的行为信号，文中报告小流量业务离线指标提高 0.60–0.93 个百分点，中流量业务提高 0.25 个百分点，大流量业务基本持平且略有正向变化。该分层结果比单一平均增益更能说明共享信息的价值。</p>
+<p>第二，把计算预算偏向目标相关交互。Full Attention 负责必要的全序列整合，Target Attention 承担大部分层数；V2 又增加目标表示容量。这不是只增加模型参数，而是在特征密度不对称时重新分配 token 和计算。3:1 配比相对全注意力结构达到 2.9 倍样本吞吐，batch size 可提高 1.7 倍，但两项数字不能脱离共同的显存节省条件独立相乘。</p>
+<p>第三，联合训练对小业务的影响被纳入优化器实现。统一损失归一化降低稀疏业务噪声；没有有效梯度时停止对应参数衰减，防止业务专属参数在缺席 batch 中持续退化。这些改动可迁移到社区搜索的帖子、问答、评论多任务，即使不采用完整 Transformer 骨干也值得单独验证。</p>
+<p>第四，算子优化围绕真实矩阵形状。作者发现针对大矩阵的 Muon 优化在这里反而被启动成本抵消，改用同形状小矩阵批处理后，NS 阶段加速 241%，端到端训练吞吐增加 19%。这说明系统收益需要用业务模型中的形状分布验证，不能直接复制其他大模型的加速结论。</p>
+<h2>4. 实验结果分析</h2>
+<p>以下整理的是官方技术文章给出的比较口径，不把不同优化阶段叠加成一个新的总收益。</p>
+<table><thead><tr><th>比较对象或阶段</th><th>指标</th><th>原文报告</th></tr></thead><tbody><tr><td>MTFM 对原有业务基线</td><td>多业务订单量</td><td>相对提升 2.06%–6.68%</td></tr><tr><td>整体部署</td><td>推理成本</td><td>降低 24%</td></tr><tr><td>3:1 混合注意力对全注意力</td><td>样本吞吐</td><td>2.9 倍</td></tr><tr><td>初始化与优化器改进</td><td>随机实验 train AUC 波动</td><td>0.4pp 降至 0.1pp</td></tr><tr><td>动态掩码构造</td><td>耗时</td><td>22ms 降至 1ms</td></tr><tr><td>推理查表合并</td><td>显存占用</td><td>22GB 降至 5.9GB</td></tr><tr><td>特征精简</td><td>训练吞吐</td><td>提升 6%，GAUC 无损</td></tr></tbody></table>
+<p>随机稳定性结果来自 5–10 组重复实验。波动变小使后续模型对比更可信，但它不是平均 AUC 提高 0.3 个百分点。类似地，掩码生成的 22ms 到 1ms 只属于该算子阶段，不能当作整个在线请求的时延变化。</p>
+<p>跨业务迁移对小流量业务更明显，符合共享数据补足稀疏信号的机制；大业务接近持平也提醒读者统一架构的收益可能主要来自整体成本和小业务增长。作者还在 token 维度 192–768、序列长度 400–2000 的范围观察到扩展趋势。这支持在已测范围内增加容量，但文章没有给出可直接外推到任意参数规模的普适指数。</p>
+<p>Target Scale-Up 与混合注意力的讨论分别对应模型能力和效率，不应把 V2 的离线结论全部写成已经全量的线上收益。文章明确描述全量落地的是 V1。线上订单提升也包含样本、特征、训练和系统协同的综合效果，无法据此计算单独替换某个 tokenizer 对社区 CTR 的因果贡献。</p>
+<p>有意义的负面经验是 flash-muon 风格优化对偏小矩阵可能变慢，以及深层联合训练可能产生局部梯度衰减。二者都说明“规模更大”本身不能保证收益，必须同时监控随机种子方差、梯度动态和设备利用率。</p>
+<h2>5. 局限与未来方向</h2>
+<p>文章是工业技术总结，没有单独的学术局限章节。作者明确提出的后续方向包括算法与基础设施协同扩大参数规模、继续验证参数和序列长度的扩展规律，以及通过联合训练、蒸馏构建 MTFM-Lite，向更多场景推广。这些属于计划，不能写成已完成的实验。</p>
+<p>公开证据的边界包括未披露完整数据集、端到端复现配置及 A/B 样本量和置信区间；部分分业务结果以图展示，本解读没有猜测图中未读取的具体数值。订单是外卖业务指标，其变化不等于社区搜索相关性提升。以上是本次阅读对披露范围的判断，区别于作者正式声称的局限。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区 UGC 搜索，较可行的迁移起点是共享用户近期点击和长期阅读序列，帖子、问答、评论各自保留目标编码器与预测头。先验证联合建模是否改善小场景 CTR 和分场景 nDCG，再决定是否扩大共享骨干，避免把特征统一工程一次性扩展到全业务。</p>
+<p>实验需要按曝光时间构造因果掩码，并按用户分组核查同一天多个样本之间的信息可见性。线上预算评估同时记录候选数、历史长度、特征处理耗时、显存和请求分位延迟；作者的相对吞吐数字不能代替本地服务容量测算。复用用户侧计算对一个请求包含较多候选时尤其有价值，但如果请求候选很少，共享计算的摊销收益也会改变。</p>
+<p>可以分三步验证：先改样本组织与时间掩码，保持现有评分头；再测试混合注意力和目标侧多 token；最后针对已确认的瓶颈开发定制算子。多业务低流量任务应额外监控空梯度、权重衰减和损失归一化。成功标准同时包含业务增益、训练方差和成本，而不只是更大的模型参数量。</p>
+<p>来源：<a href="https://tech.meituan.com/2026/09/22/Meituan-Foundation-Model-for-Recommendation.html" target="_blank" rel="noopener">美团官方技术文章</a>。全文已保存于本次 evidence 目录；本解读基于官方文章正文，未把关联 KDD 论文未读取的内容作为证据。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

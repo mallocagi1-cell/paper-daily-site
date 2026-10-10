@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — PRECTR-V2: Unified Relevance-CTR Framework with Cross-User Preference Mining, Exposure Bias Correction, and LLM-Distilled Encoder Optimization</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>PRECTR-V2: Unified Relevance-CTR Framework with Cross-User Preference Mining, Exposure Bias Correction, and LLM-Distilled Encoder Optimization</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.15</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 3 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 提出统一搜索相关性与CTR预估的框架V2版本，新增跨用户偏好挖掘、曝光偏差校正和LLM蒸馏编码器。</p><p><strong>Key insight:</strong> 搜索相关性和CTR可以在统一框架内协同优化：通过挖掘全局相关性偏好解决冷启动问题，用噪声注入构造困难负样本校正排序偏差，并用LLM知识蒸馏替代冻结BERT。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-02-26/personalization/report.html#dr-arxiv-2602-20676">2026-02-26 · Personalization (4.15)</a> <a href="../reports/2026-02-26/generative/report.html#dr-arxiv-2602-20676">2026-02-26 · Generative (4.15)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2602.20676" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>PRECTR-V2 深度解读</h1>
+<blockquote><p><strong>论文</strong>: PRECTR-V2: Unified Relevance-CTR Framework with Cross-User Preference Mining, Exposure Bias Correction, and LLM-Distilled Encoder Optimization<br><strong>来源</strong>: 阿里巴巴闲鱼搜索团队 | arxiv: 2602.20676</p></blockquote>
+<hr>
+<h2>1. 问题与动机</h2>
+<p>PRECTR-V2 是对前作 PRECTR（统一搜索相关性与 CTR 预估框架）的迭代升级，针对其在大规模工业部署中暴露的<strong>三个关键缺陷</strong>：</p>
+<p><strong>冷启动个性化失效</strong>：PRECTR 依赖用户自身的历史行为序列来建模&quot;相关性偏好&quot;（即用户对搜索结果相关性的敏感程度）。但在闲鱼这样的 C2C 平台上，大量低活用户缺乏足够的行为数据，导致个性化相关性激励分 τ(x) 退化为全局均值，失去区分能力。</p>
+<p><strong>曝光偏差严重</strong>：训练数据中 <strong>80%以上的样本是高相关性 item</strong>（rsl=4），因为排序系统本身就倾向于曝光相关性高的结果。这导致模型在训练时几乎看不到低相关性样本，而推理时需要对大量低相关性候选做评估——训练与推理的分布严重不匹配。</p>
+<p><strong>编码器无法联合优化</strong>：原始 PRECTR 使用冻结的 BERT（110M 参数）提取文本 embedding，再接 MLP 做 CTR 预测。冻结 BERT 的原因是线上延迟要求，但这阻止了文本表征与 CTR 目标的端到端联合优化，限制了模型上限。</p>
+<p>这三个问题在搜索排序系统中极为普遍——冷启动、曝光偏差、语义理解与行为预估脱节——是搜索/推荐领域的核心痛点，解决它们具有很强的实际意义。</p>
+<hr>
+<h2>2. 方法概述</h2>
+<p>PRECTR-V2 在 PRECTR 的统一框架（将点击概率分解为 P(click|x) = Σ P(click|rsl=i, x)·P(rsl=i|x)）基础上，新增三个模块：</p>
+<table><thead><tr><th>模块</th><th>解决的问题</th><th>核心思路</th></tr></thead><tbody><tr><td>Cross-User Preference Mining</td><td>冷启动</td><td>从同 query 类目下采样 50 个相似用户的行为，补充稀疏用户的偏好信号</td></tr><tr><td>Relevance Exposure Debias</td><td>曝光偏差</td><td>对高相关正样本注入噪声构造低相关负样本，用 pairwise ranking loss 校正</td></tr><tr><td>LLM-Distilled Lightweight Encoder</td><td>编码器冻结</td><td>用 Qwen-7B 蒸馏 + 相关性 SFT 训练 2M 参数的轻量 Transformer，替代 110M 的冻结 BERT</td></tr></tbody></table>
+<p>整体思路是：<strong>在不破坏统一相关性-CTR 框架的前提下，逐个击破工业落地中的关键瓶颈</strong>。</p>
+<hr>
+<h2>3. 核心技术贡献</h2>
+<h3>3.1 跨用户相关性偏好挖掘</h3>
+<p>这是本文最有新意的模块。核心洞察是：<strong>同一 query 类目下的用户群体对相关性的偏好模式是可迁移的</strong>。</p>
+<p>具体做法：</p>
+<ul>
+<li>对低活用户，在同 query 类目下采样 50 个相似用户</li>
+<li>按 query 文本相似度筛选 top-k 行为</li>
+<li>合并序列 S = {S_u, S_q}（用户自身 + 跨用户采样）</li>
+<li>用 <strong>Multi-Head Target Attention</strong> 分别生成 user-level 和 category-level 的偏好表征</li>
+<li>最终通过 <strong>MoE（两个专家网络 + 不同激活函数）</strong> 融合输出相关性激励分 τ</li>
+</ul>
+<p>与常见的 user-CF 补全不同，这里迁移的不是 item 偏好而是<strong>相关性敏感度偏好</strong>——某些用户更在意相关性（只点高相关结果），某些用户更宽容。这个视角比较独特。</p>
+<h3>3.2 曝光偏差校正</h3>
+<p>构造困难负样本的方式很巧妙：</p>
+<ol>
+<li>取 click=1 且 rsl=4 的正样本</li>
+<li>将 rsl 降级（按概率 p1/p2 分配到 1/2/3）</li>
+<li>对 item 文本 embedding 注入高斯噪声：Q_emb^fake = Q_emb + ε, ε ~ N(0,1)</li>
+<li>用 pairwise ranking loss 约束 f(x⁺) &gt; f(x⁻)</li>
+</ol>
+<p><strong>关键创新在于两个校准机制</strong>，防止 ranking loss 破坏绝对预估校准（PCOC）：</p>
+<ul>
+<li><strong>Relative order critical distance penalty</strong>：对正负样本分数差设 margin 上限，避免过度拉开</li>
+<li><strong>Dynamic truncation weighting</strong>：当 batch 平均分数超过阈值时将 loss 权重截断为 0</li>
+</ul>
+<p>这两个设计在工业实践中很关键——纯 pairwise loss 会破坏 pCTR 的绝对值语义，而搜索/推荐系统的竞价、流控等模块都依赖 pCTR 的校准性。</p>
+<h3>3.3 LLM 蒸馏轻量编码器</h3>
+<p>用 <strong>2M 参数的 3 层 Transformer</strong> 替代 110M 的 BERT，训练分三步：</p>
+<ol>
+<li><strong>Relevance SFT</strong>：在相关性标注数据上做分类微调</li>
+<li><strong>LLM Embedding 蒸馏</strong>：以 Qwen-7B（RAG 增强）为教师，MSE 损失蒸馏</li>
+<li><strong>端到端联合微调</strong>：以较小学习率与 CTR 主模型联合训练</li>
+</ol>
+<p>参数量缩减 <strong>55 倍</strong>（110M → 2M），满足线上延迟要求的同时实现了端到端优化。</p>
+<hr>
+<h2>4. 实验结果分析</h2>
+<h3>离线实验</h3>
+<p>在闲鱼 <strong>16 亿日曝光数据</strong> 上的实验结果：</p>
+<table><thead><tr><th>模型</th><th>AUC</th><th>GAUC</th><th>RelaImpr</th></tr></thead><tbody><tr><td>Wide&amp;Deep</td><td>0.7267</td><td>0.6586</td><td>baseline</td></tr><tr><td>DIN</td><td>0.7492</td><td>0.6757</td><td>—</td></tr><tr><td>PRECTR</td><td>0.7581</td><td>0.6892</td><td>—</td></tr><tr><td><strong>PRECTR-V2</strong></td><td><strong>0.7674</strong></td><td><strong>0.6933</strong></td><td><strong>+5.61%</strong></td></tr></tbody></table>
+<ul>
+<li>相比 PRECTR 提升 AUC +0.0093、GAUC +0.0041，在十亿级数据上这是非常显著的提升</li>
+</ul>
+<h3>消融实验</h3>
+<table><thead><tr><th>配置</th><th>AUC RelaImpr</th></tr></thead><tbody><tr><td>仅 Cold-Start Mining</td><td>+1.08%</td></tr><tr><td>仅 Exposure Debias</td><td>+2.98%</td></tr><tr><td>仅 LLM-Distilled Encoder</td><td>+3.13%</td></tr><tr><td><strong>三者联合</strong></td><td><strong>+3.60%</strong></td></tr></tbody></table>
+<ul>
+<li>LLM 蒸馏编码器贡献最大（+3.13%），说明端到端联合优化的重要性</li>
+<li>三个模块有正向叠加效应（3.60% &gt; max(1.08%, 2.98%, 3.13%)）</li>
+</ul>
+<h3>在线 A/B 实验</h3>
+<ul>
+<li>20%+ 流量对照</li>
+<li><strong>人均订单量 +1.39%</strong></li>
+<li><strong>GMV +3.18%</strong></li>
+<li>PCOC 偏差从 2.3% 降至 1.7%（校准性更好）</li>
+<li>高相关性 badcase 率仅微升 0.15%（绝对值），可忽略</li>
+<li><strong>已全量部署上线</strong></li>
+</ul>
+<hr>
+<h2>5. 局限与未来方向</h2>
+<h3>现有局限</h3>
+<ol>
+<li><strong>跨用户采样的在线开销</strong>：采样 50 个相似用户并计算 query 文本相似度，在线 serving 时的延迟和存储开销未详细讨论。在流量高峰时这可能成为瓶颈。</li>
+</ol>
+<ol>
+<li><strong>噪声注入的粗糙性</strong>：用标准高斯噪声破坏 embedding 来模拟&quot;低相关性&quot;，这种构造方式较为粗糙。真实的低相关性样本有其自身的语义模式（如 query=&quot;手机壳&quot;但展示了&quot;手机膜&quot;），简单加噪声可能无法准确模拟。</li>
+</ol>
+<ol>
+<li><strong>蒸馏教师的局限</strong>：Qwen-7B 作为教师模型，其语义理解能力在电商垂直领域可能不够精确，尤其是对闲鱼这类非标品平台。</li>
+</ol>
+<ol>
+<li><strong>相关性 badcase 微升</strong>：虽然论文称 0.15% 的绝对增幅可忽略，但在搜索场景中相关性是底线，长期积累可能影响用户体验。</li>
+</ol>
+<ol>
+<li><strong>单平台验证</strong>：仅在闲鱼（C2C 二手电商）上验证，泛化性到 B2C、内容搜索等场景未知。</li>
+</ol>
+<h3>未来方向</h3>
+<ul>
+<li><strong>动态负样本生成</strong>：用生成模型（如 LLM）构造更真实的困难负样本，而非简单噪声注入</li>
+<li><strong>多粒度蒸馏</strong>：不仅蒸馏 embedding，还可蒸馏 attention pattern 和中间层表征</li>
+<li><strong>在线学习适配</strong>：跨用户偏好挖掘模块可结合在线学习，实时更新相似用户图谱</li>
+<li><strong>多目标扩展</strong>：从 relevance-CTR 二元统一扩展到 relevance-CTR-CVR-satisfaction 多目标统一</li>
+</ul>
+<hr>
+<h2>6. 工业实践意义</h2>
+<h3>对搜索系统</h3>
+<p><strong>统一建模范式的验证</strong>：PRECTR 系列持续证明 relevance 和 CTR 不应割裂优化。工业搜索系统中常见的&quot;先相关性过滤、再 CTR 排序&quot;的级联架构，可以考虑向统一框架迁移。核心公式 P(click) = Σ P(click|rsl=i)·P(rsl=i) 提供了一个干净的分解视角。</p>
+<h3>对推荐系统</h3>
+<p><strong>冷启动偏好迁移的思路</strong>：跨用户偏好挖掘不局限于搜索场景。推荐系统中的新用户冷启动同样可以从&quot;类目/场景相似用户&quot;中迁移偏好模式，且迁移的维度可以从&quot;相关性偏好&quot;扩展到&quot;多样性偏好&quot;&quot;价格敏感度&quot;等。</p>
+<h3>对广告系统</h3>
+<p><strong>曝光偏差校正 + 校准保持的双重设计</strong>：广告系统对 pCTR 校准性的要求极高（直接影响出价和收入），本文的 margin + dynamic truncation 机制是 pairwise 学习与校准保持的一个很好的平衡方案，值得广告排序借鉴。</p>
+<h3>对 LLM 落地</h3>
+<p><strong>大模型蒸馏到端上的务实路线</strong>：110M → 2M 的压缩比（55x）且保持甚至提升效果，给出了一条&quot;LLM 预训练语义 → 轻量模型蒸馏 → 端到端联合训练&quot;的工业化路径。这比直接在线上部署大模型做推理要务实得多，是当前 LLM 赋能搜推广的主流思路之一。</p>
+<h3>关键 takeaway</h3>
+<blockquote><p>搜索排序的核心矛盾不是&quot;要相关性还是要 CTR&quot;，而是如何在统一框架中让两者协同增强。PRECTR-V2 给出的答案是：补齐偏好信号（冷启动）、校正数据偏差（曝光偏差）、打通表征学习（LLM蒸馏），三管齐下。</p></blockquote></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

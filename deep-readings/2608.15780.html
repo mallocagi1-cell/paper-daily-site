@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Decomposing Staleness in Recommender Systems: A Dual-Filter Framework for Supersession and Decay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Decomposing Staleness in Recommender Systems: A Dual-Filter Framework for Supersession and Decay</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 论文将推荐内容过时拆成“被新内容替代”和“生命周期衰减”两类，并在 Google Discover 上部署 SDF。系统由关系式陈旧度模型识别内容对之间的替代关系，再用预测流量比模型估计生命周期价值，在排序前做并集过滤；连续两年线上运行后，用户主动提交的陈旧内容反馈较基线下降 54.9%，同时减少下游服务成本。</p><p><strong>Key insight:</strong> 对社区 UGC 推荐/搜索，年龄阈值不是可靠的新鲜度代理，应把“替代关系”和“自然衰减”分开建模，并将过滤放在排序前。可先离线训练内容对关系模型和生命周期模型，再以反馈投诉、CTR/nDCG、候选量和延迟做联合 A/B；重点监控误删常青内容和热点切换滞后。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-19/personalization/report.html#dr-arxiv-oai-arXiv-org-2608-15780">2026-08-19 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2608.15780" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>SDF 针对的是 Google Discover 这类大规模内容推荐中一个常被粗略处理的问题：推荐内容会过时，但“过时”并不是单一的时间衰减。论文把它拆成两种机制。第一种是 supersession（被新内容替代）：例如早期报道某球员正在考虑转会，签约结果出现后，早期报道的事实状态就被新消息推进了。这里的陈旧性是内容对之间的关系，单看发布时间无法判断。第二种是 intrinsic relevance decay（自身生命周期衰减）：一篇“今晚流星雨观测指南”即使没有后续报道，也会在事件窗口结束后失去价值。作者指出，固定 age cutoff 会误删常青内容，CTR 门槛又要等内容被反复曝光、用户体验变差后才发现问题。</p>
+<p>论文的工业动机很明确：SDF 已完整部署在 Google Discover，服务数亿日活和数十亿月活用户，且过滤发生在计算昂贵的下游排序之前。作者把用户投诉、离线分类、在线 A/B、两个月 joint holdback 和两年生产监控都纳入验证。最终两年窗口内用户主动提交的陈旧反馈下降 54.9%，其中 supersession 类下降 64.0%、decay 类下降 34.4%，说明拆分机制不是概念上的重命名，而是能对应到不同的线上问题与收益。</p>
+<h2>2. 方法详解</h2>
+<p>论文维护一个持续变化的候选集合 A。对旧内容 d 和同主题、后来到达的内容 d&#x27;，关系过滤器学习二元函数 f(d,d&#x27;)∈{0,1}，只要存在一个 d&#x27; 使 f=1，就把 d 标为被替代。对在 t 时刻进入的内容 d_t，内在衰减过滤器学习 g(d_t,τ)∈[0,1]，预测从发布到年龄 τ 期间累积的生命周期点击流量比例。年龄为 τ=t&#x27;-t 时，如果 g(d_t,τ)≥θ，就认为继续服务的边际价值很低。最终规则是 S(d_t;t&#x27;)=S_supersession(d_t)∨S_decay(d_t;t&#x27;)；任一分支触发，内容都不进入下游 ranker。</p>
+<p>关系分支不是直接人工标注百万级内容对。作者先聚类，按簇规模选代表，再只生成来自不同簇且相似度落在“中间带”的 pair：太相似通常是近重复，太不相似又不会形成有意义的替代关系。用相似度区间的权重采样平衡稀有正例后，PaLM 2-L 对每对内容生成类别和理由，独立采样 7 次并做多数投票；类别胜出后，再用第二次 LLM pass 从胜出类别对应的理由中选出一致理由。学生侧用公开 11B T5 checkpoint 做监督微调，并额外加入 NLI 数据，让模型学习更广的“前提—假设”关系。训练数据共 1,100,133 对，train/val/test 为 880,027/109,951/110,155；batch size 128，学习率 1e-3，20k steps，warm-up 1k。</p>
+<p>PTR 分支使用匿名用户的 search-click log，而不是 page-view log，因为 page view 更容易受到发布方推广干扰。标签的分母被工程化为固定 30 天窗口，预测 horizon 为 12 小时、1 天、3 天、5 天、7 天、10 天、14 天七个离散点；标签随 horizon 单调不减。输入端把文本、图片、视频 token 早期融合进共享多模态 backbone，随后每个 horizon 使用一个 dense head，一次前向输出全部预测，用跨 horizon 的 MSE 之和训练。线上以 θ=0.9 为主操作点，并只取已经经过的最大 horizon 的预测。两类模型都在用户请求路径外高频计算并缓存，服务时只是查表，不新增 request-time model inference。关系模型同时有近实时 online 模式和补齐长尾的 batch 模式，前者先过滤明显无关 pair，后者按簇扩展漏标内容。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，作者把“陈旧”从单调的时间特征改写为关系维度与内容生命周期维度。这个建模拆分使更新型新闻和自然过期的服务逻辑可以分别训练、分别调阈值；两分支最后用 OR 组合，既不要求一个模型同时理解“被谁替代”和“自己何时失效”，也能在候选层统一执行。</p>
+<p>第二，关系过滤器把 LLM 作为离线教师而不是在线大模型。相似度中间带采样、7 次投票、理由二次校验、NLI 辅助训练和 T5 蒸馏共同解决了人工标注贵、正例稀少、pair 关系难解释的问题。最终模型在 550 对人工 golden test 上达到 83.5% precision 和 95% recall，Gen+NLI 的 F1 为 84.79，高于 Disc 的 84.41 和 Gen 的 84.59。</p>
+<p>第三，PTR 用多模态内容在没有未来点击的情况下预测生命周期。七个时间头让输出能对应“小时级突发内容”“日级新闻”“周级指南”等运营时间尺度，同时固定 30 天分母和 search-click 标签使指标可解释。早期融合在人工时效性池上达到 80% accuracy，高于 late fusion 的 76%。</p>
+<h2>4. 实验结果分析</h2>
+<p>关系过滤器消融如下：</p>
+<table><thead><tr><th>配置</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody><tr><td>Disc</td><td>83.71</td><td>83.68</td><td>85.15</td><td>84.41</td></tr><tr><td>Disc + NLI</td><td>83.86</td><td>84.25</td><td>84.65</td><td>84.45</td></tr><tr><td>Gen</td><td>83.37</td><td>81.31</td><td>88.14</td><td>84.59</td></tr><tr><td>Gen + NLI</td><td>84.16</td><td>84.31</td><td>85.28</td><td>84.79</td></tr></tbody></table>
+<p>NLI 的增益绝对值不大，但在两种监督形式下都提高 F1；理由监督提升 recall，NLI 让类别判断更稳。PTR 的另一组实验固定 θ=0.9，用 5 位人工评审者的 Majority≥3/5、Strong≥4/5、Unanimous 5/5 作为标签，F1 从 78.07% 提高到 87.50%，所有切分 precision 都超过 88%。</p>
+<p>在线 A/B 以 promoted 与 demoted 内容的陈旧率差定义 Δ_stale，负数代表实验组把更少的陈旧内容推高。年龄 cutoff+engagement cliff 基线是 -0.10±1.22%，关系过滤器为 -4.19±2.25%，内在过滤器为 -3.10±2.56%，两者合并的 SDF 为 -6.91±2.23%。两个月 joint holdback 相对未启用 SDF 的用户，dismissal rate 降低 0.16±0.07%，feed diversity 提升 0.13±0.04%，positive engagement 提升 0.26±0.18%，区间为 95% 置信区间。生产监控还显示关系过滤器节省 4.76% serving CPU/TPU hours，PTR 额外节省 3.98%。</p>
+<table><thead><tr><th>生产指标</th><th>结果</th></tr></thead><tbody><tr><td>两年总陈旧投诉</td><td>-54.9%</td></tr><tr><td>supersession 投诉</td><td>-64.0%</td></tr><tr><td>decay 投诉</td><td>-34.4%</td></tr><tr><td>关系过滤服务资源</td><td>-4.76%</td></tr><tr><td>PTR 服务资源</td><td>-3.98%</td></tr></tbody></table>
+<p>失败案例也很重要：政治评论中“替代”关系可能没有唯一答案；逐渐衰减的长尾内容可能永远达不到 PTR 阈值；部分投诉来自用户以前已经看过的内容，超出 supersession/decay 的范围。也就是说，SDF 解决的是内容新鲜度，不是重复曝光或所有满意度问题。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确报告的限制包括：关系判断在混合事实与观点的政治内容上容易暧昧；PTR 对缓慢、长尾的衰减内容可能漏检；一部分用户感知的陈旧性来自“我已经看过”，单靠这两个过滤器无法处理。关系分支仍是更重的 pairwise 分类，虽然 online/batch 双模式平衡了延迟和覆盖，但内容量持续增长时仍需成本管理。作者还指出，持续迭代的难点是把更强的 LLM 能力引入服务预算，并计划探索多模态 LLM reasoning 和连续 horizon 的 lifespan representation learning。本文没有给出完整的错误分桶、不同语言的独立数字或长期用户留存结果，这是应用时需要补齐的验证。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区 UGC 搜索/推荐，最可复用的不是直接复制 Google 的模型，而是把“新内容替代旧内容”和“内容生命周期结束”作为两条数据产品管线。第一条可以用主题聚类、时间邻域和离线 LLM 标注启动，再蒸馏成轻量 pair 模型；第二条可以用帖子文本、图片、视频、发布时间、历史点击曲线预测 12 小时到 14 天的累计消费比例。两条都应在召回/粗排前运行，把 heavy ranker 的预算留给仍有价值的候选。</p>
+<p>落地时建议把阈值作为业务可调的护栏：先以 θ=0.9 类似的高 precision 操作点做灰度，监控 nDCG、CTR、负反馈、长尾作者曝光、候选量和 P99 延迟；不要用过激过滤换取漂亮的陈旧率。对热点主题要保留“新旧内容并存”的人工抽检，避免把解释性更新误判成替代。最后，把“已经看过”独立建成曝光/重复消费特征，不要让 SDF 承担超出其机制边界的个性化去重责任。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

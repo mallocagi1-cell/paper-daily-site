@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Efficient Personalized Reranking with Semi-Autoregressive Generation and Online Knowledge Distillation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Efficient Personalized Reranking with Semi-Autoregressive Generation and Online Knowledge Distillation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.30</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 提出 PSAD 框架，解决生成式重排序中生成质量与推理延迟的固有矛盾。教师模型采用半自回归生成器平衡质量与效率，通过在线知识蒸馏将排序知识传递给轻量评分网络实现实时推理。同时引入 User Profile Network (UPN) 注入用户意图并建模兴趣动态，增强用户-物品特征交互。在三个大规模公开数据集上显著优于现有最优基线，兼顾排序性能与推理效率。</p><p><strong>Key insight:</strong> 半自回归 + 在线蒸馏的组合巧妙解决了生成式重排序的部署难题：教师模型捕获列表级依赖，学生模型实现低延迟推理。这种师生框架可迁移到搜索结果重排序场景，特别适合对延迟敏感的在线服务。UPN 的用户意图注入机制为个性化排序提供了有效的用户建模方案。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-03-11/personalization/report.html#dr-arxiv-oai-arXiv-org-2603-07107">2026-03-11 · Personalization (4.30)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2603.07107" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><hr>
+<h2>深度阅读分析：PSAD — 基于半自回归生成与在线知识蒸馏的高效个性化重排序</h2>
+<p><strong>论文</strong>: Efficient Personalized Reranking with Semi-Autoregressive Generation and Online Knowledge Distillation<br><strong>作者</strong>: Kai Cheng, Hao Wang, Wei Guo, Weiwen Liu, Yong Liu, Yawen Li, Enhong Chen（华为 &amp; 中国科学技术大学）<br><strong>提交日期</strong>: 2026年3月7日<br><strong>arXiv</strong>: 2603.07107</p>
+<hr>
+<h3>1. 问题与动机</h3>
+<p><strong>核心问题</strong>：推荐系统中的重排序（Reranking）旨在将粗排阶段输出的候选集，依据用户个性化偏好进行最终精排。其本质是一个序列优化问题：在所有可能的候选集全排列中，找到最大化用户满意度的排列 $R_u^* = \arg\max_{R_u \in \mathcal{P}(C_u)} p(R_u | C_u, H_u, P_u)$。</p>
+<p><strong>两大核心挑战</strong>：</p>
+<p><strong>挑战一：推理速度与生成质量的矛盾</strong><br>生成式重排序（Generative Reranking）将排序问题建模为序列生成任务，天然适合捕捉位置间的依赖关系。然而，主流的自回归（Autoregressive, AR）方法（如Seq2Slate、PIER）必须逐步生成每个位置，T步生成产生O(T)的顺序依赖，导致推理延迟与序列长度线性正相关，在工业级高并发场景下难以接受。非自回归（Non-Autoregressive, NAR）方法虽然可以并行生成，但由于放弃了所有位置间的依赖关系，生成质量通常显著低于AR方法。</p>
+<p><strong>挑战二：用户与物品特征的交互深度不足</strong><br>现有重排序方法在融合用户偏好与物品特征时，往往采用简单拼接（concatenation）的方式，缺乏细粒度的语义交互机制。用户的兴趣是动态的、多面的，不同物品应当激活用户兴趣的不同维度，而简单拼接无法建模这种&quot;用户意图条件化物品表示&quot;的交互逻辑。</p>
+<p><strong>重要性</strong>：重排序是推荐系统漏斗中最接近用户曝光的环节，其质量直接决定点击率和成单率。在电商、广告等商业场景，哪怕0.1%的NDCG提升都能带来可观的商业回报，而推理延迟直接影响系统QPS容量和用户体验。解决这两个挑战，是将生成式重排序从学术推向工业落地的关键一步。</p>
+<hr>
+<h3>2. 方法概述</h3>
+<p>PSAD（<strong>P</strong>ersonalized <strong>S</strong>emi-<strong>A</strong>utoregressive reranking with knowledge <strong>D</strong>istillation）框架由三个核心模块构成，形成一个训练时用重型教师模型生成软标签、推理时用轻量打分网络服务的师生蒸馏体系：</p>
+<ol>
+<li><strong>共享编码器（Shared Encoder）</strong>：基于Transformer的自注意力层，将用户历史序列（长度N）与候选物品序列（长度M）拼接后统一编码，输出上下文感知的特征表示，是所有后续模块的特征基础。</li>
+</ol>
+<ol>
+<li><strong>半自回归生成器（Semi-Autoregressive Generator，SAR）</strong>：作为教师模型，以&quot;块&quot;（Block）为单位并行生成排序序列。每次并行生成K个位置的物品（K是超参数），块间保持自回归依赖（前一块的输出作为后一块的条件），块内并行生成。这在AR的质量和NAR的速度之间取得折中，并通过&quot;遮蔽-精炼&quot;（Mask-and-Refine）机制在块内引入迭代优化。</li>
+</ol>
+<ol>
+<li><strong>用户画像网络（User Profile Network，UPN）</strong>：通过个性化门控（Personalized Gating）和个性化位置编码（Personalized Position Encoding），将用户画像特征动态注入到物品表示和注意力机制中，使用户意图条件化整个特征空间，实现用户与物品的深层语义交互。</li>
+</ol>
+<ol>
+<li><strong>在线知识蒸馏（Online Knowledge Distillation）</strong>：学生模块是一个轻量MLP评分网络，在与SAR教师共享编码器特征的同时，以SAR生成的排列概率（经指数衰减加权聚合）为软标签，通过KL散度损失进行蒸馏。整个蒸馏过程在训练时在线进行（teacher和student同步更新），推理时仅激活学生打分网络，大幅降低延迟。</li>
+</ol>
+<p><strong>推理时的工作流</strong>：编码器 → 用户画像网络增强 → 学生打分网络输出每个候选物品的分数 → 按分数排序输出最终列表。完全无自回归解码步骤，复杂度为O(1)相对于序列长度。</p>
+<hr>
+<h3>3. 核心技术贡献</h3>
+<p><strong>贡献一：半自回归块生成 + 遮蔽精炼机制</strong></p>
+<p>SAR以块为单位生成：设块大小为K，总长度为T，则生成需要⌈T/K⌉轮解码（相比AR的T轮）。每块内的生成通过交叉注意力实现并行：</p>
+<p>$$Y_{I_b}^l = \text{CrossAttn}(H^l, Y_{&lt;I_b}^l)$$</p>
+<p>其中 $I_b$ 是第b块的物品索引集，$Y_{&lt;I_b}$ 是前b-1块已生成的物品表示。</p>
+<p>在块内，引入&quot;遮蔽-精炼&quot;（Mask-and-Refine）机制：随机遮蔽当前块中比例为γ的位置，通过上下文增强（Contextual Enhancement）模块对被遮蔽位置进行再生成，利用同块内其他已生成物品的信息进行修正，从而缓解块内并行生成时的独立性假设误差。</p>
+<p>训练损失融合了交叉熵和Hinge损失，并用DCG权重 $\omega_j = 1/\log(j+1)$ 对靠前位置施加更高惩罚：<br>$$\mathcal{L}_{gen} = \sum_j \omega_j \cdot [\mathcal{L}_{CE} + \mathcal{L}_{Hinge}]$$</p>
+<p><strong>贡献二：用户画像网络的双重个性化注入</strong></p>
+<p>UPN通过两个机制将用户画像 $P_u$ 注入特征空间：</p>
+<ul>
+<li><strong>个性化门控</strong>：计算门控信号 $S = \text{Sigmoid}(\text{MLP}(G_1 \odot G_2))$，其中 $G_1, G_2$ 分别由 $(X, P_u)$ 的MLP变换得到，输出门控后的物品表示 $\hat{X} = S \odot X$。本质上是用用户画像动态选择每个物品特征维度的激活程度，实现&quot;用户意图过滤物品语义&quot;。</li>
+</ul>
+<ul>
+<li><strong>个性化位置编码</strong>：在标准位置编码基础上叠加用户感知的偏移：$\hat{P}_{ij}^l = P_{ij}^l + \text{Tanh}(\text{MLP}(P_u \oplus P_{ij}^l))$。不同用户对位置偏差（Position Bias）的敏感程度不同，该设计使位置编码具有用户自适应能力。</li>
+</ul>
+<p><strong>贡献三：在线知识蒸馏的软标签构造方法</strong></p>
+<p>区别于传统的离线蒸馏（先训好teacher，再单独训student），PSAD采用在线蒸馏（teacher和student联合训练）。软标签的构造是核心创新：SAR生成排列后，用生成概率矩阵 $\tilde{p}_{ij}$（第i个物品被放到第j位的概率）通过指数衰减加权聚合为物品级分数：</p>
+<p>$$\hat{p}_i = \frac{\sum_j \tilde{p}_{ij} \cdot e^{-j}}{\sum_j e^{-j}}$$</p>
+<p>指数衰减体现了排序的头部重要性（靠前位置权重更高）。学生的MLP评分 $s_i$ 通过KL散度对齐软标签：</p>
+<p>$$\mathcal{L}_{KD} = \text{KL}\left(\text{Softmax}(\hat{p}/\tau) \,\|\, \text{Softmax}(s/\tau)\right)$$</p>
+<p>温度参数τ控制软标签的&quot;软化&quot;程度。总损失为：<br>$$\mathcal{L} = \mathcal{L}_{gen} + \mathcal{L}_{scorer} + \alpha \cdot \mathcal{L}_{KD}$$</p>
+<p>这样的设计使得SAR教师在训练时持续为student提供细粒度的排序知识，而student在推理时可完全独立运行，无需调用SAR生成器。</p>
+<p><strong>贡献四：PSAD-G与PSAD-S的双模式部署设计</strong></p>
+<p>PSAD提供两种推理模式：</p>
+<ul>
+<li><strong>PSAD-G</strong>：推理时运行完整SAR生成器，追求最高质量；</li>
+<li><strong>PSAD-S</strong>：推理时仅运行轻量学生打分网络，追求最优效率。</li>
+</ul>
+<p>两者共享相同的训练过程，通过一次训练支持两种部署策略，赋予系统在不同资源约束下灵活配置的能力。</p>
+<hr>
+<h3>4. 实验结果分析</h3>
+<p><strong>实验设置</strong>：</p>
+<ul>
+<li>数据集：Ad（Taobao广告数据集，Tianchi竞赛）、PRM Public（rank2rec项目）、Avito（广告点击率数据集，Kaggle）</li>
+<li>评估指标：NDCG@K、MAP@K</li>
+<li>Baselines：miDNN、DLCM、PRM、Seq2Slate、CRUM、PIER、NAR4Rec，覆盖评分式、列表式、生成式三类方法</li>
+<li>延迟测试：batch size=256，单次推理时间（秒）</li>
+</ul>
+<p><strong>总体排序性能（Table 2）</strong>：</p>
+<table><thead><tr><th>数据集</th><th>指标</th><th>NAR4Rec（最强baseline）</th><th>PSAD-G</th><th>PSAD-S</th></tr></thead><tbody><tr><td>Ad</td><td>N@5</td><td>0.6965</td><td><strong>0.7038</strong> (+1.05%)</td><td>0.6962</td></tr><tr><td>Ad</td><td>N@10</td><td>0.7101</td><td><strong>0.7184</strong> (+1.17%)</td><td>0.7091</td></tr><tr><td>Ad</td><td>M@10</td><td>0.6188</td><td><strong>0.6255</strong> (+1.08%)</td><td>0.6185</td></tr><tr><td>PRM Public</td><td>N@5</td><td>0.2701</td><td><strong>0.2762</strong> (+2.26%)</td><td>0.2717</td></tr><tr><td>PRM Public</td><td>N@10</td><td>0.3455</td><td><strong>0.3528</strong> (+2.11%)</td><td>0.3464</td></tr><tr><td>PRM Public</td><td>M@10</td><td>0.3071</td><td><strong>0.3136</strong> (+2.11%)</td><td>0.3079</td></tr><tr><td>Avito</td><td>N@5</td><td>0.7315</td><td><strong>0.7427</strong> (+1.53%)</td><td>0.7285</td></tr><tr><td>Avito</td><td>M@5</td><td>0.7462</td><td><strong>0.7561</strong> (+1.33%)</td><td>0.7396</td></tr></tbody></table>
+<p>PSAD-G在全部三个数据集、全部指标上均显著超越所有baseline，相对提升幅度在1%～2.3%之间。PSAD-S（轻量推理模式）性能与NAR4Rec持平甚至略有优势，但推理速度更快。</p>
+<p><strong>推理延迟对比（Table 3，PRM Public，batch=256）</strong>：</p>
+<table><thead><tr><th>方法</th><th>推理时间（秒）</th><th>相对PSAD-S</th></tr></thead><tbody><tr><td>miDNN</td><td>0.1893</td><td>—</td></tr><tr><td>PRM</td><td>0.2037</td><td>—</td></tr><tr><td><strong>PSAD-S</strong></td><td><strong>0.2161</strong></td><td>基准</td></tr><tr><td>NAR4Rec</td><td>0.3572</td><td>1.65× 慢</td></tr><tr><td>CRUM</td><td>0.3048</td><td>1.41× 慢</td></tr><tr><td>DLCM</td><td>0.3940</td><td>1.82× 慢</td></tr><tr><td>PIER</td><td>0.4735</td><td>2.19× 慢</td></tr><tr><td>PSAD-G</td><td>0.4239</td><td>1.96× 慢</td></tr><tr><td>Seq2Slate</td><td>0.5873</td><td>2.72× 慢</td></tr></tbody></table>
+<p>PSAD-S以0.2161秒的推理时间，在所有具有序列建模能力的方法中（NAR4Rec、PIER、Seq2Slate等）最快，仅慢于不含序列依赖的miDNN（0.1893秒）和PRM（0.2037秒）。PSAD-G（完整SAR推理）虽慢于PSAD-S，但其推理质量最高，可用于对延迟不敏感的离线或批量场景。</p>
+<p><strong>蒸馏策略对比（Table 5）</strong>：</p>
+<table><thead><tr><th>蒸馏策略</th><th>PRM Public N@10</th><th>训练时间（秒/batch）</th></tr></thead><tbody><tr><td>AR教师（在线蒸馏）</td><td>0.3434</td><td>0.7372</td></tr><tr><td>NAR教师（在线蒸馏）</td><td>0.3429</td><td>0.4165</td></tr><tr><td>SAR教师（<strong>离线</strong>蒸馏）</td><td>0.3481</td><td>0.8933</td></tr><tr><td>SAR教师（<strong>在线</strong>蒸馏，PSAD-S）</td><td><strong>0.3464</strong></td><td><strong>0.5128</strong></td></tr></tbody></table>
+<p>关键发现：SAR在线蒸馏在质量（0.3464 &gt; NAR的0.3429 &gt; AR的0.3434）和效率（0.5128秒，相比离线蒸馏0.8933秒节省约42%训练时间）上均取得最佳平衡。在线蒸馏相比离线蒸馏不仅更快，质量也未下降（0.3464 vs 0.3481，差距极小）。</p>
+<p><strong>消融实验（Table 4）</strong>：</p>
+<table><thead><tr><th>消融组件</th><th>Ad N@10</th><th>PRM Public N@10</th><th>Avito N@5</th></tr></thead><tbody><tr><td>完整PSAD-G</td><td><strong>0.7184</strong></td><td><strong>0.3528</strong></td><td><strong>0.7427</strong></td></tr><tr><td>去掉半自回归（→全自回归）</td><td>0.7095 (-1.24%)</td><td>0.3455 (-2.07%)</td><td>0.7145 (-3.80%)</td></tr><tr><td>去掉上下文增强（遮蔽精炼）</td><td>0.7133 (-0.71%)</td><td>0.3482 (-1.30%)</td><td>0.7231 (-2.64%)</td></tr><tr><td>去掉两者（→全并行NAR）</td><td>0.7042 (-1.97%)</td><td>0.3441 (-2.47%)</td><td>0.7103 (-4.35%)</td></tr><tr><td>去掉个性化位置编码</td><td>0.7168 (-0.22%)</td><td>0.3523 (-0.14%)</td><td>0.7384 (-0.58%)</td></tr><tr><td>去掉个性化门控</td><td>0.7136 (-0.67%)</td><td>0.3507 (-0.60%)</td><td>0.7402 (-0.34%)</td></tr></tbody></table>
+<p>消融结论：</p>
+<ul>
+<li>半自回归结构（块间自回归依赖）贡献最大，去掉后Avito N@5下降3.80%，是最核心的设计；</li>
+<li>上下文增强机制（遮蔽-精炼）贡献其次，显示块内迭代精炼的有效性；</li>
+<li>两者联合去掉（退化为纯NAR）损失最大，验证了SAR相比NAR的显著优越性；</li>
+<li>用户画像网络的两个组件（位置编码和门控）贡献相对温和但稳定，共同支撑个性化能力。</li>
+</ul>
+<hr>
+<h3>5. 局限与未来方向</h3>
+<p><strong>已识别局限</strong>：</p>
+<ol>
+<li><strong>块大小K的超参敏感性</strong>：实验发现随K增大，性能呈现&quot;先升后降&quot;的趋势。K过小退化为AR（推理慢），K过大退化为NAR（质量差）。最优K值依赖具体数据集和序列长度，缺乏自适应选择机制，需要额外的调参成本。</li>
+</ol>
+<ol>
+<li><strong>无在线A/B测试验证</strong>：论文全部实验基于离线数据集，未提供生产环境的在线指标（如CTR、GMV提升），无法直接评估工业部署的实际收益。</li>
+</ol>
+<ol>
+<li><strong>目标函数的单一性</strong>：当前框架仅优化效用（utility）相关指标（NDCG、MAP），未考虑多样性（Diversity）、公平性（Fairness）、新颖性（Novelty）等列表级多目标约束，而这些在工业推荐系统中同等重要。</li>
+</ol>
+<ol>
+<li><strong>用户-物品交互深度的潜在瓶颈</strong>：用户画像网络通过门控机制注入用户信息，但Gate的实现相对简单（MLP+Sigmoid），在用户行为极其丰富或多模态用户表示（如图文行为）的场景下，表达能力可能仍不足。</li>
+</ol>
+<p><strong>潜在未来方向</strong>：</p>
+<ul>
+<li><strong>自适应块大小调度</strong>：根据用户请求动态调整K值，高优先级请求用小K保质量，高并发时用大K保吞吐，形成弹性推理策略。</li>
+<li><strong>多目标生成式重排序</strong>：将多样性约束（如MMR、DPP）或公平性约束融入SAR的生成损失中，探索多目标帕累托最优排序。</li>
+<li><strong>在线A/B测试与工业落地</strong>：在真实广告或电商平台上验证PSAD-S的线上收益，并研究与工业特征工程（稀疏ID特征、实时特征）的兼容性。</li>
+<li><strong>大语言模型（LLM）增强的用户画像</strong>：将LLM生成的用户意图描述作为更丰富的 $P_u$ 输入，替代传统统计型用户画像特征。</li>
+<li><strong>流式重排序</strong>：结合在线学习（Online Learning），使PSAD在流量推理过程中持续更新蒸馏目标，适应用户实时兴趣漂移。</li>
+</ul>
+<hr>
+<h3>6. 工业实践意义</h3>
+<p><strong>对搜推系统实践者的核心启示</strong>：</p>
+<p><strong>1. &quot;训练时用重模型，推理时用轻模型&quot;的师生蒸馏范式是工业落地的标准路径</strong></p>
+<p>PSAD的核心工程哲学与工业推荐的实际约束完美契合：离线训练资源相对充裕，可以运行参数量大、推理慢的SAR教师；在线推理有严格的P99延迟约束（通常&lt;10ms），只能运行轻量学生。这一范式在BERT→DistilBERT、大模型→小模型等NLP场景已成熟，PSAD将其系统化应用于序列重排序，具有方法论迁移价值。</p>
+<p><strong>2. PSAD-S的推理延迟（0.2161秒/batch=256）意味着约0.84ms/请求，在工业可接受范围内</strong></p>
+<p>对比来看：Seq2Slate需0.5873秒/batch，即2.29ms/请求；PIER需0.4735秒/batch，即1.85ms/请求。PSAD-S相比这些自回归方法节省约60-63%的推理时间，在重排序阶段（通常是整个推荐链路中延迟最敏感的环节）具有直接的工程价值。</p>
+<p><strong>3. 用户画像网络的个性化门控机制值得作为特征交互模块复用</strong></p>
+<p>UPN的个性化门控（User-conditioned Feature Gating）是一个轻量但有效的设计：通过用户画像动态调整物品特征的激活维度，无需引入昂贵的全交叉注意力（Cross-attention over user-item pairs），计算复杂度低但个性化表达能力强。这一设计可以作为独立模块插入其他推荐模型（粗排、精排），不局限于重排序场景。</p>
+<p><strong>4. 在线蒸馏比离线蒸馏更适合快速迭代的工业环境</strong></p>
+<p>在线蒸馏（teacher和student同步训练）在PRM Public上比离线蒸馏节省约42%训练时间（0.5128 vs 0.8933秒/batch），且质量几乎不变（N@10: 0.3464 vs 0.3481）。在工业中，模型更新频率高（日训甚至时训），在线蒸馏缩短了从数据收集到模型上线的周期，工程价值显著。</p>
+<p><strong>5. 半自回归的块大小K是延迟-质量权衡的关键旋钮</strong></p>
+<p>K=1对应完整自回归（最高质量，最慢），K=T对应完全并行（最低质量，最快）。工业实践中可以根据业务场景配置不同K值：</p>
+<ul>
+<li><strong>广告主搜索竞价场景</strong>（对质量极其敏感）：K=1或K=2；</li>
+<li><strong>信息流推荐</strong>（高并发，轻度延迟容忍）：K=4或K=8；</li>
+<li><strong>离线批量重排序</strong>（无延迟约束）：K=1配合完整SAR。</li>
+</ul>
+<p><strong>6. 对比行业现有方案的迁移策略</strong></p>
+<p>目前工业界重排序主流方案以PRM（阿里）和Seq2Slate（Google）为代表。PSAD-S与PRM推理延迟相当（0.2161 vs 0.2037秒），但在NDCG@10上均高出约0.76-2.11个百分点，迁移成本低而收益明确。对于已部署Seq2Slate的团队，PSAD-S可将推理速度提升约2.7倍，同时提升排序质量，升级动力充足。</p>
+<hr>
+<p><strong>总结</strong>：PSAD是一篇工程导向清晰的工业级研究，其贡献在于将半自回归生成、用户画像深度交互、在线知识蒸馏三者有机整合到一个统一框架，系统性解决了生成式重排序的落地难题。PSAD-G追求极致质量，PSAD-S追求部署效率，双模式设计体现了对工业约束的深刻理解。对于搜推算法团队而言，该框架的核心理念（SAR块生成 + 在线蒸馏轻量化）和个性化门控模块，均有较高的工程借鉴价值。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

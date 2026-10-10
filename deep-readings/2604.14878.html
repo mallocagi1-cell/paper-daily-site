@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — GenRec: A Preference-Oriented Generative Framework for Large-Scale Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>GenRec: A Preference-Oriented Generative Framework for Large-Scale Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> GenRec 面向京东 App 大规模推荐中的翻页输出不一致、长行为序列成本与偏好对齐难题，在单一解码器中引入页级下一词预测、非对称 Token Merger 和 GRPO-SR。Token Merger 将输入长度约压缩 2 倍；持续一个月的线上 A/B 实验中，点击数提升 9.5%，成交数提升 8.7%。</p><p><strong>Key insight:</strong> 页级监督把一次请求内的多条正反馈共同建模，避免逐物品训练造成的一对多歧义；预填充侧压缩、解码侧保留完整语义 ID，则兼顾吞吐与可生成性。社区 UGC 场景可借鉴其“页级目标＋偏好奖励＋NLL 正则”组合，将点击、停留和互动信号统一进生成式召回。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-22/generative/report.html#dr-web-arxiv-2604-14878">2026-07-22 · Generative (4.75)</a> <a href="../reports/2026-04-20/personalization/report.html#dr-arxiv-2604-14878">2026-04-20 · Personalization (4.45)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2604.14878" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>深度解读：GenRec</h1>
+<h2>1. 问题与动机</h2>
+<p>GenRec 关心的不是生成式推荐在公开小数据上能否跑通，而是它为何在亿级互动、翻页请求和严格延迟约束下容易失效。作者在京东首页信息流归纳了三个具体断点。第一，一次翻页会产生多个点击或成交，但传统 point-wise NTP 把相同历史分别配上不同正标签，迫使模型在同一前缀上拟合均匀混合分布，导致梯度方差增大、单物品概率被稀释。第二，一个物品用 3 个语义 ID 表示时，长行为序列的 item token 部分会膨胀到原来的 3 倍，prefill 延迟成为线上瓶颈。第三，真实点击与成交稀疏，直接用稠密奖励模型做 RL 又会诱导模型生成形式合法但语义无关的 SID 组合，出现 reward hacking。这些问题在摘要中只是三个名词，正文则用 5.6 亿条用户互动序列和一个月线上实验证明，训练目标、推理表示与业务奖励必须联合设计。</p>
+<h2>2. 方法详解</h2>
+<p>物品端先用 Qwen2.5-VL 联合编码图像外观和文本描述，再用领域内协同样本微调 embedding，使连续表征不只重建内容，还包含点击与购买相似性。随后用 residual-quantization K-means 逐级聚类残差，把每个物品映射成分层 SID 三元组。主干选用 decoder-only Qwen2.5，实验覆盖 1.5B、3B 和 7B 三种规模。</p>
+<p>SFT 阶段的核心是 Page-wise NTP（PW-NTP）。给定页面到达前的用户历史，目标不再是单个物品，而是当页交互物品列表，并按成交、点击、曝光等交互强度组织成序列。损失仍是对完整响应序列的标准自回归负对数似然，但每次前向同时获得多个正样本信号，消除相同输入对应多个独立标签的基数错配。服务时却不输出整页，而是保留产线的 point-wise beam search，每个 query 生成 beam width 个物品；这种训练—推理非对称是有意的，训练获得稠密梯度，推理与已有候选管线兼容。</p>
+<p>Token Merger 只在 prefill 侧压缩。它拼接同一物品的 3 个 SID embedding，通过一层线性投影变成单个潜向量；<code>&lt;sep&gt;</code> 等结构 token 保持不变。因为解码端仍按原始 SID 粒度生成，这是一种非对称压缩：历史读取成本减半，生成空间和训练目标不被粗化。</p>
+<p>RL 阶段的 GRPO-SR 与线上 beam search 对齐，每个 rollout 只生成一个物品序列，在同组多个候选之间学相对优势。SIM 类奖励模型输出稠密偏好分，相关性 gate 把语义无关结果压到小常数；若候选命中真实成交或点击集，其奖励被校准为当组最大值，避免奖励模型低估真实正反馈。最终目标一部分是 group-relative policy loss，另一部分是正轨迹的 NLL 正则。作者特意不用普通 KL 拘束：NLL 直接把策略锚定在真实用户行为上，更能抑制奖励过度优化。数据是京东大型推荐平台一个月的约 5.6 亿条用户互动序列，最后一天作测试，其余训练。三个模型均在 8 张 NVIDIA H100 上分布式训练，优化器为 AdamW，前 1% 步数线性 warm-up，之后 cosine decay；论文未披露 batch size、总步数和精确学习率。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，PW-NTP 把生产翻页机制本身变成监督单元。它改进的不是更大的 backbone，而是标签结构：一次前向学整页正例，因此比 LC-Rec 的 point-wise NTP 收敛更快，并将无效 SID 幻觉率从 7.80% 降到 4.96%，相对降幅超过 36%。</p>
+<p>第二，非对称 Token Merger 把“长历史贵”和“细粒度生成有用”拆开处理。去掉 Merger 后 HR@10 只从 0.4456 变为 0.4467、NDCG@10 从 0.2635 变为 0.2653，质量差异极小，而输入 token 长度约减半，说明压缩主要去除了冗余而非有用信息。</p>
+<p>第三，GRPO-SR 把点击/成交真值、稠密偏好模型与语义合法性 gate 组成混合奖励，再用 NLL 约束守住行为分布。完整 GRPO-SR 相对 SFT 在 Reward@1 上提升 18.01%，同时将 HaR 从 4.96% 降至 2.68%；普通 GRPO 反而将 HaR 推高到 6.03%，说明工业 RL 不能只看奖励均值。</p>
+<p>第四，论文给出了容量选择的反直觉结论。3B 模型有 36 层、2048 隐层宽度，7B 只有 28 层、3584 宽度；从 1.5B 到 3B 的收益明显，但 3B 到 7B 参数增加约 2.3 倍后，NDCG@10 仅从 0.2635 到 0.2649。对推荐互动建模，深度可能比宽度更有容量密度，不应盲目追求更大参数。</p>
+<h2>4. 实验结果分析</h2>
+<p>离线评测使用 HR@K、NDCG@K 和 HaR（生成无效 SID 的比例）。下表摘录最能说明问题的结果：</p>
+<table><thead><tr><th>模型</th><th>HR@1</th><th>HR@10</th><th>NDCG@10</th><th>HR@50</th><th>HaR</th></tr></thead><tbody><tr><td>TIGER</td><td>0.0518</td><td>0.1660</td><td>0.0803</td><td>0.3556</td><td>15.46%</td></tr><tr><td>LC-Rec</td><td>0.0947</td><td>0.3669</td><td>0.2146</td><td>0.6226</td><td>7.80%</td></tr><tr><td>GenRec 3B</td><td>0.1189</td><td>0.4456</td><td>0.2635</td><td>0.7192</td><td>4.96%</td></tr><tr><td>GenRec 3B + GRPO-SR</td><td>—</td><td>—</td><td>—</td><td>0.7438</td><td>2.68%</td></tr></tbody></table>
+<p>GenRec 相对 LC-Rec 的 NDCG@10 提升约 22.8%，HR@10 提升约 21.5%；同为 Qwen2.5 3B 的对照使收益更能归因于 PW-NTP 和框架设计，而非单纯增参。规模实验中，1.5B/3B/7B 的 HR@10 分别为 0.4103/0.4456/0.4483，NDCG@10 为 0.2484/0.2635/0.2649；3B 是明显的效率拐点。RL 消融更关键：SFT、GRPO、GRPO-SR 的 HR@50 为 0.7192、0.7248、0.7438，HaR 为 4.96%、6.03%、2.68%。去掉相关性 gate 后，GRPO-SR 的 HR@50 降至 0.7016，表明奖励模型会被利用，看似更高的局部奖励不等于更好的召回。</p>
+<p>线上 A/B 在京东首页 Feed 持续一个月，SFT 和 RL 版本各承接 10% 流量。基础 SFT 使曝光率提高 48.7%、点击数提高 8.5%、成交数提高 7.3%；加入 GRPO-SR 后三项变为 57.3%、9.5%、8.7%。对长尾物品，曝光、点击、成交分别提升 10%、16%、13%，说明语义 ID 与偏好对齐不只改善热门物品。结果也有一个值得警惕的模式：曝光增幅远大于点击和成交，上线时应同时监控曝光扩张是否稀释单次效率。论文表示完整 GRPO-SR 版本已全量生产部署。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文没有独立 Limitations 章节。作者在结论中明确把未来方向放在框架的 reasoning 能力，意味着当前 GenRec 仍是偏好对齐的物品生成器，并未展示可审计的多步理由。正文可确认的边界还包括：只在京东一个大型平台验证，数据不公开；未披露奖励模型精确结构、gate 阈值、beam width、batch size、学习率、训练步数、线上延迟与算力成本，外部团队无法完整复现。论文也没有报告多样性、公平性、用户留存或长期满意度，而且大曝光增幅可能改变整体供给分布。作者未明说的限制是，以交互强度安排页内目标顺序可能把业务价值偏好写入序列位置，在社区内容、新闻或知识推荐中需重新校准。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区 UGC 搜索与推荐，最值得先实验的不是直接上 7B，而是三个可拆分的设计。第一，把一页搜索结果或 Feed 中的点击、长停留、收藏、评论组成 page-wise 目标，并在线下对比 point-wise 训练的 NDCG、无效 ID 率和收敛速度。第二，若帖子用多级语义 ID 编码，可仅在历史 prefill 合并 ID embedding，保留解码粒度；这比全链路减少 SID 层级的可逆性更好。第三，RL 奖励必须有硬的相关性/合法性 gate 与行为 NLL 锚点，否则应同时上升的不是 CTR，而是幻觉率。</p>
+<p>实施路线可分四阶段：先在现有候选集上训练 1.5B 或 3B PW-NTP 对照；再加 Token Merger 测量 prefill token 数、P95/P99 延迟与 HR 损失；第三阶段只做离线 GRPO-SR，绘制 reward—HR—HaR 三维曲线；最后以小流量分别验证 SFT 和 RL，不要一次合并实验。容量上应优先 3B：论文中 7B 比 3B 的 NDCG@10 只多 0.0014，但参数约 2.3 倍。监控除点击和成交外，还要包含 SID 无效率、长尾曝光集中度、重复物品率、新内容冷启动、用户负反馈和单请求成本。这篇论文最具价值的信息是：生成式推荐的工业上限不只由模型规模决定，更由页级标签结构、输入压缩位置和奖励防黑客机制共同决定。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

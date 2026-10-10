@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Progressive Alignment of Recommender Foundation Model through Multi-Phase Post-Training</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Progressive Alignment of Recommender Foundation Model through Multi-Phase Post-Training</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.88</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 推荐基础模型通常把点击或点赞等稠密标签当作最终目标，难以对齐真正决定推荐质量的业务指标。论文提出三阶段渐进式后训练：先线性探测（LP）稳定任务头，再全量微调（FFT），最后用带奖励模型的强化微调（RFT）对齐业务目标；离线实验优于单阶段方案，并在大规模线上 A/B 中超过传统非基础模型。</p><p><strong>Key insight:</strong> 关键设计是把业务指标只用于训练奖励模型，而不直接拿稀疏业务目标优化线上策略；策略仍用稠密隐式反馈训练，降低稀疏奖励带来的不稳定。对社区 UGC 排序，可将 nDCG、CTR、停留和负反馈拆成离线奖励建模，再通过 LP→FFT→RFT 控制迁移风险。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-11/personalization/report.html#dr-arxiv-oai-arXiv-org-2608-06792">2026-08-11 · Personalization (4.88)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2608.06792" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>这篇论文研究的不是一个孤立的点击率模型，而是推荐基础模型在真实业务目标上继续对齐的问题。作者来自 NAVER WEBTOON，场景是韩国 Webtoon 推荐。平台上的内容消费具有明显的漏斗结构：用户先看到曝光，再点击内容，随后可能读到免费章节、付费章节，最后才形成更深层的付费或持续消费行为。只优化最上层点击，容易把短期吸引力误当成长期价值；只用最终付费标签，又会遇到样本稀疏、反馈延迟和曝光偏差。论文因此把推荐目标写成多个层级的用户反馈，而不是单一的二元 CTR 标签。</p>
+<p>论文还关注推荐基础模型的灾难性遗忘与策略不稳定。基础模型已经从大规模行为中学到通用的用户兴趣和物品关系，但在继续训练一个新的业务头时，随机初始化的 head 可能让模型快速过拟合当前标签，破坏原有的序列表示。反过来，直接用强化学习优化深层反馈，也可能因为奖励稀疏而出现训练不稳定。作者的问题是如何利用已有的推荐基础模型，在保持通用能力的同时，按由浅入深的阶段学习多层级业务目标，并让最终排序策略真正改善用户的深度参与。</p>
+<p>作者将问题拆成三个相互衔接的阶段。第一阶段是 Language Pre-training，先利用语言模型式目标让推荐 backbone 对业务序列保持稳定的基础能力；第二阶段是 Funnel Fine-tuning，把六级漏斗信号转化成监督目标，建立从曝光到深层消费的有序反馈表示；第三阶段是 Recommendation Fine-tuning，通过 reward model、GRPO 或 DPO 对候选排序策略做后训练。这个顺序很关键：先恢复并稳定表示，再学习业务漏斗，最后让策略接受结果导向的优化。</p>
+<h2>2. 方法详解</h2>
+<p>基础模型采用约 7M 参数的 HSTU 结构。输入是用户按时间排列的内容交互，模型将历史行为编码成序列隐状态，再通过 cross-attention pooling 得到用户在当前请求下的表示。作者为 serving policy、reward model 和 propensity model 准备不同的 prediction head，分别估计推荐策略、用户反馈价值和曝光概率。这样业务目标、反事实评价和最终排序策略不会完全挤在一个分类头里。</p>
+<p>反馈标签被组织成六个层级。论文正文把它们描述为从 impression、click、free consumption、paid consumption 到更深层消费行为的一组漏斗信号，中间共使用五个 cutpoints。每个 cutpoint 将用户行为划分成有序的累计事件，因此模型既能学习是否发生点击，也能学习点击之后是否继续读、是否触达付费和是否完成更深层目标。与把六个标签当成互不相关的分类任务相比，序数结构保留了漏斗的单调关系：已经完成付费消费的用户不应被模型解释成完全没有点击。</p>
+<p>日志存在 exposure bias。用户只能对被展示的候选产生反馈，而展示本身由旧策略决定。作者用 propensity model 估计曝光概率，再用 clipped inverse propensity weighting 构造 SNIPS 风格的修正目标。低曝光概率但实际得到反馈的样本会获得更高权重，但权重被截断以避免单个样本主导训练。这个修正让 funnel head 不只是复读历史排序策略，而是更接近对候选策略的反事实评价。</p>
+<p>第一阶段 LP 使用推荐序列上的语言模型式训练目标，让基础模型在继续学习时不立即偏向某一个稀疏业务标签。第二阶段 FFT 同时训练漏斗任务，论文比较了单阶段直接 FFT、先 LP 再 FFT，以及在 FFT 中使用 learning-rate control 的两阶段方案。最终进入第三阶段 RFT：先训练 reward model，把多个漏斗指标与业务偏好压缩成一个可比较的奖励；再将候选列表视为组，在组内计算相对优势，使用 GRPO 更新 policy。GRPO 的 advantage 采用组内归一化形式，并通过 clip ratio 约束更新幅度，再加入 KL 惩罚保持策略不要偏离参考模型过远。</p>
+<p>作者还比较 DPO。DPO 不要求在线式策略采样，而是从偏好对中直接学习 chosen 与 rejected 排序，更接近 pairwise preference optimization。训练使用三周日志、10% 用户作为测试划分；LP 单阶段 100 个 epoch，LP 与 FFT 两阶段各 50 个 epoch；LP 学习率为 1e-3，FFT 的 head 学习率为 1e-4、backbone 学习率为 1e-5，RFT policy 学习率为 1e-5、backbone 学习率为 1e-6。线上候选列表限制为 top-32，GRPO 的 clip 为 0.1，KL 系数为 0.001。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，LP→FFT→RFT 是一条面向推荐基础模型的渐进式对齐路径。它把表示保持、业务监督和策略优化分开，降低了从通用行为模型直接跳到稀疏深层奖励的风险。两阶段设置中加入 learning-rate control 后，RankNDCG 与 FunnelNDCG 都继续上升，说明小学习率的 backbone 与较快适应的任务头之间存在实际收益。</p>
+<p>第二，论文将多层漏斗和曝光校正放在策略优化之前。这样 reward model 学到的不是单一 CTR 代理，而是经过 propensity 修正的多目标价值。对于点击诱导、短停留和长周期转化不一致的问题，这个建模方式比简单加权 CTR 更可解释。</p>
+<p>第三，作者用 reward model 将复杂业务目标与策略训练解耦。GRPO 可以在候选组内比较不同排序策略的相对收益，而不是依赖每一个候选都拥有稳定的绝对奖励；DPO 则提供另一条不需要显式策略采样的路径。两者的对照说明，推荐后训练不应被理解为只有一种 RL 算法。</p>
+<p>第四，在线实验验证了深层目标的改善可以传递到真实行为。论文在韩国 Webtoon 平台做了一个月 A/B test，比较 CTRL、SFT、GRPO with RM 与 DPO without RM。各方案在 click、engaged、last-free 和 last-paid 等指标上均呈正向结果且具有统计显著性；GRPO 更擅长推动更深层参与，DPO 对即时 click 的收益更突出。</p>
+<h2>4. 实验结果分析</h2>
+<p>离线实验最能说明渐进式训练的效果。单阶段 FFT 的 RankNDCG 为 0.429、FunnelNDCG 为 0.620；只做 LP 时为 0.426 和 0.620。两阶段但不做 learning-rate control 后升至 0.434 和 0.622；加入 learning-rate control 后为 0.437 和 0.625。也就是说，先保持基础能力、再做漏斗微调本身有收益，而让 backbone 用更小步长继续适应又能避免基础知识被快速覆盖。</p>
+<p>进入策略后，reward model 配合 GRPO 的 RankNDCG 为 0.463，FunnelNDCG 为 0.637，是表中最强的组合。GRPO 不使用 reward model 时为 0.441 和 0.627，说明有质量的 reward model 对深层漏斗价值十分重要。DPO 配合 reward model 为 0.423 和 0.630，而不配合 reward model 为 0.453 和 0.637，表明 DPO 对偏好对的构造方式敏感。不能简单根据一种离线指标宣布 GRPO 或 DPO 永远更优；GRPO 的优势更集中在策略与深层目标，DPO 的优势可能出现在更直接的点击偏好。</p>
+<p>实验划分使用最近三周数据，测试为 10% 用户。这个设置能够验证短期时间外推，但结果主要反映一个内容平台、一个短窗口和一个业务漏斗。线上测试持续一个月，CTRL 是既有控制策略，SFT 是监督微调基线，GRPO 与 DPO 是后训练候选。论文报告各层行为指标总体正向且 p&lt;0.001，并指出 GRPO 对 engaged、last-free、last-paid 等更深反馈的改善更明显，DPO 对第一步 click 更有优势。对于实际业务，这个差异比单个总体 CTR 更值得关注。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文没有单列很长的 limitations 章节，因此下面区分正文明确给出的范围与基于实验设计的工程边界。作者明确展示的是 NAVER WEBTOON 的韩国 Webtoon 业务、约 7M 参数 HSTU、三周离线日志和一个月线上 A/B；论文没有证明同一套 funnel cutpoints、reward model 或 top-32 约束可以直接迁移到电商、社区搜索或广告。六级漏斗的具体层级依赖内容消费流程，换成 UGC 搜索时必须重新定义点击之后的有效阅读、收藏、关注或问题解决。</p>
+<p>从数据角度，SNIPS 只能依赖 propensity model 的质量。若曝光概率估计错误、旧策略覆盖不足或极低概率样本被大量截断，反事实排序评价仍然可能有偏。三周日志对节假日、长周期留存和内容生命周期的覆盖也有限；一个月线上 A/B 能说明短期行为变化，却不能替代更长时间的用户留存、创作者生态和内容消费质量分析。</p>
+<p>从模型角度，RFT 的 reward model 把多个深层反馈压缩成可优化的标量或偏好关系，仍有 reward hacking 风险。系统可能提高某一层停留或付费，却降低满意度、内容多样性或长期留存。论文报告了四层漏斗指标，但没有给出足够细的负反馈、重复曝光、长周期 retention 或不同用户群体公平性切片。未来扩大部署时，应加入反短期诱导的约束、用户分群稳定性分析和策略漂移监控。</p>
+<p>论文没有公开完整线上数据、候选生成器、reward model 标注细节或复现所需的工业基础设施。因此外部团队可以复用训练顺序、propensity 校正和 GRPO/DPO 对照，却不能只凭公开表格复现线上 lift。更长窗口的 sequential A/B、跨域迁移、不同候选规模、稀疏注意力和面向用户长期价值的多目标 Pareto 训练，都需要单独验证，不能从当前结果直接推出。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区短文本搜索，最值得借鉴的是训练顺序，而不是照搬 Webtoon 的标签。可以先用 query、曝光、点击和阅读序列做 LP 风格的基础行为训练；再把点击、有效阅读、收藏、关注、问题解决或负反馈组织成符合业务流程的漏斗；最后再对排序候选做 reward model 与偏好优化。backbone 使用比 task head 小一个数量级的学习率，能够减少新业务目标对通用用户兴趣表示的破坏。</p>
+<p>上线前应保留强控制策略，并把 CTRL、SFT、GRPO、DPO 放在同一实验框架里。离线要同时记录基础相关性和深层漏斗：搜索可用 RankNDCG、Recall、CTR、长点击、收藏/关注率与 query 解决率；推荐可用点击、有效消费、付费、负反馈、多样性和留存。不要把所有目标提前折成一个总分后只看总分，否则会失去判断策略到底改善了哪一层的能力。</p>
+<p>propensity 校正应成为日志和评测的一等组件。记录候选曝光概率、位置、过滤原因与策略版本，训练 propensity model 时做校准检查，并把 clipping 阈值、有效样本量和权重分布放入每日监控。若新候选在历史策略下几乎没有曝光，就不能仅用离线 SNIPS 宣称它已经被充分验证；应通过安全探索、流量护栏或受控随机化增加支持集。</p>
+<p>对候选策略的更新要有预算。论文在 RFT 中使用 top-32 候选与较小 KL 惩罚，这提示线上可先限制策略动作空间，确保每次请求的延迟和风险可控。实际部署还应监控 P50/P95/P99 延迟、GPU 利用率、候选重复率、负反馈、用户分群差异和 reward model 与真实业务指标的偏离。若 GRPO 主要改善深层参与而牺牲即时点击，应根据产品目标选择流量，而不是简单把即时 CTR 作为唯一门槛。</p>
+<p>最后，建议把管线分成可回滚阶段：先上线漏斗感知的监督模型，确认指标和日志稳定；再在小流量引入 DPO 或 GRPO；每轮只改变一种策略、一个 reward 版本或一个候选预算。对用户生成内容和搜索场景，增加内容安全、重复推荐、诱导点击、低质长文和 query 误解等守护指标。这样，Progressive Alignment 才能从工业案例转化为可审计、可回滚、可持续迭代的推荐后训练流程。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

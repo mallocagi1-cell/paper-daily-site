@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Scalable Training of Mixture-of-Experts Models with Megatron Core</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Scalable Training of Mixture-of-Experts Models with Megatron Core</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.85</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 5 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 本文针对 Mixture-of-Experts (MoE) 模型训练中的系统挑战，提出了跨内存、通信和计算的集成优化方案。由于 MoE 模型的稀疏性使参数量远超每 token 计算量，优化任一维度会将压力转移到其他维度，因此需要全栈协同设计。框架支持 Parallel Folding 灵活多维并行、FP8/NVFP4 低精度训练和高效长上下文训练。在 NVIDIA GB300 和 GB200 上，DeepSeek-V3-685B 模型达到 1,233/1,048 TFLOPS/GPU。</p><p><strong>Key insight:</strong> 该工作首次系统性地解决了 MoE 训练中内存-通信-计算三角约束问题，通过细粒度重计算、优化调度器、Grouped GEMM 融合和 CUDA Graphs 等技术的协同优化，在最新 NVIDIA GPU 上实现了接近峰值的训练吞吐。Parallel Folding 机制提供了灵活的多维并行折叠能力，为搜索推荐领域大规模 MoE 模型（如 DeepSeek-V3 级别）的高效训练提供了直接可用的工程框架。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-03-11/infra/report.html#dr-arxiv-oai-arXiv-org-2603-07685">2026-03-11 · Infra (4.85)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2603.07685" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>Megatron Core MoE 深度解读：万亿参数混合专家模型的可扩展训练系统</h1>
+<h2>问题与动机</h2>
+<p>MoE 架构通过稀疏激活实现了参数量与计算量的解耦——以 DeepSeek-V3 为例，模型总参数量达 685B，但每个 token 仅激活 37B 参数，参数-计算比高达 18:1。这种稀疏性带来了三个紧密耦合的系统级挑战：</p>
+<p><strong>内存墙</strong>：所有专家的参数、梯度和优化器状态都必须驻留在内存中，即使每个 token 只激活少数专家。以 Llama-405B（BF16 + Adam）为参考，总内存需求约 12,865GB。</p>
+<p><strong>通信墙</strong>：专家并行（EP）依赖 all-to-all 集合通信分发和收集 token。未优化的 all-to-all 可占总训练时间的 60%。</p>
+<p><strong>计算效率墙</strong>：MoE 的稀疏激活产生大量小型矩阵乘法。在稠密模型中 GEMM 约占执行时间的 70%，而在细粒度 MoE 中不到 50%，路由和排列开销约占 MoE 层执行时间的 9%。</p>
+<p>关键洞察：这三面墙不是独立的——优化一个维度往往将压力转移到另一个维度，因此需要跨整个系统栈的协同设计。</p>
+<h2>方法概述</h2>
+<p>围绕 MoE 的四阶段前向传播流程展开优化：Route（路由）→ Dispatch（分发）→ Compute（计算）→ Combine（聚合）。系统优化分层组织：并行策略（Parallel Folding）、通信优化（Flex Dispatcher + DeepEP/HybridEP）、内存优化（FSDP+EP、激活卸载）、计算优化（Grouped GEMM、CUDA Graphs）、精度优化（FP8/FP4）。</p>
+<h2>核心技术贡献</h2>
+<h3>1. 并行折叠（Parallel Folding）</h3>
+<p>传统框架要求 EP 是 DP 的子集，导致 Attention 和 MoE 层被迫使用相同的 TP/CP 配置。并行折叠将两者的并行配置完全解耦：Attention 层可用 TP=4, CP=8 优化长序列大矩阵，MoE 层用 ETP=1, EP=16 优化稀疏专家分布。梯度同步也相应解耦，通过 ChainedOptimizer 防止不同副本数下的错误梯度平均。</p>
+<h3>2. 多后端 Token Dispatcher 与通信-计算重叠</h3>
+<p>提供三种通信抽象：AllGather Dispatcher（小规模）、All-to-All Dispatcher（NCCL 标准）和 Flex Dispatcher（统一抽象，支持 DeepEP 和 HybridEP 后端）。关键策略包括 EP 通信与专家计算并发执行，以及共享专家与路由专家的流水线并行。</p>
+<h3>3. 全栈低精度训练（FP8/FP4）</h3>
+<p>低精度是唯一能同时缓解三面墙的优化手段。支持 Per-Tensor FP8、Blockwise FP8（Hopper）、MXFP8（Blackwell）和 NVFP4（Blackwell）四种精度 recipe。针对 MoE 特有的动态形状对齐、分组量化和 FP8/FP4 主权重等挑战提出了专门的解决方案。</p>
+<h3>4. CUDA Graphs 与 Dropless MoE 兼容</h3>
+<p>通过 Sync-free kernels（无同步内核）、ECHO（弹性克隆热点专家）和 Paged stashing（分页暂存）三项技术实现全 CUDA Graphs 覆盖，结合 Grouped GEMM 将多个专家计算批处理为单次内核调用。</p>
+<h2>实验结果分析</h2>
+<p>在 NVIDIA GB300 上，DeepSeek-V3-685B 模型达到 <strong>1,233 TFLOPS/GPU</strong>，GB200 上达到 <strong>1,048 TFLOPS/GPU</strong>。Qwen3-235B 在 GB300/GB200 上分别达到 974/919 TFLOPS/GPU。</p>
+<p>优化栈贡献拆解：无 Grouped GEMM 约 35% 效率损失；无通信-计算重叠约 20% 效率损失；无低精度训练约 15% 效率损失。框架已在实际生产中训练了从数十亿到万亿参数的 MoE 模型，集群规模扩展到数千个 GPU。</p>
+<h2>局限与未来方向</h2>
+<ol>
+<li>CUDA Graphs 与动态路由的张力：dropless MoE 的完全覆盖仍需特殊处理</li>
+<li>负载均衡的根本困境：辅助损失可能强制不自然的路由决策</li>
+<li>跨平台可移植性有限：大量优化深度绑定 NVIDIA 硬件特性</li>
+<li>未提供与其他 MoE 训练框架（DeepSpeed-MoE、Tutel）的直接对比</li>
+<li>未来方向包括 MoE + RL 后训练、自适应专家分布策略、端到端编译优化</li>
+</ol>
+<h2>工业实践意义</h2>
+<ol>
+<li><strong>MoE 训练的核心矛盾</strong>不是模型太大，而是参数多但激活少带来的内存-通信-计算三维失衡。通信优化的 ROI 在 MoE 中高于计算优化</li>
+<li><strong>并行折叠</strong>应成为 MoE 训练框架的标准能力，解决 Attention 和 MoE 层最优并行配置不同的问题</li>
+<li><strong>低精度训练是 MoE 的万能钥匙</strong>：FP8/FP4 同时缓解三个瓶颈，多种精度 recipe 提供渐进式迁移路径</li>
+<li><strong>推荐系统天然适合 MoE 架构</strong>——不同用户群体/场景可以由不同专家处理。论文中的负载均衡、共享专家设计和 Grouped GEMM 优化可直接迁移</li>
+<li><strong>分布式检查点的并行无关重分片</strong>对于搜索/推荐训练场景的跨集群迁移极为实用</li>
+</ol></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

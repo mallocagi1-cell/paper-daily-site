@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — OpenSeeker-v2: Pushing the Limits of Search Agents with Informative and High-Difficulty Trajectories</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>OpenSeeker-v2: Pushing the Limits of Search Agents with Informative and High-Difficulty Trajectories</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.10</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 工业界训练前沿搜索 Agent 的「标准菜谱」是 PT→CPT→SFT→RL 的重资源管线。本文反其道而行之，证明只要用「高信息量+高难度」轨迹，纯 SFT 也能达到 SOTA。三个简单的数据合成改动是关键：扩大知识图谱以丰富探索、扩大工具集、严格过滤低步数轨迹。仅 10.6k 数据上训练 30B 规模 ReAct agent，BrowseComp 46.0%、BrowseComp-ZH 58.1%、HLE 34.6%、xbench-DeepSearch 76.0%，全面 SOTA。</p><p><strong>Key insight:</strong> 对于生成式搜索/Agent 落地，本工作把「复杂 RL pipeline」破除为可复用的工程问题——重点不在 RL，而在轨迹质量。社区/UGC 搜索若想做 DeepSearch 风格的复杂查询分解，可以先按本文的三条数据合成原则建一条 SFT-only 基线：(1) 知识图谱越大召回越多样；(2) 工具集大小决定 agent 行动空间；(3) 严格过滤低步数轨迹避免 shortcut。这是一条比「先 PT 再 CPT 再 RL」低 10x 成本的复制路径。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-07/generative/report.html#dr-hf-2605-04036">2026-05-07 · Generative (4.10)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">HuggingFace</span>
+          <a href="https://huggingface.co/papers/2605.04036" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>OpenSeeker-v2 直面&quot;前沿搜索 Agent 训练被工业巨头垄断&quot;这一现实：训练一个 SOTA 的 Deep Search agent 通常意味着 PT→CPT→SFT→RL 的重资源管线，学术与中小团队无法复现。论文的核心立论是：&quot;这条管线真的必要吗，还是数据质量足够时纯 SFT 就够？&quot;作者指出，OpenSeeker-v1 等先前工作虽然探索过 SFT 路径，但它们使用的合成轨迹要么太短、要么知识图覆盖太窄，给模型&quot;shortcut 解题&quot;留下了空间——很多问题靠简单关键词匹配就能解，导致模型学不到长程多步推理。在 BrowseComp / BrowseComp-ZH / Humanity&#x27;s Last Exam / xbench 这种需要&quot;持续在网页上探索&quot;的 benchmark 上，先前 SFT 模型与重 RL 流程之间存在显著差距。本文要回答的具体问题是：在不引入 CPT 与 RL 的情况下，仅通过提升合成数据的&quot;难度+信息量&quot;，能否让 SFT 训出 SOTA 的搜索 Agent？这一问题对学术界与企业内部&quot;复制工业级搜索 Agent&quot;都有直接意义。</p>
+<h2>2. 方法详解</h2>
+<p><strong>Base 模型与运行范式</strong>：基于 Qwen3-30B-A3B-Thinking-2507（总参 30B、激活 3B 的 MoE），256k 上下文，运行在 ReAct 范式下，单条轨迹最多允许 200 次工具调用。这一选择本身就反映了团队的核心判断——选 thinking-friendly + 长上下文的 base，让模型能&quot;想深+查多&quot;。</p>
+<p><strong>数据合成的三个关键改动</strong>（核心方法贡献）：</p>
+<ol>
+<li><strong>Scaling Knowledge Graph Size</strong>：把每条合成数据所依托的知识子图从 k 个节点放大到 K 个节点，让证据图拓扑更丰富、强制模型做多跳推理而非单跳查找；</li>
+<li><strong>Expanding Tool Set</strong>：在 v1 工具集基础上扩张工具种类，使 agent 能学到更灵活、功能更丰富的解题模式（搜索、浏览、抽取、对比等组合）；</li>
+<li><strong>Strict Low-Step Filtering</strong>：硬过滤掉工具调用次数低于 T_min 的&quot;直接命中型&quot;轨迹——这些&quot;shortcut 数据&quot;看起来是正例其实在教模型偷懒。</li>
+</ol>
+<p><strong>训练设置</strong>：仅 10.6k SFT 样本，无 CPT、无 RL。论文未给出 optimizer/学习率/batch size/硬件的具体数字（这是论文实证披露层面的薄弱点）。</p>
+<p><strong>轨迹统计佐证设计动机</strong>：合成轨迹平均工具调用步数 64.67（v2）vs 46.97（v1）vs 36.01（RedSearcher），直接量化&quot;任务难度上升&quot;。这是三条改动的最直观体现：扩图+扩工具+过滤短轨迹，自然产出更长、信息更密的训练样本。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>数据难度替代 RL</strong>：把&quot;复杂的 RL pipeline&quot;问题降维成&quot;高质量数据合成&quot;问题。前者技术栈深、需要 reward model + rollout，后者只需把图扩大、工具加多、滤掉简单样本。这是一条让学术团队也能跑出 SOTA Agent 的实操路径。</li>
+<li><strong>三条简单可复现的合成原则</strong>：图大小、工具数量、最小步数，每一条都对应一个在 v1 上做不到的&quot;长尾难度&quot;，且互为正交。任何团队都可以单独 ablate 验证。</li>
+<li><strong>Trajectory Length 作为难度指标</strong>：用平均工具步数定量衡量数据难度，给后续工作提供了可比较的标尺。</li>
+<li><strong>挑战 Scaling 假设</strong>：在 30B 参数下，10.6k SFT 数据居然能击败 671B DeepSeek-V3.1（BrowseComp 46.0% vs 30.0%）和 Claude-4.5-Sonnet（24.1%）——证明对于 deep search 这类任务，&quot;训练数据轨迹质量&quot;的影响可能远大于参数规模。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<p><strong>主表（30B-sized agents, ReAct）</strong>：</p>
+<table><thead><tr><th>Benchmark</th><th>OpenSeeker-v2</th><th>Tongyi DeepResearch</th><th>Δ</th></tr></thead><tbody><tr><td>BrowseComp</td><td>46.0%</td><td>43.4%</td><td>+2.6</td></tr><tr><td>BrowseComp-ZH</td><td>58.1%</td><td>46.7%</td><td>+11.4</td></tr><tr><td>Humanity&#x27;s Last Exam</td><td>34.6%</td><td>32.9%</td><td>+1.7</td></tr><tr><td>xbench</td><td>78.0%</td><td>75.0%</td><td>+3.0</td></tr></tbody></table>
+<p>最显著的提升在 BrowseComp-ZH（+11.4）——中文长程搜索本身是行业弱点，论文的&quot;扩图+严格过滤&quot;在中文知识图上效果尤为突出，说明数据难度论对低资源语种提升更大。</p>
+<p><strong>与 v1 对比（同 base 系列）</strong>：BrowseComp 29.5%→46.0%（+16.5），BrowseComp-ZH 48.4%→58.1%（+9.7），xbench 74.0%→78.0%（+4.0）。增益不是来自 base 模型升级，而是来自数据合成改造——这是论文最有说服力的对照。</p>
+<p><strong>惊人发现</strong>：OpenSeeker-v2 在 BrowseComp 上以 30B 击败 671B DeepSeek-V3.1（30.0%）与 Claude-4.5-Sonnet（24.1%），说明在&quot;网页深度搜索&quot;这类高度依赖工具使用模式的任务上，参数规模并非主导因素，反而是&quot;是否在长程多步轨迹上充分训练过&quot;决定上限。</p>
+<p><strong>实验局限</strong>：论文没有给出三条数据合成改动各自的 ablation（图扩大单独贡献多少、工具扩张单独贡献多少、低步过滤单独贡献多少），这是它的方法学短板。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文未设独立&quot;限制&quot;章节，但隐含约束清晰：</p>
+<ol>
+<li><strong>模型规模仅 30B</strong>：未尝试 70B/100B+，扩到更大规模数据是否仍 SOTA 未知；</li>
+<li><strong>基准只 4 个</strong>：BrowseComp 系列+HLE+xbench 都是&quot;网页深搜&quot;型，不能覆盖代码搜索、企业知识库搜索、垂直领域多模态搜索等长尾场景；</li>
+<li><strong>训练超参未披露</strong>：无 learning rate / batch / 训练步数等关键数字，复现门槛高于论文宣称；</li>
+<li><strong>缺少线上 A/B</strong>：所有结果都是离线 benchmark，没有真实搜索产品线上对比；</li>
+<li><strong>三条数据改动未做 ablation</strong>：哪一条贡献多少不清楚，给后续优化方向留了未解的空白。</li>
+</ol>
+<h2>6. 工业实践意义</h2>
+<p>对社区/UGC 搜索做&quot;DeepSearch 风格复杂查询分解&quot;的实践有三条直接启示：</p>
+<ol>
+<li><strong>先建一条 SFT-only 基线</strong>：不要急着上 RL。按 OpenSeeker-v2 的三条原则合成 1 万条轨迹（扩大业务知识图 → 扩工具集 → 过滤短轨迹），用 30B 级 thinking 模型 SFT，作为&quot;DeepSearch v1&quot;。论文证明这条路径在多个公开 benchmark 上能击败 RL 重型方案——对中小团队是 10x 成本下降。</li>
+</ol>
+<ol>
+<li><strong>数据质量比数据量重要</strong>：10.6k 数据胜过百万级 RL rollout，背后是&quot;每条轨迹都强制走多步推理 + 多工具组合&quot;。社区搜索可以模仿：把热门帖、问答、评论组成的&quot;业务知识图&quot;作为合成基底，强制每条轨迹必须跨 5 个以上节点+至少 3 种工具，过滤掉&quot;直接搜关键词找答案&quot;的简单样本。</li>
+</ol>
+<ol>
+<li><strong>部署考量</strong>：30B-A3B 激活 3B 的 MoE 推理对工业部署相对友好（A3B vs Dense 70B+ 显存压力差很多），但 64 步以上的工具调用链对延迟影响显著（每步 1-2s 网页 fetch+LLM 推理），社区搜索若要做实时 DeepSearch，需要分级触发（仅高复杂度 query 走 64 步链路，简单 query 走 1-step 兜底）。论文未给延迟数字，落地团队需要自测。</li>
+</ol>
+<p>可借鉴的&quot;避免坑&quot;：论文未做三项数据合成改动的 ablation，落地团队应该在自己业务上做 ablation——某些场景下&quot;扩工具集&quot;提升很小（业务工具天然有限），重点应放在&quot;扩图+过滤短轨迹&quot;。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

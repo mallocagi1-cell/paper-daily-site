@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — PIANO: Personalized Reranking via Information Aggregation Node for Music Search Optimization</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>PIANO: Personalized Reranking via Information Aggregation Node for Music Search Optimization</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.20</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 4 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 音乐搜索重排需同时对齐用户当前 query 与长期偏好，并联合优化 CTR 与 CVR，但已有序列方法只用 item 交互历史、无法用历史 query 判断哪些偏好匹配当前意图，且多数 listwise 模型只优化单目标。论文提出 PIANO：Query-Driven Interest Refiner (QDIR) 用当前 query 对历史 query 序列做 cross-attention 筛选相关历史交互、融合长短期兴趣；Information Aggregation Node (IAN) 用一个 [CLS] 式可学习 token 在列表级聚合并预测 CTR/CVR，配合 list-level + item-level 联合损失。工业音乐数据集 NDCG@5 0.8606 优于 PEAR 0.8586；网易云音乐线上 4 周 A/B，CTR 相对 +0.62%、CVR 相对 +4.45%（p&lt;0.05）。</p><p><strong>Key insight:</strong> 两个设计值得借鉴：一是用历史 query 序列而非仅 item 序列刻画“搜索意图下的长期偏好”，解决了序列推荐在搜索场景下意图错配的问题；二是用列表级 [CLS] token 把多目标（点击/转化）的权衡放到整列粒度而非单 item 粒度优化（消融显示去掉 QDIR 掉 ~1.9% NDCG@5、去掉 IAN 掉 ~1.2%）。对社区搜索而言，QDIR 的“query 感知历史筛选”可直接迁移到 UGC 搜索重排，把用户历史搜索词作为意图锚点对齐当前 query，同时用列表级损失协调相关性与点击/互动多目标。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-06-17/personalization/report.html#dr-arxiv-2606-16641">2026-06-17 · Personalization (4.20)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2606.16641" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>音乐搜索重排与短视频不同：音乐曲目生命周期长、价值持久，重排既要对齐用户当前 query，又要兼顾长期偏好，还要同时优化 CTR 与 CVR。论文指出已有方法两个缺陷：(1) <strong>序列方法只用 item 交互历史</strong>，无法利用历史 query 判断“哪些过去偏好匹配当前搜索意图”——比如用户此刻搜“安静的钢琴曲”，纯 item 序列分不清历史里哪些交互与当前意图相关；(2) <strong>多数 listwise 模型只优化单目标</strong>（如只优化 CTR），而传统多目标方法在 item 粒度平衡点击与转化，忽略了整条排序列表层面 trade-off 如何展开。动机即：把“历史 query 感知的长期偏好对齐”与“列表级多目标优化”结合进个性化重排。</p>
+<h2>2. 方法详解</h2>
+<p>PIANO = QDIR + IAN + 联合损失。</p>
+<p><strong>QDIR（Query-Driven Interest Refiner）</strong>，对齐长短期兴趣：</p>
+<ul>
+<li>当前意图表征：用音乐专用 embedding 模型 Qwen3-Embedding-0.6B 编码当前 query，投影 r_short = W^E · q_cur；</li>
+<li>历史 query 感知的偏好精炼：以当前 query 为 Query、历史 query 序列为 Key、历史交互 item 为 Value 做 cross-attention，r_long = softmax(QK^T/√d)V——用“当前 query 与哪些历史 query 相似”来筛选相关历史交互；</li>
+<li>长短期融合：r_user = LayerNorm(W_f·[r_long ‖ r_short ‖ user_profile] + b)。</li>
+</ul>
+<p><strong>IAN（Information Aggregation Node）</strong>，列表级聚合：</p>
+<ul>
+<li>一个 [CLS] 式可学习 token 前置到候选列表，初始化 h_0 = MLP_init(g)（g 为 QDIR 输出）；</li>
+<li>IAN 用固定位置编码、item 用顺序位置编码，送入 2 层 pre-norm Transformer encoder 处理 [h_0, h_1,…,h_M]；</li>
+<li>双预测头：列表级 p_list = Sigmoid(MLP(h_0&#x27;))，item 级 p_j = Sigmoid(MLP(h_j&#x27;))。</li>
+</ul>
+<p><strong>多目标优化</strong>：问题形式化为 π* = argmax_π [λ·U_clk + (1−λ)·U_conv]，列表级损失对每条列表的 CTR/CVR 率做 BCE（标签 y_clk = 列表内点击 item 数/列表长度，y_conv 同理），item 级损失对单 item 做 BCE，联合目标 L = α·L_list + (1−α)·L_item，α 平衡两种监督粒度（最优 α=0.5）。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>用历史 query 序列刻画搜索意图下的长期偏好</strong>：QDIR 的 cross-attention 以“当前 query↔历史 query 相似度”为桥筛选相关历史交互，直击序列推荐在搜索场景的“意图错配”痛点。消融显示去掉 QDIR 掉 ~1.9% NDCG@5（工业集），是贡献最大的模块。</li>
+<li><strong>列表级 [CLS] token（IAN）做整列粒度多目标</strong>：传统多目标在 item 级平衡点击/转化，PIANO 用 h_0 聚合整条列表、在列表层面预测 CTR/CVR 率，配合列表级+item 级联合损失显式建模“整列 trade-off”。去掉 IAN 掉 ~1.2% NDCG@5。</li>
+<li><strong>长短期 + 多粒度监督的统一重排框架</strong>，且在公开（Yahoo Letor）与工业（音乐搜索）双数据集 + 线上 A/B 三重验证。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<p>数据集：Yahoo Letor（公开，29,921 记录 / 709,877 item）+ 工业音乐搜索（3133.7 万记录、448.9 万用户、23.6 万 query、64.2 万 item）。</p>
+<p>离线主结果：</p>
+<ul>
+<li>工业集 NDCG@3 0.8296、NDCG@5 0.8606、MAP 0.8100，优于次优 PEAR（0.8277/0.8586/0.8081）与 PRM（0.8098/0.8433/0.7868）；</li>
+<li>Yahoo Letor NDCG@5 0.6700 vs PRM 0.6676、MAP 0.6516 vs PRM 0.6494。</li>
+</ul>
+<p>消融（工业集）：full（QDIR+IAN）0.8606 → 去 QDIR 0.8442（−1.9%）→ 去 IAN 0.8507（−1.2%）→ 都去 0.8437，两模块均有效、QDIR 贡献更大。超参 α（list vs item 损失权重）：0→0.25→0.5→0.75 呈倒 U，α=0.5 最优。历史序列长度：从 5 到 30 单调提升，越长越好（长期偏好越充分）。</p>
+<p>线上 A/B（网易云音乐，4 周）：CTR 绝对 +0.17pp / 相对 +0.62%，CVR 绝对 +0.005pp / 相对 +4.45%，均 p&lt;0.05，工作日/周末、主要 query 类目均稳定。<strong>CVR 相对提升（+4.45%）远高于 CTR（+0.62%）</strong>，说明列表级多目标优化对“转化”这类更稀疏目标帮助更大。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文无专门 limitations，但隐含：(a) Yahoo Letor 上必须关掉 QDIR 的 query 序列分支（公开集无用户行为序列），QDIR 核心能力只在工业集完整验证；(b) 没量化在线推理延迟/算力开销，仅提到部署有延迟要求；(c) 引入 λ、α、β 多个平衡超参，只系统分析了 α，交互未充分研究；(d) 公开集用合成位置偏置（P_exam∝1/pos^η），非真实交互；(e) 无失败案例分析。补充：QDIR 依赖 Qwen3-Embedding 编码 query，embedding 模型质量与音乐域适配直接影响意图对齐，跨域迁移需重训 embedding。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜索/推荐重排从业者：</p>
+<ul>
+<li><strong>直接可借鉴</strong>：QDIR 的“query 感知历史筛选”——把用户历史搜索词作为意图锚点，用当前 query 对历史 query 做 attention 挑选相关历史交互，几乎可平移到任何“搜索场景下的个性化重排”，社区 UGC 搜索尤其契合（用户历史搜过的话题/帖子类型就是长期意图信号）。</li>
+<li><strong>列表级多目标</strong>：IAN 的 [CLS] token + 列表级 CTR/CVR 率损失，给“既要相关性又要点击/互动/转化”的多目标重排提供了 item 级之外的整列视角；线上 CVR 相对 +4.45% 说明对稀疏转化目标增益显著，值得在付费/收藏等稀疏转化业务上试。</li>
+<li><strong>部署考量</strong>：2 层 Transformer encoder 处理候选列表，推理成本可控；但 QDIR 用了 0.6B 的 query embedding 模型，需评估在线 query 编码延迟（可离线缓存历史 query embedding、仅在线编码当前 query）。</li>
+<li><strong>该避</strong>：别只在 item 级做多目标平衡而忽略整列 trade-off；历史序列越长越好（5→30 单调提升），但要权衡存储与延迟。</li>
+</ul></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

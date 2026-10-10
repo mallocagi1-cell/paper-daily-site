@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — MARS: Multi-rate Aggregation of Recency Signals for Sequential Recommendation across Sparse and Dense Regimes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>MARS: Multi-rate Aggregation of Recency Signals for Sequential Recommendation across Sparse and Dense Regimes</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.35</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 5 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 序列推荐里，Transformer 用位置自注意力、State-Space Model（如 Mamba）用单一隐式衰减来加权历史行为，二者都没把真实用户行为的多尺度时间结构显式建模。MARS 提出一个与编码器无关的聚合算子：直接消费真实时间戳，产出 K 个强调不同 recency 尺度的摘要，再用上下文自适应门控融合。它最多只增加 6% 参数、时间复杂度 O(LdK)，并按训练集平均序列长度自动在稀疏数据用 MARS-T（Transformer）、稠密数据用 MARS-M（Mamba）间切换。在 5 个公开 benchmark、对比 10 个 Transformer/Mamba 基线（统一 RecBole 协议）下，MARS 在每个 benchmark 上都拿到最佳 HR@10，平均相对提升 +19.7%。</p><p><strong>Key insight:</strong> 把「时间」从位置索引或单一衰减升级为显式的多速率 recency 通道，是这篇的核心洞察：用户的短期冲动与长期兴趣本就处于不同时间尺度，单一衰减无法同时拟合。对社区推荐/搜索可直接借鉴——MARS 是即插即用算子（+6% 参数），可挂在现有 SASRec/Mamba 召回塔上，按行为密度自动选骨干，工程落地成本低。门控融合多尺度摘要的思路也能迁移到 query-行为序列的时序特征构造。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-06-04/personalization/report.html#dr-arxiv-2606-03718">2026-06-04 · Personalization (4.35)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2606.03718" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>MARS 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>序列推荐的核心是给历史行为加权，但现有两类骨干各有盲区：Transformer（SASRec 类）用位置自注意力，把&quot;加权&quot;交给可学习的位置/内容注意力，没有时间先验；State-Space Model（Mamba4Rec、SIGMA 类）用单一隐式指数衰减，强加了一条固定的&quot;越近越重&quot;曲线。作者点出关键 gap：<strong>序列混合（sequence mixing）的最优架构，未必等于多尺度时间加权（multi-scale temporal weighting）的最优参数化</strong>——这两件事被现有模型耦合在了一起。真实用户行为天然有多个时间尺度：分钟级的冲动点击、天级的短期兴趣、月级的长期偏好，单一衰减无法同时拟合。量化证据上，论文显示在稀疏数据上 MARS 相对最强 content-only Transformer 基线平均 +19.7% HR@10（Games 上达 +36.2%），在稠密 ML-1M 上以 42% 更少的 MFLOPs 取得 +3.2% HR@10 / +0.9% NDCG（对比 SIGMA），说明显式多尺度建模既涨点又省算力。</p>
+<h2>2. 方法详解</h2>
+<p>MARS 是一个<strong>与编码器无关的聚合算子</strong>，挂在任意骨干输出的 token 表征 h 之上，分三步：</p>
+<p><strong>(a) Per-Head 衰减加权</strong>：先把相邻交互的真实间隔时间 Δt 做对数压缩 Δ̃tᵢ = log(1 + Δtᵢ/τ₀)，τ₀=1 小时。设 K 个衰减 head，每个 head 有可学习基础衰减率 λₖ=softplus(λ̃ₖ) 和温度 τₖ=softplus(τ̃ₖ)+0.1。</p>
+<p><strong>(b) 用户条件化调制</strong>：用序列最后一个表征 hₗₐₛₜ 过 MLP 调制每个 head 的衰减率：λₖ(u)=λₖ·exp(σ·tanh(Wλ·hₗₐₛₜ)ₖ)，σ=0.5。这样每个用户有自己的衰减曲线，但不引入 per-user 参数。</p>
+<p><strong>(c) 聚合</strong>：第 k 个 head 的权重为 softmax 归一化的衰减 logit：wₖ,ᵢ(u)=exp(−λₖ(u)Δ̃tᵢ/τₖ)·mᵢ / Σⱼ(...)，得到 K 个摘要 Zₖ(u)=Σᵢ wₖ,ᵢ(u)hᵢ。理论上（Proposition 1）K 个指数衰减的混合是单调衰减核的通用逼近器。</p>
+<p><strong>上下文自适应融合门</strong>：用上下文向量 c=[时间编码; 最后物料 embedding; hₗₐₛₜ] 对 K 个摘要做门控：gₖ=vᵀtanh(Wg[Zₖ(u);c])，α=softmax(g/τα)，最终 hᵤ=hₗₐₛₜ+Σₖ αₖZₖ(u)。<strong>残差连接保留编码器原信号</strong>，避免退化。</p>
+<p><strong>损失</strong>：L=L_CE + η_div·L_div + η_bal·L_bal。多样性损失 L_div=−Σ JSD(wₖ‖wₖ&#x27;) 防止 K 个 head 塌缩到同一衰减率；负载均衡损失 L_bal=K·Σ ᾱₖ²（MoE 风格）防止门只走单个 head。默认 η_div=η_bal=1e-2。</p>
+<p><strong>骨干自动选择</strong>：按训练集平均序列长度 L̄ 切换——L̄&lt;50 用 MARS-T（Transformer），L̄≥50 用 MARS-M（Mamba）。复杂度 O(LdK)，仅增 ~6% 参数。</p>
+<p>训练配置：d=64，2 层 block，dropout（稀疏 0.5 / 稠密 0.2），Adam lr=1e-3，batch 2048，K（稀疏 4 / ML-1M 8）。</p>
+<h2>3. 核心技术贡献</h2>
+<p><strong>(1) 解耦&quot;序列混合&quot;与&quot;时间加权&quot;</strong>：这是最核心的观念贡献。把时间衰减从骨干中剥离成独立、可即插即用的算子，使得&quot;用什么架构混合序列&quot;和&quot;如何按时间加权&quot;可以各自最优。这比 TiSASRec 把时间嵌入硬塞进注意力更模块化。</p>
+<p><strong>(2) 多速率衰减 + 用户调制</strong>：用 K 个可学习指数核覆盖不同时间尺度，再用用户表征调制——既有多尺度表达力，又不爆 per-user 参数。消融显示去掉真实 Δt（用位置序号替代）在 Beauty 上掉 2.5%，是单个最重要组件。</p>
+<p><strong>(3) 防塌缩正则</strong>：多样性损失保证 K 个 head 真的学到不同尺度（Proposition 3：在 Hawkes 过程数据下可恢复真实衰减率），负载均衡保证门不退化。在稠密 ML-1M 上去掉负载均衡掉 3.0%。</p>
+<h2>4. 实验结果分析</h2>
+<p>主结果（HR@10）：Beauty 8.84（SASRec 8.04，+9.95%）、Sports 5.22（+13.5%）、Games 12.07（SASRec 8.86，+36.2%）、Yelp 6.45（+19.2%）、ML-1M 用 MARS-M 32.80（SASRec 29.62，+10.7%，对比 SIGMA +3.2%）。效率上 MARS-T 仅增 ~2% 参数、1% MFLOPs；MARS-M 比 SIGMA 省 40-42% MFLOPs。</p>
+<p>消融最有信息量：稀疏数据上 backbone-only（去掉 MARS）掉 4.0-6.3%；K=1 单 head 在 Beauty 已达最优 K=8 的 96.2%，说明<strong>稀疏场景少量 head 就够</strong>；稠密 ML-1M 上 K 敏感得多（K=16 时 +6.4% HR@10 摆动），负载均衡损失变成最关键组件。</p>
+<p>按历史长度分组分析揭示一个反直觉点：稀疏 benchmark 上增益随序列变长而增大（Yelp 从短序列 +21.8% 到超长 +29.7%）；但 ML-1M 上 MARS-T 在超长桶（76% 测试用户）反而 −2.9%——因为注意力本就已在长序列上聚焦——而 MARS-M 在所有桶稳定 +5.7%~+9.0%。这正是骨干自动选择规则的实验依据。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确列出：(1) 骨干选择是<strong>手工设定的数据集级阈值</strong>（L̄=50），在 20× 密度差内稳健但未在更连续的密度谱上验证，且非学习得到；(2) 可辨识性（Proposition 3）依赖 Hawkes 过程假设，分布无关版本仍开放；(3) TiSASRec 在 Beauty/Games 的 NDCG/MRR 上仍略胜 MARS-T（1.1-7.1%），作者用 40× 内存优势换取这一让步；(4) 评估仅限五个公开集的离线 next-item 预测。隐含未提的局限：未做线上 A/B，工业超长行为序列（千级）下 K 个核是否够用未知。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜推团队最直接的可借鉴点：<strong>MARS 是低成本即插即用算子</strong>（+6% 参数、O(LdK)），可直接挂在现有 SASRec / Mamba 召回塔输出上，不动主干。对社区推荐尤其契合——用户行为兼有秒级刷信息流的冲动和长期话题偏好，单一时间衰减拟合不了，多速率核能同时建模。三条工程结论：(1) <strong>务必喂真实时间戳</strong>而非位置序号（去掉真实 Δt 是最大掉点项）；(2) 稀疏行为场景 K=4 足矣，不必堆 head，省算力；(3) 行为密度差异大时用骨干自动选择思路——短序列用注意力、长序列用 Mamba。门控融合多尺度摘要的设计也能迁移到 query-行为时序特征构造。部署上 MARS-M 比 SIGMA 省 40% FLOPs，对延迟敏感的精排友好。需注意：超长行为用户（注意力已聚焦）上 Transformer 变体可能无增益甚至掉点，上线前要按行为长度分桶评估。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -62,15 +62,27 @@
     if (!dr || dr.status !== "completed") return "";
     const htmlBody = dr.content_html || "";
     if (!htmlBody) return "";
-    const pid = escapeHtml(paper.id || dr.paper_id || "");
+    const rawPid = paper.id || dr.paper_id || "";
+    const pid = escapeHtml(rawPid);
+    const domId = String(rawPid).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "x";
+    const pageLink = dr.slug
+      ? '<a class="deep-read-page-link" href="deep-readings/' +
+        encodeURIComponent(dr.slug) +
+        '.html">独立页面阅读 &#8599;</a>'
+      : "";
     return (
-      '<div class="deep-read-inline" data-deep-read data-paper-id="' +
+      '<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="' +
       pid +
+      '" id="dr-' +
+      escapeHtml(domId) +
       '">' +
+      '<div class="deep-read-toggle-row">' +
       '<button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">' +
       '<span class="deep-read-trigger-icon">&#9660;</span>' +
-      "<span>展开深度解读</span>" +
+      "<span>&#128214; 展开深度解读</span>" +
       "</button>" +
+      pageLink +
+      "</div>" +
       '<div class="deep-read-section" hidden>' +
       '<div class="deep-read-header-bar">' +
       '<button type="button" class="deep-read-trigger expanded" data-deep-collapse>' +
@@ -88,12 +100,13 @@
     const btn = root.querySelector("[data-deep-toggle]");
     const section = root.querySelector(".deep-read-section");
     if (!btn || !section) return;
+    const row = btn.closest(".deep-read-toggle-row") || btn;
     if (open) {
-      btn.hidden = true;
+      row.hidden = true;
       section.hidden = false;
       btn.setAttribute("aria-expanded", "true");
     } else {
-      btn.hidden = false;
+      row.hidden = false;
       section.hidden = true;
       btn.setAttribute("aria-expanded", "false");
       const card = root.closest(".card");
@@ -232,6 +245,7 @@
       "</span></div></div>" +
       scoreDetail +
       body +
+      renderDeepRead(paper) +
       meta +
       "</div></div></div>"
     );
@@ -422,6 +436,11 @@
       "</strong>" +
       (generated ? " · 生成于 " + escapeHtml(generated) : "") +
       "</p>" +
+      (DATA.deep_reading_entries
+        ? '<p class="pages-meta"><a class="pages-dr-link" href="deep-readings/index.html">&#128214; 深度解读 ' +
+          DATA.deep_reading_entries +
+          " 篇 · 按日期浏览 &#8594;</a></p>"
+        : "") +
       "</div>" +
       (DATA.days.length
         ? '<section class="day-list" aria-label="日报列表">' + cards + "</section>"

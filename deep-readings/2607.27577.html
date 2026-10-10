@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Heterogeneous Ranking in Industrial-Scale Recommender Systems: A Case Study</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Heterogeneous Ranking in Industrial-Scale Recommender Systems: A Case Study</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> Google Discover 的统一信息流同时包含网页、长短视频和 UGC，单一共享表示容易让多数内容类型压制少数类型。HA-MoE 将异质性上下文同时注入多门控专家与专家表示，并用 LENS 追踪专家分工、用 DL-AUC 衡量全局效用和跨类型正确性。10M 条 7 天样本上，pInterest DL-AUC 达 0.691；1% 流量、7 天 A/B 中 DAU +0.22%、多样互动率 +0.54%。</p><p><strong>Key insight:</strong> 多目标推荐的“负迁移”不只是 loss 权重问题，也来自内容类型的特征密度和行为语义不一致。可以借鉴 HA-MoE 的显式类型条件、4 专家 dense MMoE 与 DL-AUC 组合：把 UGC、视频、广告的跨类型排序作为安全指标，同时监控专家塌缩；论文报告模型体积增加不到 5%、p50/p95 延迟增加不到 0.5%。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-08-06/personalization/report.html#dr-web_search-arxiv-2607-27577">2026-08-06 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2607.27577" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>这篇工业案例研究关注推荐系统里一个常见但经常被平均指标掩盖的矛盾：同一个统一 feed 同时服务网页文章、长视频、短视频、UGC 等异质内容，而用户对不同内容类型的消费意愿、停留机制和曝光位置并不相同。如果用一个共享的 MLP/多任务模型在总体样本上优化，micro-AUC 可能上涨，但模型对某一内容类型的判断会被另一类型的样本主导，最终表现为跨类型不公平、用户兴趣被单一媒介吞没，或者多样性下降。</p>
+<p>Google Discover 的实际场景把这个问题放大了。它要在一个 feed 中混合多个内容类型，排序系统还要同时预测点击/兴趣与不感兴趣等多个目标。论文将“异质性”从一个离线分析维度提升为模型输入和训练目标：HA-MoE（Heterogeneity-Adaptive Mixture-of-Experts）让 gating 读取内容类型与其他 heterogeneity context，并让 expert representation 也感知这种差异；LENS 则提供线上可观察性，以便定位哪种类型、哪类用户和哪个目标受到影响。论文的贡献不是宣称 MoE 普遍优于 MLP，而是展示在统一 feed 中如何把跨类型 xAUC、模型可解释性和线上多样性放在同一套工程闭环里。</p>
+<p>研究的业务目标因此有两层。模型层要提高兴趣/不感兴趣预测并缩小 web、video 等类型之间的 xAUC gap；产品层要确保 DAU、Viewed Impressions、Scroll Depth 等消费指标上涨的同时，Diverse Feed Rate 和 Diverse Engagement Rate 不恶化。这个目标组合比单看点击率更适合资讯流：如果模型只是把最容易点击的一种视频推到所有位置，短期 CTR 可能好看，但用户体验与内容生态会变差。</p>
+<h2>2. 方法详解</h2>
+<p>基线是生产中的 shared MLP，多任务输出 11 个 task heads。所有内容类型共享底层表示，任务权重使用固定的多目标损失组合。对照方法包括标准 MMoE 以及两个删减版本：HA-MoE without HA-Gating、HA-MoE without HDLM。完整 HA-MoE 在 dense MMoE 结构中设置 N=4 个 experts，并在 gate 中注入 heterogeneity context；作者比较了 2、4、8、16 个 expert，选择 4 个作为效果、容量和工程成本之间的折中。</p>
+<p>HA-Gating 的直觉是让同一个用户/上下文下，不同 content type 看到不同的专家混合权重，而不是所有样本沿用一个平均路由。gate 既接收基础用户与场景特征，也接收内容类型等异质性信号；每个 expert 的输出再经过与 heterogeneity 相关的表示处理，使差异不仅停留在最后的路由层。这样 web article、long video、short video 与 UGC 可以共享通用模式，同时保留各自的消费与兴趣结构。HDLM 是论文中与 heterogeneity-aware representation 相关的组件；移除它可以检验“只改变 gate”是否足够。</p>
+<p>训练目标使用 DL-AUC（Diversity-aware/heterogeneity-aware loss 的 AUC 形式），把总体 micro-AUC 和跨类型 Macro-xAUC 组合起来：DL-AUC = lambda × Micro-AUC + (1-lambda) × Macro-xAUC，线上实验取 lambda = 0.8。Micro-AUC 保持主业务目标，Macro-xAUC 则对不同正/负类型组合的区分能力施加约束。论文报告的一个核心例子是 web+ 与 video-、video+ 与 web- 的 xAUC；两者差距越大，说明模型偏向某一内容类型的交互反馈，无法把用户对不同类型的偏好放进可比较的尺度。</p>
+<p>LENS 是观测层而不是另一个 ranking tower。它将模型预测、content type、用户分层和 cross-type 指标关联起来，让离线表与线上变化可以追溯到具体类型对。工程上这一点很重要：平均 DAU 提升可能来自某一个强势类型，只有把 xAUC gap、Diverse Feed Rate、Diverse Engagement Rate 一并看，才能判断模型是否真的改善了统一 feed 的异质性。</p>
+<p>实现方面，作者采用 Adam-family optimizer、11 个任务权重和 dense MMoE；expert 数量从 2/4/8/16 做搜索，最终 4 experts。模型在约 1,000 万条样本的 7-day holdout 上做离线评估，再进入多个 7-day、1% live traffic 的在线 A/B。模型增量控制得很紧：参数量增加低于 5%，训练速度与基线相当，线上 p50/p95 latency 增加低于 0.5%。这让论文更接近工业升级方案，而不是只适用于宽松计算预算的实验模型。</p>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>把内容异质性写进 gating 和 representation。</strong> 标准 MMoE 只提供多个专家，但不保证专家分工与内容类型有关；HA-MoE 显式让 gate 和 expert representation 读取 heterogeneity context，减少共享表示对某一强势类型的偏置。</li>
+</ol>
+<ol>
+<li><strong>用 Macro-xAUC 补充总体 micro-AUC。</strong> 统一 feed 的质量不应只由总体样本排序衡量。跨类型的正/负比较能够暴露 web+ 对 video-、video+ 对 web- 等组合的差异，DL-AUC 通过 lambda=0.8 保留业务主目标，又不会把跨类型一致性完全牺牲掉。</li>
+</ol>
+<ol>
+<li><strong>把模型改动和可观测性绑定。</strong> LENS 使跨类型指标、用户分群、流量实验与多样性指标在同一诊断框架中可追踪；这有助于发现“主指标涨、内容生态变窄”的回归。</li>
+</ol>
+<ol>
+<li><strong>证明效果并非依赖大幅扩容。</strong> 完整方案参数量增加不到 5%，p50/p95 延迟增加不到 0.5%，说明在已经存在的多任务排序系统中，异质性建模可以在接近原服务预算内完成。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<p>离线表来自约 1,000 万样本的 7-day holdout，主要看 pInterest 与 pDisinterest 的预测，以及跨类型 xAUC。关键结果如下：</p>
+<table><thead><tr><th>模型</th><th>pInterest</th><th>pDisinterest</th><th>web+ vs video- xAUC</th><th>video+ vs web- xAUC</th><th>跨类型 gap</th></tr></thead><tbody><tr><td>Shared MLP</td><td>0.679</td><td>0.939</td><td>0.971</td><td>0.830</td><td>0.141</td></tr><tr><td>Standard MMoE</td><td>0.686</td><td>0.934</td><td>—</td><td>—</td><td>—</td></tr><tr><td>HA-MoE w/o HA-Gating</td><td>0.689</td><td>0.949</td><td>—</td><td>—</td><td>—</td></tr><tr><td>HA-MoE w/o HDLM</td><td>0.690</td><td>0.945</td><td>—</td><td>—</td><td>—</td></tr><tr><td>HA-MoE full</td><td>0.691</td><td>0.949</td><td>0.960</td><td>0.900</td><td>0.060</td></tr></tbody></table>
+<p>完整 HA-MoE 的 pInterest 从 Shared MLP 的 0.679 提升到 0.691，pDisinterest 从 0.939 到 0.949；更重要的是跨类型 gap 从 0.141 缩小到 0.060，减少了 0.081，约相当于相对缩小 57%。web+ vs video- 的 xAUC 从 0.971 降到 0.960，并不是所有单项都朝同一方向提高；但 video+ vs web- 从 0.830 提高到 0.900，说明完整方案在模型不擅长的跨类型方向上补得更多。这里不能只看最高单项 xAUC，而应看不同类型之间是否更可比。</p>
+<p>删减实验也能区分组件作用。仅有 HA-Gating 而没有 HDLM 时，pInterest 为 0.690、pDisinterest 为 0.945；没有 HA-Gating 而保留 HDLM 时，分别为 0.689/0.949；两者都存在时才达到 0.691/0.949。说明路由和表示不是同一件事：gate 负责选择专家，HDLM 负责让专家输出表达内容类型差异。标准 MMoE 的 pInterest 0.686，优于 Shared MLP 但落后于两种删减版，也说明“多个专家”本身能提供部分容量，却没有完整利用异质性条件。</p>
+<p>在线实验使用 1% live traffic，进行多个 7-day A/B。指标变化为：</p>
+<table><thead><tr><th>线上指标</th><th>相对变化</th></tr></thead><tbody><tr><td>DAU</td><td>+0.22% ± 0.11%</td></tr><tr><td>Viewed Impressions</td><td>+0.48% ± 0.34%</td></tr><tr><td>Scroll Depth</td><td>+0.34% ± 0.25%</td></tr><tr><td>Diverse Feed Rate</td><td>+0.36% ± 0.03%</td></tr><tr><td>Diverse Engagement Rate</td><td>+0.54% ± 0.07%</td></tr></tbody></table>
+<p>这些 uplift 的绝对数值不算巨大，但方向一致，而且多样性指标也为正。Viewed Impressions 和 Scroll Depth 的增长说明模型没有只增加一次性点击；Diverse Feed Rate 与 Diverse Engagement Rate 的提升尤其关键，因为它们表明跨内容类型的消费没有被单一类型挤出。误差项也提示实验存在波动：DAU 的 ±0.11% 和 Viewed Impressions 的 ±0.34% 相对于点估计并不小，应结合多次 7-day 实验、置信区间和长期留存再判断。</p>
+<p>效率结果对工业迁移很有价值。与 Shared MLP 比，HA-MoE 的模型 size 增量小于 5%，训练速度 comparable；serving p50/p95 latency 增量小于 0.5%。因此它更像对现有 dense ranking tower 的受控替换，而不是需要重新建设特征或 serving 平台的项目。不过 dense MMoE 的计算仍随 expert 数量增长，4 experts 是论文场景的选择，不能假设在所有 QPS、batching 和硬件上都保持同样的尾延迟。</p>
+<p>实验仍有三点需要谨慎。第一，离线 holdout 约 10M，线上只有 1% 流量；论文报告的是多次 7-day 实验的汇总，无法从摘要判断各实验的样本量、显著性校正和每种 content type 的置信区间。第二，pInterest/pDisinterest 是模型指标，不等同于用户长期价值；推荐系统还需观察 hide、负反馈、留存、创作者供给和广告收益。第三，xAUC gap 的改善可能部分来自重新分配不同类型的曝光，必须结合 feed position、库存与用户人群分层，才能确认是表示变好而不是流量结构变化。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文是一个 Google Discover 的案例研究，数据、特征、11 个 task heads、content type taxonomy 和在线实验细节都不能完全公开，因此外部团队无法直接复现实验。它也没有证明同样的 HA-Gating/HDLM 配置在类型更多、内容更短、中文 UGC 或强实时热点场景中一定有效。异质性上下文的定义依赖产品形态：把 long video、short video、article、UGC 设成四类只是当前 feed 的建模选择。</p>
+<p>目标函数中的 lambda=0.8 是一个业务权衡，不是理论上最优的常数。lambda 太大时仍可能回到 micro-AUC 主导，太小时可能为多样性牺牲核心 engagement；论文没有展开不同 lambda、不同 expert 数量和不同内容分布下的完整敏感性曲线。离线 xAUC 也不直接处理曝光偏置、位置偏置、内容供应量不足和用户主动选择不同入口的问题。</p>
+<p>未来可以沿三条线推进：把 heterogeneity context 从离散 type 扩展为主题、时长、意图和用户阶段的组合；让 expert routing 随时间漂移并提供版本化/回滚；把多样性与长期价值、创作者生态和用户满意度纳入统一的因果或多目标实验。对于在线 serving，还应研究稀疏/条件计算、expert cache 与类型级别的延迟预算，避免模型效果随着 content type 数量增长而线性消耗资源。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区搜索和推荐，这篇论文最可复制的是“类型分层 + 跨类型评估 + 受控升级”的方法。社区 feed 可以把原创帖子、问答、评论、短视频、外链和广告视为异质内容；同一个 query 下，不同类型并不是可以互换的候选。排序模型应显式接收 content type、长度、作者关系、时效、媒体形态和用户当前 session intent，让 gate 学到“当前用户/场景应该组合哪些专家”，而不是把全部类型混成一个平均 embedding。</p>
+<p>离线评估不要只报总体 AUC、nDCG 或 CTR 代理指标。应建立 content-type confusion/偏置矩阵，例如 query+ 对帖子-、视频+ 对帖子- 的 cross-type xAUC，并跟踪 Macro-xAUC 的均值和最差类型对。与论文中 0.141 降到 0.060 的 gap 类似，团队可以把“类型间最差差距”设为护栏；若总体 nDCG 上涨但某一类型 gap 扩大，应暂停发布。对于社区搜索，还要按 query 长短、是否实体查询、用户新老、帖子新旧、作者是否关注和内容语言分桶。</p>
+<p>模型落地可从标准 MMoE 的小规模对照开始：固定四个 expert，比较 Shared MLP、Standard MMoE、只做 type-aware gating、只做 heterogeneity-aware representation 和完整方案。记录参数量、GPU/CPU 利用率、p50/p95/p99、训练吞吐和索引/缓存成本。论文的 &lt;5% 参数增量、&lt;0.5% 延迟增量可以作为工程目标，不应当当作承诺；必须在自有线上 batch size、QPS 和热 key 分布下重新压测。</p>
+<p>上线实验建议同时观察五组指标：核心消费（CTR、长停留、播放完成、Scroll Depth）、搜索相关性（nDCG、无关结果率、query reformulation）、跨类型公平（Macro-xAUC、Diverse Feed/Engagement Rate）、生态安全（负反馈、作者覆盖、新内容曝光）和系统成本（训练时长、GPU、P95/P99、错误率）。采用 1% 小流量、多次 7-day 实验、A/A 桶和 user-level hash 分桶，能够减少类型与用户组成变化带来的误判。对于热榜或重大事件，还应单独检查 gate 是否把某种媒介过度放大。</p>
+<p>最终判断是：HA-MoE 的收益来自把“异质内容不是噪声，而是条件”写进模型和评估。对于一个统一 feed 或统一搜索结果页，这种思路比单纯扩大 MLP 更值得优先验证；但成功关键在于 content type 定义、跨类型标签质量、lambda 权衡和多样性护栏。若团队只有一种内容形态或数据量不足以支持专家分工，复杂 MoE 可能只是额外成本；若产品同时服务多媒介内容并长期遇到“总体指标好、某类内容被压制”的问题，则这篇案例提供了很清晰的实验起点。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

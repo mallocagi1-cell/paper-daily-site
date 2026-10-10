@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — From Language to Behavior: Scaling Sequence Transformers for Industrial Recommendation Ranking with Rec-Native Designs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>From Language to Behavior: Scaling Sequence Transformers for Industrial Recommendation Ranking with Rec-Native Designs</h1></div>
+          <div class="card-actions"><span class="badge badge-green">5.00</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 5 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> ReST 面向工业推荐排序中行为序列噪声高、时间不规则且一份用户历史需匹配大量候选的问题，采用双门控注意力、旋转位置与时间编码，并把重型可复用编码器和轻量交叉解码器拆开。生产广告平台一周 A/B 测试显示，线上 AUC 提升 1.31%，核心收入指标提升 11.93%，P99 延迟保持在 50 毫秒内。</p><p><strong>Key insight:</strong> 该工作把语言模型的规模化思路改造成“用户侧一次计算、候选侧多次轻解码”，说明推荐 Transformer 的扩展瓶颈主要是行为信号质量与请求内重复计算。对社区 CTR 排序，可优先缓存长历史表征，并用候选感知的小解码器融合实时帖子特征，在不突破延迟预算的前提下扩大序列长度与模型深度。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-09-03/personalization/report.html#dr-arxiv-oai-arXiv-org-2609-01240">2026-09-03 · Personalization (5.00)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2609.01240" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h1>ReST 深度解读</h1>
+<h2>1. 问题与动机</h2>
+<p>ReST 研究的是 TikTok Shop Ads 大规模广告排序中的 CVR 预估。作者指出，把 LLaMA 式 Transformer 直接搬到用户行为序列上会遇到两类结构性错配。第一类是信号质量：点击、浏览既可能代表稳定偏好，也可能来自误触、探索或曝光偏差；行为之间的物理时间间隔不规则；最终转化标签又稀疏且延迟。工业排序器通常还有很强的非序列 DLRM 分支，主损失容易从这条“捷径”下降，序列分支得到的梯度不足，作者称之为 sequence starvation。第二类是计算不对称：一次请求只有一份用户历史，却要给 N 个候选广告打分。若每个候选都重复编码历史，扩展序列模型会直接撞上线上延迟墙。</p>
+<p>论文的关键观察是，语言模型中的 token 同质、密集监督和单序列生成假设，在推荐排序中均不成立。实验也说明盲目加参数无效：在序列编码器中加入 MoE，参数增加 500%，AUC 没有可测增益。ReST 因而不追求简单复制 LLM，而是围绕“噪声行为、稀疏监督、一对多打分”重新设计 Transformer 与训练/服务系统。</p>
+<h2>2. 方法详解</h2>
+<p>模型仍预测二元转化概率，主目标为 BCE：给定用户按时间排列的行为序列、非序列用户/上下文特征和候选广告，输出 P(y=1)。整体被拆成重型序列编码器 T 与轻型交叉解码器 C。T 每个请求只执行一次，产出可复用的行为记忆；C 对每个候选执行，用四类语义 query token（CLS、context、user、ad）读取这份记忆。</p>
+<p>T 的第一项改造是 Dual-Gated Attention。普通注意力直接把 V 加权聚合，ReST 先用 sigmoid 值门对每个行为特征做预聚合过滤，再对聚合后的上下文使用另一个 sigmoid 输出门。直观上，值门回答“这条行为是否可靠”，输出门回答“聚合结果应在多大程度上更新当前 token”。作者没有改 softmax 主体，因此仍兼容高效注意力内核；相比 HSTU 的无界 SiLU 门，有限范围的 sigmoid 可避免规模增大时注意力输出发散。</p>
+<p>第二项是 RoPE+RoTE。部分 attention head 用标准 RoPE 表示顺序位置，另一部分用离散物理时间做旋转。时间戳先减去序列起点，再按每个 head 的粒度 τ 分桶；秒/分钟粒度捕捉短期邻近，天/周粒度捕捉长期新鲜度。这样序号距离和真实时间距离进入同一种旋转算子，保持 FlashAttention 兼容性，也避免传统相对时间表的外推问题。</p>
+<p>第三项 SRN 用深度相关的归一化位置和小残差系数稳定深层训练。约前 25% 层采用类似 Post-LN 的路径，后续采用 Pre-LN；每个残差分支的可学习系数初始为 0.01，使深网络从近似恒等映射开始。候选侧 C 直接把 T 的输出当 K/V，移除反复执行的 K、V 投影；不同语义 query token 使用各自参数，增加容量却只激活当前 token 的参数。</p>
+<p>训练目标为主 BCE 加两个仅训练时存在的辅助项。序列 CVR 头禁止读取非序列 DLRM 特征，权重 λ_seq=0.1 时让序列编码器平均梯度范数提高 3 倍以上。另一个 sigmoid 对比损失对齐同一用户的序列与非序列表征，且相较 softmax 对批大小不敏感。User-Level Shared-Prefix Training 把时间窗内同一用户的 M 个样本合并编码，通过 causal mask 保证各样本只能看到当时历史，把 T 的计算从 M·FLOPs(T) 降为 FLOPs(T)。线上同理只编码一次历史，再批量运行 C，复杂度从 N·T+N·C 变为 T+N·C。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，论文把行为噪声处理拆成“进入注意力前过滤”和“聚合后调制”，而不是仅在注意力输出端加门。消融显示仅输出门带来 AUC +0.03%，输出门和值门合用达到 +0.06%，与全 Q/K/V 门相同，但 FLOPs 增幅从 14.9% 降到 7.5%。</p>
+<p>第二，RoTE 将多个真实时间尺度纳入旋转位置体系。仅 RoPE 带来 +0.04%，加入单一秒级 RoTE 为 +0.08%，多粒度 RoPE+RoTE 达到 +0.12%，说明推荐序列需要同时识别“第几个行为”和“距现在多久”。</p>
+<p>第三，架构和系统围绕一对多候选共同设计。加入轻量 C 且使用 token-specific parameterization 后 AUC 增益为 +0.05%；projection-free KV 将重复 FLOPs 增幅压到 0.2%，而保留 K/V 投影会增至 6.7%。这比只扩大 T 更有效，证明推荐大模型应优先扩展可摊销的用户侧计算，同时保留低成本候选交互。</p>
+<p>第四，作者明确诊断并修复 sequence starvation。辅助序列 CVR 与表征对齐不进入推理路径，却显著加强序列分支训练信号，让模型在长度、深度和宽度上持续扩展，而 LLaMA/HSTU 基线较早饱和。</p>
+<h2>4. 实验结果分析</h2>
+<p>工业数据来自匿名化的 TikTok Shop Ads，比较时固定排序栈、行为序列和 query token，只替换序列模块。公开数据使用 ML-1M、ML-20M 和 Amazon-Books。</p>
+<table><thead><tr><th>设置/数据</th><th>基线或模型</th><th>AUC 结果</th><th>计算量</th></tr></thead><tbody><tr><td>工业 Base</td><td>LLaMA</td><td>相对 DLRM +0.53%</td><td>1.37G FLOPs</td></tr><tr><td>工业 Base</td><td>HSTU</td><td>+0.51%</td><td>1.70G FLOPs</td></tr><tr><td>工业 Base</td><td>ReST</td><td>+0.67%</td><td>1.52G FLOPs</td></tr><tr><td>工业 Large</td><td>LLaMA</td><td>+0.70%</td><td>30.21G FLOPs</td></tr><tr><td>工业 Large</td><td>ReST</td><td>+0.92%</td><td>32.40G FLOPs</td></tr><tr><td>ML-20M</td><td>HSTU</td><td>0.8103</td><td>23.32M FLOPs</td></tr><tr><td>ML-20M</td><td>ReST</td><td>0.8135</td><td>23.41M FLOPs</td></tr><tr><td>Amazon-Books</td><td>HSTU</td><td>0.7556</td><td>23.32M FLOPs</td></tr><tr><td>Amazon-Books</td><td>ReST</td><td>0.7571</td><td>23.41M FLOPs</td></tr></tbody></table>
+<p>宽度实验中，HSTU 和 LLaMA 在 d=256 附近趋于饱和，扩到 512 基本不再改善；ReST 则从 +0.67% 继续升到 +0.80%。消融中 SRN 单独贡献 +0.08%，优于 Mix-LN 的 +0.02%；多粒度时间编码是单组设计中最大的增益之一。一个反直觉结果是 MoE：参数多 5 倍却没有 AUC 改善，说明稀疏标签下容量不是首要短板，信号路径与计算位置更关键。</p>
+<p>最终的一周线上 A/B 测试取得在线 AUC +1.31%、核心收入指标 +11.93%，并把 P99 控制在 50ms 预算内，之后全量部署。线上收入增幅明显大于 AUC 相对增幅，说明对高价值转化样本的排序改善可能具有非线性业务收益，但论文因保密未公开样本规模、绝对 AUC 与收入指标定义。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确指出工业数据和完整系统不能公开，工业结果仅报告相对 DLRM 的 AUC Δ；这限制了外部团队复核收益与数据分布的关系。论文聚焦 CVR 二分类排序，结论能否直接迁移到 CTR、多目标时长或列表级优化仍需验证。线上实验只有一周，未展示长期兴趣反馈、广告生态或模型漂移。</p>
+<p>此外，ULT 依赖同一用户在时间窗内形成可合并样本，共享前缀收益会随流量结构变化；RoTE 的时间粒度由工程设定，不同社区内容寿命可能需要重新搜索。作者未来可进一步研究自动时间尺度、增量更新编码器记忆，以及多目标损失下 sequence starvation 是否更严重。</p>
+<h2>6. 工业实践意义</h2>
+<p>最值得采用的是分阶段改造路径。第一步不必更换整个排序器，可先给序列分支增加直接 CTR/CVR 辅助头，监控其梯度范数和对最终指标的边际贡献；若序列分支长期被 DLRM 特征压制，再加入 sigmoid 表征对齐。第二步加入值门和多粒度 RoTE，用误触、低停留等弱行为验证门值是否合理。第三步才把用户历史编码与候选交互拆开，在线缓存或请求内复用 T 的输出。</p>
+<p>对于社区 UGC，候选数量多、帖子更新快，推荐的部署形态是：用户侧编码器异步或请求级计算长历史，候选侧小解码器融合帖子文本、多模态向量和实时上下文。需要重点压测候选数增长时的 P99、KV 读带宽和缓存失效率。不要把 MoE 或参数规模当作默认升级路线；本文最强的证据恰恰表明，如果训练信号仍稀疏、候选侧仍重复计算，增加参数只会提高存储和通信成本。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Fortress: A Case Study in Stabilizing Search Recommendations via Temporal Data Augmentation and Feature Pruning</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Fortress: A Case Study in Stabilizing Search Recommendations via Temporal Data Augmentation and Feature Pruning</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.00</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 3 | Practical 5 | Evidence 3 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 搜索与推荐的预测模型常因部分输入特征带来分数波动而出现「时间维度不稳定」，在多阶段系统中会因上下游分数不一致而损害可靠性与体验。论文提出通用框架 Fortress，通过定位并裁剪导致分数随时间不一致的特征来提升模型稳定性与精度，遵循四步流程：(1) 采集历史快照、按时间切分数据集以捕获同一实体跨周期的分数波动；(2) 识别预测不稳定的样本；(3) 隔离并移除引发不稳定的特征；(4) 仅用稳定特征重训模型。论文还指出来自 LLM/BERT 的语义特征虽利于泛化但可能引入不稳定，需要纳入该裁剪流程评估。</p><p><strong>Key insight:</strong> 把「特征稳定性」当成一个可量化、可裁剪的工程目标，而非泛泛追求精度——这对多阶段搜索/推荐链路（召回→粗排→精排）尤其关键，因为上游分数抖动会被下游放大。可直接借鉴的设计是用时间切分的历史快照构造「同实体跨周期分数波动」数据集来定位不稳定特征，并对引入语义噪声的 LLM/BERT 特征保持警惕：泛化收益与线上稳定性需要联合权衡。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-19/personalization/report.html#dr-arxiv-2605-15299">2026-05-19 · Personalization (4.00)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.15299" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>Fortress 针对搜索与推荐预测模型的&quot;时间维度不稳定&quot;问题：同一 query-app 对在不同时间得到差异显著的相关性分数，导致结果在&quot;可见/不可见&quot;间反复横跳 (flip-flop)，在多阶段系统中上游分数抖动会被下游放大、损害可靠性与体验。论文用 app 应用市场场景给出量化证据：全特征模型 PR-AUC 达 0.9572，但分数的变异系数 (CV) 高达 0.5462——精度高却极不稳定。权衡被明确点出：基于用户互动 (engagement) 的特征能提升精度但&quot;tend to introduce temporal instability&quot;；来自 LLM/DistilBERT 的语义特征更稳定但覆盖率仅 ~80%。如何在保留 engagement 预测力的同时压制其波动，是多阶段检索/排序系统的真实工程痛点。</p>
+<h2>2. 方法详解</h2>
+<p>Fortress 是一个四步通用框架。<strong>第一步 采集历史快照</strong>：按时间把数据切成连续区间 (daily snapshot)，对被多次打分的同一实体评估预测一致性。<strong>第二步 识别不稳定样本</strong>：取跨快照 CV 处于 75 分位 (最高变异) 的 query-app 对作为不稳定样本。<strong>第三步 隔离引发不稳定的特征</strong>：对高方差样本逐特征单独计算 CV，CV 最高的特征作为裁剪候选。<strong>第四步 仅用稳定特征重训</strong>：移除候选特征后重训。关键设计是贪心搜索 + 显著性门控——只有当移除某特征后在验证集上 PR-AUC 相对基线&quot;statistically significant improved&quot;才真正裁掉该特征，避免误删有预测力的特征。不稳定度量为 CV = 跨时间快照预测分数的标准差 ÷ 均值。数据结构：70/15/15 切分，~40% 样本标 BAD，其余 60% 均分 ACCEPTABLE/GOOD/EXCELLENT，daily 快照粒度。模型选 XGBoost (因其速度与抗噪)。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(1) 框架可泛化：不限于本案例，适用于任何&quot;同一实体被多次打分&quot;的场景。(2) 时间稳定性分析视角：揭示&quot;单快照有益的特征可能跨时间退化&quot;，多快照视角暴露此前隐藏的不稳定性——这是方法论层面的核心洞见。(3) 实用权衡求解：engagement 信号有预测力但波动、语义特征稳定但覆盖不全，Fortress 在抑制波动的同时保留预测价值。(4) 系统级收益：不止模型指标，还带来下游推荐一致性的真实改善 (flip-flop 率下降)，证明特征稳定性是可量化、可裁剪的工程目标。</p>
+<h2>4. 实验结果分析</h2>
+<p>数据集为某大型商业应用市场的 query-to-app 相关性分类，含 ~25 个每日多次刷新的 engagement 特征 + LLM/DistilBERT 语义特征。四方法对比 (Table I)：仅语义特征 (SR) PR-AUC 0.9367 / CV 0.4744；全特征 0.9572 / 0.5462；多快照全特征 0.9593 / 0.5283；Fortress 0.9595 / 0.5274。即 Fortress 相对多快照基线再降 CV 3.44%、PR-AUC 绝对 +0.24%——在不牺牲 (甚至略升) 精度下显著降波动。系统级 (Table II flip-flop 率下降)：Region 1 降 14.7%、Region 4 降 49.6%、全局降 25.8%，区域差异大说明效果与地域/数据分布相关。值得注意：仅用 SR 特征虽 CV 最低 (0.4744) 但 PR-AUC 最低 (0.9367)，印证&quot;稳定但覆盖不全&quot;，Fortress 在两者间取得更优折中。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者未显式列举局限，但隐含承认：(1) 语义特征覆盖率仅 ~80%，存在覆盖缺口。(2) flip-flop 改善区域差异巨大 (14.7%~49.6%)，方法有效性可能依赖地域/数据分布。(3) 结论来自单一领域 ~25 个 engagement 特征，跨特征集/跨领域泛化未验证。此外论文未讨论延迟开销，多快照重训需历史数据采集与时间切分，更偏批处理而非实时特征工程——这是落地需补充评估的部分。</p>
+<h2>6. 工业实践意义</h2>
+<p>对搜推从业者最可直接借鉴的是把&quot;特征稳定性&quot;当成可量化、可裁剪的工程目标，而非泛泛追求精度。具体做法：用 daily 时间快照构造&quot;同实体跨周期分数波动&quot;数据集，按 CV 定位不稳定特征，并用&quot;移除后验证集 PR-AUC 显著提升&quot;作为裁剪门控，避免误删有效特征。这在召回→粗排→精排的级联架构中尤其关键——论文明确指出&quot;in multistage retrieval and ranking systems, volatility in production scores can lead to undesirable shifts in system dynamics&quot;，上游抖动会向下游传播。对引入 LLM/BERT 语义特征要警惕：泛化收益与线上稳定性需联合权衡，覆盖率不足时不宜全量替换 engagement 特征。部署上 XGBoost 因速度与抗噪被选用，多快照重训属离线批处理，适合作为定期特征体检流程嵌入模型迭代。社区搜索场景可直接套用：对 query-内容相关性模型做特征稳定性审计，裁掉抖动大的实时互动特征，换取结果排序的跨时间一致性、减少用户感知的&quot;结果忽隐忽现&quot;。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

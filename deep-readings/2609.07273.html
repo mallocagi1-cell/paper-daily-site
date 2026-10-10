@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Task-Blind No MORE: Multi-Task Information Flow in Unified Ranking Backbones</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Task-Blind No MORE: Multi-Task Information Flow in Unified Ranking Backbones</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.50</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 4 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对共享排序骨干无法区分点击与深度互动信号的问题，MORE 将共享和任务私有锚点贯穿每层，通过任务感知序列读取、边界掩码和独立增强分支减少信号混合。陌陌附近动态两周线上实验中，使用时长提升3.0%、点击提升2.8%、评论提升3.6%；请求内共享计算相对逐候选服务使P99评分时延降低约30%。</p><p><strong>Key insight:</strong> 社区UGC搜索可借鉴其任务私有信息通路，联合学习点击、有效阅读和互动，避免稀疏的高价值反馈在共享表征中被稠密点击信号淹没。优先验证边界掩码与任务感知序列读取，再扩大模型；线上时延收益来自同请求候选共享用户计算，迁移时须保留query相关性约束并单独评估nDCG。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-09-10/personalization/report.html#dr-arxiv-2609-07273">2026-09-10 · Personalization (4.50)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2609.07273" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>MORE研究的是排序骨干在多任务学习中的信息组织方式。点击、评论和深度聊天都来自同一用户，但需要读取的历史证据不同：点击可能更依赖近期曝光和内容吸引力，评论则需要主题兴趣，深度聊天还涉及社交匹配。若先把行为与非序列特征压成一份共享向量，再交给任务塔，任务塔只能重组已有信息，很难找回编码时已经丢掉的任务差异。</p>
+<p>作者把这一问题放在统一排序骨干的发展中讨论。HyFormer、MixFormer和OneTrans使序列建模与特征交互进入同一计算栈，但这种统一本身并不保证每层都能意识到任务差别。论文第4节提供了可检验的证据：用HSTU替换参考模型的序列编码器时，点击GAUC相对提升0.09%，其他六个展示任务却下降；单纯加强某个模块并不保证多任务共同受益。</p>
+<p>对社区UGC搜索，这对应一个具体问题：点击数据充足，收藏、长阅读或有价值互动稀疏，共享表示可能过早偏向点击。MORE的研究价值是把任务差异提前到历史读取和特征混合阶段。这里的搜索迁移是分析推断，论文实际线上场景是陌陌附近动态推荐，并未报告搜索nDCG。</p>
+<h2>2. 方法详解</h2>
+<p>输入分为用户行为序列、候选相关的非序列特征和锚点三部分。行为编码采用动作组合的笛卡尔积表示，把多种动作是否发生构成二进制组合ID，并与物品及位置表示共同构成序列token。这样，同一个物品上的不同反馈组合不会在输入处完全合并。非序列token则承载用户画像、候选属性与请求场景。</p>
+<p>锚点由平均池化的行为摘要和展平后的非序列表示经MLP产生，再拆为共享锚点和任务私有锚点；私有锚点还加入任务先验embedding。它们不是最终预测头的临时输入，而是逐层更新的内部状态。每个MORE Block按读取、混合、增强三个步骤运行。</p>
+<p>读取阶段先更新仅依赖用户行为的序列状态并形成K/V。共享锚点读取通用证据，私有锚点利用任务差异读取相关证据。论文另设跨层序列寄存器，初始为零，逐层累积压缩后的序列摘要；不同锚点通过各自的SwiGLU门控解释这一共享记忆。复现时需要保留寄存器状态的跨层传递，而非简单复制一个独立的cross-attention层。</p>
+<p>混合阶段把锚点与非序列token拼接，通过类似MLP-Mixer的轴变换及门控实现交互。关键是任务边界掩码：共享锚点和公共特征允许全局交互，私有锚点之间保持隔离。不能在实现时为了方便直接改为全连接token混合，否则会失去论文最关键的消融变量。随后每个任务的独立MLP从非序列特征提取调制参数，以FiLM式仿射调制和残差连接增强相应私有锚点。</p>
+<p>所有块堆叠后，预测塔同时接收对应私有锚点、共享锚点和公共特征，训练目标是任务加权的二元交叉熵。默认设置为2个块、隐藏宽度256、15个非序列token和17个锚点，其中8个共享、9个私有。优化器为Adam，batch size为1024，使用多GPU数据并行。数据来自连续90天线上日志，随后一天评估；全文没有给出可据以完全复建训练的GPU型号、确切样本数、学习率和完整训练步数。</p>
+<p>服务实现同样重要。用户序列状态不依赖候选，因此一个请求中的候选可共享序列计算，候选差异保留在非序列token和锚点上。训练按请求组织样本，线上按候选mini-batch执行共享，从而避免为每个候选重复计算同一用户历史。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一项贡献是将任务状态贯穿整个骨干。相较在最后添加MMoE或PLE，私有锚点在每层决定读取什么历史、如何混合候选特征，使任务信息拥有连续的处理路径。这一机制并不是给每个任务复制完整模型，而是使用少量状态和轻量独立分支表达差异，因此能够兼顾共享和容量控制。</p>
+<p>第二项贡献是显式限制任务间的混合边界。允许共享语义传播，同时阻止私有状态直接相互污染，解决的是信息混合位置的问题。消融中移除Boundary Gating Mask，平均GAUC相对完整模型下降0.21%，互动任务下降0.34%，是单项消融中损失最大的组件。它说明减少不必要的信息串扰，比仅增加任务分支参数更值得优先验证。</p>
+<p>第三项贡献是与计算复用相容的状态划分。候选无关的序列分支负责公共工作，候选相关的锚点负责个体化读出。这种划分使任务感知模型能够在请求内共享用户计算；线上P99评分时延降低约30%，比较对象是逐候选服务方式。模型精度改进与服务调度改进各有对照，不能将其合并解释为对所有现有模型都同时快30%。</p>
+<h2>4. 实验结果分析</h2>
+<p>下面摘录论文表1的部分列。参考行是绝对GAUC，其余行是相对参考的变化，不能把百分数与绝对AUC直接相加。</p>
+<table><thead><tr><th>模型</th><th>点击GAUC</th><th>评论GAUC</th><th>深聊GAUC</th><th>稠密参数</th><th>单例前向FLOPs</th></tr></thead><tbody><tr><td>Transformer+RankMixer</td><td>0.7863</td><td>0.6979</td><td>0.8444</td><td>77.85M</td><td>1.92G</td></tr><tr><td>MixFormer</td><td>+0.29%</td><td>+0.89%</td><td>+0.15%</td><td>98.68M</td><td>4.65G</td></tr><tr><td>HyFormer</td><td>+0.43%</td><td>+1.09%</td><td>+0.08%</td><td>153M</td><td>2.16G</td></tr><tr><td>OneTrans</td><td>+0.38%</td><td>+0.80%</td><td>+0.11%</td><td>108.65M</td><td>1.73G</td></tr><tr><td>MORE</td><td>+0.44%</td><td>+1.26%</td><td>+0.33%</td><td>132M</td><td>1.85G</td></tr></tbody></table>
+<p>MORE在展示的七个任务上均领先。它的点击优势对HyFormer很小，主要价值体现在更深的互动任务也受益。132M参数超过部分基线，但低于HyFormer；FLOPs低于参考模型，却高于OneTrans，因此应把精度和计算预算一起比较，不能宣称在所有资源维度都最优。</p>
+<p>消融进一步区分了贡献来源。移除任务私有序列读取，平均GAUC下降0.15%；移除独立增强下降0.14%；移除全部六个组件退化为任务无关骨干，平均下降0.33%。各项消融损失不能简单求和，因为组件之间存在依赖。序列寄存器的平均影响只有0.05%，但深聊下降0.13%，表明平均值会掩盖任务差异。</p>
+<p>扩展实验覆盖约0.1B到0.9B参数，MORE相对任务无关统一骨干在相近参数和FLOPs范围内保持更好的平均GAUC趋势。这支持在测试区间内更有效地利用容量，但还不足以据此给出任意规模上的增长定律。</p>
+<p>线上试验持续两周、平衡分流，与生产DLRM式排序模型比较。时长提升3.0%，点击2.8%，点赞2.0%，评论3.6%，打招呼2.5%，深聊2.0%，论文称这些提升均满足p&lt;0.05。摘要把3.6%写成互动率，细表明确对应评论，因此本报告采用表3的细粒度名称。深聊被定义为至少五轮对话，对社区内容搜索不能直接照搬这一标签。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者没有单设完整的局限章节。结论明确把跨推荐场景泛化、更大参数规模和动态任务配置列为后续工作，因此当前证据边界是一个生产社交推荐场景与有限扩展范围。全文没有展示公开数据集上的独立复现，也没有社区搜索或电商转化等跨场景实验。</p>
+<p>还有一个需复现者核对的描述差异：任务设置写联合优化13项任务，默认结构则列9个核心私有锚点，主表展示7项任务。这些数字可能分别对应总任务、核心任务与报告子集，但正文没有完整公开映射，不能自行补写成一一对应关系。GPU配置、完整超参数及流量比例也不足以重建绝对训练成本。</p>
+<p>以下是分析补充，而非作者宣称：任务边界掩码隔离的是直接信息通路，仍存在共享骨干和共享语义，不能因此声称所有梯度冲突都被消除。新增任务时如何初始化锚点、重训多久以及低样本任务是否过拟合，均需额外实验。</p>
+<h2>6. 工业实践意义</h2>
+<p>社区UGC搜索可以从最小可验证改动开始：保持召回、query匹配与基础排序不变，在点击、有效阅读、收藏等目标之间引入少量私有锚点，对比末端多任务塔、全共享锚点和带边界掩码的锚点。最先观察分任务GAUC与相关性nDCG，再用在线CTR和有效阅读验证是否发生真实收益，尤其检查点击提升是否伴随低质内容曝光增加。</p>
+<p>请求级共享计算值得单独做性能实验。应确认用户序列表示完全不依赖候选，query若在同一请求固定也可作为请求级输入，但跨query不能无条件复用。候选mini-batch大小会影响显存、吞吐与P99，需要同时记录不同候选规模的曲线。论文的30%是其服务实现的对照结果，不能预先记为本平台收益。</p>
+<p>在投入顺序上，任务边界消融最有参考价值：先确认稀疏互动目标是否受共享特征挤压，再决定是否扩容。若平台只有一个点击目标或长期互动标签不足，多任务骨干的额外复杂度未必划算。若已有稳定的社区行为标签与统一排序骨干，则这一方案提供了清晰的、可分组件试验的改进路线。</p>
+<p>来源：<a href="https://arxiv.org/html/2609.07273" target="_blank" rel="noopener">论文全文，第3—5节及表1—3</a>。文中业务迁移建议为本报告分析，非论文线上结论。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Thinking Broad, Acting Fast: Latent Reasoning Distillation from Multi-Perspective Chain-of-Thought for E-Commerce Relevance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Thinking Broad, Acting Fast: Latent Reasoning Distillation from Multi-Perspective Chain-of-Thought for E-Commerce Relevance</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.55</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 3 | Timely 4</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对电商搜索相关性建模，提出 Multi-Perspective CoT（MPCoT）让 LLM 从多个视角生成推理链，配合 SFT+DPO 训练教师模型；再用 Latent Reasoning Knowledge Distillation（LRKD）把推理能力蒸馏进一个推理抽取器，推理在隐空间完成、不在推理时展开显式 CoT，以此压低线上延迟。已在日活数千万的电商搜索广告平台离线与在线 A/B 验证，离线指标与线上商业、体验指标均有提升（摘要未给出具体百分比）。</p><p><strong>Key insight:</strong> 把“多视角思考”与“快速执行”拆开：离线用多视角 CoT 喂饱教师，线上只跑隐式推理 extractor。对社区搜索短文本相关性的启示——当相关性判断需要常识与多角度推理时，可让大模型离线产出多视角推理标注，再蒸馏成隐推理小模型挂在精排前，避免线上跑显式 CoT 的延迟。MPCoT 的多视角覆盖比单一 CoT 更稳，DPO 专门用于纠正过度判正。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-18/retrieval/report.html#dr-arxiv-2601-21611">2026-05-18 · Retrieval (4.55)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2601.21611" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>电商搜索相关性中，传统判别式模型（如 BERT cross-encoder）能稳定处理 80–90% 的常规 query，但剩余 10%+ 的长尾、歧义 query 恰恰对应高意图、高转化的用户旅程，理解错误会直接拖垮满意度与相关性指标。论文指出现有 LLM+CoT 路线有两处具体缺陷：(a) 单视角推理无法覆盖电商相关性的多面性——用户意图、属性匹配、平台业务规则是三套不同判断逻辑；(b) 现有蒸馏在推理时丢弃 CoT 结构，把推理当作一次性辅助信号而非可持久化能力。作者用一个 oracle 实验量化了多视角的价值：三视角中“任一通过即算对”的多视角 oracle 准确率 77.52%，而单视角 User Intent 仅 64.61%、单视角 pass@3 也只有 72.59%——说明收益来自视角多样性本身，而非单纯多采几次。</p>
+<h2>2. 方法详解</h2>
+<p><strong>MPCoT 三视角</strong>：User Intent（模拟买家直觉，关注使用场景与功能需求）、Structured Analysis（逐属性系统比对 query 与商品）、Business Rule（用启发式规则裁决常见歧义）。</p>
+<p><strong>SFT 阶段</strong>：用基座 Qwen3-14B 为每个视角生成 CoT，做一致性过滤（仅保留预测标签=ground-truth 的样本），把三视角数据聚合后用标准 NLL 损失微调（3 epoch，lr=5e-5，batch=32）。</p>
+<p><strong>DPO 阶段</strong>：挑出“至少被一个视角判错”的冲突样本，构造跨视角偏好对——失败视角的错误 rationale 作 rejected，三视角 pass@5 中正确的 rationale 作 chosen，标准 DPO（3 epoch，lr=5e-6，batch=64）。消融显示：必须先有视角对齐的 SFT 基础，直接对单视角 SFT 套多视角 DPO 会一致掉点。</p>
+<p><strong>LRKD（隐推理蒸馏）</strong>：学生为 BERT-multilingual-base（168.15M）cross-encoder，输出 token 表示 H∈R^(L×d)；一个可训练的隐推理抽取器 R(·)（试了 MLP / Poly-Encoder / GAT 三种）把 H 映射成隐推理向量 r_qp∈R^d；教师 CoT 文本用冻结的 BGE-M3 编码成 e_cot。双损失训练：分类用交叉熵 L_cls，引导用 MSE 对齐 ||r_qp − e_cot||²₂，合成 L_total = L_cls + λL_guide（λ=0.1）。学生训练 5 epoch、lr=2e-6、batch=256、输入 128 token。教师 Qwen3-14B 用 LoRA。数据：AliExpress ~10万训练/2万测试（6 类），ESCI 10万训练/1万测试（4 类 Exact/Substitute/Complement/Irrelevant）。</p>
+<h2>3. 核心技术贡献</h2>
+<p>(1) <strong>多视角 CoT 替代单视角</strong>：把电商相关性拆成意图/属性/业务规则三套推理，oracle 上限 77.52% vs 单视角 64.61% 证明了多样性增益；MPCoT 教师较最优单视角平均 +1.96 ACC、+3.5 F1。机制在于不同视角对同一难样本的失败模式互补。</p>
+<p>(2) <strong>跨视角偏好构造的 DPO</strong>：用“某视角错 rationale”对“另一视角对 rationale”组偏好对，把视角间的纠错信号显式喂给模型，比单纯加正样本更有针对性。</p>
+<p>(3) <strong>隐空间持久化推理（LRKD）</strong>：不在推理时展开 CoT，而是用一个非自回归抽取器把“推理”固化为 embedding 空间的一个向量，并用 MSE 向教师 CoF 嵌入对齐。probing 实验显示隐推理向量预测 CoT 关键词的 F1=0.403，远高于 [CLS] 的 0.221（相对 +81.8%，p&lt;0.05），证明推理信息确实被编码进了隐向量。</p>
+<h2>4. 实验结果分析</h2>
+<p>离线（Table 1）：AliExpress 上 BERT 基线 ACC/F1 = 53.17/49.34，最优单视角 SFT+DPO 64.83/58.26，MPCoT 教师 68.36/65.90，LRKD-GAT 学生 57.36/52.29。ESCI-US 上 BERT 66.83/41.38，MPCoT 教师 70.23/51.85，LRKD-GAT 学生 68.73/45.83，且优于蒸馏基线 CED-KD（67.49/43.71）、MKD（68.34/42.45）。综合：LRKD-GAT 较 BERT 平均 +2.37 ACC/+3.91 F1，较 MKD +1.15/+2.49，较 CED-KD +0.98/+2.5。</p>
+<p>在线 A/B（AliExpress 搜索广告，10% 流量、7 天）：RPM +1.42%、CTR +0.48%、相关性满意度 RS +0.4%，均统计显著。</p>
+<p>效率（Table 2）：教师 14B 推理 46,800ms/批，BERT 基线 132.22ms，LRKD-Poly 132.68ms（仅 +0.46ms、+0.03M 参数），LRKD-GAT 148.76ms——学生较教师约快 315×。消融（Table 4）：去掉隐推理抽取器 -1.35~-1.49 ACC，去掉引导损失 -1.42~-1.98 ACC（引导损失影响更大），说明 LRKD 两个组件都不可省、且向 CoT 对齐的 MSE 是主要增益来源。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文没有专门的 Limitations 章节。从方法看，可见约束包括：(a) 视角只固定为三种，未分析换域时视角集合是否需重设计；(b) 一致性过滤依赖人工标注种子集，跨新域的泛化未验证；(c) 增益依赖具体抽取器结构——GAT 最优但延迟更高（148.76ms vs Poly 132.68ms），MLP/Poly 增益较小，存在精度-延迟权衡需按场景取舍。在线收益（RPM +1.42%）虽显著但量级温和，长尾难 query 占比小决定了天花板。</p>
+<h2>6. 工业实践意义</h2>
+<p>对社区搜索（UGC 短文本）最值得借鉴的是三点。其一，把相关性判断显式拆成多视角（社区场景可对应：用户意图、内容属性/话题匹配、社区运营/安全规则），离线用多视角 CoT 喂教师，能把长尾难 query 的判别上限抬高十几个点。其二，LRKD 给出一条“线上不跑 CoT 也能保留推理”的可落地路径：非自回归抽取器仅在 embedding 空间加一个向量，Poly 变体几乎零延迟开销（+0.46ms），完全满足精排前毫秒级约束，相比线上直接调 14B（46,800ms/批）不可行。其三，引导损失用冻结 BGE-M3 编码教师 CoT 再做 MSE 对齐，工程上简单且即插即用，可直接套在现有 BERT cross-encoder 精排器上。落地注意：教师质量靠一致性过滤+跨视角 DPO 保证，社区需自建多视角标注与业务规则集；GAT 抽取器精度高但 +16ms，若精排预算紧建议先上 Poly 变体做 A/B，再按收益决定是否换 GAT。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

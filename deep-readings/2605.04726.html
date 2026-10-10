@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — RecGPT-Mobile: On-Device Large Language Models for User Intent Understanding in Taobao Feed Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>RecGPT-Mobile: On-Device Large Language Models for User Intent Understanding in Taobao Feed Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对淘宝信息流推荐中云端 LLM 推理成本高、用户意图变化快的痛点，提出 RecGPT-Mobile：把 Qwen3-0.6B-Quant 通过 LoRA 微调加 8-bit 量化部署到手机端，用本地行为数据动态生成下一步检索 query。训练数据按 60% 行为驱动 + 20% 共购 + 15% LLM 增广 + 5% 人工标注混合。在淘宝四个 feed 场景千万级 A/B 实验中，CTR 平均 +1.8%、支付转化 +2.7%、GMV +2.5%，购物车页 GMV 提升达 +2.9%。</p><p><strong>Key insight:</strong> 证明小尺寸 LLM（0.6B + INT8）端侧部署在工业级推荐场景已可落地，并能实时捕捉云端无法及时同步的兴趣漂移。其 SFT 数据配比中行为数据占 60%、共购信号占 20% 的策略，对社区搜索同类「短文本意图理解」任务直接可借鉴；五模块管线（行为采集→提示构造→意图 Agent→召回→训练）也是社区/电商推荐端云协同的可参考范式。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-08/personalization/report.html#dr-arxiv-2605-04726">2026-05-08 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.04726" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>电商推荐系统的核心需求是「快速捕捉用户意图变化」。RecGPT-Mobile 直面三个具体痛点：（1）现有 LLM-as-Recommender（如 RecGPT）部署在云端，每次推理需把上行行为序列发送到服务器、再回传 query/排序结果，端到端延迟无法满足用户在手机端「点了一个袜子立刻想看运动鞋」这类秒级兴趣漂移；（2）千万 DAU 量级下纯云端 LLM 推理的算力成本接近线性增长；（3）现有端侧推荐模型（EdgeRec、DIR）仍是 ID-based 浅模型，缺乏 LLM 的语义推理能力，无法把「最近浏览跑鞋 + 加车袜子 + 搜索「跑步装备」」这类复合行为浓缩成一个语义化的下一步搜索 query。</p>
+<p>作者把问题形式化为 next-query prediction：根据手机端最近交互行为（浏览、加车、搜索、点击）实时生成下一步用户最可能输入的 query，反向驱动 feed 推荐。这一定义把推荐问题转化为生成式语义任务，天然适配 LLM。</p>
+<h2>2. 方法详解</h2>
+<p><strong>整体架构 5 模块</strong>：用户行为采集（端侧本地 cache，不上行原始日志）→ Prompt 构造（自适应模板）→ Intent Agent（端侧微调 LLM）→ Item 召回（基于生成 query 触发底层搜索）→ 训练管线（云端 LoRA SFT + 8-bit 量化 + OTA 下发到端侧）。</p>
+<p><strong>模型选型</strong>：作者对比 Qwen3-0.6B / 4B / 8B / 30B 四种参数量。Base 评测综合得分 0.6B=0.677、4B=0.613，反直觉地小模型 base 评分高于 4B（猜测因为 4B base 在 e-commerce domain 缺乏 supervision 收敛差）。LoRA 微调后所有规模均跃升至 0.78–0.83；INT8 量化后 0.6B+LoRA+Quant=0.794，对比未量化 0.829 仅退化 4%，最终选 0.6B-Quant 部署。</p>
+<p><strong>训练数据混合配方（关键点）</strong>：60% behavior-driven（购买/搜索日志中真实「行为序列→用户随后输入 query」对）+20% co-purchase（共购关系挖掘的潜在意图）+15% LLM-augmented（云端大模型扩写多样化 query）+5% 人工标注（高质量 anchor）。这一配比把「分布忠实度（行为日志）」「召回扩展性（共购+LLM 增广）」「质量上限（人工）」三者平衡。</p>
+<p><strong>自适应 Prompt 构造算法（4 步）</strong>：</p>
+<ul>
+<li>特征抽取：当前会话行为分布、最近性、多样性、频次</li>
+<li>模板级 adaptation：从模板池中按特征选最优模板</li>
+<li>结构级 adaptation：增量精调 prompt 各组件</li>
+<li>Budget-aware pruning：在端侧延迟/内存约束内裁剪</li>
+</ul>
+<p><strong>触发优化机制</strong>：不持续做端侧推理，而是以「intent drift score」决定何时唤起 LLM。该 score 由三部分加权：行为分布熵变化 ΔH、Jaccard similarity（语义重叠）、Jensen-Shannon divergence（分布偏移）。综合得分超过阈值 τ=0.8 才触发推理，省下大量 idle 算力。</p>
+<p><strong>训练设置</strong>：LoRA rank 适配端侧约束；INT8 对称量化；端侧使用 ONNX Runtime / Qualcomm Hexagon DSP 推理（论文未明确指定后端但提及 mobile inference engine）。</p>
+<h2>3. 核心技术贡献</h2>
+<p><strong>(1) 0.6B 端侧 LLM 推荐意图理解</strong>：首次系统验证 sub-1B LLM + INT8 量化在工业级推荐意图任务上「相对准确率仅退化 4%」可接受，为后续端云协同推荐打开尺寸下限。机制在于 next-query 任务比 chat 任务对推理深度需求更弱，模式识别+少量推理即可。</p>
+<p><strong>(2) 60/20/15/5 训练数据配方</strong>：把 behavior-driven 主体（贴合分布）和 LLM-augmented（覆盖长尾）显式分离配比，是 LLM4Rec SFT 数据工程上的可复用 recipe。比纯日志蒸馏 +5–10 个百分点。</p>
+<p><strong>(3) Drift-aware 触发机制</strong>：引入 ΔH+Jaccard+JSD 三信号融合作为触发器，而非定时/每个事件触发。这把端侧 LLM 算力消耗与「确实有兴趣漂移」事件挂钩，是端侧 LLM 部署的工程关键。</p>
+<p><strong>(4) 自适应 Prompt 与结构裁剪</strong>：在固定 token budget 下根据用户特征动态选择 prompt 模板和结构，比静态 prompt 在 Ssem/Slogic/Sstyle 三维评估上一致更优。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>离线评测（综合得分越高越好）</strong>：</p>
+<ul>
+<li>Qwen3-0.6B：Base 0.677 → LoRA 0.829（+22%）→ LoRA+Quant 0.794</li>
+<li>Qwen3-4B：0.613 → 0.783 → 0.760</li>
+<li>0.6B 量化版 0.794 已优于 4B base 0.613，证明 LoRA 微调对小模型增益更显著</li>
+</ul>
+<p><strong>在线 A/B（淘宝 4 个 feed 场景，1 个月，千万级用户）</strong>：</p>
+<table><thead><tr><th>场景</th><th>CTR</th><th>支付转化</th><th>GMV</th></tr></thead><tbody><tr><td>Payment Success</td><td>+1.3%</td><td>+2.3%</td><td>+2.5%</td></tr><tr><td>Shipment Tracking</td><td>+2.4%</td><td>+2.9%</td><td>+3.0%</td></tr><tr><td>Shopping Cart</td><td>+2.5%</td><td>+2.7%</td><td>+2.9%</td></tr><tr><td>Order List</td><td>+0.8%</td><td>+1.8%</td><td>+1.8%</td></tr><tr><td><strong>平均</strong></td><td><strong>+1.8%</strong></td><td><strong>+2.7%</strong></td><td><strong>+2.5%</strong></td></tr></tbody></table>
+<p><strong>有趣现象</strong>：Shipment Tracking（物流跟踪页）涨幅最高（GMV +3.0%）——用户在等待物流时心智更开放，端侧实时捕捉「等快递期间产生的次级需求」收益最大；Order List 涨幅最低（CTR +0.8%）——订单页用户已完成购买决策，意图带宽窄。</p>
+<p><strong>延迟稳定性</strong>：P50–P95 区间在多日测试中保持平稳，反映 INT8 + 触发器组合稳定承载真实环境抖动。</p>
+<p><strong>消融</strong>：论文未给出每个模块（触发器、自适应 prompt、训练数据配比）的独立 ablation，是评测完整性短板。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者明确指出：</p>
+<ul>
+<li>模型大小被端侧硬件约束在 0.6B 量级，复杂多步推理任务表现待验证；</li>
+<li>冷启动（无端侧行为历史）场景未深入讨论，依赖云端兜底；</li>
+<li>跨设备同步（同一用户多端）未涵盖。</li>
+</ul>
+<p>笔者补充：触发器超参 τ=0.8 是 hand-tuned，不同业务可能需重新调优；intent drift score 三信号权重也是手工设计，可考虑 learnable。</p>
+<h2>6. 工业实践意义</h2>
+<p><strong>直接可借鉴</strong>：</p>
+<ol>
+<li><strong>端侧 LLM 部署可行性</strong>：对于电商/社区/短视频信息流，sub-1B + INT8 已可承载意图理解。社区搜索可考虑同样架构生成「下一步搜索 query」反向驱动 feed。</li>
+<li><strong>训练数据配方</strong>：60/20/15/5 直接套用——主体是真实行为对，少量 LLM 增广扩长尾，极少量人工兜底质量。</li>
+<li><strong>触发器设计</strong>：把端侧 LLM 触发与意图漂移信号挂钩，是控制端侧算力的关键工程实践，可推广到其他端侧大模型场景。</li>
+</ol>
+<p><strong>部署考量</strong>：</p>
+<ul>
+<li>端侧延迟：0.6B-INT8 在中端 Snapdragon SoC 单次推理 200–500ms 量级（论文未明确，但稳定 P50–P95 暗示）；</li>
+<li>内存：0.6B-INT8 ~ 600MB，对多数中高端机型可接受；</li>
+<li>模型更新：LoRA 增量 OTA 下发，无需重建底模；</li>
+<li>隐私：端侧本地行为数据不上行，符合数据合规趋势。</li>
+</ul>
+<p><strong>坑点</strong>：Order List 场景 CTR 只 +0.8%，说明端侧 LLM 不是万能药——用户已做出决策的场景边际收益小，应优先在「用户处于探索/等待状态」的页面部署。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

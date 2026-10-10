@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Memento: Personalized RAG-Style Long-Retention Data Scaling for META Ads Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Memento: Personalized RAG-Style Long-Retention Data Scaling for META Ads Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.50</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> Meta 提出 Memento：把广告推荐场景的超长用户历史当作“文档库”，把当前广告请求当作 query，用 Maximal Marginal Relevance (MMR) 检索出相关历史交互注入模型。两个互补应用：Representation Memento 检索历史 embedding 做特征增强，Data Memento 检索历史训练样本做多轮训练。通过时序分块、INT8 量化和异步 serving 协同设计，相比线性扩展达到 5–10× 资源效率，日处理请求亚 10ms 延迟，在 baselines 上获得 0.25–0.3% Normalized Entropy 增益。</p><p><strong>Key insight:</strong> Memento 把“长序列建模”从“一次性塞进 transformer”改写成“RAG 风格的按需检索”，绕开了 attention 稀释、catastrophic forgetting 与系统效率三座大山。两层应用（Repr / Data）分别覆盖在线服务和离线训练两条主线，是当前“RAG 思路反哺推荐”最完整的工业范例。对社区搜索来说，用户的长期 query/点击历史完全可以套用 MMR 检索来做个性化重排，比起直接 SFT 一个 50k-token 历史窗口的 LLM 更现实。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-05-27/personalization/report.html#dr-arxiv-oai-arXiv-org-2605-24051">2026-05-27 · Personalization (4.50)</a> <a href="../reports/2026-05-27/generative/report.html#dr-arxiv-2605-24051">2026-05-27 · Generative (4.40)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2605.24051" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机（约 320 字）</h2>
+<p>Meta 广告推荐的核心矛盾是 <strong>用户历史长（O(100K) events / 365 天）但绝大多数事件对当前 ad 请求无效</strong>。论文用三组定量证据建立动机：</p>
+<ol>
+<li><strong>Attention 检索准确度退化</strong>：Transformer 在长上下文里出现 &quot;needle-in-the-haystack&quot; 衰减，单条相关事件被海量噪声淹没；</li>
+<li><strong>O(n²) attention 复杂度</strong>：百万级序列在实时排序里 &quot;computationally intractable&quot;；</li>
+<li><strong>滚动窗口的灾难性遗忘</strong>：Meta 实测，30 天窗口训出的模型在 6 个月前的模式上 <strong>预测能力损失 &gt;50%</strong>。</li>
+</ol>
+<p>LastN 这种线性扩窗只能延缓问题，CVR NE 在 ~180 天后饱和、CTR NE 在 ~70 天后饱和——继续加历史既贵又不涨点。Memento 把&quot;长历史建模&quot;问题重新定义为 <strong>RAG 风格的检索问题</strong>：user 历史是文档库，ad 请求是 query，按相关性按需检索 top-K 注入模型。</p>
+<h2>2. 方法详解（约 640 字）</h2>
+<p><strong>MMR 检索核心</strong>：</p>
+<pre><code>MMR = arg max[α·SimUU(Dᵢ,Q) + β·SimUA(Dᵢ,Q) - (1-α-β)·max SimUU(Dᵢ,Dⱼ)]</code></pre>
+<p>三路相似度：<code>SimUU</code> 是历史 user-state vs 当前 user-state、<code>SimUA</code> 是历史 user-state vs target ad、最后一项是已选历史之间的多样性惩罚。调参显示 MMR@0.5 with (α=0.3, β=0) 优于纯多样性，β=0.95 反而退化——平衡比单维更重要。</p>
+<p><strong>Temporal Chunking</strong>：365 天历史按 <strong>7 天 epoch</strong> 切块，把单 user O(100K) embeddings 压成约 50K，~50% 压缩零损失。</p>
+<p><strong>INT8 NormInt8 量化</strong>：8-bit 整型把每 user 存储从 <strong>701K float-eq 压到 50K，14× 压缩</strong> 同时保留模型质量。</p>
+<p><strong>Asynchronous Serving</strong>：</p>
+<ul>
+<li>索引构建与重建完全离线，与在线 serving 解耦；</li>
+<li>query 构造与模型计算并行；</li>
+<li>检索本身预算 <strong>sub-10ms</strong>，对端到端延迟 negligible。</li>
+</ul>
+<p><strong>两条互补应用</strong>：</p>
+<p>(a) <strong>Representation Memento（推理时）</strong>：检索历史 user embedding 做特征增强。提出 <strong>Ember 架构</strong> 两个变体：</p>
+<ul>
+<li><em>Ember-Affine</em>：用 context 做元素级 affine 调制；</li>
+<li><em>Ember-Quadratic</em>：在压缩前用 Quadratic Neural Network 显式做 cross-feature 交互。</li>
+</ul>
+<p>(b) <strong>Data Memento（训练时）</strong>：检索历史训练样本 (user, ad, label) 做第二轮 rehearsal。<strong>参数全量重置</strong> 比 0.1× embedding shrink 高 0.04% NE；MMR 选 25–50% 历史训练数据，比统一扩量更高效。</p>
+<h2>3. 核心技术贡献（约 420 字）</h2>
+<ol>
+<li><strong>算法层重定义</strong>：第一次把 &quot;长用户历史建模&quot; 形式化为 <strong>文档检索问题</strong>，MMR 同时兼顾 user-user 相似度、user-ad 相关度、多样性。和直接堆 attention 的 LastN/SIM 形成范式之差。</li>
+<li><strong>双应用框架（Representation + Data Memento）</strong>：一条做在线特征增强（解决覆盖率/稀疏性）、一条做离线 rehearsal（解决灾难性遗忘）。两个机制互补、不冲突，可单独或联合上量。</li>
+<li><strong>基础设施协同设计</strong>：temporal chunking + INT8 量化 + 异步检索三件套带来 <strong>5-10× 资源效率</strong>，把 &quot;365 天历史&quot; 从理论变成可上线。</li>
+<li><strong>生产规模验证</strong>：在 Facebook Feed/Reels（CTR +1%）和 Offsite Conversion（CVR +1.2%）上量，QPS 无显著回归。这种规模下能撬动 1% 是巨额收益。</li>
+</ol>
+<h2>4. 实验结果分析（约 640 字）</h2>
+<p><strong>数据</strong>：~50B 训练样本、~1B 评估样本。Baseline 是 LastN 线性扩窗。指标是 Normalized Entropy (NE, 越低越好)。</p>
+<p><strong>离线 NE 主结果</strong>：</p>
+<table><thead><tr><th>配置</th><th>CTR NE</th><th>CVR NE</th><th>关键发现</th></tr></thead><tbody><tr><td>RAG vs LastN (365 天)</td><td>+0.25–0.30% gain</td><td>+0.25–0.30% gain</td><td>RAG 跨过 LastN 饱和点</td></tr><tr><td>LastN 饱和点</td><td>~70 天</td><td>~180 天</td><td>CVR 需要更长 retention</td></tr><tr><td>Representation Memento (V1-TQ-Ember)</td><td><strong>-0.25%</strong></td><td><strong>-0.26%</strong></td><td>最佳推理时配置</td></tr><tr><td>Data Memento (DM-MMR25-RS)</td><td>N/A</td><td><strong>-0.195%</strong></td><td>CVR 训练时部署</td></tr></tbody></table>
+<p>NE -0.25% 在 Meta 广告大盘是非常大的数字，文章特地强调：LastN 在 70 天后涨幅趋零，Memento 在 365 天位置仍能拿 +0.25% 增益，说明<strong>真正的 bottleneck 不是模型容量而是 &quot;哪些历史进入模型&quot;</strong>。</p>
+<p><strong>效率消融</strong>：</p>
+<ul>
+<li>存储压缩 14×（701K → 50K floats/user）；</li>
+<li>检索 sub-10ms；</li>
+<li>在线 QPS 增加 &lt;&lt;5%（统计不显著）；</li>
+<li>整体资源效率 5-10× over linear scaling。</li>
+</ul>
+<p><strong>调参洞察</strong>：</p>
+<ul>
+<li>MMR@0.5 with (α=0.3, β=0) 优于纯 diversity baseline；</li>
+<li>β=0.95（user-ad 强相关）反而降效，说明三维平衡比单维更优；</li>
+<li>MMR 数据选择比随机采样高 0.07% NE。</li>
+</ul>
+<p><strong>线上 A/B</strong>：</p>
+<ul>
+<li>Facebook Feed/Reels：<strong>CTR +1%</strong>；</li>
+<li>Offsite Conversion：<strong>CVR +1.2%</strong>；</li>
+<li>部署粒度：V1-LITE（180 天）、V1-FULL（30+ embedding 源、360 天 + Ember）、Data Memento（CVR-only、360+ 天、25-50% 下采样）。</li>
+</ul>
+<h2>5. 局限与未来方向（约 280 字）</h2>
+<p>作者明确或隐含的局限：</p>
+<ol>
+<li><strong>Data Memento 仅在 CVR 上量</strong>：CTR 模型受算力/存储预算限制无法用 Data Memento，因为 CTR 训练样本量是 CVR 的数十倍；</li>
+<li><strong>检索算法待升级</strong>：当前 MMR 是无监督的，作者明确表示后续会研究 <strong>supervised retrieval</strong>，把 ad ranker 的反馈信号引入到检索器；</li>
+<li><strong>公开数据不可用</strong>：评估完全基于 Meta 内部数据，复现门槛极高；</li>
+<li><strong>平台绑定</strong>：依赖 Meta 的 VectorDP 向量库和内部事件聚合系统，迁移到非 Meta 基础设施需要重写。</li>
+</ol>
+<p>笔者补充：MMR 的 α/β 是手调超参，未做端到端学习；Ember-Quadratic 的算力代价随 embedding 源数量线性涨，30+ 源场景下离线训练成本可能成为新瓶颈。</p>
+<h2>6. 工业实践意义（约 420 字）</h2>
+<ol>
+<li><strong>范式更新</strong>：把 &quot;长序列建模&quot; 从 attention 工程问题改写成 RAG 检索问题，是 2024-2026 周期 <strong>RAG 反哺推荐系统</strong> 最完整的工业范例。对所有受 SIM/ETA 类终身行为框架制约的团队都值得借鉴。</li>
+<li><strong>量化落地的具体配方</strong>：7 天 epoch chunking + INT8 + async serving 三件套，<strong>14× 存储压缩 + sub-10ms 检索 + QPS 不退化</strong>，可以直接照搬到自家长行为系统。</li>
+<li><strong>训练时 rehearsal 是被低估的机制</strong>：Data Memento 用 25-50% 历史样本做第二轮训练就拿到 -0.195% CVR NE，<strong>比离线扩量更高效</strong>。绝大多数推荐团队都没用这种思路。</li>
+<li><strong>对社区搜索的迁移</strong>：UGC 平台用户长期浏览/点击/搜索历史天然适合 Memento 套路。可以：(a) 把用户 query 历史 + 帖子历史按 7 天 chunking、(b) INT8 存到向量库、(c) 当前 query 时用 MMR 检索 top-K 历史，作为个性化重排的辅助特征。比起 SFT 一个 50K-token 历史窗口的 LLM 现实得多。</li>
+<li><strong>延迟可控</strong>：sub-10ms 检索说明 Memento 完全可以在精排前置链路使用，不一定只能用在召回。</li>
+<li><strong>建议 PoC 路径</strong>：先做 Representation Memento V1-LITE（单一 embedding 源 + 180 天），验证 NE 收益后再做 V1-FULL，最后引入 Data Memento。</li>
+</ol></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

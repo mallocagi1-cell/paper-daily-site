@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — CAMIE: Co-Engagement-Aware Multimodal Item Embeddings for Snap Dynamic Product Ads Retrieval</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>CAMIE: Co-Engagement-Aware Multimodal Item Embeddings for Snap Dynamic Product Ads Retrieval</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> CAMIE 面向 Snap 动态商品广告的 I2I 召回，把图像与商品元数据送入同一 LLM/MLLM 原生多模态接口，再用用户旅程挖掘的共参与商品对和对称式 in-batch InfoNCE 对齐转化行为。线上替换两个内容编码器后，相对多模态对照 CTR +0.390%、CVR +10.832%，整体 DPA 流量 CTR +0.211%、CVR +1.911%。</p><p><strong>Key insight:</strong> 关键不是继续堆独立视觉/文本塔，而是让统一内容空间接受真实共参与信号监督，使相似性直接靠近转化目标。该方案可作为现有 I2I 向量源的低风险替换：保持 ANN 基础设施不变，以统一 checkpoint 支持多模态和纯文本召回，并通过离线 Recall@10 与线上 CTR/CVR 双重把关。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-09-02/personalization/report.html#dr-arxiv-oai-arXiv-org-2608-30255">2026-09-02 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2608.30255" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>大规模 I2I 召回通常离线编码商品、构建 ANN 索引，在线只做一次向量查询，因此时延低且能覆盖冷启动商品。但生产系统往往分别维护图像、文本和多模态编码器，每套模型都有独立训练、刷新和索引链路；同时，CLIP/SigLIP 等内容相似度并不等于用户行为上的共同转化。两个视觉相似商品可能只是替代品，而用户连续互动的商品可能在图像上差异很大但业务上互补。</p>
+<p>CAMIE 的目标是用一个原生 LLM/MLLM 多模态接口统一商品表征，并用真实用户旅程中的 co-engagement 而非内容标签对齐召回空间。作者特别区分“更强 backbone”和“更合适监督”：后续 matched recipe 实验表明，大部分收益来自共参与监督，不是简单换成 2B MLLM。该问题重要之处在于可作为现有 I2I encoder 的 drop-in replacement，不改变线上 ANN 形态。</p>
+<h2>2. 方法详解</h2>
+<p>数据由 30 天 Snap DPA 用户旅程构建。每条事件包含用户、商品、时间和 view/click/add-to-cart/purchase 类型；同一用户旅程按 item_id 去重，再在局部 session 或 attribution window 内产生无序商品 pair。过滤要求 EXACT attribution、标题与图片非空、同一广告主、顶级类目一致，时间衰减权重至少 0.5；衰减半衰期为 7 天，每用户最多采样 2 对。离线实验用 1000 万训练 pair、10 万测试 pair，线上 checkpoint 用同流程扩到 1 亿 pair。</p>
+<p>每个商品可含主图、标题、品牌、描述和类目路径。renderer 根据 multimodal、text-only、image-only 模式选择字段，图像走 backbone 原生视觉接口，文本走 tokenizer，不增加模态专用 projection。共享编码器 f 与 projection g 输出 L2 归一化向量；decoder-only 模型采用 last-token pooling。相同 checkpoint 通过改变 renderer 支持三种表面。</p>
+<p>训练目标是加权、对称的 in-batch InfoNCE。对 pair(i,j)，既计算 i 查询 j 的 softmax，也计算 j 查询 i；分母含同 batch 其他商品，分布式 all-gather 提供跨卡负例。对称性符合 co-engagement 无方向关系，时间可靠度 ω 可作为样本权重。主模型是 Qwen3-VL-Embedding 2B，backbone 冻结，仅在 q/k/v/o attention projection 加 LoRA（r=32、α=64）并训练 projection head。AdamW 峰值学习率 2e-5、200 warm-up steps、余弦衰减、BF16，温度从 0.07 可学习；8 张 A100 40GB，有效 batch 32–64，训练 1 epoch。离线向量 512 维，线上取前 128 维以匹配既有 I2I_MM 索引占用。</p>
+<p>部署时每次 catalog refresh 离线编码所有活跃商品并写入 ANN。在线 seed 商品优先查缓存 embedding，新商品才即时编码，然后只发一次 ANN top-K；因此昂贵 MLLM 主要在索引构建期，不进入绝大多数请求关键路径。</p>
+<h2>3. 核心技术贡献</h2>
+<p>第一，原生多模态输入加统一 projection，避免为视觉、文本、多模态分别设计融合塔。一个多模态训练 checkpoint 在 text-only R@10 上达到专用文本 fine-tune 的 87.9% 对 89.0%，仅差 1.1 个百分点，说明文本链路可以合并。</p>
+<p>第二，co-engagement pair 把预训练语义空间对齐到转化相关性。相同 Qwen3-VL 2B 从未经微调到 CAMIE，归一化 R@10 从 100.0% 提到 137.7%。在 matched backbone 实验中，三种 backbone 的多模态结果落在 5.5pp 范围内，而共参与微调本身带来 37.7% 相对增益，证明监督是主因。</p>
+<p>第三，论文把“数据纯度还是规模”做了可行动的拆解。高意向 pair 在同样三分之一数据量时只比全事件子集高 1.6% R@10；保留全部事件把 R@10 提高 8.9%，最终比只用高意向高 7.2%。对稀疏转化场景，这支持用可靠过滤后的全漏斗数据，而非过度追求 purchase 标签。</p>
+<h2>4. 实验结果分析</h2>
+<p>主要离线结果以预训练 Qwen3-VL-Embedding 2B 多模态结果归一化：</p>
+<table><thead><tr><th>模型/输入</th><th>R@1</th><th>R@10</th><th>R@50</th><th>MRR</th></tr></thead><tbody><tr><td>预训练 Qwen3-VL，多模态</td><td>100.0%</td><td>100.0%</td><td>100.0%</td><td>100.0%</td></tr><tr><td>CAMIE Qwen3-VL，多模态</td><td>126.4%</td><td>137.7%</td><td>141.8%</td><td>130.5%</td></tr><tr><td>CAMIE Qwen3-VL，纯文本</td><td>117.8%</td><td>122.5%</td><td>134.1%</td><td>116.4%</td></tr><tr><td>Gemini Embedding 2，多模态</td><td>129.1%</td><td>129.9%</td><td>129.2%</td><td>129.4%</td></tr></tbody></table>
+<p>CAMIE 在 R@10 上比 Gemini 约高 6% 相对值，且向量 512 维而 Gemini 为 3072 维；但 Gemini 在 R@1 仍领先，说明优势集中在候选生成需要的较大 cutoff。backbone 对纯图像表面出现反例：Qwen3-VL 只有 68.8%，SigLIP2-large 达 87.3%，差 18.5pp。作者解释 MLLM 用“图像后接空文本的 last-token”读取图像并非其预训练强项，因此图像-only 不宜强行统一。</p>
+<p>线上随机 A/B 保持其他组件不变：</p>
+<table><thead><tr><th>对比</th><th>CTR lift</th><th>CVR lift</th></tr></thead><tbody><tr><td>全部 DPA 流量</td><td>+0.211%</td><td>+1.911%</td></tr><tr><td>替换 I2I_MM</td><td>+0.390%</td><td>+10.832%</td></tr><tr><td>替换 I2I_TEXT</td><td>+18.958%</td><td>+13.12%</td></tr></tbody></table>
+<p>三项 CVR 和对文本控制的 CTR 在 99% 置信水平显著；总体 CTR +0.211% 不显著。对多模态控制主要提升 CVR 而非点击，说明共参与监督更容易找出真正转化相关候选；对文本控制同时大幅提升 CTR/CVR，表明补入图像后恢复了原系统完全漏掉的候选。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文未设置独立 limitations 章节，但正文明确指出图像-only 是统一方案的例外：专用 SigLIP2 视觉塔明显更强，生产上仍应保留专用视觉 encoder。所有数据和线上实验来自 Snap DPA，绝对指标、pair 数之外的目录规模、A/B 时长与流量分桶未公开；离线测试候选池由测试 pair 中出现的商品构成，也不等同完整线上目录。作者还指出离线 co-engagement 测试天然偏好同类监督，真正归因必须依靠线上 A/B。未被充分讨论的风险包括同一广告主/同类目过滤会限制跨商家和跨类目的互补发现，co-engagement 也可能继承曝光与流行度偏差。</p>
+<h2>6. 工业实践意义</h2>
+<p>最值得复制的顺序是“先改监督，再换大模型”。团队可先用现有双塔或 SigLIP 在同一套可靠 co-engagement pair 上训练，验证行为监督带来的离线/线上收益；只有文本与多模态统一确有运维价值时，再引入 MLLM。pair 生成要记录 attribution 置信度、时间差、广告主/类目边界和事件类型，避免同页曝光造成伪共现；同时用时间切分防止近邻泄漏。</p>
+<p>对社区 UGC，可把帖子或商品换成内容单元，将同一会话内的点击、收藏、长停留、关注作者构成 pair，用时间半衰与来源一致性过滤。线上仍可保持“离线全量编码 + 缓存 seed + 单次 ANN”，从而把 2B 模型成本放在索引刷新。部署监控应拆分总体流量与被替换召回源，分别观察 CTR、深度消费、转化、候选覆盖和长尾分布；总体 lift 会被召回源流量占比稀释。若图像-only 是关键入口，应保留专用视觉塔，避免为了模型统一牺牲约 18.5pp 的离线 R@10。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

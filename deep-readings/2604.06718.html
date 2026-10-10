@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — CASE: Cadence-Aware Set Encoding for Large-Scale Next Basket Repurchase Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>CASE: Cadence-Aware Set Encoding for Large-Scale Next Basket Repurchase Recommendation</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.35</span></div>
+        </div>
+        <div class="score-detail">Relevance 4 | Novelty 4 | Practical 5 | Evidence 4 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> CASE 指出按购物篮序号建模会丢失真实日历间隔，因而把每件商品的购买历史编码为固定时间窗信号，用多尺度时间卷积学习周、双周、月度等复购节律，再以诱导集合注意力建模商品间关系，将复杂度从 O(n²) 降到 O(nK)。在千万级用户生产评估中，Top-5 Precision、Recall 和 NDCG 相对现网分别提升 8.63%、9.90% 和 10.46%。</p><p><strong>Key insight:</strong> 行为发生的真实间隔本身就是强个性化特征，不能被“第几次交互”的序号替代。社区产品可将这一思路迁移到周期性访问、内容复看或主题回访：先以共享多尺度卷积提取时间节律，再用集合编码器处理候选间依赖；共享滤波器且不引入 per-user 参数，使推理成本与候选数线性增长，适合大用户规模的批量刷新。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-07-27/personalization/report.html#dr-web_search-arxiv-2604-06718">2026-07-27 · Personalization (4.35)</a> <a href="../reports/2026-04-10/personalization/report.html#dr-arxiv-2604-06718">2026-04-10 · Personalization (4.00)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://arxiv.org/abs/2604.06718" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>复购行为是零售推荐中的核心信号——大量用户的下一个购物篮中包含此前购买过的商品，且复购时间遵循稳定的商品特定节奏（如牛奶每周、洗衣液每月）。然而，现有 Next Basket Repurchase Recommendation（NBRR）模型将购买历史表示为按访问顺序索引的离散篮子序列，存在根本性缺陷：(1) 在第 1、8、36 天购买的商品与第 1、2、3 天购买的商品获得相同表示；(2) 两次购买间隔期内推荐无法动态更新；(3) 无法区分已逾期和尚未到期的商品。</p>
+<p>现有方法的具体不足：KNN 方法（如 TIFUKNN）需要在推理时计算用户间相似度，在千万级用户规模下计算开销不可接受（O(|U|·d) per query）；先前的日历时间方法依赖用户级别的卷积滤波器和二次复杂度的物品交互模块，限制了生产环境的可扩展性。</p>
+<h2>2. 方法详解</h2>
+<p><strong>日历时间历史表示</strong>：对每个商品 i，构建 T 天滚动窗口内的二值购买指示向量 h_i ∈ {0,1}^T，h_{i,t}=1 表示第 t 天购买了商品 i。这保留了精确的购买间隔信息。</p>
+<p><strong>多尺度时间 CNN</strong>：使用共享 Conv1d 滤波器在五个预设核尺寸上处理 h_i——7 天（周频）、14 天（双周频）、28 天（月频）、91 天（季度频）、182 天（半年/趋势）。每个尺度使用非重叠步长 stride=w，⌊T/w⌋ 个激活值在所有尺度上拼接后经两层 FC+ReLU 投影为 cadence embedding c_i ∈ R^{d_c}，d_c=128。</p>
+<p><strong>Induced Set Attention (ISAB)</strong>：将 cadence embedding 和物品 embedding e_i ∈ R^{d_e}（d_e=128）拼接为组合表示 x_i = [c_i || e_i]，输入 Set Transformer 编码器。使用两层 ISAB，K=32 个 induced points，H=4 注意力头。ISAB 将 O(n²) 的成对注意力降至 O(nK)，n 为用户候选商品数。</p>
+<p><strong>评分与训练</strong>：每个表示 z_i ∈ R^{d_h}（d_h=256）经两层 MLP 产生标量分数 s_i，按 s_i 排序推荐。训练使用 BCE 损失，下一个篮子中的复购商品为正样本。训练 30 个 epoch，Adam 优化器（lr=10^{-3}，weight decay=10^{-5}），batch size=64，ISAB 和 MLP 后 dropout=0.1。</p>
+<p><strong>关键设计选择</strong>：(1) 时间卷积滤波器跨所有用户共享（非用户级），大幅减少参数量；(2) 使用 induced points 而非完整 self-attention，使复杂度与候选集大小线性相关而非二次；(3) 解耦 cadence 学习与跨商品交互——CNN 独立捕捉每个商品的时间节奏，ISAB 处理商品间的互补/替代关系。</p>
+<h2>3. 核心技术贡献</h2>
+<p><strong>贡献一：日历时间 vs 序列索引的问题重构</strong>。论文明确指出 basket-index 公式化是阻碍生产部署的结构性限制，提倡以日历时间节奏作为更优的建模基础。这一重构使模型能在两次购买之间动态刷新推荐。</p>
+<p><strong>贡献二：可扩展的 cadence 学习架构</strong>。通过共享多尺度 CNN + induced set attention 的组合，实现了显式日历时间建模与生产级可扩展性的兼得。推理复杂度 O(n(T+K))，与用户总数无关。</p>
+<p><strong>贡献三：嵌入依赖降低</strong>。消融实验表明移除物品 embedding 仅导致 1.75% 的 Precision 下降，说明 cadence 信号本身已携带大量信息，减少了对频繁刷新的大规模 embedding 表的依赖。</p>
+<p><strong>贡献四：首个 NBRR 的生产级评估</strong>。在千万级用户规模上的评估表明 CASE 在工业环境中可行，而非仅限于学术基准。</p>
+<h2>4. 实验结果分析</h2>
+<p><strong>公开基准</strong>（Precision@5 / Recall@5 / NDCG@5）：</p>
+<table><thead><tr><th>数据集</th><th>CASE</th><th>PIETSP（次优）</th><th>提升</th></tr></thead><tbody><tr><td>TaFeng</td><td>0.1539 / 0.4361 / 0.3559</td><td>0.1421 / 0.4223 / 0.3317</td><td>+8.3% / +3.3% / +7.3%</td></tr><tr><td>DC</td><td>0.1846 / 0.7230</td><td>0.1841 / 0.7230</td><td>接近持平</td></tr><tr><td>Instacart</td><td>0.3989 / 0.3949 / 0.5086</td><td>0.3930 / 0.3878 / 0.5037</td><td>+1.5% / +1.8% / +1.0%</td></tr><tr><td>内部数据集</td><td>0.2661 / 0.2550 / 0.3509</td><td>0.2422 / 0.2311 / 0.3301</td><td>+9.9% / +10.3% / +6.3%</td></tr></tbody></table>
+<p><strong>生产级评估</strong>（千万用户，相对提升）：</p>
+<table><thead><tr><th>K</th><th>Precision</th><th>Recall</th><th>NDCG</th></tr></thead><tbody><tr><td>5</td><td>+8.63%</td><td>+9.90%</td><td>+10.46%</td></tr><tr><td>10</td><td>+6.78%</td><td>+7.95%</td><td>+9.40%</td></tr><tr><td>20</td><td>+5.27%</td><td>+6.32%</td><td>+8.75%</td></tr></tbody></table>
+<p><strong>消融实验</strong>（Instacart，Precision@5）：</p>
+<ul>
+<li>移除 Temporal CNN: 0.3989 → 0.2382（<strong>降幅 40%</strong>，CNN 是最关键组件）</li>
+<li>移除 Set Encoder: 0.3989 → 0.3947（降幅 1%）</li>
+<li>移除 Item Embedding: 0.3989 → 0.3919（降幅 1.75%）</li>
+<li>ISAB vs PermEqMean: 0.3989 vs 0.3983（ISAB 仅微小优势）</li>
+</ul>
+<p>消融结果清晰表明：<strong>时间 CNN 是性能的核心驱动力</strong>，贡献了绝大部分增益。Set encoder 和 item embedding 提供互补但相对有限的改善。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者指出以下局限：(1) 依赖历史日历时间戳，缺失时间戳时需重建相对日期，可能引入噪声；(2) 在数据密集的场景（如 Instacart）上增益相对较小，暗示当历史信息足够丰富时 cadence 的边际收益递减；(3) 尚未进行在线 A/B 测试——论文明确提到「online A/B test is planned to validate offline gains on user-facing metrics」。</p>
+<p>此外，模型仅处理复购推荐场景，对全新商品（无历史购买）的推荐需要与其他冷启动方法结合。</p>
+<h2>6. 工业实践意义</h2>
+<p><strong>直接可借鉴的设计</strong>：多尺度时间卷积的思路不限于购物篮推荐——任何有周期性行为模式的场景（社区平台的周期性浏览、视频平台的观看节奏、音乐平台的收听习惯）都可套用。核心思想是「用真实时间间隔而非事件序号建模行为节奏」。</p>
+<p><strong>生产部署友好</strong>：推理复杂度 O(n(T+K)) 与用户总数无关，这对千万级 DAU 平台至关重要。共享权重设计避免了用户级参数爆炸。</p>
+<p><strong>减少 embedding 依赖</strong>：消融显示 cadence 信号本身携带大量信息，这启示团队在 embedding 基础设施受限时可以优先投入时间建模。</p>
+<p><strong>Walmart 的工业验证</strong>：在千万级用户上 +8.6% Precision / +9.9% Recall 的提升具有显著业务价值，表明 cadence-aware 设计在真实工业环境中可行且高效。但需注意该评估为离线指标，在线效果有待 A/B 验证。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

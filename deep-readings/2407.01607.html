@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — Multi-Epoch Learning with Data Augmentation for Deep Click-Through Rate Prediction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>Multi-Epoch Learning with Data Augmentation for Deep Click-Through Rate Prediction</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.45</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 3 | Timely 4</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> MEDA 提出首个通用可靠的深度 CTR 模型多轮训练策略。工业界 CTR 模型普遍面临多轮训练过拟合问题（样本重复暴露导致 embedding 层过拟合），现有方案需针对特定模型调参。MEDA 通过特征级数据增强和自适应正则化，在不同 CTR 模型架构（DeepFM、DCN、DIN 等）上均能稳定提升多轮训练效果，AUC 提升 0.3-0.8%。</p><p><strong>Key insight:</strong> 核心创新在于将数据增强从 CV/NLP 领域适配到 CTR 场景：对 embedding 层施加特征 dropout 和噪声注入，结合动态正则化权重调度。实践启示：CTR 模型训练通常只用单轮以避免过拟合，MEDA 证明多轮训练可安全使用且带来显著收益，适用于样本量有限或模型容量较大的场景。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-04-21/personalization/report.html#dr-web-multi-epoch-ctr-meda">2026-04-21 · Personalization (4.45)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">Web Search</span>
+          <a href="https://openreview.net/forum?id=7vH8DO2oPk" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>CTR 预估模型面临一个独特的训练困境：<strong>单轮过拟合现象</strong>（one-epoch overfitting）。与 CV/NLP 领域模型通常需要多轮训练才能收敛不同，CTR 模型在第二轮训练开始时性能即显著下降。</p>
+<p>根本原因在于 <strong>embedding 层过拟合</strong>：CTR 模型处理数十亿稀疏分类特征（如用户 ID、物品 ID），大量低频特征的 embedding 向量仅有极少训练样本，重复暴露导致 embedding 记忆训练数据而非学习泛化表征。作者通过控制实验验证：固定 embedding 层时 MLP 几乎不过拟合；固定 MLP 后 embedding 过拟合仍然出现。</p>
+<p>工业意义：多轮训练对于以下场景至关重要——(1) 数据量有限但模型容量大；(2) 需要无监督域适应或标签噪声修正；(3) 计算资源充足但训练时间有限。快手实际部署中，MEDA 使基线 2 周训练效果仅需 1 周达到。</p>
+<h2>2. 方法详解</h2>
+<h3>核心思想：解耦 Embedding 与 MLP</h3>
+<p>MEDA 发现 MLP 层学习的是 embedding 间的<strong>相对关系</strong>（方向）而非绝对位置（数值）。因此可通过在每轮训练时重新初始化 embedding 来实现隐式数据增强——MLP 被迫在不同的 embedding 空间中学习稳健的匹配函数。</p>
+<h3>Non-Continual MEDA (Algorithm 1)</h3>
+<ol>
+<li>随机初始化 MLP 参数 θ₀</li>
+<li>对每轮 r (1 到 k)：</li>
+</ol>
+<p>   - <strong>随机重新初始化</strong> embedding 层 Eᵣ（Glorot/均匀分布）<br>   - 使用上轮 MLP θ_{r-1} 作为初始化（保留 MLP 知识）<br>   - 在完整数据集上训练一轮<br>   - 同时更新 θ 和 E</p>
+<p><strong>关键洞察</strong>：embedding 重新初始化 = 隐式数据增强。每轮的 embedding 空间不同，MLP 看到的是&quot;同一数据的不同表示&quot;，等效于在特征空间做增强。</p>
+<h3>Continual MEDA (Algorithm 2)</h3>
+<p>适用于连续数据流（如日增量训练）：维护 k 个独立初始化的 embedding 组：</p>
+<ol>
+<li>初始化共享 MLP θ^c 和 k 个 embedding 层</li>
+<li>对每个数据集 t (日增量)：对每轮 r 选择 embedding Eᵣ^{t-1}，初始化 MLP 为 θ^c，训练一轮</li>
+</ol>
+<h3>训练细节</h3>
+<ul>
+<li>损失函数：BCELoss（分类）/ AUC scoring（回归/LTV）</li>
+<li>优化器：Adam (lr=0.001) 公开数据集；Adagrad (lr=0.01) 业务数据集</li>
+<li>Embedding 初始化：Glorot（公开）；uniform [-0.01, 0.01]（业务）</li>
+<li>验证 MLP 收敛性：跨轮 MLP 参数的 cosine similarity 单调递增</li>
+</ul>
+<h2>3. 核心技术贡献</h2>
+<ol>
+<li><strong>首次系统诊断 CTR 模型单轮过拟合根因</strong>：通过控制实验明确归因于 embedding 层的高维稀疏性过拟合。推翻了此前模糊的&quot;整体模型过拟合&quot;认知。</li>
+</ol>
+<ol>
+<li><strong>通用多轮训练策略</strong>：MEDA 可无缝集成到 DNN、DIN、DIEN、MIMN、ADFM 等不同架构中，无需修改模型结构。2 轮训练即带来 +0.73% 到 +5.17% AUC 提升。</li>
+</ol>
+<ol>
+<li><strong>数据效率翻倍</strong>：在 Taobao 数据上，50% 数据 + 2 轮训练即达到基线 100% 数据单轮的性能，节省一半数据采集成本。</li>
+</ol>
+<ol>
+<li><strong>MLP 学习相对关系的发现</strong>：余弦相似度分析证明 MLP 参数方向跨轮收敛，为 embedding 重新初始化策略提供理论基础。</li>
+</ol>
+<h2>4. 实验结果分析</h2>
+<h3>主实验 AUC 提升（2轮 vs 单轮）</h3>
+<p><strong>公开数据集</strong>：</p>
+<table><thead><tr><th>模型</th><th>Amazon</th><th>Taobao</th></tr></thead><tbody><tr><td>DNN</td><td>+0.73%</td><td>+1.82%</td></tr><tr><td>DIN</td><td>+1.30%</td><td>+1.06%</td></tr><tr><td>DIEN</td><td>+1.75%</td><td>+1.98%</td></tr><tr><td>MIMN</td><td>+1.41%</td><td>+1.61%</td></tr><tr><td>ADFM</td><td>+0.90%</td><td>+5.17%</td></tr></tbody></table>
+<p><strong>业务数据集</strong>：</p>
+<table><thead><tr><th>模型</th><th>SVO (快手短视频, 17.5亿样本)</th><th>SVSL (快手社交, 3亿样本)</th></tr></thead><tbody><tr><td>DNN</td><td>+0.24%</td><td>+0.49%</td></tr><tr><td>DIN</td><td>+0.33%</td><td>+0.64%</td></tr></tbody></table>
+<p>Taobao 提升显著高于 Amazon，因 Taobao 数据稀疏度更低。</p>
+<h3>消融实验</h3>
+<ul>
+<li>Fix embedding（不重新初始化）：无增强效果</li>
+<li>Fix MLP after epoch 1：embedding 过拟合仍发生</li>
+<li>Embedding same init：减轻但不消除过拟合</li>
+<li><strong>Embedding reinit（MEDA）</strong>：成功消除过拟合</li>
+</ul>
+<h3>数据效率</h3>
+<p>Taobao：MEDA 50% 数据 + 2 轮 = 基线 100% 数据单轮<br>ADFM with 3 epochs on 1/8 data &gt; 基线全数据单轮</p>
+<h3>在线 A/B 测试（快手视频广告，10% 流量 9 天）</h3>
+<ul>
+<li>Test AUC: <strong>+0.14%</strong></li>
+<li>用户留存: <strong>+6.6%</strong></li>
+<li>整体收入: <strong>+0.32%</strong>；预期收入: <strong>+0.91%</strong></li>
+</ul>
+<p>关键成果：MEDA 使 2 周训练效果仅需 1 周达到，<strong>训练效率翻倍</strong>。</p>
+<h2>5. 局限与未来方向</h2>
+<p>作者承认：</p>
+<ol>
+<li><strong>信息损失</strong>：随机重新初始化丢弃了高频特征积累的有价值 embedding。建议未来借鉴差分隐私思想，根据特征频率设计差异化噪声水平。</li>
+<li><strong>在线学习时效性</strong>：多轮方法牺牲时效性，但 batch+online 混合方案可容纳。</li>
+</ol>
+<p>未被作者提及的局限：(1) 十亿级特征表重新初始化的显存和 IO 开销；(2) 高频特征的冷启动效应。</p>
+<h2>6. 工业实践意义</h2>
+<p><strong>直接可采纳</strong>：</p>
+<ul>
+<li><strong>零代码改动</strong>提升 CTR 模型效果：仅需在训练脚本中加入 embedding 重新初始化逻辑</li>
+<li>在数据量有限的垂类场景（如 UGC 社区搜索排序），多轮训练增益更显著</li>
+<li>数据效率翻倍意味着可用更短数据窗口训练出等效模型</li>
+</ul>
+<p><strong>部署考量</strong>：</p>
+<ul>
+<li>训练时间增加 k 倍，但可并行化</li>
+<li>在线 serving 无额外开销：最终只保留一套 embedding + MLP</li>
+<li>与增量训练兼容：Continual MEDA 专为日更场景设计</li>
+</ul>
+<p><strong>对 UGC 搜索排序的适用性</strong>：社区搜索的 CTR 模型通常面临样本稀疏（长尾 query/帖子组合多）、特征高维稀疏特点，正是 MEDA 增益最大的场景。建议在现有 CTR 模型上尝试 2-3 轮 MEDA 训练，预期 AUC +0.3-1.0%。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>深度解读 — IAT: Instance-As-Token Compression for Historical User Sequence Modeling in Industrial Recommender Systems</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/app.css" />
+  <link rel="stylesheet" href="../css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    
+    <nav class="navbar">
+      <a class="navbar-brand" href="../index.html#/">Paper Daily</a>
+      <ul class="navbar-nav">
+        <li><a href="../index.html#/">Reports</a></li>
+        <li><a href="../deep-readings/index.html" class="active">&#128214; 深度解读</a></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Curated</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Topics</span></li>
+        <li><span class="nav-disabled" title="Needs local Flask API">Run</span></li>
+      </ul>
+      <span class="pages-badge">Static preview</span>
+    </nav>
+    <div class="main-content">
+
+      <p style="font-family: Inter, sans-serif; font-size: 13px; margin-bottom: 12px;"><a href="index.html">&#8592; 全部深度解读</a></p>
+      <div class="card dr-paper-header">
+        <div class="card-header">
+          <div class="card-title"><h1>IAT: Instance-As-Token Compression for Historical User Sequence Modeling in Industrial Recommender Systems</h1></div>
+          <div class="card-actions"><span class="badge badge-green">4.75</span></div>
+        </div>
+        <div class="score-detail">Relevance 5 | Novelty 4 | Practical 5 | Evidence 5 | Timely 5</div>
+        <div class="paper-body" style="margin-top: 10px;"><p><strong>Summary:</strong> 针对工业推荐系统中用户历史序列建模的信息瓶颈问题，提出 Instance-As-Token (IAT) 两阶段压缩框架。第一阶段将每次交互的全部特征（约6000维）压缩为64维统一实例嵌入，支持时序和用户两种压缩模式；第二阶段通过标准序列建模学习长程偏好模式。在字节跳动的电商广告、商场营销、直播电商等多个真实场景部署，AUC 提升 +0.31%，广告主分数在线 A/B 提升 +1.557%，GMV 提升 +0.151%。</p><p><strong>Key insight:</strong> IAT 的核心创新在于将用户交互实例视为 token 进行压缩，打破了手工序列特征的信息瓶颈。用户序压缩模式（user-order）比时序模式更适配下游序列建模需求，这一发现对工业实践有重要指导意义。6000→64维的压缩比使得长序列建模在存储和计算上均可行，且跨域迁移效果显著（跨域 +0.5%~+3.015%），为多业务线复用序列模型提供了有效范式。</p></div>
+        <div class="dr-appearances">出现于报告：<a href="../reports/2026-04-14/personalization/report.html#dr-arxiv-2604-08933">2026-04-14 · Personalization (4.75)</a></div>
+        <div class="paper-meta">
+          <span class="source-tag">arXiv</span>
+          <a href="https://arxiv.org/abs/2604.08933" target="_blank" rel="noopener">原文 &#8599;</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="deep-read-section">
+          <div class="deep-read-content"><h2>1. 问题与动机</h2>
+<p>工业推荐系统中用户序列建模面临严重的信息瓶颈。传统方法依赖手工构造的序列特征（如物品属性、交互类型、时间戳），但这些特征稀疏且有限——每条交互仅包含少量手选特征。然而，工业级训练样本中每条交互实例包含约6000维特征，涵盖用户画像、物品属性、上下文信息等丰富信号。这种信息浪费源于存储、传输和计算的资源限制，使得全量特征无法直接用于在线序列推理。更关键的是，特征扩展涉及漫长的开发周期和高昂的工程成本，限制了模型迭代速度。</p>
+<p>该问题的核心矛盾是：离线训练系统可以访问完整的实例特征空间，但在线序列推理只能使用经过压缩和手工筛选的少量特征。IAT 的思路是在离线训练阶段将完整实例信息压缩为紧凑的嵌入表示，然后在在线推理时高效检索这些压缩表示用于序列建模。</p>
+<h2>2. 方法详解</h2>
+<p>IAT 采用两阶段框架设计：</p>
+<p><strong>第一阶段：实例压缩（Source Model）</strong></p>
+<p>提出两种压缩模式。时序压缩（Temporal-Order）对每个训练实例独立压缩：通过压缩层 h_compress = σ(W₁h + b₁) 将 D_raw≈6000 维原始特征映射到 D=64 维，再通过解压层恢复用于预测任务训练。这种方式简单直接，但存在约0.05% AUC损失。</p>
+<p>用户序压缩（User-Order）是核心创新：将训练实例按用户ID聚合并按时间排序，引入 Source Instance Transformer (SIT) 增强压缩质量。SIT 由2层 Transformer 组成（模型维度64，FFN中间维度128），对同一用户的历史实例序列进行因果注意力建模。关键设计选择是：<strong>InsEmb 保存在 SIT 之前而非之后</strong>，这避免了信息泄露并保证表示的可迁移性。消融实验表明此选择带来0.09% AUC差异。用户序模型不仅不损失源模型性能，反而带来+0.6% AUC提升。</p>
+<p>训练支持两种模式：(1) 批量训练：单个 batch 包含一个用户的全部历史实例；(2) 流式训练：从存储中检索前 T-1 个 InsEmb（带 stop-gradient），与当前 batch 拼接后通过 SIT。</p>
+<p><strong>第二阶段：序列建模（Downstream Model）</strong></p>
+<p>下游模型通过时间戳检索固定长度（T=256）的 InsEmb 序列，构造 InsToken = Concat(E_InsEmb_adapt, E_side)，其中 E_side 包含标签信息和时间戳等辅助信号（各64维）。Query Token 由候选物品特征压缩至512维生成。最终通过标准序列建模架构（DIN/LONGER/Transformer）学习长程偏好并输入 RankMixer 特征交互模块。</p>
+<p><strong>存储架构</strong>：InsEmb 存储在嵌入参数服务器（Emb PS）中，以 InsID 为键；(UID, InsID, Side Info) 元组异步写入高性能键值存储。存储成本约为：1亿日活 × 256序列长度 × 64维 × 4字节 ≈ 6.5TB/年。</p>
+<h2>3. 核心技术贡献</h2>
+<p><strong>贡献一：实例级压缩范式</strong>。将推荐系统中的序列建模从「手工特征选择」转变为「自动学习压缩」，6000维→64维的100倍压缩比使全量实例信息可用于在线推理。这是对传统序列特征工程的根本性替代。</p>
+<p><strong>贡献二：用户序压缩与 SIT 设计</strong>。通过 Transformer 对同用户历史实例进行因果建模，使压缩表示隐含了序列上下文信息，比独立压缩每个实例提供了更丰富的语义。关键的 InsEmb 保存位置选择（SIT 之前）平衡了信息丰富性和可迁移性。</p>
+<p><strong>贡献三：跨域迁移能力</strong>。一次训练的 InsEmb 可复用于多个下游场景（电商广告、商场营销、直播电商），跨域 AUC 提升 +0.5%~+3.015%，极大降低了多业务线的模型开发成本。</p>
+<p><strong>贡献四：可扩展性验证</strong>。在基座模型从150M扩展到1B参数的过程中，IAT 的增益持续存在，证明了与模型规模的良好兼容性。序列长度和 Transformer 层数的扩展也遵循标准 scaling law。</p>
+<h2>4. 实验结果分析</h2>
+<p>离线实验在字节跳动工业级 CVR 预测数据集上进行，包含数百亿训练样本，训练周期覆盖4个月。</p>
+<p><strong>主要结果</strong>：User-Order IAT 在三种基座架构上一致提升 AUC 0.24%~0.31%，LogLoss 降低 0.51%~0.67%。LONGER 和 Transformer 基座效果优于 DIN，表明 IAT 序列建模架构应与源模型 SIT 架构保持一致性。</p>
+<table><thead><tr><th>基座模型</th><th>AUC 提升</th><th>LogLoss 降低</th></tr></thead><tbody><tr><td>DIN</td><td>+0.24%</td><td>-0.51%</td></tr><tr><td>LONGER</td><td>+0.31%</td><td>-0.67%</td></tr><tr><td>Transformer</td><td>+0.29%</td><td>-0.63%</td></tr></tbody></table>
+<p><strong>在线 A/B 实验</strong>：用户序 IAT 在核心广告场景取得广告主分数 +1.557%、广告价值 +1.340% 的提升。跨域实验中，Feed 广告 CTR 提升高达 +3.015%，直播电商 GMV 提升 +0.151%。</p>
+<p><strong>消融实验关键发现</strong>：(1) InsEmb 保存在 SIT 之前比之后好0.09%——保存后会导致信息泄露；(2) 标签侧信息贡献最大（去除后 -0.10%）；(3) 特征交互前放置 IAT 优于交互后（-0.06%）。</p>
+<p><strong>扩展性实验</strong>：约80%用户历史实例少于256条，更长序列与更大 AUC 增益正相关（最高达0.4%）。参数增加仅3-8M（6-15%开销），FLOPs 增加15-20%。</p>
+<h2>5. 局限与未来方向</h2>
+<p>论文未设显式局限性章节，但可识别以下限制：(1) 两阶段训练增加了系统复杂度，需要独立维护源模型和下游模型的训练流水线；(2) 依赖额外的嵌入参数服务器和高性能键值存储，增加了基础设施成本（约6.5TB/年）；(3) 用户序模型的批量训练需要按用户聚合数据，这在超大规模数据集上可能面临数据倾斜问题；(4) InsEmb 维度固定为64，不同业务场景的最优维度可能不同。</p>
+<h2>6. 工业实践意义</h2>
+<p><strong>直接可采纳的设计</strong>：(1) 实例压缩思路适用于任何有丰富离线特征但在线特征受限的推荐场景——这在绝大多数工业系统中普遍存在；(2) 用户序压缩+SIT 的设计模式可作为用户长期兴趣建模的标准化方案；(3) InsEmb 的跨域复用特性意味着团队可以训练一次、多场景部署。</p>
+<p><strong>部署考量</strong>：(1) 存储成本是主要门槛——6.5TB/年对中小团队可能偏高，但对字节跳动级别的公司完全可接受；(2) 64维 FP32 的 InsEmb 可考虑量化到 INT8 进一步降低存储成本；(3) 异步写入键值存储的设计确保了写入不会阻塞在线推理；(4) 流式训练中的 stop-gradient 操作使得历史 InsEmb 不需要重新计算梯度，保证了训练效率。</p>
+<p><strong>值得关注的信号</strong>：跨域迁移效果（+0.5%~+3.015%）特别值得关注，这表明 InsEmb 捕获了用户兴趣的通用表征，而非场景特定信号。对于拥有多业务线的搜索推荐团队，这可能是一个显著的效率提升方向。</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  
+</body>
+</html>
