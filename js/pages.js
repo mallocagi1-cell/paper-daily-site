@@ -449,8 +449,28 @@
     });
   }
 
+  // Per-view document title / description (hash routes share one URL; static tags describe the home page).
+  const HOME_TITLE = document.title;
+  const descEl = document.querySelector('meta[name="description"]');
+  const HOME_DESC = descEl ? descEl.getAttribute("content") : "";
+  function setDocMeta(route) {
+    let t = HOME_TITLE, d = HOME_DESC;
+    if (route.weekly) {
+      t = "周榜 Weekly Top " + (DATA.weekly_top_n || 10) + (route.week ? " · " + route.week + " 周" : "") + " | Paper Daily";
+      d = "Paper Daily 周榜：按周汇总搜索、推荐与 GenAI 各方向日报入选论文，按偏好调整分排序、去重后的每周 Top " +
+        (DATA.weekly_top_n || 10) + "，附深度解读链接。";
+    } else if (route.archive) {
+      t = "往期日报 · " + (DATA.days || []).length + " 期 | Paper Daily";
+    } else if (route.date) {
+      t = route.date + (route.track ? " " + trackLabel(route.track) : "") + " 论文日报 | Paper Daily";
+    }
+    document.title = t;
+    if (descEl) descEl.setAttribute("content", d);
+  }
+
   function render() {
     const route = parseRoute();
+    try { setDocMeta(route); } catch (e) { /* never block rendering */ }
     if (route.weekly) {
       setNavActive("weekly");
       renderWeekly(route);
