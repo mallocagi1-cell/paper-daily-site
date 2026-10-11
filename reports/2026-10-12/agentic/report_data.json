@@ -1,0 +1,671 @@
+{
+  "date": "2026-10-12",
+  "track": "agentic",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。 运行说明：来源覆盖缺口：Web搜索补充8/10（80%），超过70%上限；已搜索国内工业实践，但相关候选被历史/跨赛道去重，无可用替补。最终未纳入中文来源。爬虫论文窗口为3天，Web补充按技能允许扩展至90天并标注原始发布日期。",
+  "stats": {
+    "papers_scored": 10,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.11370",
+      "title": "RIT-RAG: Navigating Document Corpora with Retrieval-Induced Trees",
+      "published": "2026-10-08",
+      "url": "https://arxiv.org/abs/2610.11370",
+      "authors": "Pulivarthi, Meghanadh, Biswal, Swaraj Kumar, Bhushan, Kushagra, Nandwani, Yatin, Joshi, Sachindra, Raghu, Dinesh",
+      "abstract": "Abstract: Retrieval-augmented generation (RAG) grounds language models in external corpora. Agentic RAG enables iterative search, yet exposes the model to isolated chunks without document structure, making it difficult to distinguish relevant evidence from chunks that merely resemble the query. Structure-aware methods such as PageIndex navigate document structure but cannot scale to the structures of large corpora, which do not fit in the LLM context. Hence, they first commit to a single document using a document retriever and cannot recover from a wrong choice. We propose RIT-RAG (Retrieval-Induced Tree RAG), which combines content retrieval with structural navigation. Offline, RIT-RAG builds a tree for each document from its table of contents or sitemap. At query time, it retrieves a broad set of chunks and uses their positions to induce manageable sub-trees, potentially across multiple documents. An LLM agent navigates these sub-trees, selectively reads promising nodes, and reformulates queries when needed. Thus, retrieval proposes where to look, while the agent decides what to read. Across financial, scientific, and customer-support benchmarks, RIT-RAG achieves the highest answer accuracy among vanilla, graph-based, and agentic baselines. On EntQABench, our new benchmark of 2.84 million technical-documentation webpages, it improves accuracy by 6.8 to 11.4 points over the strongest baseline across three LLMs.",
+      "source": "web_search",
+      "discovered_at": "2026-10-12",
+      "company": [
+        "IBM",
+        "IIT Kharagpur"
+      ],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.35,
+      "summary": "RIT-RAG 将召回与阅读解耦：先用检索命中的段落及祖先节点构造跨文档子树，再让 Agent 按需读取节点、改写查询。相同混合检索器下，Haiku 在 WixQA 的答案准确率由 Agentic Search 的84.5%升至95.0%，FinanceBench由74.0%升至84.0%；284万网页语料验证了规模可扩展性。",
+      "key_insight": "社区搜索可将帖子、楼层和评论组织为轻量层级，先展示结构再读证据，以减少同主题但缺乏依据的内容进入答案。该设计允许失败后切换文档，适合跨帖复杂问答；但Haiku单次成本为4.9–10.1美分，高于普通Agent检索，应先在高价值查询上试点并同步测量nDCG、CTR与延迟。",
+      "evidence_urls": [
+        "https://arxiv.org/abs/2610.11370"
+      ],
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:2610.11370",
+        "title": "RIT-RAG: Navigating Document Corpora with Retrieval-Induced Trees",
+        "status": "completed",
+        "content": "# RIT-RAG：检索决定去哪里，Agent决定读什么\n\n## 1. 问题与动机\n\nRIT-RAG关注的失败并不是缺少更大的向量模型，而是检索接口丢失了证据的组织关系。普通Agentic Search每轮收到一批独立chunk，只能继续改写查询，难以知道段落属于哪个产品、年份、章节或子问题。主题相似的片段可能缺少真正的答案依据，Agent却仍要读取整批内容。PageIndex把目录交给模型，让模型选择阅读位置，但需要先选定一份文档，选错后无法在同一流程中换到其他文档；整个目录也可能超过上下文限制。\n\n论文给出一个具体解释：两个都叫“Configuring the server”的章节，只有祖先节点才能告诉模型它们来自不同版本的产品。把标题孤立地交给模型，就可能把版本相关的证据混用。作者因此把语料建成文档森林，再让内容检索按query诱导局部子森林，避免在没有看内容之前押注单篇文档。这个思路与社区搜索的跨帖问答有关：帖子、楼层和引用回复的组织关系，可能帮助模型区分相似措辞下不同语境的事实。不过社区短帖是否具有足够结构，仍需业务验证，本文没有报告社区nDCG或CTR。\n\n## 2. 方法详解\n\n离线表示中，每份文档是一棵树，章节、节和子节是节点。节点只拥有自己标题下、不属于子节点的正文，因此每段文本恰好归属一个节点。标题必须存在，摘要和关键词可以省略。模型看到的树是JSON：节点ID、元数据及保持原顺序的children，正文不在初始结构中，必须经Read工具取回。这一点让“看到目录”和“读取证据”成为两个不同动作。\n\nchunk必须在节点内部切分，不能跨节点；一个节点可以含多个chunk。索引保存chunk到节点的映射，以及祖先ID和标题。在线首先召回top-k′ chunk，作者主配置k′=200。每个节点的分数等于其被召回chunk中最高的相似度，随后保留top-n节点，n=50。再把这些节点到根的所有祖先取并集，保留对应父子关系，构成query相关子森林。子树按树内最高节点分数排序。因而结构大小由选中节点及祖先决定，而不是由语料总量决定；不是把整棵百万页目录塞进上下文。\n\nAgent的流程可以写成：生成查询→GetToC返回子森林JSON→推理选择节点ID→Read读取所选节点→回答、继续读节点或改写查询。每次GetToC都会从全语料重新检索，因此之前的候选文档不会限制下一轮。最多10次工具调用，其中GetToC最多3次，达到预算后停止。普通RAG和Agentic Search等对照共享BM25与gte-modernbert-base稠密检索融合的混合检索器，使用FAISS和最多512 token的chunk，避免把结果差异解释为换了检索模型。\n\n结构来源依语料而不同：WixQA利用HTML标题和产品分类形成目录及站点层级；QASPER用论文章节；FinanceBench原生目录过粗，用PageIndex流程解析PDF并由LLM诱导更细目录；EntDocs用网页breadcrumbs形成站点层级，每网页一个节点。小语料额外生成摘要和关键词，WixQA用Haiku，QASPER与FinanceBench用Qwen3-32B；284万网页的EntDocs只用标题，不做全量LLM元数据生成。\n\n本方法没有提出新的梯度训练过程或RL目标，因此不存在要照抄的优化器、batch size或训练步数。复现重点是索引、树构造、工具预算与提示。生成模型包括Claude Haiku 4.5、GPT-5-mini及GPT-5.6-Luna，主准确率由Gemini 2.5 Flash比对标准答案判分。对训练硬件或训练样本量不能从本文推断，因为它主要是推理阶段的结构化检索系统。\n\n## 3. 核心技术贡献\n\n第一项贡献是把内容召回与结构导航结合。与PageIndex先选一个文档不同，RIT-RAG允许多个文档的证据节点同时出现，查询失败后也可以重新检索。它利用现成目录而不是把语料重新抽成实体图，减少大型语料需要的预处理。相同Haiku模型下，QASPER准确率为88.6%，而PageIndex为76.0%；但这个差值是整套方案的对照结果，不能单独归因于某一个实现组件。\n\n第二项贡献是选择性阅读接口。GetToC负责暴露“有什么结构”，Read负责按需提供“有什么正文”。Agent不再被迫读取所有命中chunk，还可看到祖先提供的版本、所属文档等语境。与同检索器的Agentic Search相比，WixQA在Haiku下从84.5%到95.0%，表明收益不依赖替换embedding。作者也测量读取证据的precision、recall和F1，而不只看最终答案。\n\n第三项贡献是百万页规模的验证。EntQABench有317个合成问题，覆盖EntDocs中的三个产品，完整检索语料仍包含284万页面。该规模下全目录导航无法放入上下文，全量图抽取费用也难承受，RIT-RAG以现有层级和标题运行。需要区分“检索语料很大”与“评测问题覆盖广”：317个问题并不等于所有产品的用户需求都已得到验证。\n\n## 4. 实验结果分析\n\n下表直接采用正文表1、表3和附录表8，准确率单位为百分比；前三项使用Haiku作为生成模型，EntQABench也取Haiku列。\n\n| 方法 | WixQA | QASPER | FinanceBench | EntQABench |\n|---|---:|---:|---:|---:|\n| Vanilla RAG | 79.5 | 72.0 | 41.3 | 43.2 |\n| Agentic Search | 84.5 | 86.2 | 74.0 | 73.5 |\n| Interact-RAG | 71.5 | 74.2 | 74.7 | 74.8 |\n| PageIndex | 88.5 | 76.0 | 72.0 | 无法运行 |\n| RIT-RAG | 95.0 | 88.6 | 84.0 | 81.4 |\n\n在WixQA中，RIT-RAG相对Agentic Search高10.5个百分点；QASPER只高2.4个百分点，说明普通Agent检索已经能够提供大量科学论文证据时，新增结构的边际收益更小。FinanceBench高10.0个百分点，但对最强基线Interact-RAG的优势为9.3个百分点。不能把“比某个基线高10.0”误写成“比所有基线高10.0”。\n\nEntQABench下，RIT-RAG三个模型的准确率为81.4%、83.9%和89.0%；对应最强基线为74.8%、76.0%和77.6%。逐列相减是6.6、7.9和11.4个百分点。摘要与结论写的是6.8–11.4，正文表格则支持6.6–11.4，本文深读保留表格算术结果并标注这一差异，不把两者当成完全一致。\n\n结构诱导的对照把FinanceBench的Qwen3-32B换成Haiku，RIT-RAG准确率最大变化只有1.4个百分点，而基线最多变化4.7个百分点。原因不一定只来自目录质量：所有方法都共享在节点内切分的chunk，所以不同目录还会改变chunk边界及检索结果。作者据此认为RIT-RAG对诱导结构更稳健，但该对照不是完全孤立的目录单变量实验。\n\n节点数敏感性分析在WixQA模拟集200个问题及QASPER验证集819个问题上选择n：增加到50时准确率上升，再继续增加略有下降。WixQA在n=50时为88.0%，QASPER在25和50时均为88.5%，因此最终用50。这里88.0属于调参集，不能与主测试集的95.0混为一谈。作者没有给出“只删掉祖先节点”的干净消融，不能凭整体对照断言祖先贡献了多少百分点。\n\n成本也有重要差异。Haiku下，WixQA的Agentic Search每问1.0美分、25秒，RIT-RAG为4.9美分、17秒；QASPER为4.1美分、55秒与5.7美分、15秒；FinanceBench为4.8美分、23秒与10.1美分、19秒。增加结构输入提高费用，但选择性阅读在这些测量中缩短了模型调用延迟。表8度量的是LLM延迟，不是含所有后端I/O的线上端到端SLA。RIT-RAG平均只读3.7–5.5个节点，平均GetToC调用约1.2–1.7次，也并非每个问题都耗尽10次预算。\n\n## 5. 局限与未来方向\n\n作者明确写出三个限制。首先，读取的节点不断累积，目前不支持证据压缩或聊天历史淘汰；因此特别长的任务会耗尽上下文。其次，系统保留层级关系，却忽略同层节点的交叉链接，这可能漏掉需要横向导航的关系。第三，必须有可用文档层级，标题弱或解析质量差会使Agent看到的地图质量降低。作者在结论提出压缩子树字符串表示以降低在线成本，并研究百万页语料上的更丰富节点元数据。\n\n额外需要注意的未充分覆盖问题是UGC结构可靠性：短帖可能没有目录、同一评论线程包含多人立场，标题也可能与事实不一致。这是从业务场景出发的分析，不是作者报告的实验结果。主准确率由LLM判分，317个EntQABench问题是合成且仅覆盖三个产品，因此不能等价为人工满意度，也不能证明跨语言和社区时效性表现。\n\n## 6. 工业实践意义\n\n社区UGC搜索可先建立一个小规模试验：保留现有召回及排序底座，为帖子、楼层、评论或引用回复补充node_id与parent_id；初始召回展示帖子及回复结构，让Agent选择需要的正文。直接检索命中评论时附上原帖和父回复语境，可以减少断章取义。对于确实需要跨帖整合经验的query，再允许改写查询恢复搜索方向。单事实查询仍应按业务预算决定是否需要完整循环，本文数据没有证明所有query都值得增加结构输入。\n\n实施顺序应从有天然层级的帖子和问答开始，而不是立即用LLM给所有短帖生成目录。EntDocs展示了只用标题也能运行的设计路径，但社区层级含义不同，需要重新验证。评测应固定检索器和模型，比较普通RAG、Agentic Search与结构导航，同时记录证据命中率、来源可核查性、nDCG、CTR和答案满意度；离线答案准确率提升不能直接替代线上点击收益。\n\n资源规划需要分清离线与在线。论文按Haiku价格估计结构预处理WixQA为15.5美元、QASPER为12.9美元；FinanceBench细目录诱导为590美元，而已有breadcrumbs且只用标题的EntDocs不需要LLM预处理费用，这不意味着抓取、索引与存储免费。对于百万帖，应优先利用现成元数据并增量更新，避免全量抽图。在线应设置工具次数、读取字节数及token预算，记录目录冗余带来的费用；只要结构输出过大，优势可能被上下文成本抵消。论文没有线上A/B或生产CTR证据，因此可据此开展低风险离线试点，再用真实流量决定收益是否足够覆盖成本。\n\n全文来源：https://arxiv.org/html/2610.11370v1 。正文与完整HTML已保存到本次报告的evidence目录，以上数字对应表1、表3、表8及附录K。",
+        "content_html": "<h1>RIT-RAG：检索决定去哪里，Agent决定读什么</h1>\n<h2>1. 问题与动机</h2>\n<p>RIT-RAG关注的失败并不是缺少更大的向量模型，而是检索接口丢失了证据的组织关系。普通Agentic Search每轮收到一批独立chunk，只能继续改写查询，难以知道段落属于哪个产品、年份、章节或子问题。主题相似的片段可能缺少真正的答案依据，Agent却仍要读取整批内容。PageIndex把目录交给模型，让模型选择阅读位置，但需要先选定一份文档，选错后无法在同一流程中换到其他文档；整个目录也可能超过上下文限制。</p>\n<p>论文给出一个具体解释：两个都叫“Configuring the server”的章节，只有祖先节点才能告诉模型它们来自不同版本的产品。把标题孤立地交给模型，就可能把版本相关的证据混用。作者因此把语料建成文档森林，再让内容检索按query诱导局部子森林，避免在没有看内容之前押注单篇文档。这个思路与社区搜索的跨帖问答有关：帖子、楼层和引用回复的组织关系，可能帮助模型区分相似措辞下不同语境的事实。不过社区短帖是否具有足够结构，仍需业务验证，本文没有报告社区nDCG或CTR。</p>\n<h2>2. 方法详解</h2>\n<p>离线表示中，每份文档是一棵树，章节、节和子节是节点。节点只拥有自己标题下、不属于子节点的正文，因此每段文本恰好归属一个节点。标题必须存在，摘要和关键词可以省略。模型看到的树是JSON：节点ID、元数据及保持原顺序的children，正文不在初始结构中，必须经Read工具取回。这一点让“看到目录”和“读取证据”成为两个不同动作。</p>\n<p>chunk必须在节点内部切分，不能跨节点；一个节点可以含多个chunk。索引保存chunk到节点的映射，以及祖先ID和标题。在线首先召回top-k′ chunk，作者主配置k′=200。每个节点的分数等于其被召回chunk中最高的相似度，随后保留top-n节点，n=50。再把这些节点到根的所有祖先取并集，保留对应父子关系，构成query相关子森林。子树按树内最高节点分数排序。因而结构大小由选中节点及祖先决定，而不是由语料总量决定；不是把整棵百万页目录塞进上下文。</p>\n<p>Agent的流程可以写成：生成查询→GetToC返回子森林JSON→推理选择节点ID→Read读取所选节点→回答、继续读节点或改写查询。每次GetToC都会从全语料重新检索，因此之前的候选文档不会限制下一轮。最多10次工具调用，其中GetToC最多3次，达到预算后停止。普通RAG和Agentic Search等对照共享BM25与gte-modernbert-base稠密检索融合的混合检索器，使用FAISS和最多512 token的chunk，避免把结果差异解释为换了检索模型。</p>\n<p>结构来源依语料而不同：WixQA利用HTML标题和产品分类形成目录及站点层级；QASPER用论文章节；FinanceBench原生目录过粗，用PageIndex流程解析PDF并由LLM诱导更细目录；EntDocs用网页breadcrumbs形成站点层级，每网页一个节点。小语料额外生成摘要和关键词，WixQA用Haiku，QASPER与FinanceBench用Qwen3-32B；284万网页的EntDocs只用标题，不做全量LLM元数据生成。</p>\n<p>本方法没有提出新的梯度训练过程或RL目标，因此不存在要照抄的优化器、batch size或训练步数。复现重点是索引、树构造、工具预算与提示。生成模型包括Claude Haiku 4.5、GPT-5-mini及GPT-5.6-Luna，主准确率由Gemini 2.5 Flash比对标准答案判分。对训练硬件或训练样本量不能从本文推断，因为它主要是推理阶段的结构化检索系统。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是把内容召回与结构导航结合。与PageIndex先选一个文档不同，RIT-RAG允许多个文档的证据节点同时出现，查询失败后也可以重新检索。它利用现成目录而不是把语料重新抽成实体图，减少大型语料需要的预处理。相同Haiku模型下，QASPER准确率为88.6%，而PageIndex为76.0%；但这个差值是整套方案的对照结果，不能单独归因于某一个实现组件。</p>\n<p>第二项贡献是选择性阅读接口。GetToC负责暴露“有什么结构”，Read负责按需提供“有什么正文”。Agent不再被迫读取所有命中chunk，还可看到祖先提供的版本、所属文档等语境。与同检索器的Agentic Search相比，WixQA在Haiku下从84.5%到95.0%，表明收益不依赖替换embedding。作者也测量读取证据的precision、recall和F1，而不只看最终答案。</p>\n<p>第三项贡献是百万页规模的验证。EntQABench有317个合成问题，覆盖EntDocs中的三个产品，完整检索语料仍包含284万页面。该规模下全目录导航无法放入上下文，全量图抽取费用也难承受，RIT-RAG以现有层级和标题运行。需要区分“检索语料很大”与“评测问题覆盖广”：317个问题并不等于所有产品的用户需求都已得到验证。</p>\n<h2>4. 实验结果分析</h2>\n<p>下表直接采用正文表1、表3和附录表8，准确率单位为百分比；前三项使用Haiku作为生成模型，EntQABench也取Haiku列。</p>\n<table><thead><tr><th>方法</th><th>WixQA</th><th>QASPER</th><th>FinanceBench</th><th>EntQABench</th></tr></thead><tbody><tr><td>Vanilla RAG</td><td>79.5</td><td>72.0</td><td>41.3</td><td>43.2</td></tr><tr><td>Agentic Search</td><td>84.5</td><td>86.2</td><td>74.0</td><td>73.5</td></tr><tr><td>Interact-RAG</td><td>71.5</td><td>74.2</td><td>74.7</td><td>74.8</td></tr><tr><td>PageIndex</td><td>88.5</td><td>76.0</td><td>72.0</td><td>无法运行</td></tr><tr><td>RIT-RAG</td><td>95.0</td><td>88.6</td><td>84.0</td><td>81.4</td></tr></tbody></table>\n<p>在WixQA中，RIT-RAG相对Agentic Search高10.5个百分点；QASPER只高2.4个百分点，说明普通Agent检索已经能够提供大量科学论文证据时，新增结构的边际收益更小。FinanceBench高10.0个百分点，但对最强基线Interact-RAG的优势为9.3个百分点。不能把“比某个基线高10.0”误写成“比所有基线高10.0”。</p>\n<p>EntQABench下，RIT-RAG三个模型的准确率为81.4%、83.9%和89.0%；对应最强基线为74.8%、76.0%和77.6%。逐列相减是6.6、7.9和11.4个百分点。摘要与结论写的是6.8–11.4，正文表格则支持6.6–11.4，本文深读保留表格算术结果并标注这一差异，不把两者当成完全一致。</p>\n<p>结构诱导的对照把FinanceBench的Qwen3-32B换成Haiku，RIT-RAG准确率最大变化只有1.4个百分点，而基线最多变化4.7个百分点。原因不一定只来自目录质量：所有方法都共享在节点内切分的chunk，所以不同目录还会改变chunk边界及检索结果。作者据此认为RIT-RAG对诱导结构更稳健，但该对照不是完全孤立的目录单变量实验。</p>\n<p>节点数敏感性分析在WixQA模拟集200个问题及QASPER验证集819个问题上选择n：增加到50时准确率上升，再继续增加略有下降。WixQA在n=50时为88.0%，QASPER在25和50时均为88.5%，因此最终用50。这里88.0属于调参集，不能与主测试集的95.0混为一谈。作者没有给出“只删掉祖先节点”的干净消融，不能凭整体对照断言祖先贡献了多少百分点。</p>\n<p>成本也有重要差异。Haiku下，WixQA的Agentic Search每问1.0美分、25秒，RIT-RAG为4.9美分、17秒；QASPER为4.1美分、55秒与5.7美分、15秒；FinanceBench为4.8美分、23秒与10.1美分、19秒。增加结构输入提高费用，但选择性阅读在这些测量中缩短了模型调用延迟。表8度量的是LLM延迟，不是含所有后端I/O的线上端到端SLA。RIT-RAG平均只读3.7–5.5个节点，平均GetToC调用约1.2–1.7次，也并非每个问题都耗尽10次预算。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确写出三个限制。首先，读取的节点不断累积，目前不支持证据压缩或聊天历史淘汰；因此特别长的任务会耗尽上下文。其次，系统保留层级关系，却忽略同层节点的交叉链接，这可能漏掉需要横向导航的关系。第三，必须有可用文档层级，标题弱或解析质量差会使Agent看到的地图质量降低。作者在结论提出压缩子树字符串表示以降低在线成本，并研究百万页语料上的更丰富节点元数据。</p>\n<p>额外需要注意的未充分覆盖问题是UGC结构可靠性：短帖可能没有目录、同一评论线程包含多人立场，标题也可能与事实不一致。这是从业务场景出发的分析，不是作者报告的实验结果。主准确率由LLM判分，317个EntQABench问题是合成且仅覆盖三个产品，因此不能等价为人工满意度，也不能证明跨语言和社区时效性表现。</p>\n<h2>6. 工业实践意义</h2>\n<p>社区UGC搜索可先建立一个小规模试验：保留现有召回及排序底座，为帖子、楼层、评论或引用回复补充node_id与parent_id；初始召回展示帖子及回复结构，让Agent选择需要的正文。直接检索命中评论时附上原帖和父回复语境，可以减少断章取义。对于确实需要跨帖整合经验的query，再允许改写查询恢复搜索方向。单事实查询仍应按业务预算决定是否需要完整循环，本文数据没有证明所有query都值得增加结构输入。</p>\n<p>实施顺序应从有天然层级的帖子和问答开始，而不是立即用LLM给所有短帖生成目录。EntDocs展示了只用标题也能运行的设计路径，但社区层级含义不同，需要重新验证。评测应固定检索器和模型，比较普通RAG、Agentic Search与结构导航，同时记录证据命中率、来源可核查性、nDCG、CTR和答案满意度；离线答案准确率提升不能直接替代线上点击收益。</p>\n<p>资源规划需要分清离线与在线。论文按Haiku价格估计结构预处理WixQA为15.5美元、QASPER为12.9美元；FinanceBench细目录诱导为590美元，而已有breadcrumbs且只用标题的EntDocs不需要LLM预处理费用，这不意味着抓取、索引与存储免费。对于百万帖，应优先利用现成元数据并增量更新，避免全量抽图。在线应设置工具次数、读取字节数及token预算，记录目录冗余带来的费用；只要结构输出过大，优势可能被上下文成本抵消。论文没有线上A/B或生产CTR证据，因此可据此开展低风险离线试点，再用真实流量决定收益是否足够覆盖成本。</p>\n<p>全文来源：https://arxiv.org/html/2610.11370v1 。正文与完整HTML已保存到本次报告的evidence目录，以上数字对应表1、表3、表8及附录K。</p>",
+        "slug": "2610.11370",
+        "chars": 4336,
+        "minutes": 11
+      }
+    },
+    {
+      "id": "arxiv:2610.06689",
+      "title": "Programmatic Search Agents: Extending Agentic Search Beyond Query Reformulation",
+      "published": "2026-10-05",
+      "url": "https://arxiv.org/abs/2610.06689",
+      "authors": "Jiaming Qian, Huiyan Yang, Mandi Liu, Jie Liu, Wenkai Shen, Pengyang Zhou, Jing Jin, Jin Ma, Dezhi Ye, Chaochao Chen",
+      "abstract": "PSA gives the agent executable program cells over a persistent candidate workspace. Across five backbones on InfoSeek-Eval and BrowseComp-Plus, success increases 4.00 and 7.56 pp; final-step tokens decrease 28.3% and 33.9%. Code release pending approval.",
+      "source": "web_search",
+      "discovered_at": "2026-10-12",
+      "company": [],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.05,
+      "preference_bonus": 0,
+      "adjusted_score": 4.05,
+      "summary": "PSA 将搜索动作扩展为候选集合上的可执行程序单元，结合持久候选工作区、检索原语组合和选择性证据展示。五种策略模型在InfoSeek-Eval和BrowseComp-Plus上无需专项训练，相比查询式Agent的宏平均成功率分别提高4.00和7.56个百分点，末步token分别减少28.3%和33.9%。",
+      "key_insight": "只允许改写query会把候选处理和证据展示固定在搜索接口中，即使召回正确段落也可能未被Agent看见。社区搜索可尝试让Agent复用候选、合并证据并精确选择展示内容；实现时要保持统一检索底座进行对照，区分接口收益与模型收益，代码尚待审批发布使复现存在工程成本。",
+      "evidence_urls": [
+        "https://arxiv.org/abs/2610.06689"
+      ],
+      "rank": 2
+    },
+    {
+      "id": "blog_rss:openai_research_blog:https://openai.com/index/asana-browser-agent",
+      "title": "Asana cuts model costs 76x in browser tests with GPT-6.1 Sol",
+      "authors": "",
+      "abstract": "Using GPT-6 Astra in Codex, Asana made its browser agent 76x cheaper and 5x faster in tests to offer customers more capable models.",
+      "url": "https://openai.com/index/asana-browser-agent",
+      "source": "blog_rss",
+      "published": "2026-10-09",
+      "discovered_at": "2026-10-11",
+      "source_type": "blog",
+      "source_detail": "openai_research_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "company": [
+        "Asana",
+        "OpenAI"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 4.0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05,
+      "summary": "Asana通过144次浏览器Agent实验优化历史缓存、文本保留与截图裁剪，较原生产方案实现估算模型费用降低76倍、耗时降低5倍。优化后的GPT-6.1 Sol每次约0.47美元和4分钟；同模型对照费用由1.97降至0.47美元，保留历史增大后18次任务全部正确完成。",
+      "key_insight": "多步搜索助手的成本可能主要来自反复发送并改动历史，而非query本身。可借鉴保持稳定前缀、延后批量裁剪截图及扩大证据保留预算，减少缓存失效和重复访问；76倍包含模型切换与流程优化，应优先参考同模型约4倍的对照结果，并在社区搜索任务上测试费用、正确性和响应时间。",
+      "evidence_urls": [
+        "https://openai.com/index/asana-browser-agent"
+      ],
+      "rank": 3
+    },
+    {
+      "id": "arxiv:2610.05034",
+      "title": "Agentic RAG Evaluation: Budget Allocation Across Questions, Trajectories, and Reads",
+      "published": "2026-10-04",
+      "url": "https://arxiv.org/abs/2610.05034",
+      "authors": "Jingjie Ning, Xueqi Li, Yibo Kong",
+      "abstract": "HotpotQA and MuSiQue evaluation budgets: at 34.14–34.39M tokens broader question coverage reduces standard error by 33% versus five reads and 12.6% versus three trajectories. Temperature zero reduces disagreement 14.3% to 3.4%.",
+      "source": "web_search",
+      "discovered_at": "2026-10-12",
+      "company": [],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.95,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.0,
+      "summary": "论文研究Agentic RAG评测预算在问题数、搜索轨迹及重复作答之间的分配，在HotpotQA和MuSiQue上比较检索反馈方案。34.14–34.39百万token预算下，扩大问题覆盖相对五次阅读降低标准误33%，相对三条轨迹降低12.6%；温度零使答案分歧由14.3%降至3.4%。",
+      "key_insight": "社区搜索评测应先覆盖更多真实query，再决定是否为单个query追加轨迹或阅读次数，避免把算力集中在少量问题上而无法稳定判断方案差异。论文的一次阅读相对最优配置方差损失为0–9.9%，但部分模型不确定性较大；应根据本地query分布和检索价格重新估计预算，而非直接套用比例。",
+      "evidence_urls": [
+        "https://arxiv.org/abs/2610.05034"
+      ],
+      "rank": 4
+    },
+    {
+      "id": "web:exa-atlas-2026",
+      "title": "ATLAS: Evaluating Agents on Search-Intensive Tasks",
+      "authors": "Alexander Goldberg, Joshua Ahn, Scott Langille",
+      "published": "2026-10-08",
+      "discovered_at": "2026-10-12",
+      "source": "web_search",
+      "url": "https://exa.ai/blog/atlas-benchmark",
+      "abstract": "Exa industry benchmark with 547 search-intensive tasks, verified golden answers and automated refresh. Memorization 9% versus BrowseComp 48% and WideSearch 59%; grading 10 full runs costs $2. Discovery, row and item F1 distinguish entity finding from complete enrichment.",
+      "company": [
+        "Exa"
+      ],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.95,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.0,
+      "summary": "Exa发布ATLAS，面向真实需求中的实体发现与信息补全任务，以核验标准答案和可更新流程减少基准过时。547个任务中，其无搜索记忆命中为9%，对照BrowseComp为48%、WideSearch为59%；官方估算十轮完整评测判分约2美元，并区分实体、整行和单元格F1。",
+      "key_insight": "社区搜索问答不应只评估能否找到一个名字，还要验证多个候选及其属性是否完整且正确。可借鉴ATLAS把发现与补充分开计分，定期刷新时效性query和证据；9%记忆率及费用来自供应商自身设置，不能直接视为独立复现结论，业务侧仍需构建真实UGC任务并验证与nDCG、CTR的关系。",
+      "evidence_urls": [
+        "https://exa.ai/blog/atlas-benchmark"
+      ],
+      "rank": 5
+    },
+    {
+      "id": "arxiv:2609.40221",
+      "title": "PhantomEnvironments: Training LLM Agents in Fictional Worlds",
+      "published": "2026-09-30",
+      "url": "https://arxiv.org/abs/2609.40221",
+      "authors": "Kabra, Anmol, Selvam, Swathi Saravana, Gong, Albert, Wan, Chao, Belardi, Christian, Go, Dongyoung, Luo, Katie Z., Weinberger, Kilian Q.",
+      "abstract": "Abstract: Training LLM agents with reinforcement learning (RL) is bottlenecked by environments, which must provide verifiable rewards, support long-horizon interaction, and scale cheaply. Existing approaches rely on costly human-curated data or on LLM-generated environments that risk hallucinations and benchmark contamination. We show that LLMs can instead be trained into capable search agents using synthetic environments generated entirely by rules, whose generation requires no LLM and has zero marginal cost. We build PhantomEnvironments, multi-turn RL environments from fictional worlds, where agents must search a corpus of templated articles to answer multi-hop questions. Despite sharing no facts with the real world, these strikingly simple environments yield agents that transfer to real-world multi-hop search benchmarks, often outperforming real-world training data on newer benchmarks. Trained agents generalize to unseen fictional universes, and Qwen models learn to scale their search budget roughly linearly with question difficulty, suggesting emergent search scaling from environment interaction alone. Ablating environment complexity reveals that hop count drives transfer more than constraints or comparisons: even the simplest rule-generated environments are a surprisingly effective, free resource for training generalizable LLM agents.",
+      "source": "web_search",
+      "discovered_at": "2026-10-12",
+      "company": [
+        "Cornell",
+        "Stanford"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.16,
+      "adjusted_score": 3.81,
+      "summary": "PhantomEnvironments用规则和Prolog生成虚构世界、文章及可核验多跳问答，不依赖LLM生成环境，再开展多轮RL训练。四种模型在六个真实搜索基准上均获提升，旧基准平均F1为基座的1.7倍、新困难基准为2.2倍；Llama-3.2-3B在SynthWorlds-SM由3.8升至27.0。",
+      "key_insight": "社区搜索Agent缺少可靠多跳训练标签时，可用可控实体关系和虚构帖子构造廉价交互环境，重点训练查询、证据串联与停止行为。论文发现跳数比约束和比较更影响迁移，值得先从简单规则图开始；虚构环境能训练搜索行为，却不能替代真实UGC中的噪声、时效及用户满意度验证。",
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.40221"
+      ],
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2609.06027",
+      "title": "Evaluating Deep-Search Agents under Hierarchical Web Evidence Poisoning",
+      "published": "2026-09-05",
+      "url": "https://arxiv.org/abs/2609.06027",
+      "authors": "Bi, Zhongan, Wang, Qiwen, Jiang, Jianrong, Ding, Jigang, Xiong, Wenwen, Meng, Changhua, Gao, Xuanang, Lin, Kepeng, Jiang, Changjiang, Chen, Yiang, Yao, Huan, Wang, Wei, Ma, Zhenyu, Dong, Wenhui",
+      "abstract": "Abstract: Search-augmented LLM agents are increasingly used for consumer decisions, making them vulnerable to Generative Engine Optimization (GEO) poisoning. Existing benchmarks largely measure whether manipulated content is retrieved or endorsed, but do not track whether an agent verifies suspicious evidence, revises adopted claims, or recovers before producing its final recommendation. We introduce HAE-GEO, a benchmark that tracks the full trajectory from exposure to recovery under progressively more persuasive Web poisoning. Agents interact via a multi-turn Search-Scrape interface across three attack levels (L1 direct assertion, L2 contextual camouflage, and L3 apparent corroboration), supported by a controlled corpus of 72,039 clean pages and 770 poisoned pages per level spanning 8 product categories and 154 brands. Evaluation combines deterministic behavioral measures with six semantic rubric dimensions. Evaluating 10 agents, we find three recurring patterns: evidence recognition degrades under the corroboration trap; agentic search improves final resistance without improving evidence recognition or utility; and defense prompting increases verification, yet rarely converts verification into recovery.",
+      "source": "web_search",
+      "discovered_at": "2026-10-12",
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "total_score": 3.55,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.6,
+      "summary": "HAE-GEO追踪搜索Agent从接触网页投毒到核验、修正和恢复的完整轨迹，包含72039张干净页面、每层770张投毒页面、8类商品和154个品牌。10个Agent评测显示，防御提示把严格核验率从约2%提高到17%，但高级伪佐证仍会导致错误推荐，且平均token消耗增加24.5%。",
+      "key_insight": "UGC搜索易遇到重复营销内容和多页相互引用，不能把“检索到多个支持页面”自动当作可信证据。应分别记录证据识别、独立核验、错误撤回和最终答案质量；论文展示核验增加未必带来恢复，因此社区搜索Agent需要可追踪的独立证据来源与纠错机制，并同时评估额外调用的费用和时延。",
+      "evidence_urls": [
+        "https://arxiv.org/abs/2609.06027"
+      ],
+      "rank": 7
+    },
+    {
+      "id": "arxiv:2610.06830",
+      "title": "MemPilot: Orchestrating On-Demand Multimodal Memory Curation for LLM Agents",
+      "published": "2026-10-05",
+      "url": "https://arxiv.org/abs/2610.06830",
+      "authors": "Zhang, Haozhen, Yue, Haodong, Long, Quanyu, Bao, Jianzhu, Liu, Qingyuan, Feng, Tao, Liu, Bohan, Liang, Weida, Wang, Wenya",
+      "abstract": "Abstract: Memory has become integral to the LLM agent ecosystem, supporting information retention and reuse across interactions. However, most existing agent memory systems construct memory in a query-agnostic manner, which can incur unnecessary preprocessing cost and discard details that later prove essential. Recent studies have begun shifting memory processing toward runtime adaptation, but typically specialize in particular operations or fixed processing schemes, leaving flexible control over performance, cost, and latency largely underexplored. To address this challenge, we present \\textbf{MemPilot}, a flexible framework that orchestrates on-demand memory curation under different performance--cost--latency preferences. Specifically, we optimize a multi-step LLM policy via reinforcement learning to iteratively choose between retrieving from query-agnostic memory and delegating query-specific curation of raw multimodal history to heterogeneous LLMs and VLMs. The policy jointly controls evidence amount, curation instructions, model selection, and visual access, enabling fine-grained allocation of runtime computation. To optimize this policy under competing objectives, we adapt objective-wise advantage decoupling by separately estimating each objective's advantage before aggregation. Moreover, we introduce prefix-based marginal utility estimation for fine-grained credit assignment across multi-step rollouts. Experiments on five multimodal agent-memory benchmarks demonstrate favorable performance--cost--latency trade-offs across optimization preferences, with preference sweeps yielding broader frontiers than existing trade-off-aware baselines.",
+      "source": "web_search",
+      "discovered_at": "2026-10-12",
+      "company": [
+        "NTU",
+        "Tsinghua",
+        "UIUC"
+      ],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0.16,
+      "adjusted_score": 3.61,
+      "summary": "MemPilot 用RL训练多步策略，在既有压缩记忆检索与按query调用不同LLM/VLM整理原始历史之间分配计算，联合控制证据数量、模型和视觉访问。五个多模态记忆基准的消融中，去掉外部整理使平均Judge分数从37.40降至14.58；去掉目标维度优势解耦则降至21.94。",
+      "key_insight": "对需要跨轮保存用户线索的社区搜索助手，可保留低成本通用记忆，再在问题需要时整理原始内容，而不是预先压缩所有信息。方法以质量、费用和延迟分别估计优势，能显式调节服务预算；目前证据来自多模态记忆任务，迁移到UGC文本搜索需要单独验证，不可把Judge提升当成CTR收益。",
+      "evidence_urls": [
+        "https://arxiv.org/abs/2610.06830"
+      ],
+      "rank": 8
+    },
+    {
+      "id": "doi:10.1016/j.knosys.2026.116667",
+      "title": "Mechanism-centric cross-domain retrieval for scientific discovery: LLM agents for structural isomorphism beyond semantic similarity",
+      "published": "2026-10-09",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0950705126013936",
+      "authors": "Huajun Zhou, Guozhu Jia",
+      "abstract": "MCDF neuro-symbolic framework separates topic and mechanism; 26 domain-expert agents generate search terms. Two case studies on social rumors and model collapse: average MAS >0.82, outperforming six baselines.",
+      "source": "web_search",
+      "discovered_at": "2026-10-12",
+      "company": [],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0,
+      "adjusted_score": 3.45,
+      "summary": "MCDF研究跨领域科学检索中语义相似度难以识别机制同构的问题，以神经符号框架分离主题与机制，并通过26个领域专家Agent生成专业搜索词。在谣言传播和模型坍塌两个案例中，平均机制对齐分数MAS超过0.82，优于包括BM25、RRF和RankGPT在内的六类基线。",
+      "key_insight": "机制相似但措辞不同的内容可能更有帮助，可借鉴其先抽取因果结构、再生成领域query的流程，为社区问题寻找跨主题经验。当前证据只有两个科学发现案例，MAS并非nDCG或CTR，出版商全文访问受限；应将其作为探索性设计启示，先测量是否能找出可解释的相关经验再考虑线上使用。",
+      "evidence_urls": [
+        "https://www.sciencedirect.com/science/article/abs/pii/S0950705126013936"
+      ],
+      "rank": 9
+    },
+    {
+      "id": "blog_rss:openai_research_blog:https://openai.com/index/sophos",
+      "title": "Sophos cuts threat investigation time by 96% with OpenAI Daybreak",
+      "authors": "",
+      "abstract": "Discover how Sophos uses OpenAI’s Daybreak to cut cyber-threat investigation time by 96% and automate 52% of MDR cases while preserving human oversight.",
+      "url": "https://openai.com/index/sophos",
+      "source": "blog_rss",
+      "published": "2026-10-09",
+      "discovered_at": "2026-10-11",
+      "source_type": "blog",
+      "source_detail": "openai_research_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "company": [
+        "Sophos",
+        "OpenAI"
+      ],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.2,
+      "preference_bonus": 0,
+      "adjusted_score": 3.2,
+      "summary": "Sophos将威胁情报、客户上下文及操作手册接入调查Agent，由计划模型组织计划、执行与复核闭环，再为分析员生成响应建议。官方案例报告相关案件平均响应由约38分钟缩短至89秒，调查时间降低96%，52%的MDR案件可由AI端到端处理；文章未给出独立随机对照实验。",
+      "key_insight": "这一案例对社区搜索的价值在于任务拆解和证据整合：搜索复杂投诉或风险线索时，可让Agent收集上下文、执行检索并形成可复核建议。应把自动化适用范围与人工判断边界分开记录，并在同类查询上测量效率和准确率；安全运营的96%时间收益不能直接外推为社区搜索的相关性或点击率提升。",
+      "evidence_urls": [
+        "https://openai.com/index/sophos"
+      ],
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:isichan-ai/Strata-GLM",
+      "title": "Strata-GLM: Strata fork that runs GLM-5.3-Flash (320B-A18B, 157 GB) on one PC: RTX 5090 + 128 GB RAM + NVMe, ~30 tok/s chat. Fork of Niko1221/Strata (MIT).",
+      "authors": "isichan-ai",
+      "abstract": "Strata fork that runs GLM-5.3-Flash (320B-A18B, 157 GB) on one PC: RTX 5090 + 128 GB RAM + NVMe, ~30 tok/s chat. Fork of Niko1221/Strata (MIT).",
+      "url": "https://github.com/isichan-ai/Strata-GLM",
+      "source": "github",
+      "published": "2026-10-11",
+      "discovered_at": "2026-10-11",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "isichan-ai/Strata-GLM",
+        "owner": "isichan-ai",
+        "description": "Strata fork that runs GLM-5.3-Flash (320B-A18B, 157 GB) on one PC: RTX 5090 + 128 GB RAM + NVMe, ~30 tok/s chat. Fork of Niko1221/Strata (MIT).",
+        "created_at": "2026-10-11T00:41:42Z",
+        "updated_at": "2026-10-11",
+        "pushed_at": "2026-10-11",
+        "stargazers_count": 10,
+        "language": "C++",
+        "topics": []
+      },
+      "description": "Strata fork that runs GLM-5.3-Flash (320B-A18B, 157 GB) on one PC: RTX 5090 + 128 GB RAM + NVMe, ~30 tok/s chat. Fork of Niko1221/Strata (MIT).",
+      "language": "C++",
+      "stars": 10,
+      "created_at": "2026-10-11",
+      "rank": 1
+    },
+    {
+      "id": "github:Reonarudo/tinygrad-npu-examples",
+      "title": "tinygrad-npu-examples: LLMs (Ternary Bonsai 2 27B, Qwen3.8-27B, Ornith 9B) and Ideogram 4 on the Zhouyi X2 NPU (CIX P1 / Radxa Orion O6N) with tinygrad; OpenAI- and Ollama-compatible server",
+      "authors": "Reonarudo",
+      "abstract": "LLMs (Ternary Bonsai 2 27B, Qwen3.8-27B, Ornith 9B) and Ideogram 4 on the Zhouyi X2 NPU (CIX P1 / Radxa Orion O6N) with tinygrad; OpenAI- and Ollama-compatible server",
+      "url": "https://github.com/Reonarudo/tinygrad-npu-examples",
+      "source": "github",
+      "published": "2026-10-05",
+      "discovered_at": "2026-10-11",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "Reonarudo/tinygrad-npu-examples",
+        "owner": "Reonarudo",
+        "description": "LLMs (Ternary Bonsai 2 27B, Qwen3.8-27B, Ornith 9B) and Ideogram 4 on the Zhouyi X2 NPU (CIX P1 / Radxa Orion O6N) with tinygrad; OpenAI- and Ollama-compatible server",
+        "created_at": "2026-10-05T19:04:26Z",
+        "updated_at": "2026-10-10",
+        "pushed_at": "2026-10-09",
+        "stargazers_count": 9,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "LLMs (Ternary Bonsai 2 27B, Qwen3.8-27B, Ornith 9B) and Ideogram 4 on the Zhouyi X2 NPU (CIX P1 / Radxa Orion O6N) with tinygrad; OpenAI- and Ollama-compatible server",
+      "language": "Python",
+      "stars": 9,
+      "created_at": "2026-10-05",
+      "rank": 2
+    },
+    {
+      "id": "github:h9-tec/LLM-Inference-Handbook-Vol2",
+      "title": "LLM-Inference-Handbook-Vol2: The LLM Inference Handbook, Volume II: Production Failure Modes. 22 chapters on what breaks after the benchmark passes, with Arabic inference as a first-class concern.",
+      "authors": "h9-tec",
+      "abstract": "The LLM Inference Handbook, Volume II: Production Failure Modes. 22 chapters on what breaks after the benchmark passes, with Arabic inference as a first-class concern.",
+      "url": "https://github.com/h9-tec/LLM-Inference-Handbook-Vol2",
+      "source": "github",
+      "published": "2026-10-08",
+      "discovered_at": "2026-10-11",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "h9-tec/LLM-Inference-Handbook-Vol2",
+        "owner": "h9-tec",
+        "description": "The LLM Inference Handbook, Volume II: Production Failure Modes. 22 chapters on what breaks after the benchmark passes, with Arabic inference as a first-class concern.",
+        "created_at": "2026-10-08T08:37:07Z",
+        "updated_at": "2026-10-11",
+        "pushed_at": "2026-10-08",
+        "stargazers_count": 9,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "The LLM Inference Handbook, Volume II: Production Failure Modes. 22 chapters on what breaks after the benchmark passes, with Arabic inference as a first-class concern.",
+      "language": "Python",
+      "stars": 9,
+      "created_at": "2026-10-08",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1-Turbo",
+      "title": "Qwen/Qwen-Image-2.1-Turbo",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, text-to-image, base_model:Qwen/Qwen-Image-2.1, base_model:finetune:Qwen/Qwen-Image-2.1",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, text-to-image, base_model:Qwen/Qwen-Image-2.1, base_model:finetune:Qwen/Qwen-Image-2.1",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 533,
+      "language": "model",
+      "created_at": "2026-10-09",
+      "updated_at": "2026-10-09",
+      "published": "2026-10-09",
+      "discovered_at": "2026-10-11",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1-Turbo",
+        "likes": 533,
+        "downloads": 4702,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "text-to-image",
+          "base_model:Qwen/Qwen-Image-2.1",
+          "base_model:finetune:Qwen/Qwen-Image-2.1",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-10-09T04:50:01.000Z",
+        "last_modified": "2026-10-09T14:14:45.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnValue-4B",
+      "title": "Alibaba-DAMO-Academy/RynnValue-4B",
+      "authors": "Alibaba-DAMO-Academy",
+      "description": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "abstract": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnValue-4B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 6,
+      "language": "model",
+      "created_at": "2026-07-27",
+      "updated_at": "2026-10-09",
+      "published": "2026-07-27",
+      "discovered_at": "2026-10-11",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Alibaba-DAMO-Academy/RynnValue-4B",
+        "likes": 6,
+        "downloads": 79,
+        "pipeline_tag": "robotics",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "rynn_value_lang",
+          "feature-extraction",
+          "robotics",
+          "embodied-ai",
+          "value-foundation-model",
+          "reinforcement-learning",
+          "spatiotemporal",
+          "vision-language-model",
+          "custom_code",
+          "en",
+          "zh",
+          "arxiv:2608.09853",
+          "arxiv:2603.02115",
+          "base_model:Alibaba-DAMO-Academy/RynnBrain-4B",
+          "base_model:finetune:Alibaba-DAMO-Academy/RynnBrain-4B",
+          "license:apache-2.0",
+          "region:us"
+        ],
+        "created_at": "2026-07-27T06:08:10.000Z",
+        "last_modified": "2026-10-09T13:54:20.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnValue-8B",
+      "title": "Alibaba-DAMO-Academy/RynnValue-8B",
+      "authors": "Alibaba-DAMO-Academy",
+      "description": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "abstract": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnValue-8B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 5,
+      "language": "model",
+      "created_at": "2026-07-27",
+      "updated_at": "2026-10-09",
+      "published": "2026-07-27",
+      "discovered_at": "2026-10-11",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Alibaba-DAMO-Academy/RynnValue-8B",
+        "likes": 5,
+        "downloads": 90,
+        "pipeline_tag": "robotics",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "rynn_value_lang",
+          "feature-extraction",
+          "robotics",
+          "embodied-ai",
+          "value-foundation-model",
+          "reinforcement-learning",
+          "spatiotemporal",
+          "vision-language-model",
+          "custom_code",
+          "en",
+          "zh",
+          "arxiv:2608.09853",
+          "arxiv:2603.02115",
+          "base_model:Alibaba-DAMO-Academy/RynnBrain-8B",
+          "base_model:finetune:Alibaba-DAMO-Academy/RynnBrain-8B",
+          "license:apache-2.0",
+          "region:us"
+        ],
+        "created_at": "2026-07-27T06:11:53.000Z",
+        "last_modified": "2026-10-09T13:56:10.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnValue-4B-Quantile",
+      "title": "Alibaba-DAMO-Academy/RynnValue-4B-Quantile",
+      "authors": "Alibaba-DAMO-Academy",
+      "description": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "abstract": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnValue-4B-Quantile",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 3,
+      "language": "model",
+      "created_at": "2026-10-03",
+      "updated_at": "2026-10-09",
+      "published": "2026-10-03",
+      "discovered_at": "2026-10-11",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Alibaba-DAMO-Academy/RynnValue-4B-Quantile",
+        "likes": 3,
+        "downloads": 15,
+        "pipeline_tag": "robotics",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "rynn_value_lang",
+          "feature-extraction",
+          "robotics",
+          "embodied-ai",
+          "value-foundation-model",
+          "reinforcement-learning",
+          "spatiotemporal",
+          "vision-language-model",
+          "custom_code",
+          "en",
+          "zh",
+          "arxiv:2608.09853",
+          "arxiv:2603.02115",
+          "base_model:Alibaba-DAMO-Academy/RynnBrain-4B",
+          "base_model:finetune:Alibaba-DAMO-Academy/RynnBrain-4B",
+          "license:apache-2.0",
+          "region:us"
+        ],
+        "created_at": "2026-10-03T09:38:17.000Z",
+        "last_modified": "2026-10-09T13:53:39.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnValue-8B-Quantile",
+      "title": "Alibaba-DAMO-Academy/RynnValue-8B-Quantile",
+      "authors": "Alibaba-DAMO-Academy",
+      "description": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "abstract": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnValue-8B-Quantile",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 3,
+      "language": "model",
+      "created_at": "2026-10-07",
+      "updated_at": "2026-10-09",
+      "published": "2026-10-07",
+      "discovered_at": "2026-10-11",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Alibaba-DAMO-Academy/RynnValue-8B-Quantile",
+        "likes": 3,
+        "downloads": 14,
+        "pipeline_tag": "robotics",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "rynn_value_lang",
+          "feature-extraction",
+          "robotics",
+          "embodied-ai",
+          "value-foundation-model",
+          "reinforcement-learning",
+          "spatiotemporal",
+          "vision-language-model",
+          "custom_code",
+          "en",
+          "zh",
+          "arxiv:2608.09853",
+          "arxiv:2603.02115",
+          "base_model:Alibaba-DAMO-Academy/RynnBrain-8B",
+          "base_model:finetune:Alibaba-DAMO-Academy/RynnBrain-8B",
+          "license:apache-2.0",
+          "region:us"
+        ],
+        "created_at": "2026-10-07T17:11:29.000Z",
+        "last_modified": "2026-10-09T13:57:20.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recency": true,
+    "source_diversity": false,
+    "chinese_sources": false,
+    "source_counts": {
+      "web_search": 8,
+      "blog_rss": 2
+    },
+    "warnings": [
+      "来源覆盖缺口：Web搜索补充8/10（80%），超过70%上限；已搜索国内工业实践，但相关候选被历史/跨赛道去重，无可用替补。最终未纳入中文来源。爬虫论文窗口为3天，Web补充按技能允许扩展至90天并标注原始发布日期。"
+    ]
+  },
+  "run_parameters": {
+    "top": 10,
+    "days": 3,
+    "min_score": 3.0
+  },
+  "run_notes": [
+    "Semantic Scholar HTTP429；OpenReview HTTP400；DBLP多次超时/响应解析失败。",
+    "Python默认日期为UTC，后续脚本以TZ=Asia/Shanghai执行；发现日期按实际抓取值保留。",
+    "PDF渲染器不可用，已跳过；无界面Chrome出现CVDisplayLink错误，视觉检查未完成。"
+  ],
+  "deep_reading_stats": {
+    "completed": 1,
+    "paper_ids": [
+      "arxiv:2610.11370"
+    ],
+    "daily_completed": 3
+  }
+}
