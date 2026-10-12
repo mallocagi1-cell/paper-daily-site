@@ -617,10 +617,10 @@
     }).join("");
     const w = r.week;
     main.innerHTML =
-      '<div class="wkhead"><div class="k">WEEKLY TOP ' + escapeHtml(DATA.weekly_top_n || 10) + " · 第 " + escapeHtml(w.iso_week) + " 周</div>" +
-      "<h2>" + escapeHtml(w.week_start.replace(/-/g, ".")) + " — " + escapeHtml(w.week_end.slice(5).replace("-", ".")) + "</h2>" +
-      '<p id="wk-stats">' + escapeHtml(w.day_count) + " 期日报 · " + escapeHtml(trackLabel(r.track)) + " 本周去重 " + escapeHtml(counts[r.track] || 0) + " 篇 · 按偏好调整分</p></div>" +
+      '<div class="wkhead"><div class="k">Weekly Top ' + escapeHtml(DATA.weekly_top_n || 10) + " · 第" + escapeHtml(w.iso_week) + "周</div>" +
+      "<h2>" + escapeHtml(w.week_start.slice(5).replace("-", ".")) + "–" + escapeHtml(w.week_end.slice(5).replace("-", ".")) + "</h2>" +
       '<div class="wk-sel">' + renderWeekNav(r) + "</div>" +
+      '<p id="wk-stats">' + escapeHtml(w.day_count) + " 期日报 · " + escapeHtml(trackLabel(r.track)) + " 本周去重 " + escapeHtml(counts[r.track] || 0) + " 篇 · 按偏好调整分</p></div>" +
       (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
