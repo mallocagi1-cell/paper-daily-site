@@ -1,0 +1,653 @@
+{
+  "date": "2026-10-14",
+  "track": "generative",
+  "scenario": "社区搜索 (UGC 短文本搜索): 用户在社区平台搜索帖子、问答、评论等 UGC 内容。 核心指标是搜索相关性 (nDCG) 和点击率 (CTR)。 关注：语义匹配、query 理解、短文本召回、排序模型、LLM 在搜索中的应用。\n",
+  "stats": {
+    "papers_scored": 68,
+    "papers_selected": 10,
+    "score_min": 3.25,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.12977",
+      "title": "Beyond Semantic IDs: Finite-Beam Reachability and Continuous-Query Generation in Generative Recommendation",
+      "authors": [
+        "Sun, Yu",
+        "Xiang, Renkai",
+        "Xiang, Zuodong",
+        "Zhou, Junwei",
+        "Zhang, Yike",
+        "Zhang, Jianxin",
+        "Zhu, Zhihao",
+        "Cao, Xiaoyu",
+        "Xu, Hailu"
+      ],
+      "abstract": "Abstract: Generative recommendation (GR) of social media platforms commonly retrieves items by autoregressively decoding discrete Semantic IDs (SIDs) with finite-width beam search. This work examines how this output interface constrains whether held-out targets enter finite returned lists, while distinguishing catalog-wide scoreability from empirical top-K support. We introduce two continuous-query paradigms: CQG-Single generates one retrieval query in a single pass, and CQG-AR autoregressively generates continuous residual updates, retaining step-wise decoding while removing the SID item-token vocabulary, code lookup, and discrete beam expansion. These designs thereby eliminate the SID-specific reachability constraint induced by finite-beam decoding and avoid the technical challenge of aligning a discrete SID vocabulary with the pretrained backbone's vector space. Both methods make every encoded item directly scoreable through dense or approximate-nearest-neighbor retrieval. Under a unified protocol with valid-prefix constrained decoding, CQG-Single exceeds the TIGER-style baseline in all seven runs while using 55.3% as many trainable parameters. CQG-AR remains comparable on ML-1M and is numerically stronger on Beauty and Sports datasets. A controlled depth ablation further shows that additional continuous refinement does not monotonically improve shallow accuracy. These findings motivate decoupling output representation, autoregressive modeling, and retrieval budget when evaluating generative recommendation systems.",
+      "url": "https://arxiv.org/abs/2610.12977",
+      "source": "web_search",
+      "published": "2026-10-09",
+      "discovered_at": "2026-10-14T05:17:48.199581",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.3,
+      "preference_bonus": 0.4,
+      "adjusted_score": 4.7,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [],
+      "summary": "论文研究有限宽度 beam search 如何限制语义 ID 推荐的候选可达性，并提出单步连续查询 CQG-Single 和连续残差生成 CQG-AR。统一协议下，CQG-Single 在 MovieLens-1M 的 7 次训练中均超过 TIGER 类基线，平均 Recall@10 增加 0.0107，仅使用其 55.3% 的可训练参数。",
+      "key_insight": "社区短文本搜索可将生成用户意图与输出物品 ID 分开：生成连续查询后连接现有向量索引，减少离散前缀剪枝造成的漏召回。实践中应固定候选数量、历史过滤和物品表征，再比较 nDCG 与长尾覆盖；论文也发现增加残差生成深度并不总能改善浅层准确率。",
+      "rank": 1,
+      "deep_reading": {
+        "paper_id": "arxiv:2610.12977",
+        "title": "Beyond Semantic IDs: Finite-Beam Reachability and Continuous-Query Generation in Generative Recommendation",
+        "status": "completed",
+        "content": "## 1. 问题与动机\n\n这篇论文研究生成式推荐的输出接口，而不是单纯提出更大的用户模型。TIGER 一类方法先把物品编码成短的 Semantic ID，再根据用户历史自回归生成编码，通过前缀树和有限宽度的 beam search 找到物品。物品拥有合法编码，只意味着它在表示空间中可被表达，并不保证它的前缀会被当前用户的搜索保留下来。作者因此区分“编码是否唯一”“给定用户目标是否进入有限列表”“全目录是否能够打分”“所有用户结果的并集覆盖多少目录物品”。这四项指标不能相互替代。\n\n在 MovieLens-1M 的固定种子诊断中，TIGER 类模型的 Top-100 包含目标比例为 66.7%，但作者明确指出，不能把剩下的 33.3% 解释成目录中永远不能被检索的物品比例。目标条件的召回与目录并集覆盖是不同统计量。论文希望在共享物品表示和相同返回数量下，判断观察到的性能限制究竟来自离散输出、生成过程，还是训练目标与检索预算。\n\n## 2. 方法详解\n\n整个实验先建立一个冻结的协同物品空间。作者训练两层、两头、隐层宽度 64 的 SASRec，用时间顺序的下一物品样本及 BPR 损失学习物品表；每个正例配一个均匀负例，Adam 学习率为 0.001，批量 256。MovieLens 与 Beauty 最多训练 200 个 epoch，Sports 为 400；每五个 epoch 用全目录验证 NDCG@10 选择检查点。随后直接导出物品 lookup 参数，而不是上下文化用户隐藏状态。该表不再更新，并同时用于用户历史输入、连续查询的分类器或目标，以及最终检索索引。此设计尽量消除不同物品编码器带来的混杂。\n\nCQG-Single 将历史中的 64 维物品向量投影到宽度 256，添加可学习位置表示，再进入四层、四头的 pre-norm 因果 Transformer；前馈维度 1024，dropout 为 0.1。取最后一个有效历史状态，线性投影回 64 维并作 L2 归一化，即得到查询。查询与归一化目录向量做点积，直接取最高分物品。主配置对全目录使用 softmax 交叉熵，而不是只回归到目标向量；Adam 学习率 0.001、批量 256，最多 50 个 epoch。论文另外比较 MSE 与批内 InfoNCE，因此读者应将主结果与这些不同目标的诊断实验分开。\n\nCQG-AR 保留逐步自回归建模，却不生成离散编码。其 Transformer 为四层、六头、宽度 384，连续生成三个残差更新。每步残差回馈给下一步，累积查询加上残差后重新归一化；最终查询仍是同一个 64 维物品空间中的向量。主配置只在最终查询上施加全目录交叉熵，使用 Adam 学习率 0.0003、批量 1024、最多 30 个 epoch。含中间监督、权重 0.3 的深度消融是另一套受控配置，不能把其中结果当作主模型成绩。\n\n损失可理解为：模型对所有目录物品给出查询点积分数，最大化真实下一物品在完整目录中的 softmax 概率。推理阶段屏蔽 padding 和已经出现过的历史物品，再返回相同数量的候选。实验采用留一法，最后交互用于测试、倒数第二个用于验证，其他用于训练；不是抽取少量随机负例的评测。MovieLens 历史长度为 50，Amazon 数据为 20。计算环境是一张 A800 80GB、14 个分配 CPU 核及约 120GB 主机内存，部分训练使用 bfloat16。这些配置可以支持复现实验规模，但没有证明工业目录下的成本。\n\n## 3. 核心技术贡献\n\n第一项贡献是把输出可达性定义为检查点与检索预算相关的诊断量。合法且几乎唯一的 ID，并不自动产生足够的目标支持；同时，扩大 beam 可以改变支持率，因此作者没有声称存在与预算无关的绝对上限。这种明确限定比把离散编码一概解释成“无法召回长尾”更有用。\n\n第二项贡献是成对的连续输出对照。CQG-Single 同时去掉离散词表和串行解码，CQG-AR 只去掉离散词表而保留残差自回归；因此可以观察生成过程是否一定需要物品 token。连续输出让每个已编码物品都能被直接打分，也免去 code-to-item 映射，不过这不是首次发明稠密检索。作者自己将其定位为分析生成式推荐接口的最小对照。\n\n第三项贡献是固定物品表征并匹配返回列表的比较。四层 CQG-Single 使用约 320 万可训练参数，对照离散模型约 578 万；比例为 55.3%。在 MovieLens 的七个下游种子中，Recall@10 的平均配对增量为 0.0107，95% 配对 t 区间为 [0.0021, 0.0193]。然而每组都共享一份固定 SASRec 导出，种子稳定性并不代表冻结表示预训练也在多种子下重复验证。\n\n## 4. 实验结果分析\n\n下表摘录正文主结果。MovieLens 的生成方法是种子 42–48 的平均值，Amazon 为种子 42–44；SASRec 为一个全目录检查点。它是论文内部复现协议的比较，不是对已发表 TIGER 原始成绩的全面超越声明。\n\n| 方法 | MovieLens Recall@10 | MovieLens NDCG@10 | Beauty Recall@10 | Sports Recall@10 |\n|---|---:|---:|---:|---:|\n| SASRec | 0.2797 | 0.1535 | 0.0558 | 0.0390 |\n| TIGER 类离散生成 | 0.2996 | 0.1739 | 0.0477 | 0.0236 |\n| CQG-Single | 0.3104 | 0.1822 | 0.0605 | 0.0363 |\n| CQG-AR | 0.2976 | 0.1735 | 0.0571 | 0.0355 |\n\nCQG-Single 在 MovieLens 和 Beauty 的这组指标中领先，但 Sports 上 SASRec 的 0.0390 高于两个连续方法。CQG-AR 相比离散基线在 Sports 的 Recall@10 从 0.0236 增至 0.0355，即相对增幅约 50.4%，仍不超过 SASRec。这说明改进输出接口能解除一种搜索限制，却不能自动创造更好的协同表示与排名函数。\n\n目标支持的变化也没有最终准确率变化那么大。MovieLens 的用户加权 TargetInOutput@100 是 TIGER 66.7%、CQG-Single 67.3%、CQG-AR 66.4%；不同目标物品类型在 Top-200 至少被命中一次的比例分别为 78.1%、78.9%、78.8%。因此不能把 Recall@10 的改善全部解释为“连续模型发现了大量此前不可达的物品”，列表内部排序同样可能重要。按流行度分组的 48 项比较中，单步方法有 38 项数值更高，但稀有物品的一些浅层截断点仍由离散模型占优。\n\n深度消融使用种子 42 和中间损失权重 0.3。残差步数 1、2、3、4 时，Recall@10 分别为 0.2924、0.2909、0.2914、0.2944，NDCG@10 分别为 0.1719、0.1688、0.1667、0.1717；Recall@100 则为 0.6550、0.6525、0.6619、0.6697。更多步骤可以改变深层召回，却没有单调提升浅层排序，不能照搬语言模型推理步数越多越好的直觉。\n\n论文另做更接近 T5/RQ-VAE 的 Beauty 复现，目录 Top-100 并集覆盖在稀有四分位仅 14.0%，热门四分位为 88.7%。作者也承认这份复现没有达到原实现的排名准确率，故应把它当作具体配置下的诊断证据。本文没有线上 A/B 或社区短文本搜索的真实 CTR/nDCG 改善数据。\n\n## 5. 局限与未来方向\n\n作者明确列出数项限制：主离散对照采用层级 K-Means，弱于已发表的 SID 系统；更近似原模型的 T5/RQ-VAE 复现也未匹配参考实现精度。扩大 beam 会明显增加目标支持，当前结论只适用于测试过的模型、搜索与算力配置。流行度分层结果是观察性分析，不能作为流行度本身导致漏召回的因果干预。\n\n全目录交叉熵每次更新需要与目录规模成正比的打分成本，实验目录分别约为 3416、12101、10693 个物品，远小于工业 UGC 库。十亿目录训练、ANN 延迟与内存、索引更新成本和动态冷物品准确率均未测量。这些是作者明确保留的开放问题；“每个向量都可打分”不能等同于“每个新帖子都能被有效推荐”。另一个实践限制是主空间来自纯协同 SASRec，没有正文语义编码器，迁移到社区短文本时必须重新评估冷启动和语义查询。\n\n## 6. 工业实践意义\n\n对社区帖子、问答和评论搜索，这项工作首先提供评测拆解方法。除了常规 nDCG 和 CTR，记录正确目标是否进入候选列表、不同流行度分层的召回、所有查询结果并集的目录覆盖，并确保不同方法采用相同返回数量和历史过滤。否则，扩大候选池或换用更强物品表征会被误记为生成范式收益。\n\n可落地的试验是保留现有语义向量索引，把生成模型用于产生连续意图查询。先从单步查询开始，再加入少量残差步，分别测准确率、P95 延迟、向量搜索成本和更新吞吐。社区业务还需要显式 query 表征，而正文任务只有用户行为序列，因此把用户历史输入替换为 query 加历史属于应用假设，不是论文已验证方法。应在时间留出的真实查询上与现有召回器比较，并检验短历史用户和刚发布的帖子。\n\n部署预算应同时计入生成计算和 ANN 访问。删除 beam 和编码映射可能简化流程，但训练时全目录 softmax、上线时索引精度与版本一致性都有成本。建议将连续生成召回作为一条受控候选通道，结合既有词法和稠密召回做增量试验，再由相关性重排控制结果质量。没有线上证据前，本文只支持“值得试验输出接口的选择”，不支持直接替换成熟系统或承诺业务收益。\n\n正文来源：https://arxiv.org/html/2610.12977 。本解读依据方法、主结果、消融与附录配置写成，区分作者报告与社区场景的应用推断。",
+        "content_html": "<h2>1. 问题与动机</h2>\n<p>这篇论文研究生成式推荐的输出接口，而不是单纯提出更大的用户模型。TIGER 一类方法先把物品编码成短的 Semantic ID，再根据用户历史自回归生成编码，通过前缀树和有限宽度的 beam search 找到物品。物品拥有合法编码，只意味着它在表示空间中可被表达，并不保证它的前缀会被当前用户的搜索保留下来。作者因此区分“编码是否唯一”“给定用户目标是否进入有限列表”“全目录是否能够打分”“所有用户结果的并集覆盖多少目录物品”。这四项指标不能相互替代。</p>\n<p>在 MovieLens-1M 的固定种子诊断中，TIGER 类模型的 Top-100 包含目标比例为 66.7%，但作者明确指出，不能把剩下的 33.3% 解释成目录中永远不能被检索的物品比例。目标条件的召回与目录并集覆盖是不同统计量。论文希望在共享物品表示和相同返回数量下，判断观察到的性能限制究竟来自离散输出、生成过程，还是训练目标与检索预算。</p>\n<h2>2. 方法详解</h2>\n<p>整个实验先建立一个冻结的协同物品空间。作者训练两层、两头、隐层宽度 64 的 SASRec，用时间顺序的下一物品样本及 BPR 损失学习物品表；每个正例配一个均匀负例，Adam 学习率为 0.001，批量 256。MovieLens 与 Beauty 最多训练 200 个 epoch，Sports 为 400；每五个 epoch 用全目录验证 NDCG@10 选择检查点。随后直接导出物品 lookup 参数，而不是上下文化用户隐藏状态。该表不再更新，并同时用于用户历史输入、连续查询的分类器或目标，以及最终检索索引。此设计尽量消除不同物品编码器带来的混杂。</p>\n<p>CQG-Single 将历史中的 64 维物品向量投影到宽度 256，添加可学习位置表示，再进入四层、四头的 pre-norm 因果 Transformer；前馈维度 1024，dropout 为 0.1。取最后一个有效历史状态，线性投影回 64 维并作 L2 归一化，即得到查询。查询与归一化目录向量做点积，直接取最高分物品。主配置对全目录使用 softmax 交叉熵，而不是只回归到目标向量；Adam 学习率 0.001、批量 256，最多 50 个 epoch。论文另外比较 MSE 与批内 InfoNCE，因此读者应将主结果与这些不同目标的诊断实验分开。</p>\n<p>CQG-AR 保留逐步自回归建模，却不生成离散编码。其 Transformer 为四层、六头、宽度 384，连续生成三个残差更新。每步残差回馈给下一步，累积查询加上残差后重新归一化；最终查询仍是同一个 64 维物品空间中的向量。主配置只在最终查询上施加全目录交叉熵，使用 Adam 学习率 0.0003、批量 1024、最多 30 个 epoch。含中间监督、权重 0.3 的深度消融是另一套受控配置，不能把其中结果当作主模型成绩。</p>\n<p>损失可理解为：模型对所有目录物品给出查询点积分数，最大化真实下一物品在完整目录中的 softmax 概率。推理阶段屏蔽 padding 和已经出现过的历史物品，再返回相同数量的候选。实验采用留一法，最后交互用于测试、倒数第二个用于验证，其他用于训练；不是抽取少量随机负例的评测。MovieLens 历史长度为 50，Amazon 数据为 20。计算环境是一张 A800 80GB、14 个分配 CPU 核及约 120GB 主机内存，部分训练使用 bfloat16。这些配置可以支持复现实验规模，但没有证明工业目录下的成本。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是把输出可达性定义为检查点与检索预算相关的诊断量。合法且几乎唯一的 ID，并不自动产生足够的目标支持；同时，扩大 beam 可以改变支持率，因此作者没有声称存在与预算无关的绝对上限。这种明确限定比把离散编码一概解释成“无法召回长尾”更有用。</p>\n<p>第二项贡献是成对的连续输出对照。CQG-Single 同时去掉离散词表和串行解码，CQG-AR 只去掉离散词表而保留残差自回归；因此可以观察生成过程是否一定需要物品 token。连续输出让每个已编码物品都能被直接打分，也免去 code-to-item 映射，不过这不是首次发明稠密检索。作者自己将其定位为分析生成式推荐接口的最小对照。</p>\n<p>第三项贡献是固定物品表征并匹配返回列表的比较。四层 CQG-Single 使用约 320 万可训练参数，对照离散模型约 578 万；比例为 55.3%。在 MovieLens 的七个下游种子中，Recall@10 的平均配对增量为 0.0107，95% 配对 t 区间为 [0.0021, 0.0193]。然而每组都共享一份固定 SASRec 导出，种子稳定性并不代表冻结表示预训练也在多种子下重复验证。</p>\n<h2>4. 实验结果分析</h2>\n<p>下表摘录正文主结果。MovieLens 的生成方法是种子 42–48 的平均值，Amazon 为种子 42–44；SASRec 为一个全目录检查点。它是论文内部复现协议的比较，不是对已发表 TIGER 原始成绩的全面超越声明。</p>\n<table><thead><tr><th>方法</th><th>MovieLens Recall@10</th><th>MovieLens NDCG@10</th><th>Beauty Recall@10</th><th>Sports Recall@10</th></tr></thead><tbody><tr><td>SASRec</td><td>0.2797</td><td>0.1535</td><td>0.0558</td><td>0.0390</td></tr><tr><td>TIGER 类离散生成</td><td>0.2996</td><td>0.1739</td><td>0.0477</td><td>0.0236</td></tr><tr><td>CQG-Single</td><td>0.3104</td><td>0.1822</td><td>0.0605</td><td>0.0363</td></tr><tr><td>CQG-AR</td><td>0.2976</td><td>0.1735</td><td>0.0571</td><td>0.0355</td></tr></tbody></table>\n<p>CQG-Single 在 MovieLens 和 Beauty 的这组指标中领先，但 Sports 上 SASRec 的 0.0390 高于两个连续方法。CQG-AR 相比离散基线在 Sports 的 Recall@10 从 0.0236 增至 0.0355，即相对增幅约 50.4%，仍不超过 SASRec。这说明改进输出接口能解除一种搜索限制，却不能自动创造更好的协同表示与排名函数。</p>\n<p>目标支持的变化也没有最终准确率变化那么大。MovieLens 的用户加权 TargetInOutput@100 是 TIGER 66.7%、CQG-Single 67.3%、CQG-AR 66.4%；不同目标物品类型在 Top-200 至少被命中一次的比例分别为 78.1%、78.9%、78.8%。因此不能把 Recall@10 的改善全部解释为“连续模型发现了大量此前不可达的物品”，列表内部排序同样可能重要。按流行度分组的 48 项比较中，单步方法有 38 项数值更高，但稀有物品的一些浅层截断点仍由离散模型占优。</p>\n<p>深度消融使用种子 42 和中间损失权重 0.3。残差步数 1、2、3、4 时，Recall@10 分别为 0.2924、0.2909、0.2914、0.2944，NDCG@10 分别为 0.1719、0.1688、0.1667、0.1717；Recall@100 则为 0.6550、0.6525、0.6619、0.6697。更多步骤可以改变深层召回，却没有单调提升浅层排序，不能照搬语言模型推理步数越多越好的直觉。</p>\n<p>论文另做更接近 T5/RQ-VAE 的 Beauty 复现，目录 Top-100 并集覆盖在稀有四分位仅 14.0%，热门四分位为 88.7%。作者也承认这份复现没有达到原实现的排名准确率，故应把它当作具体配置下的诊断证据。本文没有线上 A/B 或社区短文本搜索的真实 CTR/nDCG 改善数据。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确列出数项限制：主离散对照采用层级 K-Means，弱于已发表的 SID 系统；更近似原模型的 T5/RQ-VAE 复现也未匹配参考实现精度。扩大 beam 会明显增加目标支持，当前结论只适用于测试过的模型、搜索与算力配置。流行度分层结果是观察性分析，不能作为流行度本身导致漏召回的因果干预。</p>\n<p>全目录交叉熵每次更新需要与目录规模成正比的打分成本，实验目录分别约为 3416、12101、10693 个物品，远小于工业 UGC 库。十亿目录训练、ANN 延迟与内存、索引更新成本和动态冷物品准确率均未测量。这些是作者明确保留的开放问题；“每个向量都可打分”不能等同于“每个新帖子都能被有效推荐”。另一个实践限制是主空间来自纯协同 SASRec，没有正文语义编码器，迁移到社区短文本时必须重新评估冷启动和语义查询。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区帖子、问答和评论搜索，这项工作首先提供评测拆解方法。除了常规 nDCG 和 CTR，记录正确目标是否进入候选列表、不同流行度分层的召回、所有查询结果并集的目录覆盖，并确保不同方法采用相同返回数量和历史过滤。否则，扩大候选池或换用更强物品表征会被误记为生成范式收益。</p>\n<p>可落地的试验是保留现有语义向量索引，把生成模型用于产生连续意图查询。先从单步查询开始，再加入少量残差步，分别测准确率、P95 延迟、向量搜索成本和更新吞吐。社区业务还需要显式 query 表征，而正文任务只有用户行为序列，因此把用户历史输入替换为 query 加历史属于应用假设，不是论文已验证方法。应在时间留出的真实查询上与现有召回器比较，并检验短历史用户和刚发布的帖子。</p>\n<p>部署预算应同时计入生成计算和 ANN 访问。删除 beam 和编码映射可能简化流程，但训练时全目录 softmax、上线时索引精度与版本一致性都有成本。建议将连续生成召回作为一条受控候选通道，结合既有词法和稠密召回做增量试验，再由相关性重排控制结果质量。没有线上证据前，本文只支持“值得试验输出接口的选择”，不支持直接替换成熟系统或承诺业务收益。</p>\n<p>正文来源：https://arxiv.org/html/2610.12977 。本解读依据方法、主结果、消融与附录配置写成，区分作者报告与社区场景的应用推断。</p>",
+        "slug": "2610.12977",
+        "chars": 3816,
+        "minutes": 10
+      }
+    },
+    {
+      "id": "arxiv:2609.22227",
+      "title": "Guiding the coarse levels of semantic IDs makes the fine levels learnable",
+      "authors": [
+        "Wang, Bin",
+        "Zhang, Zhengyu"
+      ],
+      "abstract": "Abstract: Generative retrieval represents each item by a short Semantic ID and casts recommendation as autoregressive generation of that sequence. Because the tokenizer is trained independently to reconstruct an item embedding, its codes are aligned with neither the downstream LLM nor the end task. Nearly every SID system therefore spends extra effort to bridge this gap--alignment corpora, reasoning/RL, or per-token encoders to make codes legible, or learned tokenizer supervision to make them task-aware--yet the recovered meaning is content-derived and may not be the meaning the task needs. We introduce Guided SID, which instead makes the levels that matter most meaningful by construction: we force the coarse RQ-VAE levels to encode a predefined categorical attribute--chosen to be text-grounded (hence legible to the LLM) and task-relevant--by deterministic supervised index assignment (overriding nearest-neighbor selection with the attribute label) while keeping the codebooks learnable (they still receive reconstruction gradients). A trie-merge construction maps any high-cardinality or set-valued attribute onto the fixed code budget while keeping merged buckets semantically coherent. Guiding costs nothing intrinsically: collision and reconstruction match or beat the vanilla baseline despite pinning the coarse level. In a matched end-to-end A/B differing only in the SID encoding, the guided retriever improves recall@k at every list length we measure (1.36x at k=1, 1.39x at k=10), raises mean reciprocal rank from 0.0260 to 0.0355, and predicts the pre-defined attribute 4.2x more often.",
+      "url": "https://arxiv.org/abs/2609.22227",
+      "source": "web_search",
+      "published": "2026-09-03",
+      "discovered_at": "2026-10-14T05:17:48.879857",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "total_score": 4.1,
+      "preference_bonus": 0.4,
+      "adjusted_score": 4.5,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "Meta"
+      ],
+      "summary": "Guided SID 将 RQ-VAE 的粗粒度编码强制对应预先定义的任务相关属性，同时保留码本的重建梯度，并用 trie 合并处理高基数属性。每组 10000 条记录的匹配检索实验中，Recall@10 从 0.0639 增至 0.0890，MRR 从 0.0260 增至 0.0355；这不是线上 CTR 提升。",
+      "key_insight": "把地区、语言或主题等服务时已知属性嵌入语义 ID 的粗层，能让生成模型更早走入相关分支。社区搜索可先试验主题或内容语言引导，但不能使用未来点击标签作为属性；需要同步观察重建误差、ID 碰撞和全目录召回，避免只追求属性预测准确率。",
+      "rank": 2
+    },
+    {
+      "id": "arxiv:2607.19704",
+      "title": "Efficient Clustering with Quality Guardrails for LLM-based Recommender Systems at Industry Scale",
+      "authors": [
+        "Wang, Longshaokan",
+        "Keung, Wai Tsang",
+        "Ghodasara, Punit",
+        "Wang, Roman",
+        "Dashti, Ali",
+        "Moreno-Noguer, Francesc"
+      ],
+      "abstract": "Abstract: LLMs can be prohibitively expensive and slow to run at scale, especially for applications that invoke an LLM per sample over millions of inputs. A natural way to scale is to cluster the inputs, run the LLM only on cluster representatives, and propagate the outputs to other cluster members. However, the outputs a member receives are only as good as its match to the representative. Off-the-shelf clustering methods optimize an aggregate objective, targeting average-case quality without per-sample guardrails. As a result, members can be assigned to poorly-matched representatives, and the inherited outputs -- though appropriate for the representative -- may be irrelevant or even unsafe for the member. For example, a parent of a toddler grouped with parents of older children could receive age-inappropriate recommendations. Most clustering methods also scale poorly to millions of inputs in runtime and memory, limiting their use at industry scale. We propose a scalable two-stage clustering algorithm with provable per-sample guardrails: every sample is guaranteed to share a user-specified minimal embedding similarity and exact attribute match with its representative. The algorithm first generates initial clusters with Mini-batch K-Means, then greedily selects representatives within each to satisfy the guardrails. We provide theoretical guarantees, complexity analysis, and benchmarks against common methods on internal and public datasets. Our method delivers per-sample guardrails while running substantially faster and scaling to data sizes where most standard methods become intractable. We demonstrate its impact in a real-world deployment clustering 38 million customers, reducing downstream LLM cost and runtime by 50-fold while preserving personalization. This unblocked the launch of a persona-based recommender system that delivers significant gains in revenue and engagement in an A/B test.",
+      "url": "https://arxiv.org/abs/2607.19704",
+      "source": "web_search",
+      "published": "2026-07-22",
+      "discovered_at": "2026-10-14T05:17:55.204242",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 2
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.75,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "Amazon"
+      ],
+      "summary": "研究用小批量 K-Means 先分区，再贪心选择代表样本，确保每个簇成员与代表满足最低嵌入相似度和属性一致约束。只对代表调用 LLM 后传播输出，已用于 3800 万客户的画像推荐，减少约 50 倍下游模型成本和运行时间；公开对照中违规样本比例为 0%。",
+      "key_insight": "社区 UGC 的离线意图标注和内容推荐可以复用代表样本推理，但平均相似度不足以保证每条短文本都适合传播。先对语言、年龄限制或主题做精确属性分组，再执行逐样本相似度护栏；线上采用前仍应抽检边界样本并监控推荐相关性，防止把成本节约等同于效果保持。",
+      "rank": 3
+    },
+    {
+      "id": "arxiv:2610.03923",
+      "title": "Learning Robust Personalized Prompts for LLM-Driven Sequential Recommendation",
+      "authors": [
+        "Zheng, Xiaolin",
+        "Zhong, Qiyong",
+        "Su, Jiajie",
+        "Chen, Xiang"
+      ],
+      "abstract": "Abstract: LLM-driven sequential recommendation formulates next-item prediction as autoregressive generation conditioned on natural-language prompts. However, minor wording changes in semantically equivalent prompts can cause substantial performance fluctuations, undermining robustness and requiring costly manual prompt engineering. Continuous prompt learning reduces template dependence but faces two interacting challenges: shared task-level instructions lack user-specific reasoning guidance, while gradient updates can push continuous prompts outside the LLM's effective semantic space. Injecting personalized signals can further amplify this semantic drift. To address these challenges, we propose LRPRec, a learnable prompting framework that initializes continuous instruction prompts from discrete templates and introduces two complementary mechanisms. Personalized prompt injection encodes user behavior into a preference embedding and additively injects it into shared prompts, enabling parameter-efficient user-level adaptation. A semantic drift constraint regularizes the shared prompts within a trust region around their initialization anchors to preserve semantic validity during optimization. By constraining the shared component while allowing additive personalization, LRPRec decouples stability from expressiveness. Extensive experiments on three benchmark datasets demonstrate consistent improvements over strong baselines while eliminating the need for manual tuning of background and task inference templates.",
+      "url": "https://arxiv.org/abs/2610.03923",
+      "source": "web_search",
+      "published": "2026-10-02",
+      "discovered_at": "2026-10-14T05:17:59.409588",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.75,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "Zhejiang University"
+      ],
+      "summary": "LRPRec 从离散模板初始化连续提示，将用户行为偏好以加法方式注入，并用信赖域约束抑制共享提示的语义漂移。MovieLens 上 HR@1 达 0.4947，高于 MLLM-MSR 的 0.4523；移除个性化后降至 0.4512，移除漂移约束后的有效命中率降至 0.4556。",
+      "key_insight": "对社区帖子推荐，稳定的共享任务提示与可变化的用户偏好可以分开优化，减少模板微调造成的性能波动。要同时评估命中率与输出有效比例，不能只看合法回答中的准确率；先在用户隔离的时间切分上验证提示初始化和漂移约束，再考虑在线部署。",
+      "rank": 4
+    },
+    {
+      "id": "arxiv:2609.25572",
+      "title": "A Behavioral Trait Leaks into Preferences: Diagnosing Trait Interference in LLM User Simulators",
+      "authors": [
+        "Kim, Chaehyun",
+        "Kim, Sein",
+        "Kang, Hongseok",
+        "Park, Chanyoung"
+      ],
+      "abstract": "Abstract: LLM-based user simulators aim to bridge the offline-online gap in recommender evaluation by emulating users through injected traits, where preference attributes determine what a user engages with and a behavioral activity trait governs how long they browse. However, we show this intended trait independence collapses during simulation, causing two failures: (i) Trait Interference, where amplified activity distorts preference boundaries and forces interactions with mismatched items to sustain browsing, and (ii) Evaluation Invalidity, where satisfaction scores inflate with activity-driven page counts despite taste mismatches, biasing evaluation toward trait distributions rather than recommender performance. To resolve this, we propose PQA, a page-level quality anchoring method that guides simulators using a personalized anchor reflecting each user's intrinsic preference standard. By assessing whether a page meets this standard before further browsing, PQA enables proactive exits from low-quality pages, letting the activity trait retain its intended role of modulating browsing depth within preference-conforming pages. Experiments show PQA mitigates trait interference and improves the reliability of LLM-based simulator evaluation under activity shifts. Our code is available at  this https URL",
+      "url": "https://arxiv.org/abs/2609.25572",
+      "source": "web_search",
+      "published": "2026-09-22",
+      "discovered_at": "2026-10-14T05:18:02.433062",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.75,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "KAIST"
+      ],
+      "summary": "研究发现 LLM 用户模拟器的活跃度设定会改变偏好边界，使不匹配内容仍得到虚高满意度，并提出页面质量锚定 PQA。MovieLens 上 Agent4Rec 的活跃度从低调至高后，平均退出页数由 1.00 增至 3.10，满意度由 3.18 增至 7.44，揭示模拟评价的混杂。",
+      "key_insight": "用合成用户验证对话推荐时，不能把更多浏览页或更高自评满意度直接视为推荐质量提升。社区业务应固定偏好标准，再改变活跃程度，测量偏好外点击与提前退出；模拟器只提供诊断信号，真正的 nDCG、CTR 和用户满意度仍需独立人工或线上验证。",
+      "rank": 5
+    },
+    {
+      "id": "arxiv:2609.33045",
+      "title": "Overview and Analysis of the RecSys Challenge 2026: Conversational Music Recommendation",
+      "authors": [
+        "Doh, Seungheon",
+        "Oramas, Sergio",
+        "Sguerra, Bruno",
+        "Bohra, Abhinav",
+        "Pomo, Claudio",
+        "Barile, Francesco"
+      ],
+      "abstract": "Abstract: The RecSys Challenge 2026 studies conversational music recommendation as a joint item recommendation and response generation problem: given a multi-turn dialogue, systems must retrieve relevant tracks from a large catalog and produce a grounded natural-language response. This paper presents the challenge task, dataset, evaluation protocol, and official results. Beyond the leaderboard, we analyze the 16 accepted systems through a common retrieve--rerank--generate framework and examine how recommendation performance varies across users, requests, and dialogue contexts. Strong systems commonly combine heterogeneous candidate sources and preserve source-specific evidence for learned reranking. Across the system papers and our organizer-side analysis, robust design also means 1) grounding cold-start retrieval in multi-turn conversation and item signals, 2) using intent detectors, and 3) modeling the full multi-turn context rather than the current query alone. We further identify limitations of the benchmark and evaluation protocol, including single-ground-truth relevance and teacher-forced evaluation of synthetic dialogues. Together, these findings provide practical guidance for future conversational recommender systems and shared evaluation efforts.",
+      "url": "https://arxiv.org/abs/2609.33045",
+      "source": "web_search",
+      "published": "2026-09-27",
+      "discovered_at": "2026-10-14T05:18:04.725258",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.75,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "Sony",
+        "Amazon",
+        "Deezer",
+        "SiriusXM"
+      ],
+      "summary": "论文总结 RecSys 2026 对话音乐推荐挑战，统一分析 16 个已接收系统的召回、重排与回答生成。目录包含 47071 首歌曲和 8772 位用户；Blind-B 中 BM25 基线 nDCG@20 为 0.134，niwatori 为 0.493，作者同时指出单一目标标签与合成对话评测的局限。",
+      "key_insight": "社区多轮搜索可保留当前请求与完整对话两种召回视图，把来源证据带入重排，再让语言模型基于已选结果生成说明。评测应区分新用户、明确指令和长对话，并检查相关性标签是否只承认一个正确结果；论文特别标注了评测数据暴露的提交，不能直接把榜首视作可靠基线。",
+      "rank": 6
+    },
+    {
+      "id": "arxiv:2609.38270",
+      "title": "VirusCascade: Hijacking Collaborative Reflection in LLM-Powered Recommender Agents",
+      "authors": [
+        "Hao, Yurong",
+        "Zhou, Wen",
+        "Guan, Guowei",
+        "Wu, Tiantong",
+        "Zhang, Fuyao",
+        "Lim, Wei Yang Bryan"
+      ],
+      "abstract": "Abstract: Advancing beyond traditional static scoring models, LLM-powered agentic recommender systems (LLM-ARS) instantiate users and items as autonomous agents, whose semantic states are dynamically refined through a recurrent process known as collaborative reflection. While this mechanism improves recommendation quality, it simultaneously introduces a systemic vulnerability: adversarial evidence injected into a single agent can be rationalised into a legitimate preference narrative, written back into memory, and propagated to other agents through interaction contexts. We term the local rationalisation process reflection laundering, and its system-wide escalation through collaborative reflection collaborative-reflection hijacking. Existing attacks on recommender systems, whether based on interaction-level data poisoning or text-level adversarial perturbations, assume static pipelines and thus cannot exploit this recurrent, multi-agent amplification pathway. To bridge this gap, we first conduct a controlled vulnerability analysis that establishes two exploitable properties underlying collaborative-reflection hijacking: reflective persistence and cross-agent propagation. Then building on these findings, we propose VirusCascade, the first black-box targeted promotion attack that jointly shapes semantic and structural attack surfaces: the former ensures the target item is naturally rationalised as satisfying broad user preferences, the latter positions it for system-wide propagation. Extensive experiments on four real-world datasets across diverse LLM-ARS architectures demonstrate that VirusCascade consistently achieves state-of-the-art targeted exposure under evaluated stealth constraints, reaching a mean E@20 of 0.384 and surpassing the strongest baseline by an absolute margin of +0.185.",
+      "url": "https://arxiv.org/abs/2609.38270",
+      "source": "web_search",
+      "published": "2026-09-29",
+      "discovered_at": "2026-10-14T05:17:52.694047",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.65,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "NTU"
+      ],
+      "summary": "VirusCascade 针对 LLM 推荐代理的协同反思机制，展示外部证据被合理化、写入记忆并跨代理传播后，如何扩大目标物品曝光。四个真实数据集的受控实验中，平均 E@20 达 0.384，比最强基线高 0.185，说明动态记忆带来了传统静态推荐攻击之外的传播路径。",
+      "key_insight": "社区 UGC 会直接进入模型语义状态，推荐记忆更新因此需要保留证据来源与可撤销关系。可把论文作为防御评测设计依据，分别测本地记忆污染和跨用户传播，检查外部内容是否绕过真实行为证据；这里的曝光提升是攻击成功指标，不是正常推荐的业务收益。",
+      "rank": 7
+    },
+    {
+      "id": "arxiv:2609.36671",
+      "title": "FairDiff: Mitigating the Self-Reinforcing Matthew Effect in Diffusion Recommender Models",
+      "authors": [
+        "Wu, Song-Li",
+        "Wang, Xianquan",
+        "Du, Zhaocheng",
+        "Gan, Weinan",
+        "Wang, Jingyi"
+      ],
+      "abstract": "Abstract: While the \"Matthew Effect\" and filter bubbles are widely recognized outcome-level biases in recommender systems, we reveal that Diffusion Recommender Models (DRMs) uniquely compound this issue through their generative dynamics. Rather than merely inheriting data imbalances, DRMs trigger a self-reinforcing amplification of popularity bias. We identify that this phenomenon is driven by two compounding mechanisms. First, while optimization loss is universally dominated by high-frequency items across recommenders, DRMs suffer from a unique structural prior mismatch during generation. Because the forward terminal distribution of long-tailed data deviates significantly from the standard Gaussian prior, reverse sampling trajectories inherently collapse toward high-density popular items, fundamentally suppressing niche item generation. To dismantle this self-reinforcing loop, we propose FairDiff, a plug-and-play fairness-aware diffusion framework. To overcome the popularity-dominated loss, we introduce Popularity Condition Guidance (PCG). Rather than altering the training objective, PCG acts as an inference-time distributional reweighting mechanism, mathematically reshaping the score-based gradient field to penalize high-popularity regions and guide trajectories toward niche semantics. Furthermore, we design a Semantic Calibration (SC) Module to bridge the prior mismatch, aligning the forward and reverse distributions via one-step optimal transport. Comprehensive evaluations demonstrate that FairDiff achieves state-of-the-art performance while effectively mitigating the self-reinforcing Matthew Effect, highlighting its value as a general framework for DRMs.",
+      "url": "https://arxiv.org/abs/2609.36671",
+      "source": "web_search",
+      "published": "2026-09-29",
+      "discovered_at": "2026-10-14T05:18:00.211526",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.65,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [],
+      "summary": "FairDiff 分析扩散推荐中的热门偏置，采用流行度条件引导重塑采样方向，并通过一步最优传输校准前向与反向分布。Beauty 数据集上，CDiff4Rec 加入该框架后 HR@10 从 7.71 增至 8.69，NDCG@10 从 4.65 增至 5.21；数字按原表尺度报告。",
+      "key_insight": "长尾 UGC 的生成式推荐不能只修正训练样本分布，采样阶段的先验也可能把结果推向热门内容。可分别消融流行度引导和初始化校准，同时报告长尾曝光、nDCG 与 CTR；原文主要是离线结果，社区业务应验证多样性收益是否伴随真实满意度提升。",
+      "rank": 8
+    },
+    {
+      "id": "arxiv:2607.23647",
+      "title": "CALMRec: Causally Aligned Language Memory for Long-Horizon Recommendation",
+      "authors": [
+        "Zhan, Gengyu"
+      ],
+      "abstract": "Abstract: Large language models (LLMs) can summarize heterogeneous user evidence in natural language, but current LLM recommenders often collapse enduring preferences, transient intent, and exposure-induced behavior into one profile. This makes recommendation vulnerable to feedback loops: repeated exposure is mistaken for preference, immediate clicks dominate delayed satisfaction, and fluent explanations need not reflect the ranking decision. We propose our method, a model-agnostic framework for long-horizon recommendation. Our method uses a frozen multimodal language model to convert item content and feedback into evidence-grounded semantic atoms, then maintains separate short-term, long-term, and exposure memories. Propensity-weighted updates reduce policy-induced exposure bias, while a conservative offline critic reranks candidates for delayed satisfaction under a behavior-support constraint. Explanations use only influential evidence atoms and are checked by counterfactual deletion. We provide an identification result and evaluate the framework in e-commerce-like, news-like, and short-video-like environments. Across ten seeds, our method improves discounted long-term value over the strongest alternative by 6.1%, 7.6%, and 6.7%, respectively. Twenty-seed paired ablations show significant value drops after removing propensity correction (0.739 +/- 0.191) or conservative support regularization (0.523 +/- 0.234). A frozen instruction language model also more than doubles semantic-atom NDCG over TF-IDF on a held-out paraphrase benchmark.",
+      "url": "https://arxiv.org/abs/2607.23647",
+      "source": "web_search",
+      "published": "2026-07-26",
+      "discovered_at": "2026-10-14T05:17:54.410072",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "total_score": 3.45,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.45,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "Shenzhen University"
+      ],
+      "summary": "CALMRec 用冻结多模态语言模型把内容及反馈转成有证据支撑的语义原子，并分别维护短期、长期和曝光记忆。结合倾向加权更新和保守离线价值评估，在电商、新闻、短视频类环境的 10 个随机种子上，折扣长期价值分别比最强对照高 6.1%、7.6% 和 6.7%。",
+      "key_insight": "社区搜索中的重复曝光不应直接被解释为稳定兴趣。可将当前 query、持久兴趣与平台曝光历史分开存储，并用反事实删除检查解释是否影响排序；这些结果来自实验环境，不能直接外推为线上收益，需要可靠曝光概率与时间留出验证才能采用因果更新。",
+      "rank": 9
+    },
+    {
+      "id": "arxiv:2610.05787",
+      "title": "Constraint-Aware Conversational Job Recommendation in Code-Mixed Low-Resource Settings",
+      "authors": [
+        "Hossain, Md Arman",
+        "Jawad, Mubashir",
+        "Moon, Fariha Khandaker",
+        "Siraj, Sonia Binte",
+        "Rahaman, Masfiqur",
+        "Islam, Raihan ul",
+        "Reza, Ahmed Wasif",
+        "Sadeq, Nafis"
+      ],
+      "abstract": "Abstract: Conversational job recommendation requires jointly modeling semantic relevance, user preferences, eligibility requirements, and the noisy language used in real-world career discussions. These challenges are especially pronounced in low-resource, code-mixed settings, where strict constraint matching can incorrectly eliminate otherwise suitable jobs. We introduce JobCCC, a conversational job recommendation benchmark for Bangladesh comprising 22,410 structured job postings and 988 multi-turn career-advice dialogues derived from regional Reddit communities. Each dialogue is annotated with evolving seeker preferences and linked to a ground-truth job, and is evaluated in semantically equivalent English and Romanized Bangla--English variants. We compare sparse BM25 retrieval, multilingual dense retrieval, and their hard-constraint-filtered counterparts against Weighted Soft-Constraint-Aware Ranking (W-SCAR), our multi-criteria ranking framework that combines lexical relevance, semantic relevance, and graded utilities for experience, location, education, and salary using the Technique for Order Preference by Similarity to Ideal Solution (TOPSIS). Experiments reveal that strict filtering consistently degrades retrieval because incomplete extraction and brittle attribute matching irreversibly remove relevant jobs. W-SCAR avoids destructive pruning and achieves more balanced performance across the two language conditions, obtaining 37.37% and 38.43% Hit@10 on English and Banglish, respectively. The code and dataset are publicly available at \\href{ this https URL }{GitHub} and \\href{ this https URL }{Hugging Face}, respectively.",
+      "url": "https://arxiv.org/abs/2610.05787",
+      "source": "web_search",
+      "published": "2026-10-05",
+      "discovered_at": "2026-10-14T05:17:49.551258",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "total_score": 3.25,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.25,
+      "track_eligible": true,
+      "assessment_basis": "已核对论文正文",
+      "company": [
+        "East West University",
+        "UCSD"
+      ],
+      "summary": "JobCCC 评测低资源混合语言中的对话职位推荐，包含 22410 个岗位和 988 段多轮对话。W-SCAR 用 TOPSIS 融合文本相关性与薪资、地点、经验等软约束，英语和 Banglish 的 Hit@10 分别为 37.37% 和 38.43%；严格属性过滤会不可逆地删除相关岗位。",
+      "key_insight": "这篇是对话推荐评测与配套排序方法，可为社区自然语言推荐提供约束处理参考。当短文本中的地点或条件抽取不完整时，优先使用可解释的软约束并检查硬性资格要求；不要将全部约束一律硬过滤，且应区分推荐准确性与回答是否忠实遵守用户条件。",
+      "rank": 10
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:JavierDomi/master-ia-bloque4",
+      "title": "master-ia-bloque4: Máster FP IA y Big Data (Cámara de Madrid) · Bloque 4: Agentes de IA y LLMs · material para alumnos",
+      "authors": "JavierDomi",
+      "abstract": "Máster FP IA y Big Data (Cámara de Madrid) · Bloque 4: Agentes de IA y LLMs · material para alumnos",
+      "url": "https://github.com/JavierDomi/master-ia-bloque4",
+      "source": "github",
+      "published": "2026-10-13",
+      "discovered_at": "2026-10-13",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "JavierDomi/master-ia-bloque4",
+        "owner": "JavierDomi",
+        "description": "Máster FP IA y Big Data (Cámara de Madrid) · Bloque 4: Agentes de IA y LLMs · material para alumnos",
+        "created_at": "2026-10-13T10:38:07Z",
+        "updated_at": "2026-10-13",
+        "pushed_at": "2026-10-13",
+        "stargazers_count": 10,
+        "language": "Jupyter Notebook",
+        "topics": []
+      },
+      "description": "Máster FP IA y Big Data (Cámara de Madrid) · Bloque 4: Agentes de IA y LLMs · material para alumnos",
+      "language": "Jupyter Notebook",
+      "stars": 10,
+      "created_at": "2026-10-13",
+      "rank": 1
+    },
+    {
+      "id": "github:AllSpark-Research/Vela",
+      "title": "Vela: User Behavior as Supervision Sparks LLM Intelligence",
+      "authors": "AllSpark-Research",
+      "abstract": "User Behavior as Supervision Sparks LLM Intelligence",
+      "url": "https://github.com/AllSpark-Research/Vela",
+      "source": "github",
+      "published": "2026-10-09",
+      "discovered_at": "2026-10-13",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "AllSpark-Research/Vela",
+        "owner": "AllSpark-Research",
+        "description": "User Behavior as Supervision Sparks LLM Intelligence",
+        "created_at": "2026-10-09T09:47:18Z",
+        "updated_at": "2026-10-13",
+        "pushed_at": "2026-10-13",
+        "stargazers_count": 9,
+        "language": "",
+        "topics": []
+      },
+      "description": "User Behavior as Supervision Sparks LLM Intelligence",
+      "language": "",
+      "stars": 9,
+      "created_at": "2026-10-09",
+      "rank": 2
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4468,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-12",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 4468,
+        "downloads": 1272612,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us",
+          "deploy:azure"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-12T09:45:54.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3-Flash",
+      "title": "zai-org/GLM-5.3-Flash",
+      "authors": "zai-org",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2836,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-12",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3-Flash",
+        "likes": 2836,
+        "downloads": 6511401,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm5_next",
+          "image-text-to-text",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:43:14.000Z",
+        "last_modified": "2026-10-12T12:59:41.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3",
+      "title": "zai-org/GLM-5.3",
+      "authors": "zai-org",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2209,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-12",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3",
+        "likes": 2209,
+        "downloads": 1739432,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm_moe_dsa",
+          "text-generation",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:other",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:42:50.000Z",
+        "last_modified": "2026-10-12T13:00:09.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:Qwen/Qwen-Image-2.1-Turbo",
+      "title": "Qwen/Qwen-Image-2.1-Turbo",
+      "authors": "Qwen",
+      "description": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, text-to-image, base_model:Qwen/Qwen-Image-2.1, base_model:finetune:Qwen/Qwen-Image-2.1",
+      "abstract": "pipeline: text-to-image; tags: diffusers, safetensors, qwen, image-generation, image-editing, text-to-image, base_model:Qwen/Qwen-Image-2.1, base_model:finetune:Qwen/Qwen-Image-2.1",
+      "url": "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 701,
+      "language": "model",
+      "created_at": "2026-10-09",
+      "updated_at": "2026-10-12",
+      "published": "2026-10-09",
+      "discovered_at": "2026-10-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen-Image-2.1-Turbo",
+        "likes": 701,
+        "downloads": 9665,
+        "pipeline_tag": "text-to-image",
+        "tags": [
+          "diffusers",
+          "safetensors",
+          "qwen",
+          "image-generation",
+          "image-editing",
+          "text-to-image",
+          "base_model:Qwen/Qwen-Image-2.1",
+          "base_model:finetune:Qwen/Qwen-Image-2.1",
+          "license:other",
+          "diffusers:QwenImage21Pipeline",
+          "region:us"
+        ],
+        "created_at": "2026-10-09T04:50:01.000Z",
+        "last_modified": "2026-10-12T09:45:49.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:Alibaba-DAMO-Academy/RynnValue-4B",
+      "title": "Alibaba-DAMO-Academy/RynnValue-4B",
+      "authors": "Alibaba-DAMO-Academy",
+      "description": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "abstract": "pipeline: robotics; tags: transformers, safetensors, rynn_value_lang, feature-extraction, robotics, embodied-ai, value-foundation-model, reinforcement-learning",
+      "url": "https://huggingface.co/Alibaba-DAMO-Academy/RynnValue-4B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 6,
+      "language": "model",
+      "created_at": "2026-07-27",
+      "updated_at": "2026-10-09",
+      "published": "2026-07-27",
+      "discovered_at": "2026-10-13",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Alibaba-DAMO-Academy/RynnValue-4B",
+        "likes": 6,
+        "downloads": 82,
+        "pipeline_tag": "robotics",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "rynn_value_lang",
+          "feature-extraction",
+          "robotics",
+          "embodied-ai",
+          "value-foundation-model",
+          "reinforcement-learning",
+          "spatiotemporal",
+          "vision-language-model",
+          "custom_code",
+          "en",
+          "zh",
+          "arxiv:2608.09853",
+          "arxiv:2603.02115",
+          "base_model:Alibaba-DAMO-Academy/RynnBrain-4B",
+          "base_model:finetune:Alibaba-DAMO-Academy/RynnBrain-4B",
+          "license:apache-2.0",
+          "region:us"
+        ],
+        "created_at": "2026-07-27T06:08:10.000Z",
+        "last_modified": "2026-10-09T13:54:20.000Z"
+      },
+      "rank": 7
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recent_7_days": true,
+    "source_diversity": false,
+    "chinese_sources": false,
+    "warnings": [
+      "来源多样性未达标：最终论文全部来自 web_search 补充；保留真实发现来源，不改写为 arXiv/HF。",
+      "爬虫使用3天窗口；为填补去重后的核心候选缺口，Web补充使用技能允许的90天近期范围。",
+      "未找到可入选的近期中文技术文章；中文工业博客候选均已收录或属于其他赛道。",
+      "Semantic Scholar 429；OpenReview 400；DBLP超时/解析失败，会议来源无候选。"
+    ]
+  }
+}
