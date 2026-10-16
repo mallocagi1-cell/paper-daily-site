@@ -111,10 +111,17 @@
   }
 
   // ---------- inline deep reading (expand / collapse + 独立页面阅读) ----------
+
+  function fixFigs(html) {
+    const root = (document.documentElement.getAttribute("data-root") || "");
+    if (!root) return html;
+    return String(html).replace(/(<img data-fig="1" src=")(figs\/)/g, "$1" + root + "$2");
+  }
+
   function renderDeepRead(paper) {
     const dr = paper && paper.deep_reading;
     if (!dr || dr.status !== "completed") return "";
-    const htmlBody = dr.content_html || "";
+    const htmlBody = fixFigs(dr.content_html || "");
     if (!htmlBody) return "";
     const rawPid = paper.id || dr.paper_id || "";
     const domId = String(rawPid).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "x";
