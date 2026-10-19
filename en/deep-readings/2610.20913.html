@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>TransX Technical Report: Scaling Sequence Transduction for Recommendation — Deep dive | Paper Daily</title>
+  <meta name="description" content="Deep dive: TransX Technical Report: Scaling Sequence Transduction for Recommendation. TransX caches reusable behavior memory and separates sequence encoding…" />
+  <link rel="canonical" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.20913.html" />
+  <meta property="og:site_name" content="Paper Daily" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="TransX Technical Report: Scaling Sequence Transduction for Recommendation — Deep dive | Paper Daily" />
+  <meta property="og:description" content="Deep dive: TransX Technical Report: Scaling Sequence Transduction for Recommendation. TransX caches reusable behavior memory and separates sequence encoding…" />
+  <meta property="og:url" content="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.20913.html" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="TransX Technical Report: Scaling Sequence Transduction for Recommendation — Deep dive | Paper Daily" />
+  <meta name="twitter:description" content="Deep dive: TransX Technical Report: Scaling Sequence Transduction for Recommendation. TransX caches reusable behavior memory and separates sequence encoding…" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"TransX Technical Report: Scaling Sequence Transduction for Recommendation","inLanguage":"en","datePublished":"2026-10-19","url":"https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.20913.html"}</script>
+  <link rel="alternate" hreflang="zh-CN" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/2610.20913.html" />
+  <link rel="alternate" hreflang="x-default" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/2610.20913.html" />
+  <link rel="alternate" hreflang="en" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.20913.html" />
+  <script>(function(){try{var t=localStorage.getItem('pd-theme');if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../css/pages.css?v=be0aae8e6a" />
+</head>
+<body class="lang-en t-personalization">
+<div class="navwrap"><div class="wrap"><nav class="nav" aria-label="Main">
+  <a class="hb" href="../../en/index.html" title="Daily GenAI papers for search &amp; recommendation engineers — scored, summarized, deep-read.">Paper <span>Daily</span></a>
+  <div class="hl">
+  <a href="../../en/index.html">Latest</a>
+  <a href="../../en/index.html#issues">Issues</a>
+  </div>
+  <div class="hm"><a class="lang-tg" href="../../deep-readings/2610.20913.html" hreflang="zh-CN" lang="zh-CN" title="中文版">中文</a>
+  <button type="button" class="tg" id="theme-toggle" aria-pressed="false" title="Toggle dark mode">&#9680;<span class="tg-l"> Dark</span></button></div>
+</nav></div></div>
+<main id="main">
+<div class="wrap">
+  <div class="rhead">
+    <a class="back" href="../reports/2026-10-19/personalization.html">&#8592; Personalization · 2026-10-19</a>
+    <div class="k">&#128214; DEEP DIVE · PERSONALIZATION</div>
+    <h1>TransX Technical Report: Scaling Sequence Transduction for Recommendation</h1>
+    <div class="by">Xu, Da, Fang, Liyan, Venugopalan, Divya, Hsu, Sunny, Wang, Xukai, Chowdhury, Rishav Roy, Liang, Cindy, Lakshmikanth, Nishant Satya</div>
+  </div>
+  <div class="rmeta"><span><b>16 min</b>read</span><span><b>4.10</b>score</span></div>
+  <div class="rbody"><nav class="toc" id="toc"></nav>
+    <article class="long deep-read-article" id="article"><p>TransX computes reusable user-history state ahead of requests, then lets each candidate read that state for prediction. LinkedIn co-designs the model, training pipeline and serving infrastructure around this boundary. The report asks both where extra model compute is useful and how often that compute should run.</p>
+<h2>1. Problem and motivation</h2>
+<p>Many candidates in a request share the same user history, and nearby requests often share most of it as well. Encoding that history separately for every prediction duplicates work. Putting more history processing into the online path also makes model scaling expensive under strict latency constraints.</p>
+<p>A single cached user vector reduces repetition but can compress away the distinctions needed to evaluate different candidates. TransX instead exposes a bounded collection of behavior-memory states. Candidates share the representation of history while retaining independent ways to read it.</p>
+<p>The key distinction is between increasing model capacity and increasing request-time computation. TransX makes encoding, memory resolution and candidate fusion independently adjustable, allowing their marginal returns to be measured separately.</p>
+<h2>2. Method: shared history, candidate-specific reads</h2>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-19/personalization/2610.20913/architecture.png" alt="The causal encoder produces shared behavior memory; candidate queries read it independently rather than re-encoding the history." loading="lazy" decoding="async"><figcaption>The causal encoder produces shared behavior memory; candidate queries read it independently rather than re-encoding the history.</figcaption></figure>
+<p>A causal encoder processes the behavior trajectory. Each training or serving event uses only the history available at its cutoff, so sharing trajectory computation must not introduce future-behavior leakage.</p>
+<p>At that cutoff, TransX constructs global–local memory: recent behavior retains local detail, while older behavior contributes to a global representation. The memory is projected into attention keys and values. It is useful to distinguish this published behavior-memory KV from the encoder continuation state used by nearline workers; they serve different purposes.</p>
+<p>Each candidate supplies a query and independently attends to the shared memory, potentially through iterative reads. Candidate-conditioned fusion and prediction features then feed response heads. The expensive history representation is shared without forcing every candidate to use one identical interest vector.</p>
+<p>Training follows the same decomposition. A trajectory is encoded once, multiple event-cutoff memories are extracted, and each memory fans out to the candidates belonging to that event. Their gradients aggregate back into the shared trajectory. This reduces repeated training computation over overlapping prefixes, separately from any serving-cache benefit.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-19/personalization/2610.20913/serving.png" alt="Offline prefill and nearline refresh maintain state; online prediction consumes compatible memory snapshots." loading="lazy" decoding="async"><figcaption>Offline prefill and nearline refresh maintain state; online prediction consumes compatible memory snapshots.</figcaption></figure>
+<p>Serving runs on three clocks. Offline prefill favors throughput. Nearline refresh advances behavior state and publishes fresh memory. Online prediction retrieves compatible snapshots and performs candidate-conditioned scoring. Immutable publication and request-scoped snapshot pinning prevent a request from observing a mixture of model or state versions.</p>
+<p>That design makes freshness, compatibility, recovery and state lifetime part of the model interface. A cache hit is useful only if the state is suitable for the request.</p>
+<h2>3. Contributions: allocation and amortization together</h2>
+<p>The scaling experiments show different returns across computational roles. At fixed memory and fusion capacity, deeper encoding can saturate. With more supervision, allocating compute to candidate fusion becomes more attractive. These observations are conditional on the studied data and architecture, rather than a universal recommendation scaling law.</p>
+<p>The memory resolution needed to preserve quality remains roughly stable as model capacity grows within the evaluated regime. A compact interface allows heavier background encoding without proportionally expanding online state transfer.</p>
+<p>The same behavioral interface also supports specialization. Starting from click and conversion pretraining, the authors post-train readers and output heads for retrieval and preference ranking. Generative retrieval and slate-ranking extensions remain offline investigations; their evidence should not be conflated with the production variants.</p>
+<h2>4. Experiments: keep the comparisons separate</h2>
+<div class="tbl"><table><thead><tr><th>Comparison</th><th>Metric</th><th>Reported result</th></tr></thead><tbody><tr><td>Base vs. production HSTU</td><td>Relative CTR</td><td>+6.02%</td></tr><tr><td>Retrieval vs. production retriever</td><td>Relative CTR</td><td>+2.96%</td></tr><tr><td>Ranking vs. production ranker</td><td>Relative conversion</td><td>+1.33%</td></tr><tr><td>Matched training vs. straightforward FSDP</td><td>Supervised-target throughput</td><td>+84%</td></tr><tr><td>Matched traffic and SLO vs. colocated serving</td><td>Total serving cost</td><td>Nearly 80% lower</td></tr></tbody></table></div>
+<p>The first three rows come from separate online experiments with different controls and product surfaces. They are not a head-to-head comparison between TransX variants. The base model also has a five-week holdout, and the paper reports positive effects across user-history cohorts.</p>
+<p>The cost result compares disaggregated and colocated execution of the framework. It does not use the same comparison as the CTR result. A separate matched-FLOP experiment tests hardware efficiency at similar offline quality. These measurement scopes answer different questions.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-19/personalization/2610.20913/efficiency.png" alt="With cached memory, online latency is largely insensitive to history length, while candidate fanout still adds scoring work." loading="lazy" decoding="async"><figcaption>With cached memory, online latency is largely insensitive to history length, while candidate fanout still adds scoring work.</figcaption></figure>
+<p>The serving curves expose the intended boundary: cached latency changes little with history length, while additional candidates still require additional scoring work. History processing has moved off the critical path; candidate-dependent computation has not disappeared.</p>
+<p>The freshness ablation also matters. Staler memory reduces recommendation gains. Memory age must therefore be tracked alongside cache hit rate, throughput and tail latency.</p>
+<h2>5. Limitations</h2>
+<p>The authors explicitly qualify the scaling patterns by data, supervision, architecture family and deployment envelope. The experiments neither establish universal laws nor identify a unique causal explanation for every curve.</p>
+<p>Materialized state introduces storage, refresh, compatibility and recovery costs. Some absolute deployment costs are undisclosed, and the resource accounting is not a complete lifecycle-cost analysis. Daily model updates can also require state reconstruction and overlapping versions.</p>
+<p>A frozen shared backbone may omit information needed by a specialized task. Changing only the reader is not guaranteed to be optimal. The generative variants have no production validation in this report.</p>
+<h2>6. Practical implications</h2>
+<p>For community-content ranking, measure repeated history computation across candidates and neighboring requests before building a large state service. Compare cached-memory and request-time encoding with matched inputs, labels and compute budgets.</p>
+<p>Sweep encoder and candidate-fusion capacity independently, and segment results by history richness. This makes it possible to test whether more sequence modeling is actually the best use of the next unit of compute.</p>
+<p>Track memory age, version incompatibility, fallback frequency and recovery time together with ranking quality and latency. Snapshot publication and request version pinning should be designed as an explicit data contract, not left as incidental cache behavior.</p></article>
+    <aside class="aside"><div class="box"><h6>Scores</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 4，Evidence 5，Timely 4"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 121.98,134.01 50.03,145.01 38.26,73.19"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 5</text><text x="11.1" y="67.36" text-anchor="middle">时效 4</text></svg></div><a class="btn" href="https://arxiv.org/abs/2610.20913" target="_blank" rel="noopener">Original paper &#8599;</a></aside>
+  </div>
+</div>
+</main>
+<div class="wrap"><footer class="site-foot"><span>Paper Daily · English edition</span><span>·</span><span><a href="../../deep-readings/2610.20913.html">中文版</a></span></footer></div>
+<script>
+(function(){
+  var root=document.documentElement;
+  function label(){var b=document.getElementById('theme-toggle');if(!b)return;var d=root.getAttribute('data-theme')==='dark';
+    b.innerHTML=(d?'&#9681;':'&#9680;')+'<span class="tg-l"> '+(d?'Light':'Dark')+'</span>';b.setAttribute('aria-pressed',d?'true':'false');}
+  function set(t,store){root.setAttribute('data-theme',t);if(store){try{localStorage.setItem('pd-theme',t)}catch(e){}}label();}
+  document.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#theme-toggle');
+    if(b)set(root.getAttribute('data-theme')==='dark'?'light':'dark',true);});
+  try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
+    var s=null;try{s=localStorage.getItem('pd-theme')}catch(x){}if(s!=='light'&&s!=='dark')set(e.matches?'dark':'light',false);});}catch(e){}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',label);else label();
+})();
+</script>
+</body>
+</html>
