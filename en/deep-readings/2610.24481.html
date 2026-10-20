@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>DuoLM: Fast and Effective Personalized Recommendation with Language Models — Deep dive | Paper Daily</title>
+  <meta name="description" content="Deep dive: DuoLM: Fast and Effective Personalized Recommendation with Language Models. DuoLM precomputes one vector per item and uses a personalized ranker…" />
+  <link rel="canonical" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.24481.html" />
+  <meta property="og:site_name" content="Paper Daily" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="DuoLM: Fast and Effective Personalized Recommendation with Language Models — Deep dive | Paper Daily" />
+  <meta property="og:description" content="Deep dive: DuoLM: Fast and Effective Personalized Recommendation with Language Models. DuoLM precomputes one vector per item and uses a personalized ranker…" />
+  <meta property="og:url" content="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.24481.html" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="DuoLM: Fast and Effective Personalized Recommendation with Language Models — Deep dive | Paper Daily" />
+  <meta name="twitter:description" content="Deep dive: DuoLM: Fast and Effective Personalized Recommendation with Language Models. DuoLM precomputes one vector per item and uses a personalized ranker…" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"DuoLM: Fast and Effective Personalized Recommendation with Language Models","inLanguage":"en","datePublished":"2026-10-21","url":"https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.24481.html"}</script>
+  <link rel="alternate" hreflang="zh-CN" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/2610.24481.html" />
+  <link rel="alternate" hreflang="x-default" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/2610.24481.html" />
+  <link rel="alternate" hreflang="en" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.24481.html" />
+  <script>(function(){try{var t=localStorage.getItem('pd-theme');if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../css/pages.css?v=be0aae8e6a" />
+</head>
+<body class="lang-en t-personalization">
+<div class="navwrap"><div class="wrap"><nav class="nav" aria-label="Main">
+  <a class="hb" href="../../en/index.html" title="Daily GenAI papers for search &amp; recommendation engineers — scored, summarized, deep-read.">Paper <span>Daily</span></a>
+  <div class="hl">
+  <a href="../../en/index.html">Latest</a>
+  <a href="../../en/index.html#issues">Issues</a>
+  </div>
+  <div class="hm"><a class="lang-tg" href="../../deep-readings/2610.24481.html" hreflang="zh-CN" lang="zh-CN" title="中文版">中文</a>
+  <button type="button" class="tg" id="theme-toggle" aria-pressed="false" title="Toggle dark mode">&#9680;<span class="tg-l"> Dark</span></button></div>
+</nav></div></div>
+<main id="main">
+<div class="wrap">
+  <div class="rhead">
+    <a class="back" href="../reports/2026-10-21/personalization.html">&#8592; Personalization · 2026-10-21</a>
+    <div class="k">&#128214; DEEP DIVE · PERSONALIZATION</div>
+    <h1>DuoLM: Fast and Effective Personalized Recommendation with Language Models</h1>
+    <div class="by">Jiang Wu, Yutong Song, Hongbo Wang, Guanghe Cao, Jeff Liang</div>
+  </div>
+  <div class="rmeta"><span><b>13 min</b>read</span><span><b>4.30</b>score</span></div>
+  <div class="rbody"><nav class="toc" id="toc"></nav>
+    <article class="long deep-read-article" id="article"><p>DuoLM reads item content offline and reserves online computation for deciding whether a particular user will like it. An encoder language model compresses each item, while a ranker uses those representations with user history and feedback. The system design turns that reuse into measured serving gains.</p>
+<h2>1. Problem and motivation</h2>
+<p>A full-text cross-encoder reads item descriptions together with user context. Its representations depend on the request and cannot simply be cached across users. Repeating this work for every candidate makes language-model recommendation expensive.</p>
+<p>A compact item vector is cheaper, but a generic text embedding may discard details needed for personalized judgments. DuoLM trains content compression and personalized ranking together.</p>
+<p>There is also overhead outside the model. Candidates in one request share a user history, yet input construction, transmission, and scheduling can repeat. Prefix caching does not necessarily remove those operations. As model execution gets faster, they become a larger share of total cost.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-21/personalization/2610.24481/framework-overview.svg" alt="Training jointly learns the item encoder and ranker; serving precomputes item vectors and keeps personalized scoring online." loading="lazy" decoding="async"><figcaption>Training jointly learns the item encoder and ranker; serving precomputes item vectors and keeps personalized scoring online.</figcaption></figure>
+<h2>2. Method</h2>
+<p>The encoder reads templated item text and uses its final EOS hidden state as one item representation. A continuous interface normalizes and calibrates its scale against the ranker’s native token embeddings. Both history items and candidates use this interface; textual feedback remains beside the relevant history entries.</p>
+<p>During training, ranking gradients flow through the interface into the encoder. Item vectors are recomputed while learning and cached only after training. A frozen full-text teacher supplies scores for the exact histories and candidate groups used by the student. The student learns both observed targets and the teacher’s relative preferences.</p>
+<p>The paper compares feedback in the encoder with feedback in the ranker. The former caches an item–rating pair; the latter caches one representation per item. Their quality is close, and the latter provides a simpler reuse boundary.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-21/personalization/2610.24481/input-layout.svg" alt="Each candidate reads the shared history but cannot attend to another candidate, preserving independent scoring when candidates are batched." loading="lazy" decoding="async"><figcaption>Each candidate reads the shared history but cannot attend to another candidate, preserving independent scoring when candidates are batched.</figcaption></figure>
+<p>At serving time, virtual token IDs reference a GPU-resident item-vector table. Requests carry IDs and feedback instead of transmitting complete vectors. These IDs are an access mechanism for continuous representations, rather than generated semantic item codes.</p>
+<p>The multi-item scoring path prefills the user history once and shares its key–value cache across candidate branches. A tree-structured mask keeps branches independent. CUDA Graph replay further reduces launch and scheduling overhead. These changes save work at different points in the request path.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-21/personalization/2610.24481/scoring-example-single-column-compact.svg" alt="The ranker reuses a shared history cache while each candidate follows its own scoring branch." loading="lazy" decoding="async"><figcaption>The ranker reuses a shared history cache while each candidate follows its own scoring branch.</figcaption></figure>
+<h2>3. Main contribution</h2>
+<p>The central design boundary separates reusable content understanding from request-specific preference judgment. The representation is shared across users, the history computation is shared across candidates, and candidate scores remain independent.</p>
+<p>The paper measures complete requests rather than treating lower model FLOPs as proof of faster serving. Runtime ablations help explain where the end-to-end improvement comes from.</p>
+<h2>4. Results</h2>
+<p>Recommendation quality is evaluated on Amazon Books and Video Games. NDCG@10 rewards relevant items appearing earlier in the ranking; absolute values should not be compared across datasets.</p>
+<div class="tbl"><table><thead><tr><th>Model</th><th>Books</th><th>Video Games</th></tr></thead><tbody><tr><td>HLLM</td><td>0.5508</td><td>0.5025</td></tr><tr><td>DuoLM</td><td>0.5586</td><td>0.5298</td></tr><tr><td>Full-text teacher</td><td>0.5440</td><td>0.5313</td></tr></tbody></table></div>
+<p>The student exceeds the teacher on Books and approaches it on Video Games. This demonstrates useful compression in these settings, not lossless compression for every domain.</p>
+<p>On one H100, with 100 candidates per request, high-concurrency throughput reaches about 26,400 candidate scores per second. The unit is candidate scores, not user requests. Full-request p99 latency is about 537 ms at that concurrency.</p>
+<p>The teacher comparison includes vLLM with automatic prefix caching. The gain combines a different model representation with a specialized serving path; it cannot all be attributed to switching inference engines.</p>
+<p>Ablations also favor restraint: the simple EOS readout beats the tested learned readouts, stronger distillation does not keep improving quality, and extra hidden-state self-alignment hurts the reported setting.</p>
+<h2>5. Limitations</h2>
+<p>The evidence covers two product categories and specified hardware, without an online UGC search experiment. It does not establish behavior on rapidly edited posts, long comment threads, or breaking events.</p>
+<p>Two engineering implications follow from the architecture. First, cached item vectors need versioning, incremental refresh, and memory budgeting. Moving encoding offline relocates its cost rather than eliminating it. Second, prefix reuse requires identical user history and context; candidate-isolation masks must remain correct.</p>
+<p>Independent scoring also differs from list-level optimization for diversity or competition. Evaluation should preserve the paper’s candidate construction before expanding to a production recall pool. NDCG values from different candidate protocols are not interchangeable.</p>
+<h2>6. Practical implications</h2>
+<p>A content-rich ranking stage is a useful trial setting. Compare compressed and full-text scoring on long-tail items and narrow preference segments, where a single vector might hide important details.</p>
+<p>Measure cache hits, history prefill, input preparation, and GPU execution separately. Report both candidate throughput and request throughput, plus tail latency. For UGC, include new and edited posts, recording the time until refreshed vectors become visible and the representation version used for ranking.</p>
+<p>Sources: Sections 2–4 and Appendices A, C, and D. All figures are original assets from the paper’s arXiv HTML.</p></article>
+    <aside class="aside"><div class="box"><h6>Scores</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 5，Novelty 4，Practical 4，Evidence 4，Timely 4"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,22.0 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><text x="90.0" y="10.04" text-anchor="middle">相关 5</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 4</text></svg></div><a class="btn" href="https://arxiv.org/abs/2610.24481" target="_blank" rel="noopener">Original paper &#8599;</a></aside>
+  </div>
+</div>
+</main>
+<div class="wrap"><footer class="site-foot"><span>Paper Daily · English edition</span><span>·</span><span><a href="../../deep-readings/2610.24481.html">中文版</a></span></footer></div>
+<script>
+(function(){
+  var root=document.documentElement;
+  function label(){var b=document.getElementById('theme-toggle');if(!b)return;var d=root.getAttribute('data-theme')==='dark';
+    b.innerHTML=(d?'&#9681;':'&#9680;')+'<span class="tg-l"> '+(d?'Light':'Dark')+'</span>';b.setAttribute('aria-pressed',d?'true':'false');}
+  function set(t,store){root.setAttribute('data-theme',t);if(store){try{localStorage.setItem('pd-theme',t)}catch(e){}}label();}
+  document.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#theme-toggle');
+    if(b)set(root.getAttribute('data-theme')==='dark'?'light':'dark',true);});
+  try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
+    var s=null;try{s=localStorage.getItem('pd-theme')}catch(x){}if(s!=='light'&&s!=='dark')set(e.matches?'dark':'light',false);});}catch(e){}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',label);else label();
+})();
+</script>
+</body>
+</html>
