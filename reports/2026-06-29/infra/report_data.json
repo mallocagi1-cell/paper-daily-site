@@ -29,7 +29,8 @@
       "preference_bonus": 0.15,
       "adjusted_score": 4.45,
       "summary": "GPUSparse 把 SPLADE 这类学习型稀疏检索的打分从 CPU 倒排遍历（WAND/Block-Max WAND）搬到 GPU：用 block 对齐、warp 合并访存的并行倒排索引，配合批量 scatter-add 打分与融合 Triton 内核。在 MS MARCO 880 万段落上，精确打分与 Pyserini 对齐到三位小数（MRR@10=0.383，Recall@1000≥0.999），单查询 1.27ms，比 Pyserini CPU 快 235 倍；batch 500 时吞吐 787 QPS，文档并行内核达到 H100 HBM 峰值带宽的 62.6%。",
-      "key_insight": "对社区搜索的短文本召回直接可用：稀疏检索保留可解释性与精确匹配，过去卡在 CPU 倒排遍历，GPUSparse 证明把倒排打分重写成 GPU 上的 scatter-add，能在不损召回（对比 Seismic 牺牲 25% 召回换速度）的前提下拿到两个数量级加速。值得借鉴的是它点出 GPU 稀疏检索存在“工作量效率 vs 带宽效率”的取舍，融合内核比 SPARe 迭代实现快 23–270 倍。"
+      "key_insight": "对社区搜索的短文本召回直接可用：稀疏检索保留可解释性与精确匹配，过去卡在 CPU 倒排遍历，GPUSparse 证明把倒排打分重写成 GPU 上的 scatter-add，能在不损召回（对比 Seismic 牺牲 25% 召回换速度）的前提下拿到两个数量级加速。值得借鉴的是它点出 GPU 稀疏检索存在“工作量效率 vs 带宽效率”的取舍，融合内核比 SPARe 迭代实现快 23–270 倍。",
+      "company_logos": []
     },
     {
       "rank": 2,
@@ -52,6 +53,7 @@
       "adjusted_score": 4.45,
       "summary": "针对 ColBERT 多向量检索的 token 级 MaxSim 打分，论文先做 roofline 分析，指出朴素实现因要物化 Nq×Nd 相似度矩阵只用到 HBM 峰值带宽的 5–18%。TileMaxSim 用 IO-aware Triton 内核解决：多 query 的 SRAM tiling 让文档 embedding 只读一次、维度 tiling 支持 d>128、融合乘积量化查表把 HBM I/O 砍掉约 31 倍。H100 上达到峰值带宽 80.2%、每秒打分 8200 万文档，作为 ColBERTv2/PLAID 的 drop-in 替换把 10 万候选打分延迟从 268ms 降到 1.2ms（端到端降 98%）。",
       "key_insight": "多向量/晚交互重排在社区搜索里常因打分太慢上不了线，TileMaxSim 说明瓶颈不在算力而在访存——别物化相似度矩阵、让 embedding 只过一次 HBM。它在 MS MARCO 和三个 BEIR 上排序与参考 MaxSim 完全一致，且 10 万到 50 万文档吞吐恒定、支持多 GPU 分片与 FP16/BF16/FP32，落地门槛低，可直接接到现有 ColBERT 检索栈。",
+      "company_logos": [],
       "deep_reading": {
         "paper_id": "arxiv:2606.26439",
         "title": "TileMaxSim: IO-Aware GPU MaxSim Scoring with Dimension Tiling and Fused Product Quantization",
@@ -85,7 +87,14 @@
       "preference_bonus": 0.05,
       "adjusted_score": 3.75,
       "summary": "CAT-Q 是面向 LLM 的后训练三值量化（PTQ），不走 BitNet 那种百亿 token 的量化感知训练。两个组件：learnable modulation（用可学习因子调制权重分布与三值阈值，降低对三值化的敏感度）与 softened ternarization（可微过渡函数稳定收敛）。1.7B–8B 模型仅用 512 条校准样本即可三值化，效果超过用 100B token 训练的 BitNet 1.58-bit v1/v2，训练 token 量降约 10 万倍；14B–235B 模型在 8 张 A100-80GB 上 8–60 小时即可量化，代码已开源（IntelChina-AI/BitTern）。",
-      "key_insight": "三值（约 1.58 bit）量化此前要从头 QAT，成本高到难以落地；CAT-Q 把它做成 PTQ，对自有排序/召回大模型的低成本压缩部署很有参考价值。关键设计是把“阈值”和“权重分布”一起当作可学习量联合优化，使权重对三值化不敏感——这是低比特 PTQ 维持精度的核心。能在 60 小时内三值化 235B 模型，说明大模型超低比特部署的算力门槛被显著拉低。"
+      "key_insight": "三值（约 1.58 bit）量化此前要从头 QAT，成本高到难以落地；CAT-Q 把它做成 PTQ，对自有排序/召回大模型的低成本压缩部署很有参考价值。关键设计是把“阈值”和“权重分布”一起当作可学习量联合优化，使权重对三值化不敏感——这是低比特 PTQ 维持精度的核心。能在 60 小时内三值化 235B 模型，说明大模型超低比特部署的算力门槛被显著拉低。",
+      "company_logos": [
+        {
+          "name": "Intel",
+          "logo": "logos/intel.png",
+          "hue": 259
+        }
+      ]
     },
     {
       "rank": 4,
@@ -107,7 +116,8 @@
       "preference_bonus": 0.05,
       "adjusted_score": 3.65,
       "summary": "现有 KV cache 压缩多用注意力权重估计 token 重要性，论文指出这忽略了预测不确定性等信息论信号。作者提出 Forward Influence 度量“被压缩 token 对未来上下文的影响”，分析发现注意力高分 token 主要影响临近上下文，而高预测不确定性的 token 对远处未来影响更强。据此提出 InfoKV：把 token 级预测不确定性、层间表示演化得到的熵分数与注意力分数结合。在 Llama-3.1/3.2、DeepSeek-R1 的长上下文推理基准上，长 prefill 与 decode 场景均优于基于注意力的压缩方法。",
-      "key_insight": "长推理（长 CoT）让 KV cache 成为部署瓶颈，这篇提示重要性估计不该只看注意力——熵/不确定性能捕捉对远期上下文的影响，是注意力的互补信号。对要把推理型 LLM 用到搜索 query 理解/复杂问答的团队，InfoKV 提供了一种无需重训、可叠加在现有注意力打分上的 KV 压缩思路，尤其利好长上下文场景的显存占用。"
+      "key_insight": "长推理（长 CoT）让 KV cache 成为部署瓶颈，这篇提示重要性估计不该只看注意力——熵/不确定性能捕捉对远期上下文的影响，是注意力的互补信号。对要把推理型 LLM 用到搜索 query 理解/复杂问答的团队，InfoKV 提供了一种无需重训、可叠加在现有注意力打分上的 KV 压缩思路，尤其利好长上下文场景的显存占用。",
+      "company_logos": []
     },
     {
       "rank": 5,
@@ -131,7 +141,14 @@
       "preference_bonus": 0.05,
       "adjusted_score": 3.65,
       "summary": "推理模型的 CoT 动辄数万 token，KV cache 成为部署瓶颈。现有按注意力权重驱逐 token 的方法在长推理里噪声大，且要物化注意力矩阵、无法用融合内核。EpiKV 改用 epiphany score——token 引起的模型内部表示变化，直接从前向传播读取，无需注意力矩阵、几乎不增加状态。该方法免训练、无分类器、无定制内核，可直接用在 FlashAttention 推理栈，可行上下文比基于注意力的方法长 16 倍。4096-token cache 下 MATH-500 达 72%（持平最强注意力基线 ThinKV 71%、H2O 67%），lag-normalized 变体在 8192-token AIME-2024 达 37%（基线 33%），速度最高 2.8 倍。",
-      "key_insight": "这篇的工程价值在“对生产推理栈友好”：不物化注意力矩阵就能算 token 重要性，意味着可以保留 FlashAttention 的融合内核，不必为了 KV 驱逐退回慢路径。对要在线部署长推理模型的搜索/问答系统，免训练、零额外内核、即插即用的特性大幅降低落地成本，是注意力-based KV 压缩方法在生产可用性上的明显改进。"
+      "key_insight": "这篇的工程价值在“对生产推理栈友好”：不物化注意力矩阵就能算 token 重要性，意味着可以保留 FlashAttention 的融合内核，不必为了 KV 驱逐退回慢路径。对要在线部署长推理模型的搜索/问答系统，免训练、零额外内核、即插即用的特性大幅降低落地成本，是注意力-based KV 压缩方法在生产可用性上的明显改进。",
+      "company_logos": [
+        {
+          "name": "CMU",
+          "logo": "logos/cmu.png",
+          "hue": 0
+        }
+      ]
     },
     {
       "rank": 6,
@@ -153,7 +170,8 @@
       "preference_bonus": 0.05,
       "adjusted_score": 3.5,
       "summary": "自回归 LLM serving 越来越受 KV cache 搬运（而非稠密矩阵乘）限制。PersistentKV 是面向 GQA 的原生 block-table decode 注意力引擎与 page-aware 调度：按 KV-head 组分配工作、跨 grouped query head 复用 K/V tile、支持原生页表，并加一个只执行非空任务的紧凑工作队列调度。在 RTX 3060（FP16，page=16，Hq=32，Hkv=8，d=128）上，校准后的自适应策略对小 batch 选 FlashInfer、长上下文 B1/B8 选 PersistentKV，held-out trace 上 B8 同步吞吐提升 1.063–1.265 倍、B1 提升 1.399 倍，并在 B4 边界回退到 FlashInfer 避免劣化。",
-      "key_insight": "论文的洞察是“调度（工作如何分配）与注意力数学同等重要”——同一个最优内核在不同 batch/序列分布下不是最优调度。对在消费级/商用 GPU 上做长上下文 serving 的成本敏感场景，page-aware 自适应调度提供了一条不换硬件就提吞吐的路径；自适应策略能在不利场景安全回退，避免单一内核的盲区。"
+      "key_insight": "论文的洞察是“调度（工作如何分配）与注意力数学同等重要”——同一个最优内核在不同 batch/序列分布下不是最优调度。对在消费级/商用 GPU 上做长上下文 serving 的成本敏感场景，page-aware 自适应调度提供了一条不换硬件就提吞吐的路径；自适应策略能在不利场景安全回退，避免单一内核的盲区。",
+      "company_logos": []
     },
     {
       "rank": 7,
@@ -177,7 +195,14 @@
       "preference_bonus": 0.05,
       "adjusted_score": 3.5,
       "summary": "NVIDIA 介绍用 Model Optimizer 制作 Nemotron 3 Ultra 的 NVFP4（4-bit 浮点）checkpoint 的流程。随着上下文窗口变长，高效搬运大模型权重对性能愈发关键，量化是主流手段之一；NVFP4 面向 Blackwell 的 FP4 张量核，把权重压到 4 bit 以降低显存与带宽压力。博客给出从高精度 checkpoint 到 NVFP4 的转换工具链与工作流。（产品博客，未给出公开基准数字。）",
-      "key_insight": "对要在新一代硬件上部署大模型的团队，NVFP4 代表 4-bit 浮点正从研究走向官方工具链支持，量化部署门槛进一步降低。与 CAT-Q 这类三值 PTQ 形成对照：前者是硬件原生 FP4 格式+厂商工具，后者是更激进的三值压缩——选型时要在硬件支持度、精度损失与压缩率之间权衡。属于需要持续跟踪的部署基建信号。"
+      "key_insight": "对要在新一代硬件上部署大模型的团队，NVFP4 代表 4-bit 浮点正从研究走向官方工具链支持，量化部署门槛进一步降低。与 CAT-Q 这类三值 PTQ 形成对照：前者是硬件原生 FP4 格式+厂商工具，后者是更激进的三值压缩——选型时要在硬件支持度、精度损失与压缩率之间权衡。属于需要持续跟踪的部署基建信号。",
+      "company_logos": [
+        {
+          "name": "NVIDIA",
+          "logo": "logos/nvidia.png",
+          "hue": 277
+        }
+      ]
     },
     {
       "rank": 8,
@@ -199,7 +224,8 @@
       "preference_bonus": 0.0,
       "adjusted_score": 3.45,
       "summary": "服务单个 MoE 大模型需要多 GPU 并行，张量并行（TP）在低并发更快、专家并行（EP）在高并发更优，而生产负载（突发在线请求、RL rollout 由高并发衰减为长尾）会不断跨越这个分界，固定一种布局就会在另一侧损失性能。Moebius 让引擎在运行时于 EP 与 TP 间切换，不重启、不丢在途请求。核心观察：EP 和 TP 是同一份专家权重/KV cache 的两种布局，切换只是改变哪个 rank 拥有哪片数据。在 8×H200 上服务 Qwen3-235B-A22B，Moebius 在每个工作点都追平更优的静态并行，RL rollout 上快 1.16–1.25 倍，单次切换 215–434ms，双布局常驻仅 2.4% 显存开销。",
-      "key_insight": "对要把 MoE 大模型用到检索/排序在线服务的团队，Moebius 指出“并行布局应随并发动态变化”——把 TP/EP 看成同一模型的两种 sharding 而非两个模型，用固定地址重分片+融合 GPU-to-GPU 传输内核实现 decode 步间无损切换。2.4% 显存换全工作点最优，对负载波动大（白天高峰、夜间低谷或 RL 训练）的场景很有吸引力。"
+      "key_insight": "对要把 MoE 大模型用到检索/排序在线服务的团队，Moebius 指出“并行布局应随并发动态变化”——把 TP/EP 看成同一模型的两种 sharding 而非两个模型，用固定地址重分片+融合 GPU-to-GPU 传输内核实现 decode 步间无损切换。2.4% 显存换全工作点最优，对负载波动大（白天高峰、夜间低谷或 RL 训练）的场景很有吸引力。",
+      "company_logos": []
     },
     {
       "rank": 9,
@@ -223,7 +249,14 @@
       "preference_bonus": 0.05,
       "adjusted_score": 3.4,
       "summary": "Google 介绍在 Pixel 上用 frozen Multi-Token Prediction 加速端侧 Gemini Nano 模型。MTP 让模型一步预测多个 token 以提升解码吞吐，“frozen”指在不改动主干的前提下加挂 MTP 模块来加速推理。博客聚焦端侧部署（移动端算力/功耗受限）的推理加速实践。（产品博客，未给出公开基准数字。）",
-      "key_insight": "端侧推理加速对延迟和功耗敏感，frozen MTP 这种“冻结主干、外挂预测头”的做法兼顾了不破坏已对齐模型与提升解码速度，值得做端侧/边缘搜索助手的团队参考。多 token 预测正从训练加速延伸到推理部署，与投机解码是互补的吞吐优化路线；端侧落地说明该技术已具备产品级成熟度。"
+      "key_insight": "端侧推理加速对延迟和功耗敏感，frozen MTP 这种“冻结主干、外挂预测头”的做法兼顾了不破坏已对齐模型与提升解码速度，值得做端侧/边缘搜索助手的团队参考。多 token 预测正从训练加速延伸到推理部署，与投机解码是互补的吞吐优化路线；端侧落地说明该技术已具备产品级成熟度。",
+      "company_logos": [
+        {
+          "name": "Google",
+          "logo": "logos/google.png",
+          "hue": 114
+        }
+      ]
     },
     {
       "rank": 10,
@@ -247,7 +280,14 @@
       "preference_bonus": 0.0,
       "adjusted_score": 3.1,
       "summary": "OpenAI 预览下一代模型 GPT-5.6 Sol，主打更强的代码、科学与网络安全能力，并配套其最先进的安全栈。属于新一代前沿模型发布预告，面向 API 用户。（发布预告，技术细节与公开基准尚未给出。）",
-      "key_insight": "对把 LLM 用作搜索 query 理解/答案生成/Agent 的团队，新一代前沿模型的能力边界（尤其代码与推理）值得跟踪，关系到是否升级底座或调整 prompt/工具策略。安全栈被并列强调，提示前沿模型发布越来越把安全对齐作为卖点，做面向 UGC 社区的搜索问答时需同步评估内容安全能力。"
+      "key_insight": "对把 LLM 用作搜索 query 理解/答案生成/Agent 的团队，新一代前沿模型的能力边界（尤其代码与推理）值得跟踪，关系到是否升级底座或调整 prompt/工具策略。安全栈被并列强调，提示前沿模型发布越来越把安全对齐作为卖点，做面向 UGC 社区的搜索问答时需同步评估内容安全能力。",
+      "company_logos": [
+        {
+          "name": "OpenAI",
+          "logo": "logos/openai.png",
+          "hue": 214
+        }
+      ]
     }
   ],
   "code_projects": [

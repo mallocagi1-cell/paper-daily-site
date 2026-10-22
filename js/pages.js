@@ -53,6 +53,16 @@
     if (typeof c === "string") c = [c];
     return c.filter(Boolean).map(String);
   }
+  function compHtml(p, max) {
+    const L = (p.company_logos && p.company_logos.length) ? p.company_logos
+      : companiesOf(p).map(function (n) { return { name: n, logo: null, hue: 210 }; });
+    return L.slice(0, max || 99).map(function (c) {
+      const icon = c.logo
+        ? '<img class="clogo" src="' + escapeHtml(c.logo) + '" alt="" width="16" height="16" loading="lazy" decoding="async" onerror="this.remove()">'
+        : '<span class="clogo mono" style="--h:' + (Number(c.hue) || 0) + '" aria-hidden="true">' + escapeHtml(String(c.name || "?").trim().charAt(0).toUpperCase()) + "</span>";
+      return '<span class="cname">' + icon + escapeHtml(c.name) + "</span>";
+    });
+  }
   function linkLabel(p) {
     const url = String(p.url || "");
     if (url.indexOf("arxiv.org") !== -1) return "arXiv";
@@ -233,7 +243,7 @@
     return (
       '<section class="lead ' + trackClass(track) + '" id="paper-' + escapeHtml(pid) + '" data-paper-id="' + escapeHtml(pid) + '" data-card>' +
       '<div class="art" data-n="' + pad2(p.rank || i + 1) + '"><div>' +
-      '<div class="k">LEAD STORY · 今日必读' + (comp.length ? " · " + escapeHtml(comp.slice(0, 3).join(" / ")) : "") + "</div>" +
+      '<div class="k">LEAD STORY · 今日必读' + (comp.length ? " · " + compHtml(p, 3).join(" / ") : "") + "</div>" +
       '<h2><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h2>" +
       "<p>" + escapeHtml(p.summary || "") + "</p></div>" +
       '<div class="btns">' + btns + "</div></div>" +
@@ -248,7 +258,7 @@
   function renderCard(p, i, track) {
     const pid = pidOf(p, i);
     const dr = p.deep_reading && p.deep_reading.status === "completed" ? p.deep_reading : null;
-    let chips = companiesOf(p).map(function (c) { return '<span class="chip">' + escapeHtml(c) + "</span>"; }).join("");
+    let chips = compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
     if (dr) { const m = readingMinutes(dr); chips += '<span class="chip deep">&#128214; 有深读' + (m ? " · " + m + " 分钟" : "") + "</span>"; }
     const ins = insightInner(p);
     let foot = "<span>" + escapeHtml(sourceLabel(p.source)) + "</span>";
@@ -651,7 +661,7 @@
         (a.rank != null ? " · 当日 #" + escapeHtml(a.rank) : "") + "</a>";
     }).join("");
     const dr = paper.deep_reading && paper.deep_reading.status === "completed" ? paper.deep_reading : null;
-    let chips = companiesOf(paper).slice(0, 3).map(function (c) { return '<span class="chip">' + escapeHtml(c) + "</span>"; }).join("");
+    let chips = compHtml(paper, 3).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
     if (dr) { const m = readingMinutes(dr); chips += '<span class="chip deep">&#128214; 有深读' + (m ? " · " + m + " 分钟" : "") + "</span>"; }
     const dl = dimLine(paper.scores);
     const first = paper.best_date ? "首见 " + escapeHtml(shortDay(paper.best_date)) : "";
