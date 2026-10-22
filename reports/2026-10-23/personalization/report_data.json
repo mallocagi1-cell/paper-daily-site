@@ -1,0 +1,666 @@
+{
+  "date": "2026-10-23",
+  "track": "personalization",
+  "scenario": "社区 UGC 短文本搜索，关注相关性、点击率、用户建模和排序模型。",
+  "stats": {
+    "papers_scored": 94,
+    "papers_selected": 10,
+    "score_min": 3.4,
+    "score_max": 4.75
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.29138",
+      "title": "Progressive Learning from Content to Relevance to Personalization for CTR Prediction",
+      "url": "https://arxiv.org/abs/2610.29138",
+      "authors": "Zhiguang Yang, Yulin Yang, Fuyu Lv, Dan Ou",
+      "source": "arxiv",
+      "published": "Thu, 22 Oct 2026 00:00:00 -0400",
+      "rank": 1,
+      "company": [
+        "Alibaba"
+      ],
+      "total_score": 4.75,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "base_score": 4.75,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.85,
+      "summary": "FineSID 用三阶段训练改善多模态点击率预估。图片和文本先转成细粒度语义 ID，再用查询相关性训练整个交互网络，最后用点击日志学习个性化偏好。淘宝七天线上实验中，商品交易总额提升 0.85%。",
+      "key_insight": "相关性预训练可以直接初始化整个点击率网络。保留图像空间位置和文本字段，让内容细节参与特征交互；同一商品的不同素材排序能帮助检验模型是否学到了内容差异。",
+      "company_logos": [
+        {
+          "name": "Alibaba",
+          "logo": "logos/alibaba.png",
+          "hue": 324
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.29138",
+        "title": "Progressive Learning from Content to Relevance to Personalization for CTR Prediction",
+        "status": "completed",
+        "content": "FineSID 把多模态点击率预估拆成三步：离线提取细粒度内容编码，用查询与商品的相关性监督训练共享网络，再用用户点击日志微调整个网络。线上只读取预先生成的编码并做特征交互。淘宝七天实验报告商品交易总额增长 0.85%。标题中的 Content、Relevance、Personalization，分别对应内容表示、显式相关性和隐式用户偏好。\n\n## 1. 问题与动机：让内容细节进入排序\n\n这项工作解决精排模型难以同时利用商品身份和多模态内容的问题。点击率模型通常擅长记住用户和商品的历史关系，新商品却缺少这类记录。图片和标题能补充内容信息，但把整张图压成一个向量，容易丢掉颜色、图中文字和局部结构。\n\n语义 ID 是把内容编码成离散整数的表示。FineSID 保留多个位置的编码，让这些整数像普通类别特征一样进入查表层。这里的目标是点击率预估，语义 ID 服务于排序特征，并不承担自回归生成商品列表的任务。\n\n| 阶段 | 执行位置与输入 | 监督和输出 |\n|---|---|---|\n| 内容编码 | 离线处理图片与文本 | 冻结的图像编码器输出多尺度整数；文本分词 |\n| 相关性预训练 | 离线训练查询、内容与常规特征的交互 | 教师模型提供四档相关性软标签 |\n| 个性化后训练 | 离线训练、线上预测点击概率 | 用户点击标签；迁移并更新全部共享参数 |\n\n![看三条内容通路怎样汇入共享预测网络；中间阶段训练相关性，右侧阶段换成点击监督。](figs/2610.29138/finesid_architecture_v2.png)\n\n## 2. 方法：内容接口不变，监督逐步变化\n\n内容编码首先解决异构特征接入问题。作者使用 VAR，即通过多尺度图像编码学习视觉表示的预训练体系。图片保留四种分辨率的网格，各尺度分别包含 1、4、9、16 个编码，总共 30 个视觉 token。token 在这里是离散内容单元。图像编码器冻结，后续模型训练自己的查表向量。\n\n模型按固定的尺度和空间顺序拼接这些向量。这样的顺序让网络知道某个编码位于哪个尺度、哪个区域。编码零也是合法内容，缺失信息由单独的有效性掩码表示。文本则使用子词与 n-gram 分词；查询、标题、图中文字保留各自字段身份。\n\n特征交互解决查询与内容的细节对齐。查询向量作为注意力的查询端，文本内容作为键和值，产生查询条件下的文本表示。模型把这些表示、视觉编码和常规特征按固定顺序拼接，投影到 768 维全局状态，再通过紧凑的潜在槽位注意力建模交叉关系。\n\nHiFormer 是这里使用的高效特征交互主干；潜在槽位是一组容量固定的中间表示，用于避免对所有原始输入做完整自注意力。多层感知机接在交互模块之后，产生共享表征。相关性与点击任务分别使用自己的输出头。\n\n相关性阶段给整个网络注入查询匹配监督。Qwen3.5 教师模型经过百万级专家标注微调，对每次曝光输出四个匹配等级的概率。预训练使用软标签交叉熵：\n\n$$L_{rel}=-\\sum_k t_k\\log p_k.$$\n\n这里 k 是相关性等级，t_k 是教师分配给该等级的概率，p_k 是学生网络预测的概率。直觉是让预测分布接近教师判断，而不是把每条样本压成一个硬标签。梯度会更新语义 ID 查表、类别特征、交互模块和归一化参数。\n\n点击阶段解决个性化偏好学习。它保留共享网络与归一化状态，丢弃相关性输出头，换上随机初始化的点击率输出头，再更新整个网络：\n\n$$L_{ctr}=-y\\log\\hat p-(1-y)\\log(1-\\hat p).$$\n\ny 是实际点击标签，预测概率是这里的 p 带帽符号。这个二元交叉熵推动模型把相关性基础调整到真实点击分布。内容接口和交互结构保持一致，使阶段迁移不需要额外的融合模块。\n\n![重点看迁移范围：更换的是任务输出头，共享查表、交互层及归一化状态一起继承。此图依据论文方法重绘。](figs/2610.29138/transfer.svg)\n\n一次请求可以这样理解。以下数字仅作示意：用户搜索“蓝色通勤包”，候选商品有两张不同主图。两张图各自已有离线编码，线上读取编码、查询与用户特征。相关性预训练让网络能够匹配“蓝色”和图片细节；点击后训练让它结合用户偏好的价格与风格输出概率。同一商品身份保持固定时，主图造成的得分差异更容易反映内容信息。\n\n## 3. 核心贡献：把预训练迁移到完整交互网络\n\n这篇论文的关键是细粒度表示与完整参数迁移的配合。细粒度编码给模型提供可单独访问的局部内容。相关性任务让这些内容和常规特征共同训练，后续点击任务继续使用已经学好的交互关系。\n\n这也解释了同商品素材评估的价值。候选素材共享完全相同的商品 ID，模型很难只靠商品历史热度分出高低。作者使用 NSCTR，即归一化模拟点击率，在日志回放中按模型选择的素材计算加权点击表现。这个检查补充了跨商品排序指标。\n\n消融结果区分了内容粒度和监督阶段的作用。去掉相关性预训练后仍保留相当一部分收益；把细粒度编码一并去掉，冷启动与素材区分能力下降更明显。因此两部分都有贡献，内容接口尤其重要。\n\n## 4. 实验结果：冷启动与素材区分收益更明显\n\n实验用淘宝搜索日志评估整体排序与冷启动。训练和测试按时间切分；冷启动子集是评估日曝光少于 1000 的商品。AUC 衡量点击样本高于未点击样本的概率，GAUC 按查询分组计算并按曝光量加权。主对照是 HiFormer 加常规身份特征。\n\n| 实验 | 相对对照的结果 | 含义 |\n|---|---|---|\n| 淘宝整体 AUC | +0.25 个百分点 | 跨商品点击区分改善 |\n| 冷启动 AUC | +0.38 个百分点 | 内容对稀疏商品帮助更大 |\n| 同商品 NSCTR | 相对 +0.75% | 能利用素材内容差别 |\n| 去掉相关性预训练后的 AUC | +0.20 个百分点 | 细粒度内容本身仍有收益 |\n| 去掉细粒度编码后的冷启动 AUC | -0.03 个百分点 | 仅有相关性阶段不足以补齐内容 |\n| 七天线上交易总额 | 相对 +0.85% | 离线改善对应到业务结果 |\n\n公开 MMCTR 数据没有查询相关性标签，作者只运行内容编码和点击后训练，AUC 达到 0.9844。这验证了内容接口的可迁移性，同时也界定了公开实验覆盖的训练阶段。\n\n线上实验报告通过显著性检验。论文称在精排阶段没有观察到显著服务延迟增长，但没有提供可复用的完整延迟分布。吞吐预算仍需结合本地特征维度测量。\n\n## 5. 局限：编码目标与搜索目标存在距离\n\n作者指出视觉编码器以图像重建为预训练目标，并在相关性训练阶段冻结。它保留画面信息，却未直接针对搜索语义联合优化。把内容编码器与排序监督一起训练，是论文提出的后续方向。\n\n实验主要验证点击率与素材选择。召回和转化率预估尚未得到同等范围的验证。细粒度编码扩大底部拼接向量，这个代价在精排可接受，迁移到处理海量候选的召回阶段需要重新设计。\n\n## 6. 工业实践意义：复用现有排序接口\n\n现有系统若已经能读取类别特征，可以把离线视觉编码作为独立字段接入，并保留尺度和空间位置。这样能直接比较细粒度内容与全局向量的差别。\n\n相关性预训练实验需要保留完整共享检查点，包括归一化状态。评估同时加入冷启动商品和同商品多素材切片，可分别观察内容泛化与内容区分。社区图文搜索也能借用这种检查方式：固定帖子身份，只改变封面或标题，观察模型分数对实际展示内容的响应。",
+        "content_html": "<p>FineSID 把多模态点击率预估拆成三步：离线提取细粒度内容编码，用查询与商品的相关性监督训练共享网络，再用用户点击日志微调整个网络。线上只读取预先生成的编码并做特征交互。淘宝七天实验报告商品交易总额增长 0.85%。标题中的 Content、Relevance、Personalization，分别对应内容表示、显式相关性和隐式用户偏好。</p>\n<h2>1. 问题与动机：让内容细节进入排序</h2>\n<p>这项工作解决精排模型难以同时利用商品身份和多模态内容的问题。点击率模型通常擅长记住用户和商品的历史关系，新商品却缺少这类记录。图片和标题能补充内容信息，但把整张图压成一个向量，容易丢掉颜色、图中文字和局部结构。</p>\n<p>语义 ID 是把内容编码成离散整数的表示。FineSID 保留多个位置的编码，让这些整数像普通类别特征一样进入查表层。这里的目标是点击率预估，语义 ID 服务于排序特征，并不承担自回归生成商品列表的任务。</p>\n<table><thead><tr><th>阶段</th><th>执行位置与输入</th><th>监督和输出</th></tr></thead><tbody><tr><td>内容编码</td><td>离线处理图片与文本</td><td>冻结的图像编码器输出多尺度整数；文本分词</td></tr><tr><td>相关性预训练</td><td>离线训练查询、内容与常规特征的交互</td><td>教师模型提供四档相关性软标签</td></tr><tr><td>个性化后训练</td><td>离线训练、线上预测点击概率</td><td>用户点击标签；迁移并更新全部共享参数</td></tr></tbody></table>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-23/personalization/2610.29138/finesid_architecture_v2.png\" alt=\"看三条内容通路怎样汇入共享预测网络；中间阶段训练相关性，右侧阶段换成点击监督。\" loading=\"lazy\" decoding=\"async\"><figcaption>看三条内容通路怎样汇入共享预测网络；中间阶段训练相关性，右侧阶段换成点击监督。</figcaption></figure>\n<h2>2. 方法：内容接口不变，监督逐步变化</h2>\n<p>内容编码首先解决异构特征接入问题。作者使用 VAR，即通过多尺度图像编码学习视觉表示的预训练体系。图片保留四种分辨率的网格，各尺度分别包含 1、4、9、16 个编码，总共 30 个视觉 token。token 在这里是离散内容单元。图像编码器冻结，后续模型训练自己的查表向量。</p>\n<p>模型按固定的尺度和空间顺序拼接这些向量。这样的顺序让网络知道某个编码位于哪个尺度、哪个区域。编码零也是合法内容，缺失信息由单独的有效性掩码表示。文本则使用子词与 n-gram 分词；查询、标题、图中文字保留各自字段身份。</p>\n<p>特征交互解决查询与内容的细节对齐。查询向量作为注意力的查询端，文本内容作为键和值，产生查询条件下的文本表示。模型把这些表示、视觉编码和常规特征按固定顺序拼接，投影到 768 维全局状态，再通过紧凑的潜在槽位注意力建模交叉关系。</p>\n<p>HiFormer 是这里使用的高效特征交互主干；潜在槽位是一组容量固定的中间表示，用于避免对所有原始输入做完整自注意力。多层感知机接在交互模块之后，产生共享表征。相关性与点击任务分别使用自己的输出头。</p>\n<p>相关性阶段给整个网络注入查询匹配监督。Qwen3.5 教师模型经过百万级专家标注微调，对每次曝光输出四个匹配等级的概率。预训练使用软标签交叉熵：<br><span class=\"katex-display\"><span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3361em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mathnormal mtight\">re</span><span class=\"mord mathnormal mtight\" style=\"margin-right:0.01968em;\">l</span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:2.3521em;vertical-align:-1.3021em;\"></span><span class=\"mord\">−</span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mop op-limits\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:1.05em;\"><span style=\"top:-1.8479em;margin-left:0em;\"><span class=\"pstrut\" style=\"height:3.05em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03148em;\">k</span></span></span><span style=\"top:-3.05em;\"><span class=\"pstrut\" style=\"height:3.05em;\"></span><span><span class=\"mop op-symbol large-op\">∑</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:1.3021em;\"><span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">t</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3361em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03148em;\">k</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mop\">lo<span style=\"margin-right:0.01389em;\">g</span></span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">p</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3361em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03148em;\">k</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mord\">.</span></span></span></span></span><br>这里 k 是相关性等级，t_k 是教师分配给该等级的概率，p_k 是学生网络预测的概率。直觉是让预测分布接近教师判断，而不是把每条样本压成一个硬标签。梯度会更新语义 ID 查表、类别特征、交互模块和归一化参数。</p>\n<p>点击阶段解决个性化偏好学习。它保留共享网络与归一化状态，丢弃相关性输出头，换上随机初始化的点击率输出头，再更新整个网络：<br><span class=\"katex-display\"><span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2806em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mathnormal mtight\">c</span><span class=\"mord mathnormal mtight\">t</span><span class=\"mord mathnormal mtight\" style=\"margin-right:0.02778em;\">r</span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.8889em;vertical-align:-0.1944em;\"></span><span class=\"mord\">−</span><span class=\"mord mathnormal\" style=\"margin-right:0.03588em;\">y</span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mop\">lo<span style=\"margin-right:0.01389em;\">g</span></span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mord accent\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.6944em;\"><span style=\"top:-3em;\"><span class=\"pstrut\" style=\"height:3em;\"></span><span class=\"mord mathnormal\">p</span></span><span style=\"top:-3em;\"><span class=\"pstrut\" style=\"height:3em;\"></span><span class=\"accent-body\" style=\"left:-0.1667em;\"><span class=\"mord\">^</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1944em;\"><span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span><span class=\"mbin\">−</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mopen\">(</span><span class=\"mord\">1</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span><span class=\"mbin\">−</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.03588em;\">y</span><span class=\"mclose\">)</span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mop\">lo<span style=\"margin-right:0.01389em;\">g</span></span><span class=\"mopen\">(</span><span class=\"mord\">1</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span><span class=\"mbin\">−</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord accent\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.6944em;\"><span style=\"top:-3em;\"><span class=\"pstrut\" style=\"height:3em;\"></span><span class=\"mord mathnormal\">p</span></span><span style=\"top:-3em;\"><span class=\"pstrut\" style=\"height:3em;\"></span><span class=\"accent-body\" style=\"left:-0.1667em;\"><span class=\"mord\">^</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1944em;\"><span></span></span></span></span></span><span class=\"mclose\">)</span><span class=\"mord\">.</span></span></span></span></span><br>y 是实际点击标签，预测概率是这里的 p 带帽符号。这个二元交叉熵推动模型把相关性基础调整到真实点击分布。内容接口和交互结构保持一致，使阶段迁移不需要额外的融合模块。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-23/personalization/2610.29138/transfer.svg\" alt=\"重点看迁移范围：更换的是任务输出头，共享查表、交互层及归一化状态一起继承。此图依据论文方法重绘。\" loading=\"lazy\" decoding=\"async\"><figcaption>重点看迁移范围：更换的是任务输出头，共享查表、交互层及归一化状态一起继承。此图依据论文方法重绘。</figcaption></figure>\n<p>一次请求可以这样理解。以下数字仅作示意：用户搜索“蓝色通勤包”，候选商品有两张不同主图。两张图各自已有离线编码，线上读取编码、查询与用户特征。相关性预训练让网络能够匹配“蓝色”和图片细节；点击后训练让它结合用户偏好的价格与风格输出概率。同一商品身份保持固定时，主图造成的得分差异更容易反映内容信息。</p>\n<h2>3. 核心贡献：把预训练迁移到完整交互网络</h2>\n<p>这篇论文的关键是细粒度表示与完整参数迁移的配合。细粒度编码给模型提供可单独访问的局部内容。相关性任务让这些内容和常规特征共同训练，后续点击任务继续使用已经学好的交互关系。</p>\n<p>这也解释了同商品素材评估的价值。候选素材共享完全相同的商品 ID，模型很难只靠商品历史热度分出高低。作者使用 NSCTR，即归一化模拟点击率，在日志回放中按模型选择的素材计算加权点击表现。这个检查补充了跨商品排序指标。</p>\n<p>消融结果区分了内容粒度和监督阶段的作用。去掉相关性预训练后仍保留相当一部分收益；把细粒度编码一并去掉，冷启动与素材区分能力下降更明显。因此两部分都有贡献，内容接口尤其重要。</p>\n<h2>4. 实验结果：冷启动与素材区分收益更明显</h2>\n<p>实验用淘宝搜索日志评估整体排序与冷启动。训练和测试按时间切分；冷启动子集是评估日曝光少于 1000 的商品。AUC 衡量点击样本高于未点击样本的概率，GAUC 按查询分组计算并按曝光量加权。主对照是 HiFormer 加常规身份特征。</p>\n<table><thead><tr><th>实验</th><th>相对对照的结果</th><th>含义</th></tr></thead><tbody><tr><td>淘宝整体 AUC</td><td>+0.25 个百分点</td><td>跨商品点击区分改善</td></tr><tr><td>冷启动 AUC</td><td>+0.38 个百分点</td><td>内容对稀疏商品帮助更大</td></tr><tr><td>同商品 NSCTR</td><td>相对 +0.75%</td><td>能利用素材内容差别</td></tr><tr><td>去掉相关性预训练后的 AUC</td><td>+0.20 个百分点</td><td>细粒度内容本身仍有收益</td></tr><tr><td>去掉细粒度编码后的冷启动 AUC</td><td>-0.03 个百分点</td><td>仅有相关性阶段不足以补齐内容</td></tr><tr><td>七天线上交易总额</td><td>相对 +0.85%</td><td>离线改善对应到业务结果</td></tr></tbody></table>\n<p>公开 MMCTR 数据没有查询相关性标签，作者只运行内容编码和点击后训练，AUC 达到 0.9844。这验证了内容接口的可迁移性，同时也界定了公开实验覆盖的训练阶段。</p>\n<p>线上实验报告通过显著性检验。论文称在精排阶段没有观察到显著服务延迟增长，但没有提供可复用的完整延迟分布。吞吐预算仍需结合本地特征维度测量。</p>\n<h2>5. 局限：编码目标与搜索目标存在距离</h2>\n<p>作者指出视觉编码器以图像重建为预训练目标，并在相关性训练阶段冻结。它保留画面信息，却未直接针对搜索语义联合优化。把内容编码器与排序监督一起训练，是论文提出的后续方向。</p>\n<p>实验主要验证点击率与素材选择。召回和转化率预估尚未得到同等范围的验证。细粒度编码扩大底部拼接向量，这个代价在精排可接受，迁移到处理海量候选的召回阶段需要重新设计。</p>\n<h2>6. 工业实践意义：复用现有排序接口</h2>\n<p>现有系统若已经能读取类别特征，可以把离线视觉编码作为独立字段接入，并保留尺度和空间位置。这样能直接比较细粒度内容与全局向量的差别。</p>\n<p>相关性预训练实验需要保留完整共享检查点，包括归一化状态。评估同时加入冷启动商品和同商品多素材切片，可分别观察内容泛化与内容区分。社区图文搜索也能借用这种检查方式：固定帖子身份，只改变封面或标题，观察模型分数对实际展示内容的响应。</p>",
+        "slug": "2610.29138",
+        "chars": 2712,
+        "minutes": 7
+      }
+    },
+    {
+      "id": "arxiv:2610.29298",
+      "title": "Generative Recommenders Forget the Long Tail: Restoring Memorization in Retrieval and Ranking",
+      "url": "https://arxiv.org/abs/2610.29298",
+      "authors": "Xu Huang, Jiancan Wu, Hongzheng Qin, Jiawei Feng, Can Ye, Wencong Zeng, Fengze Li, Xiang Wang",
+      "source": "arxiv",
+      "published": "Thu, 22 Oct 2026 00:00:00 -0400",
+      "rank": 2,
+      "company": [
+        "USTC"
+      ],
+      "total_score": 4.05,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.35,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.2,
+      "adjusted_score": 4.25,
+      "summary": "CAPE 用物品共现信息补充生成式推荐的长尾记忆。它同时扩充候选池和校准排序分数，避免长尾商品在前缀搜索和最终排序中接连失利。在 Industrial & Scientific 上，长尾 HR@10 提高 3.39 个百分点。",
+      "key_insight": "候选召回和最终打分需要一起修正。只扩大搜索宽度，长尾物品仍会被原来的似然分数压低；共现通道提供物品级信号，但整体准确率与长尾收益也可能出现取舍。",
+      "company_logos": [
+        {
+          "name": "USTC",
+          "logo": "logos/ustc.png",
+          "hue": 325
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.29219",
+      "title": "PerSPL: Personalized Semi-supervised Preference Learning",
+      "url": "https://arxiv.org/abs/2610.29219",
+      "authors": "Xiaoan Xu, Tingzhou Wei, Juncheng Dong, Korel Gundem, Ethan X. Fang, Zhengling Qi",
+      "source": "arxiv",
+      "published": "Thu, 22 Oct 2026 00:00:00 -0400",
+      "rank": 3,
+      "company": [
+        "Duke University",
+        "George Washington University"
+      ],
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "summary": "PerSPL 利用无偏好标签的回答补充个性化奖励模型训练。它约束成对回答的平均分，让同一用户在不同问题上的分数可比较，再迭代生成伪标签。PersonalLLM 上，未见用户的偏好判断准确率达到 95.5%。",
+      "key_insight": "伪标签需要跨问题一致的评分尺度。成对偏好损失只约束分差，均值约束补上了分数位置的信息，使未标注回答能够转成用户级训练信号。",
+      "company_logos": [
+        {
+          "name": "Duke University",
+          "logo": "logos/duke.png",
+          "hue": 332
+        },
+        {
+          "name": "George Washington University",
+          "logo": null,
+          "hue": 179
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.30128",
+      "title": "Think Harder Where It Matters: Item-Level Adaptive Recursion for Sequential Recommendation",
+      "url": "https://arxiv.org/abs/2610.30128",
+      "authors": "Zhanshuo Cao, Jiakai Tang, Yuqi Zhou, Sunhao Dai, Jun Xu",
+      "source": "arxiv",
+      "published": "Thu, 22 Oct 2026 00:00:00 -0400",
+      "rank": 4,
+      "company": [
+        "Renmin University of China"
+      ],
+      "total_score": 4.1,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 4.1,
+      "summary": "LoopRec 为用户历史中的每条行为选择计算深度。模型重复使用同一编码块，门控根据中间状态决定继续或退出，并用下一物品预测训练路由。在 Software 数据集上，SASRec 的 NDCG@20 相对提升 5.68%。",
+      "key_insight": "计算深度可以成为行为级的可学习变量。较新或低频行为往往需要更多处理；动态路由减少的计算量和实际延迟要分别测量，因为 GPU 上的分支调度也有成本。",
+      "company_logos": [
+        {
+          "name": "Renmin University of China",
+          "logo": "logos/ruc.png",
+          "hue": 16
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.30128",
+        "title": "Think Harder Where It Matters: Item-Level Adaptive Recursion for Sequential Recommendation",
+        "status": "completed",
+        "content": "LoopRec 在序列编码器内部按历史物品分配计算深度：所有位置先经过一次共享编码块，然后由逐位置门控决定退出或继续。模型仍只用下一物品预测提供任务监督。作者在三个 Amazon 数据集、四类主干上测试，Software 上 SASRec 的 NDCG@20 相对提高 5.68%。这些步骤在线执行，训练时另加路由正则与预热。\n\n## 1. 问题与动机：历史行为需要多少计算\n\n这项工作调整序列推荐的编码环节。序列推荐根据用户按时间排列的行为预测下一件物品。常规模型把每条历史行为送过相同层数，默认所有位置都需要同样多的计算。\n\n作者先检查一个训练好的三层 SASRec。SASRec 是使用自注意力学习用户行为顺序的推荐模型。诊断时只让一个历史位置提前停止，其他位置照常计算，比较最终推荐集合是否改变。如果不变，就把那个深度称为该位置的饱和深度。\n\n第二个诊断只改变最近五条行为的深度。研究者让一个知道真实目标物品的离线搜索器选择最好的分配。这是分析固定深度局限的工具，实际路由器不会看到未来目标。它回答的是固定计算是否留下改进空间。\n\n| 环节 | 输入和处理 | 监督或作用 |\n|---|---|---|\n| 初始编码 | 全部历史位置经过共享主干 | 建立上下文表示 |\n| 逐位置递归 | 活跃位置接受退出门控 | 控制每条行为计算深度 |\n| 深度相关读出 | 选择深度的状态与输入残差结合 | 输出下一物品预测表示 |\n| 训练正则 | 深度使用与路由分数 | 减少深度集中和过早饱和 |\n\n![看同一序列里浅层与深层饱和位置的混合情况；该诊断衡量固定模型中的稳定性。](figs/2610.30128/rethinking_truncation_jaccard_office_sasrec3l_top30_refstyle_preview.svg)\n\n## 2. 方法：共享参数，逐次决定是否继续\n\n共享递归首先解决不同深度表示难以对齐的问题。模型重复使用同一个编码块，而不是给每一层分配独立参数。论文用 LxRy 表示结构：x 是共享块的层数，y 是最多递归次数。比如 L2R3 对应两层编码块、最多使用三次。\n\n初始阶段把整个历史序列编码一次。后面的每个递归边界，路由器读取每个活跃位置的当前状态与递归索引，输出一个标量。通过 sigmoid 函数把它变成退出概率：\n\n$$p_i^{(r)}=\\sigma(g(h_i^{(r)},e_r)).$$\n\ni 是历史位置，r 是当前递归深度，h 是该位置状态，e 是深度编码，g 是轻量门控网络。退出概率达到阈值就停止，否则继续。直觉是先吸收一轮上下文，再判断是否值得追加处理。\n\n只有继续的位置才组成下一轮输入。它们保留原有相对顺序并使用因果掩码，即当前位置只依赖此前可见行为。已经停止的位置保留当前状态，不再参与后续状态更新。到达最大递归预算时，所有剩余位置强制停止。\n\n这意味着下一轮处理的序列本身会改变。工程实现必须忠实保留活跃位置的索引和顺序，才能让不同请求与不同批次得到一致结果。动态位置压缩也是实际速度收益是否出现的关键。\n\n读出阶段把位置的输入向量与所选深度状态结合。前向计算选择硬深度，深度相关权重仍保留对路由概率的梯度，使门控能通过推荐目标学习。共享块负责控制参数规模，深度相关读出负责连接停止决策与最终预测。\n\n![沿着共享编码块观察位置怎样逐轮退出；每次门控只给继续的位置追加计算，最后统一读出。](figs/2610.30128/LoopRec_overview.svg)\n\n训练阶段主要解决路由容易退化的问题。若所有位置都在同一深度退出，模型就接近固定深度。论文加入深度使用正则，结合实际硬路由比例和可微的软质量，避免路由过度集中。\n\n另一项正则抑制门控过早给出极端分数。极端概率会让停止选择很快固定，早期尚未稳定的状态就可能决定整个训练轨迹。作者借用路由 z-loss，惩罚二元门控的对数配分函数过大。\n\n总体目标可概括为：\n\n$$L=L_{rec}+\\lambda_b L_{bal}+\\lambda_z L_z.$$\n\nLrec 是下一物品交叉熵，Lbal 是深度使用正则，Lz 是门控稳定项；两个 lambda 分别控制正则强度。额外项只约束路由，目标物品标签仍是唯一的物品预测监督。\n\n训练还包含预热阶段。预热时所有有效位置都执行最大深度，暂时关闭路由正则，先让共享主干形成可用状态。随后开启门控。最值得关注的结构参数是共享块层数、最大递归次数，以及预热长度；它们共同影响可学习性和实际计算预算。\n\n一次请求可用以下示意走查。用户最近五次看过 A、B、C、D、E，候选是 F。初始编码让五个位置交换过去的上下文。门控让 A、B 退出，C、D、E 继续；下一轮又让 C 退出，最后 D、E 达到预算。模型读出所选状态后为 F 评分。这里的退出轨迹和物品字母仅作说明，线上不会用真实下一物品来替路由器作决定。\n\n## 3. 核心贡献：把计算分配变成推荐建模的一部分\n\n这篇论文把推荐质量与行为级计算预算联系起来。模型学习哪个位置需要更深处理，而不是仅把整段序列统一加长或加深。逐轮判断可以利用更新后的上下文，比一次性给所有位置分配深度更灵活。\n\n作者观察到较新和较低频物品更常得到深层处理。低频行为缺少充分统计，较新行为又可能更接近当前意图，因此这个分配方向具有解释性。实验也比较了按位置或频率制定的启发式规则，学习式路由取得更高的平均表现。\n\n共享主干使这套方法不局限于注意力网络。论文还测试卷积和线性循环模型。它们怎样聚合序列不同，但都能把编码块重复使用，并由门控控制继续处理的位置。\n\n## 4. 实验结果：准确率与延迟分别比较\n\n实验使用 Software、Office Products 和 Patio 三个 Amazon Reviews 2023 类别。每个用户按时间留下最后一次交互测试，模型选择使用验证集 NDCG@20。NDCG 是按名次折损的排序质量，MRR 是真实目标排名倒数的平均值。主表报告五次运行均值。\n\n| 比较 | NDCG@20：固定主干 → LoopRec | 解读 |\n|---|---|---|\n| SASRec / Software | 0.0944 → 0.0998 | 相对收益报告为 5.68% |\n| SASRec / Office | 0.0582 → 0.0595 | 注意力主干也有稳定小幅收益 |\n| NextItNet / Patio | 0.0192 → 0.0263 | 卷积主干相对收益较大 |\n| LRURec / Software | 0.0958 → 0.1001 | 对线性循环主干同样有效 |\n\nNextItNet 是因果卷积序列模型，LRURec 是线性循环序列模型。主表的四种主干还包括带频域建模的注意力变体 BSARec。相对收益使用作者报告值，因为展示的绝对指标经过四位小数舍入。\n\n速度实验在单张 A6000 GPU 上测编码器，不含全量候选打分。L2R4 相对同最大深度的固定模型，编码时间从 91.230 毫秒降到 79.273 毫秒。L2R2 则几乎没有延迟变化，即使选择执行的计算量已经减少。\n\n这个结果说明计算节省与延迟收益的差别。较深结构给提前退出留下更多空间，但动态分支、索引整理和小矩阵计算会吞掉部分收益。线上评估需要把编码与候选打分放到完整请求里再看。\n\n## 5. 局限：动态执行收益依赖运行环境\n\n论文的速度测量限定为单 GPU 编码器时间。作者明确指出，跳过计算只能部分转成墙钟时间收益。不同递归结构的改善幅度也明显不同。\n\n评估集中在三个同源公开数据集，条件历史按热启动物品处理。工业超长行为序列、特征交叉和候选打分的成本构成不同；它们属于本文未直接覆盖的环境。另一个具体实现风险是动态活跃序列改变了后续上下文，批处理需要正确维护用户与位置映射。\n\n## 6. 工业实践意义：观察路由是否用在有价值的行为上\n\n可以在现有用户序列主干旁记录位置、物品频次与所选深度，检查模型是否把额外计算集中到新近或稀疏行为。这样的分析比只报告平均递归次数更容易解释质量变化。\n\n上线前把同最大有效深度的固定主干作为速度对照，并分别测编码器和完整请求延迟。消融中保留共享参数、去掉自适应门控，能帮助区分参数复用和计算分配各自的收益。对于以用户历史支持个性化排序的系统，这些实验直接对应效果与服务成本之间的选择。",
+        "content_html": "<p>LoopRec 在序列编码器内部按历史物品分配计算深度：所有位置先经过一次共享编码块，然后由逐位置门控决定退出或继续。模型仍只用下一物品预测提供任务监督。作者在三个 Amazon 数据集、四类主干上测试，Software 上 SASRec 的 NDCG@20 相对提高 5.68%。这些步骤在线执行，训练时另加路由正则与预热。</p>\n<h2>1. 问题与动机：历史行为需要多少计算</h2>\n<p>这项工作调整序列推荐的编码环节。序列推荐根据用户按时间排列的行为预测下一件物品。常规模型把每条历史行为送过相同层数，默认所有位置都需要同样多的计算。</p>\n<p>作者先检查一个训练好的三层 SASRec。SASRec 是使用自注意力学习用户行为顺序的推荐模型。诊断时只让一个历史位置提前停止，其他位置照常计算，比较最终推荐集合是否改变。如果不变，就把那个深度称为该位置的饱和深度。</p>\n<p>第二个诊断只改变最近五条行为的深度。研究者让一个知道真实目标物品的离线搜索器选择最好的分配。这是分析固定深度局限的工具，实际路由器不会看到未来目标。它回答的是固定计算是否留下改进空间。</p>\n<table><thead><tr><th>环节</th><th>输入和处理</th><th>监督或作用</th></tr></thead><tbody><tr><td>初始编码</td><td>全部历史位置经过共享主干</td><td>建立上下文表示</td></tr><tr><td>逐位置递归</td><td>活跃位置接受退出门控</td><td>控制每条行为计算深度</td></tr><tr><td>深度相关读出</td><td>选择深度的状态与输入残差结合</td><td>输出下一物品预测表示</td></tr><tr><td>训练正则</td><td>深度使用与路由分数</td><td>减少深度集中和过早饱和</td></tr></tbody></table>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-23/personalization/2610.30128/rethinking_truncation_jaccard_office_sasrec3l_top30_refstyle_preview.svg\" alt=\"看同一序列里浅层与深层饱和位置的混合情况；该诊断衡量固定模型中的稳定性。\" loading=\"lazy\" decoding=\"async\"><figcaption>看同一序列里浅层与深层饱和位置的混合情况；该诊断衡量固定模型中的稳定性。</figcaption></figure>\n<h2>2. 方法：共享参数，逐次决定是否继续</h2>\n<p>共享递归首先解决不同深度表示难以对齐的问题。模型重复使用同一个编码块，而不是给每一层分配独立参数。论文用 LxRy 表示结构：x 是共享块的层数，y 是最多递归次数。比如 L2R3 对应两层编码块、最多使用三次。</p>\n<p>初始阶段把整个历史序列编码一次。后面的每个递归边界，路由器读取每个活跃位置的当前状态与递归索引，输出一个标量。通过 sigmoid 函数把它变成退出概率：<br><span class=\"katex-display\"><span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:1.3217em;vertical-align:-0.2769em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">p</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:1.0448em;\"><span style=\"top:-2.4231em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">i</span></span></span><span style=\"top:-3.2198em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mopen mtight\">(</span><span class=\"mord mathnormal mtight\" style=\"margin-right:0.02778em;\">r</span><span class=\"mclose mtight\">)</span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2769em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1.3217em;vertical-align:-0.2769em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.03588em;\">σ</span><span class=\"mopen\">(</span><span class=\"mord mathnormal\" style=\"margin-right:0.03588em;\">g</span><span class=\"mopen\">(</span><span class=\"mord\"><span class=\"mord mathnormal\">h</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:1.0448em;\"><span style=\"top:-2.4231em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">i</span></span></span><span style=\"top:-3.2198em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mopen mtight\">(</span><span class=\"mord mathnormal mtight\" style=\"margin-right:0.02778em;\">r</span><span class=\"mclose mtight\">)</span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2769em;\"><span></span></span></span></span></span></span><span class=\"mpunct\">,</span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">e</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.02778em;\">r</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mclose\">))</span><span class=\"mord\">.</span></span></span></span></span><br>i 是历史位置，r 是当前递归深度，h 是该位置状态，e 是深度编码，g 是轻量门控网络。退出概率达到阈值就停止，否则继续。直觉是先吸收一轮上下文，再判断是否值得追加处理。</p>\n<p>只有继续的位置才组成下一轮输入。它们保留原有相对顺序并使用因果掩码，即当前位置只依赖此前可见行为。已经停止的位置保留当前状态，不再参与后续状态更新。到达最大递归预算时，所有剩余位置强制停止。</p>\n<p>这意味着下一轮处理的序列本身会改变。工程实现必须忠实保留活跃位置的索引和顺序，才能让不同请求与不同批次得到一致结果。动态位置压缩也是实际速度收益是否出现的关键。</p>\n<p>读出阶段把位置的输入向量与所选深度状态结合。前向计算选择硬深度，深度相关权重仍保留对路由概率的梯度，使门控能通过推荐目标学习。共享块负责控制参数规模，深度相关读出负责连接停止决策与最终预测。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-23/personalization/2610.30128/LoopRec_overview.svg\" alt=\"沿着共享编码块观察位置怎样逐轮退出；每次门控只给继续的位置追加计算，最后统一读出。\" loading=\"lazy\" decoding=\"async\"><figcaption>沿着共享编码块观察位置怎样逐轮退出；每次门控只给继续的位置追加计算，最后统一读出。</figcaption></figure>\n<p>训练阶段主要解决路由容易退化的问题。若所有位置都在同一深度退出，模型就接近固定深度。论文加入深度使用正则，结合实际硬路由比例和可微的软质量，避免路由过度集中。</p>\n<p>另一项正则抑制门控过早给出极端分数。极端概率会让停止选择很快固定，早期尚未稳定的状态就可能决定整个训练轨迹。作者借用路由 z-loss，惩罚二元门控的对数配分函数过大。</p>\n<p>总体目标可概括为：<br><span class=\"katex-display\"><span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\">L</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mathnormal mtight\">rec</span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span><span class=\"mbin\">+</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.8444em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">λ</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3361em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">b</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3361em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mathnormal mtight\">ba</span><span class=\"mord mathnormal mtight\" style=\"margin-right:0.01968em;\">l</span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span><span class=\"mbin\">+</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.8444em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">λ</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.04398em;\">z</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.04398em;\">z</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mord\">.</span></span></span></span></span><br>Lrec 是下一物品交叉熵，Lbal 是深度使用正则，Lz 是门控稳定项；两个 lambda 分别控制正则强度。额外项只约束路由，目标物品标签仍是唯一的物品预测监督。</p>\n<p>训练还包含预热阶段。预热时所有有效位置都执行最大深度，暂时关闭路由正则，先让共享主干形成可用状态。随后开启门控。最值得关注的结构参数是共享块层数、最大递归次数，以及预热长度；它们共同影响可学习性和实际计算预算。</p>\n<p>一次请求可用以下示意走查。用户最近五次看过 A、B、C、D、E，候选是 F。初始编码让五个位置交换过去的上下文。门控让 A、B 退出，C、D、E 继续；下一轮又让 C 退出，最后 D、E 达到预算。模型读出所选状态后为 F 评分。这里的退出轨迹和物品字母仅作说明，线上不会用真实下一物品来替路由器作决定。</p>\n<h2>3. 核心贡献：把计算分配变成推荐建模的一部分</h2>\n<p>这篇论文把推荐质量与行为级计算预算联系起来。模型学习哪个位置需要更深处理，而不是仅把整段序列统一加长或加深。逐轮判断可以利用更新后的上下文，比一次性给所有位置分配深度更灵活。</p>\n<p>作者观察到较新和较低频物品更常得到深层处理。低频行为缺少充分统计，较新行为又可能更接近当前意图，因此这个分配方向具有解释性。实验也比较了按位置或频率制定的启发式规则，学习式路由取得更高的平均表现。</p>\n<p>共享主干使这套方法不局限于注意力网络。论文还测试卷积和线性循环模型。它们怎样聚合序列不同，但都能把编码块重复使用，并由门控控制继续处理的位置。</p>\n<h2>4. 实验结果：准确率与延迟分别比较</h2>\n<p>实验使用 Software、Office Products 和 Patio 三个 Amazon Reviews 2023 类别。每个用户按时间留下最后一次交互测试，模型选择使用验证集 NDCG@20。NDCG 是按名次折损的排序质量，MRR 是真实目标排名倒数的平均值。主表报告五次运行均值。</p>\n<table><thead><tr><th>比较</th><th>NDCG@20：固定主干 → LoopRec</th><th>解读</th></tr></thead><tbody><tr><td>SASRec / Software</td><td>0.0944 → 0.0998</td><td>相对收益报告为 5.68%</td></tr><tr><td>SASRec / Office</td><td>0.0582 → 0.0595</td><td>注意力主干也有稳定小幅收益</td></tr><tr><td>NextItNet / Patio</td><td>0.0192 → 0.0263</td><td>卷积主干相对收益较大</td></tr><tr><td>LRURec / Software</td><td>0.0958 → 0.1001</td><td>对线性循环主干同样有效</td></tr></tbody></table>\n<p>NextItNet 是因果卷积序列模型，LRURec 是线性循环序列模型。主表的四种主干还包括带频域建模的注意力变体 BSARec。相对收益使用作者报告值，因为展示的绝对指标经过四位小数舍入。</p>\n<p>速度实验在单张 A6000 GPU 上测编码器，不含全量候选打分。L2R4 相对同最大深度的固定模型，编码时间从 91.230 毫秒降到 79.273 毫秒。L2R2 则几乎没有延迟变化，即使选择执行的计算量已经减少。</p>\n<p>这个结果说明计算节省与延迟收益的差别。较深结构给提前退出留下更多空间，但动态分支、索引整理和小矩阵计算会吞掉部分收益。线上评估需要把编码与候选打分放到完整请求里再看。</p>\n<h2>5. 局限：动态执行收益依赖运行环境</h2>\n<p>论文的速度测量限定为单 GPU 编码器时间。作者明确指出，跳过计算只能部分转成墙钟时间收益。不同递归结构的改善幅度也明显不同。</p>\n<p>评估集中在三个同源公开数据集，条件历史按热启动物品处理。工业超长行为序列、特征交叉和候选打分的成本构成不同；它们属于本文未直接覆盖的环境。另一个具体实现风险是动态活跃序列改变了后续上下文，批处理需要正确维护用户与位置映射。</p>\n<h2>6. 工业实践意义：观察路由是否用在有价值的行为上</h2>\n<p>可以在现有用户序列主干旁记录位置、物品频次与所选深度，检查模型是否把额外计算集中到新近或稀疏行为。这样的分析比只报告平均递归次数更容易解释质量变化。</p>\n<p>上线前把同最大有效深度的固定主干作为速度对照，并分别测编码器和完整请求延迟。消融中保留共享参数、去掉自适应门控，能帮助区分参数复用和计算分配各自的收益。对于以用户历史支持个性化排序的系统，这些实验直接对应效果与服务成本之间的选择。</p>",
+        "slug": "2610.30128",
+        "chars": 3010,
+        "minutes": 8
+      }
+    },
+    {
+      "id": "arxiv:2610.28636",
+      "title": "RESEARCHHUB: A Personalized Literature Discovery System for Biomedical Preprints",
+      "url": "https://arxiv.org/abs/2610.28636",
+      "authors": "Viswonathan Manoranjan, Taeyoon Kim, Nicholas Do, Sang Woo Kim, Dawei Li, Zhen Tan, Tianlong Chen, Yunmei Liu",
+      "source": "arxiv",
+      "published": "Thu, 22 Oct 2026 00:00:00 -0400",
+      "rank": 5,
+      "company": [],
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "summary": "ResearchHub 用用户画像或查询推荐生物医学预印本。检索器结合生成查询与教师软标签训练，再通过多样性重排和阅读顺序控制减少重复内容。在其论文语料上，Recall@10 比 SPECTER2-Search 高 12.4 个百分点。",
+      "key_insight": "相关性与新颖性可以拆成两个可控环节。领域检索器负责找到相关论文，重排模块再调整重复程度和阅读难度；这种结构便于单独观察个性化探索是否改善发现体验。",
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.29467",
+      "title": "PreCoMem: Predictive Cognitive Memory for Self-Evolving Long-Term Dialogue Agents",
+      "url": "https://arxiv.org/abs/2610.29467",
+      "authors": "Jian Zhong, Zeyu Liu, Pingchuan Cao, Rongduo Han, Shunye Tang, Guohuan Xie, Mingyuan Qin, Ran Ji, Xiao Liang, Wei Wang, Haining Zhang",
+      "source": "arxiv",
+      "published": "Thu, 22 Oct 2026 00:00:00 -0400",
+      "rank": 6,
+      "company": [],
+      "total_score": 3.85,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "summary": "PreCoMem 把用户记忆存成带置信度的偏好状态。系统结合语义偏离、矛盾程度和检索可靠性，将新信息分成维持、暂存和修正三类。LoCoMo 上，默认配置的整体问答准确率为 73.57%。",
+      "key_insight": "含糊的新信息可以先作为低置信度假设保存。把暂存与正式修正分开，有助于兼顾用户偏好变化和短暂噪声；每条事实的置信度也能直接参与检索和淘汰。",
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.29556",
+      "title": "SOAR: Social and Opinion-Aware Recommendations",
+      "url": "https://arxiv.org/abs/2610.29556",
+      "authors": "Giannis Christoforidis, Apostolos N. Papadopoulos",
+      "source": "arxiv",
+      "published": "Thu, 22 Oct 2026 00:00:00 -0400",
+      "rank": 7,
+      "company": [
+        "Aristotle University of Thessaloniki"
+      ],
+      "total_score": 3.75,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "base_score": 3.75,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.75,
+      "summary": "SOAR 联合好友关系和评论情感推荐附近地点。系统从评论相似图与社交图中提取用户倾向，再结合空间范围生成个性化候选。论文主配置的 Top-5 召回率为 42.22%。",
+      "key_insight": "评论内容与好友意见可以提供互补偏好信号。邻域范围同时改变候选难度和推荐效果，比较模型时应固定地理范围；社交信号也要求平台有可用的好友与评论数据。",
+      "company_logos": [
+        {
+          "name": "Aristotle University of Thessaloniki",
+          "logo": null,
+          "hue": 304
+        }
+      ]
+    },
+    {
+      "id": "hf:2610.29722",
+      "title": "Retrieval Augmented Generation Compositionality",
+      "url": "https://huggingface.co/papers/2610.29722",
+      "authors": "Ido Levy, Segev Shlomov, Leshem Choshen",
+      "source": "huggingface",
+      "published": "2026-10-20",
+      "rank": 8,
+      "company": [],
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "summary": "LASAGNA 检查检索增强生成各环节的收益能否叠加。它控制查询扩展、检索、重排和压缩等组合，覆盖多个语料规模。三个检索技巧单独效果推算可提升 47%，组合实测只提升 17%。",
+      "key_insight": "组件单独有效，并不保证组合后仍保留全部收益。把检索质量和回答忠实度分开评估，有助于发现重排、压缩和查询扩展之间的相互作用。",
+      "company_logos": []
+    },
+    {
+      "id": "blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/10/22/loop-autoresearch.html",
+      "title": "从 LOOP 到图探索 —— 算法模型的 AutoResearch 自进化系统架构演进之路",
+      "url": "https://tech.meituan.com/2026/10/22/LOOP-AutoResearch.html",
+      "authors": "",
+      "source": "blog_rss",
+      "published": "2026-10-22",
+      "rank": 9,
+      "company": [
+        "Meituan"
+      ],
+      "total_score": 3.55,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0,
+      "adjusted_score": 3.55,
+      "summary": "美团将模型实验自动化从串行循环改为图探索。系统用显式状态、结构化工具校验和原始实验记录管理多个研究方向，并把经验经人工审核后入库。一个多目标项目的全部 12 个预估目标均超过人工基线。",
+      "key_insight": "可执行约束与原始实验结果适合交给代码管理。保留失败方向、指标和修改记录，让自动迭代能追溯原因；经验通过审核后再复用，可以减少局部结论污染其他建模任务。",
+      "company_logos": [
+        {
+          "name": "Meituan",
+          "logo": "logos/meituan.png",
+          "hue": 41
+        }
+      ]
+    },
+    {
+      "id": "hf:2610.29357",
+      "title": "Memory-Centric Continual Learning for AI Agents",
+      "url": "https://huggingface.co/papers/2610.29357",
+      "authors": "Dongfang Li, Zhuoen Chen, Bonian Jia, Zixuan Liu, Zhengxuan Lu",
+      "source": "huggingface",
+      "published": "2026-10-20",
+      "rank": 10,
+      "company": [],
+      "total_score": 3.4,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "base_score": 3.7,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0,
+      "adjusted_score": 3.4,
+      "summary": "MCCL 将外部记忆用于智能体持续学习，并提出统一评估框架。它按存储位置、记忆内容和管理策略组织系统，通过内外两层循环更新记忆与管理方法。分类框架覆盖三个轴，效果评估关注后续行动。",
+      "key_insight": "记忆质量可以用后续任务表现衡量。能找回事实只是其中一项能力，用户建模还需要观察这些记忆是否改善决策；这为个性化助手提供了更完整的评估视角。",
+      "company_logos": []
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:mokeyjay/Pixiv-daily-ranking-widget",
+      "title": "Pixiv-daily-ranking-widget: 会自动更新的P站每日榜小挂件，适合放在博客侧边栏等地方 Pixiv daily ranking widget, automatically updates, suitable for blog sidebar, etc.",
+      "authors": "mokeyjay",
+      "abstract": "会自动更新的P站每日榜小挂件，适合放在博客侧边栏等地方 Pixiv daily ranking widget, automatically updates, suitable for blog sidebar, etc.",
+      "url": "https://github.com/mokeyjay/Pixiv-daily-ranking-widget",
+      "source": "github",
+      "published": "2017-02-28",
+      "discovered_at": "2026-10-22",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "mokeyjay/Pixiv-daily-ranking-widget",
+        "owner": "mokeyjay",
+        "description": "会自动更新的P站每日榜小挂件，适合放在博客侧边栏等地方 Pixiv daily ranking widget, automatically updates, suitable for blog sidebar, etc.",
+        "created_at": "2017-02-28T15:49:14Z",
+        "updated_at": "2026-10-22",
+        "pushed_at": "2026-10-22",
+        "stargazers_count": 295,
+        "language": "PHP",
+        "topics": []
+      },
+      "description": "会自动更新的P站每日榜小挂件，适合放在博客侧边栏等地方 Pixiv daily ranking widget, automatically updates, suitable for blog sidebar, etc.",
+      "language": "PHP",
+      "stars": 295,
+      "created_at": "2017-02-28",
+      "rank": 1
+    },
+    {
+      "id": "github:jwuthri-cloud/Scribely",
+      "title": "Scribely: AI chat app with unified access to 500+ LLMs via OpenRouter, Clerk auth and a terminal-style interface.",
+      "authors": "jwuthri-cloud",
+      "abstract": "AI chat app with unified access to 500+ LLMs via OpenRouter, Clerk auth and a terminal-style interface.",
+      "url": "https://github.com/jwuthri-cloud/Scribely",
+      "source": "github",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-22",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "jwuthri-cloud/Scribely",
+        "owner": "jwuthri-cloud",
+        "description": "AI chat app with unified access to 500+ LLMs via OpenRouter, Clerk auth and a terminal-style interface.",
+        "created_at": "2026-10-22T03:07:12Z",
+        "updated_at": "2026-10-22",
+        "pushed_at": "2026-10-22",
+        "stargazers_count": 42,
+        "language": "TypeScript",
+        "topics": []
+      },
+      "description": "AI chat app with unified access to 500+ LLMs via OpenRouter, Clerk auth and a terminal-style interface.",
+      "language": "TypeScript",
+      "stars": 42,
+      "created_at": "2026-10-22",
+      "rank": 2
+    },
+    {
+      "id": "github:ir00nman/chrome-crawler",
+      "title": "chrome-crawler: LLM-агент в боковой панели Chrome",
+      "authors": "ir00nman",
+      "abstract": "LLM-агент в боковой панели Chrome",
+      "url": "https://github.com/ir00nman/chrome-crawler",
+      "source": "github",
+      "published": "2026-10-18",
+      "discovered_at": "2026-10-22",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "ir00nman/chrome-crawler",
+        "owner": "ir00nman",
+        "description": "LLM-агент в боковой панели Chrome",
+        "created_at": "2026-10-18T18:13:33Z",
+        "updated_at": "2026-10-22",
+        "pushed_at": "2026-10-22",
+        "stargazers_count": 24,
+        "language": "JavaScript",
+        "topics": []
+      },
+      "description": "LLM-агент в боковой панели Chrome",
+      "language": "JavaScript",
+      "stars": 24,
+      "created_at": "2026-10-18",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4702,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-16",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-22",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 4702,
+        "downloads": 1488213,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "deploy:azure",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-16T09:27:28.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, eval-results, endpoints_compatible",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, eval-results, endpoints_compatible",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2342,
+      "language": "model",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-17",
+      "published": "2026-10-17",
+      "discovered_at": "2026-10-22",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "likes": 2342,
+        "downloads": 51911,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-10-17T02:40:38.000Z",
+        "last_modified": "2026-10-17T05:46:55.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:internlm/Intern-Decision-4B",
+      "title": "internlm/Intern-Decision-4B",
+      "authors": "internlm",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, decision-model",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, decision-model",
+      "url": "https://huggingface.co/internlm/Intern-Decision-4B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 90,
+      "language": "model",
+      "created_at": "2026-09-26",
+      "updated_at": "2026-10-22",
+      "published": "2026-09-26",
+      "discovered_at": "2026-10-22",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Intern-Decision-4B",
+        "likes": 90,
+        "downloads": 4812,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5",
+          "image-text-to-text",
+          "decision-making",
+          "multimodal",
+          "structured-prediction",
+          "decision-model",
+          "conversational",
+          "arxiv:2610.22131",
+          "base_model:Qwen/Qwen3.5-4B",
+          "base_model:finetune:Qwen/Qwen3.5-4B",
+          "license:apache-2.0",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-09-26T05:36:37.000Z",
+        "last_modified": "2026-10-22T08:43:41.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:internlm/Intern-Decision-0.8B",
+      "title": "internlm/Intern-Decision-0.8B",
+      "authors": "internlm",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, conversational",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, conversational",
+      "url": "https://huggingface.co/internlm/Intern-Decision-0.8B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 37,
+      "language": "model",
+      "created_at": "2026-09-26",
+      "updated_at": "2026-10-22",
+      "published": "2026-09-26",
+      "discovered_at": "2026-10-22",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Intern-Decision-0.8B",
+        "likes": 37,
+        "downloads": 3263,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5",
+          "image-text-to-text",
+          "decision-making",
+          "multimodal",
+          "structured-prediction",
+          "conversational",
+          "arxiv:2610.22131",
+          "base_model:Qwen/Qwen3.5-0.8B",
+          "base_model:finetune:Qwen/Qwen3.5-0.8B",
+          "license:apache-2.0",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-09-26T05:35:57.000Z",
+        "last_modified": "2026-10-22T08:43:36.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:internlm/Intern-Decision-2B",
+      "title": "internlm/Intern-Decision-2B",
+      "authors": "internlm",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, conversational",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, conversational",
+      "url": "https://huggingface.co/internlm/Intern-Decision-2B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 18,
+      "language": "model",
+      "created_at": "2026-09-26",
+      "updated_at": "2026-10-22",
+      "published": "2026-09-26",
+      "discovered_at": "2026-10-22",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Intern-Decision-2B",
+        "likes": 18,
+        "downloads": 2424,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5",
+          "image-text-to-text",
+          "decision-making",
+          "multimodal",
+          "structured-prediction",
+          "conversational",
+          "arxiv:2610.22131",
+          "base_model:Qwen/Qwen3.5-2B",
+          "base_model:finetune:Qwen/Qwen3.5-2B",
+          "license:apache-2.0",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-09-26T05:36:19.000Z",
+        "last_modified": "2026-10-22T08:43:38.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recent": true,
+    "sources": {
+      "arxiv": 7,
+      "huggingface": 2,
+      "blog_rss": 1
+    },
+    "chinese_source": true
+  },
+  "notes": [
+    "Semantic Scholar 429；OpenReview 400；DBLP 429/非JSON。",
+    "爬虫使用 UTC 日期 2026-10-22，报告按 Asia/Shanghai 2026-10-23 归档。",
+    "补充工业文章3篇均被历史去重；保留当日美团工业实践。",
+    "覆盖规则以两个HF条目和一篇工业文章替换较低优先级arXiv候选。"
+  ]
+}
