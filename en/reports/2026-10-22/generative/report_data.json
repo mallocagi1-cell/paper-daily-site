@@ -1,0 +1,691 @@
+{
+  "date": "2026-10-22",
+  "track": "generative",
+  "scenario": "UGC community search for posts, questions and comments; prioritize relevance (nDCG), CTR, semantic matching, query understanding, recall, ranking and LLM applications.",
+  "stats": {
+    "papers_scored": 202,
+    "papers_selected": 10,
+    "score_min": 3.05,
+    "score_max": 4.4,
+    "adjusted_score_min": 3.05,
+    "adjusted_score_max": 4.8
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.28568",
+      "title": "Evolving Semantic Indexes for Generative Retrieval",
+      "authors": "Jinming Nian, Jyun-Yu Jiang, Henry Tsai, Yi Fang, Zhirong Liang",
+      "url": "https://arxiv.org/abs/2610.28568",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR",
+        "fetch_method": "arxiv_rss"
+      },
+      "rank": 1,
+      "company": [
+        "Coupang",
+        "Santa Clara University"
+      ],
+      "summary": "An LLM evolves executable semantic-index programs while a tiny retriever screens them. With the target training recipe fixed, NQ320K Recall@100 rises from 85.82% to 90.57%.",
+      "key_insight": "Index construction and collision handling are coupled. A cheap proxy can rank index changes well, yet become misleading when the search also changes the generator objective.",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.4,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "total_score": 4.4,
+      "preference_bonus": 0.4,
+      "adjusted_score": 4.8,
+      "company_logos": [
+        {
+          "name": "Coupang",
+          "logo": "logos/coupang.png",
+          "hue": 270
+        },
+        {
+          "name": "Santa Clara University",
+          "logo": "logos/santa-clara-university.png",
+          "hue": 49
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.28568",
+        "title": "Evolving Semantic Indexes for Generative Retrieval",
+        "status": "completed",
+        "content": "A small retriever can cheaply evaluate semantic-index programs proposed by an LLM, making it practical to search for better identifiers for generative retrieval. The paper holds the final generator and its training recipe fixed. It asks whether changing what the generator must learn can improve retrieval. Its most useful result is a boundary: proxy-selected index changes transfer, while proxy-selected training objectives can make the target model worse.\n\n## 1. Problem and motivation: identifiers shape the search\n\nGenerative retrieval predicts a document identifier from a query, one token at a time. A semantic ID is a short code derived from document content. Documents with the same prefix share early decoding decisions; pruning that prefix removes every document beneath it.\n\nA typical index quantizes document embeddings in stages and appends a token to distinguish documents that receive identical codes. Index construction and collision handling are coupled: changing the partition also changes which documents need disambiguation. Reconstruction error, balanced code usage and low collision rates are imperfect substitutes for downstream retrieval quality. Random codes can look balanced without being useful.\n\nTraining the target generator for every candidate index is expensive. The paper instead uses a tiny generator to rank candidates, then trains the target only for selected programs.\n\n## 2. Method: mutate code and evaluate executable indexes\n\nThe outer loop maintains a population of programs, selects parents and asks a locally served open-weight LLM for edits. The inner loop executes each proposal, checks its output and collision rate, and trains a proxy only after the program passes those gates. Failed proposals receive execution diagnostics for revision.\n\n![The outer loop selects and mutates programs; the inner loop checks execution and evaluates them with a tiny retriever. The target generator is kept outside the repeated search loop.](figs/2610.28568/method.png)\n\nThe program interface stays fixed: document embeddings, query embeddings and training relevance pairs go in; aligned integer document IDs come out. The implementation can change quantization, clustering or initialization. The final generator receives query text and learns to predict the resulting codes.\n\nThe proxy has about one million non-embedding parameters. Original training relevance pairs are split between proxy training and search feedback. The split is by query–document pair, so different answers to the same query can occur on both sides. Held-out test queries remain inaccessible to search.\n\nAfter selection, the winning program is rebuilt with all original training pairs and a 1B target generator is trained. Final public-dataset training additionally uses synthetic queries; the proxy–target calibration experiment does not. Their absolute scores therefore should not be compared as if they came from the same recipe.\n\nA proxy evaluation takes roughly twenty minutes, versus five hours for a target run. That comparison excludes mutation, index construction and failed executions; it is not an end-to-end pipeline speedup.\n\n## 3. Contribution: coordinate semantic codes and collision suffixes\n\nThe strongest NQ program retains residual quantization. It chooses codes by direction, using cosine similarity, while subtracting unnormalized code vectors so that magnitude still affects the next residual. It also increases codebook capacity and introduces several training stabilizers. The gain cannot be assigned to a single change.\n\nQuery supervision makes the reconstructed document embedding align with the mean embedding of its relevant training queries. The index therefore reflects how people look for a document, rather than preserving only its original content representation.\n\nCollision suffixes gain a shared meaning. Non-colliding documents receive zero. Within a collision group, documents are ordered by similarity to the group's centroid. Smaller suffixes then consistently indicate more central documents, rather than arbitrary database order.\n\n![Best-so-far proxy recall improves as the island-based search proceeds. This establishes optimization of the proxy, not automatic improvement of the target model.](figs/2610.28568/nq_island_progression.svg)\n\n## 4. Results: useful index search, unreliable broader search\n\nThe table reports target-model Recall@100 on NQ320K. Changes are absolute percentage points.\n\n| Search scope | Target R@100 | Change from seed |\n|---|---:|---:|\n| Seed | 85.82% | — |\n| SID only | 87.40% | +1.58 |\n| Joint SID and collision handling | 90.57% | +4.75 |\n| Generator objective | 84.46% | −1.36 |\n| Full pipeline | 76.12% | −9.70 |\n\nJoint index search adds 4.75 points of recall on NQ. MSMARCO and the private multilingual commerce dataset also improve, although early-rank commerce gains are within one standard deviation. The paper does not establish that generative retrieval dominates dense or lexical retrieval: BM25 remains stronger on several MSMARCO metrics.\n\n![Each point pairs a candidate index's proxy and target recall. Their agreement measures whether the proxy ranks index programs usefully; it does not validate transfer for arbitrary components.](figs/2610.28568/recall_100_correlation_pt.svg)\n\nAcross twenty-one calibrated index programs, proxy and target recall have a Spearman rank correlation of 0.90. Accurate absolute prediction is unnecessary if candidate preferences transfer.\n\nChanging the training objective breaks that logic. Objectives affect how a model learns and interact with architecture, pretraining and optimization. An objective tuned to a tiny model can harm a larger pretrained model. Five observed objective or full-pipeline programs improved proxy fitness while reducing target recall. That small sample illustrates a failure mode rather than establishing a broad statistical law.\n\n## 5. Limitations\n\nSearch scopes use different starting points, budgets and gates. Joint search beating sequential search is therefore not a controlled intervention on coordination alone. Several index changes occur together, limiting attribution to individual mechanisms.\n\nThe private commerce evaluation withholds absolute scores and provides no online A/B result. Purchases are also different labels from answer relevance or community-content satisfaction. The public collections are reduced subsets, not evidence of unrestricted web-scale deployment.\n\nProxy evaluation still requires final target-model checks. Mutation failures and index rebuilding add cost. The experiments also leave incremental document insertion and migration of existing identifiers unresolved.\n\n## 6. Practical implications\n\nA team with a generative retriever can freeze its encoder, generator and data, then compare alternative index programs. Measure agreement between proxy and target rankings on the same programs, rather than relying only on collision rate or code balance.\n\nFor short community text, a concrete experiment is to construct codes using query–clicked-document pairs alongside content. This transfers the paper's query-aware indexing idea; click bias and noisy short text remain separate data problems. The paper does not report UGC production results.\n\nCollision suffixes are another inspectable component. If they encode database order, the generator learns arbitrary distinctions. Giving suffixes a consistent geometric interpretation may make that final token easier to learn. Keep automated search focused on shared index structure and verify the selected result with the real target retriever.",
+        "content_html": "<p>A small retriever can cheaply evaluate semantic-index programs proposed by an LLM, making it practical to search for better identifiers for generative retrieval. The paper holds the final generator and its training recipe fixed. It asks whether changing what the generator must learn can improve retrieval. Its most useful result is a boundary: proxy-selected index changes transfer, while proxy-selected training objectives can make the target model worse.</p>\n<h2>1. Problem and motivation: identifiers shape the search</h2>\n<p>Generative retrieval predicts a document identifier from a query, one token at a time. A semantic ID is a short code derived from document content. Documents with the same prefix share early decoding decisions; pruning that prefix removes every document beneath it.</p>\n<p>A typical index quantizes document embeddings in stages and appends a token to distinguish documents that receive identical codes. Index construction and collision handling are coupled: changing the partition also changes which documents need disambiguation. Reconstruction error, balanced code usage and low collision rates are imperfect substitutes for downstream retrieval quality. Random codes can look balanced without being useful.</p>\n<p>Training the target generator for every candidate index is expensive. The paper instead uses a tiny generator to rank candidates, then trains the target only for selected programs.</p>\n<h2>2. Method: mutate code and evaluate executable indexes</h2>\n<p>The outer loop maintains a population of programs, selects parents and asks a locally served open-weight LLM for edits. The inner loop executes each proposal, checks its output and collision rate, and trains a proxy only after the program passes those gates. Failed proposals receive execution diagnostics for revision.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-22/generative/2610.28568/method.png\" alt=\"The outer loop selects and mutates programs; the inner loop checks execution and evaluates them with a tiny retriever. The target generator is kept outside the repeated search loop.\" loading=\"lazy\" decoding=\"async\"><figcaption>The outer loop selects and mutates programs; the inner loop checks execution and evaluates them with a tiny retriever. The target generator is kept outside the repeated search loop.</figcaption></figure>\n<p>The program interface stays fixed: document embeddings, query embeddings and training relevance pairs go in; aligned integer document IDs come out. The implementation can change quantization, clustering or initialization. The final generator receives query text and learns to predict the resulting codes.</p>\n<p>The proxy has about one million non-embedding parameters. Original training relevance pairs are split between proxy training and search feedback. The split is by query–document pair, so different answers to the same query can occur on both sides. Held-out test queries remain inaccessible to search.</p>\n<p>After selection, the winning program is rebuilt with all original training pairs and a 1B target generator is trained. Final public-dataset training additionally uses synthetic queries; the proxy–target calibration experiment does not. Their absolute scores therefore should not be compared as if they came from the same recipe.</p>\n<p>A proxy evaluation takes roughly twenty minutes, versus five hours for a target run. That comparison excludes mutation, index construction and failed executions; it is not an end-to-end pipeline speedup.</p>\n<h2>3. Contribution: coordinate semantic codes and collision suffixes</h2>\n<p>The strongest NQ program retains residual quantization. It chooses codes by direction, using cosine similarity, while subtracting unnormalized code vectors so that magnitude still affects the next residual. It also increases codebook capacity and introduces several training stabilizers. The gain cannot be assigned to a single change.</p>\n<p>Query supervision makes the reconstructed document embedding align with the mean embedding of its relevant training queries. The index therefore reflects how people look for a document, rather than preserving only its original content representation.</p>\n<p>Collision suffixes gain a shared meaning. Non-colliding documents receive zero. Within a collision group, documents are ordered by similarity to the group&#x27;s centroid. Smaller suffixes then consistently indicate more central documents, rather than arbitrary database order.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-22/generative/2610.28568/nq_island_progression.svg\" alt=\"Best-so-far proxy recall improves as the island-based search proceeds. This establishes optimization of the proxy, not automatic improvement of the target model.\" loading=\"lazy\" decoding=\"async\"><figcaption>Best-so-far proxy recall improves as the island-based search proceeds. This establishes optimization of the proxy, not automatic improvement of the target model.</figcaption></figure>\n<h2>4. Results: useful index search, unreliable broader search</h2>\n<p>The table reports target-model Recall@100 on NQ320K. Changes are absolute percentage points.</p>\n<table><thead><tr><th>Search scope</th><th>Target R@100</th><th>Change from seed</th></tr></thead><tbody><tr><td>Seed</td><td>85.82%</td><td>—</td></tr><tr><td>SID only</td><td>87.40%</td><td>+1.58</td></tr><tr><td>Joint SID and collision handling</td><td>90.57%</td><td>+4.75</td></tr><tr><td>Generator objective</td><td>84.46%</td><td>−1.36</td></tr><tr><td>Full pipeline</td><td>76.12%</td><td>−9.70</td></tr></tbody></table>\n<p>Joint index search adds 4.75 points of recall on NQ. MSMARCO and the private multilingual commerce dataset also improve, although early-rank commerce gains are within one standard deviation. The paper does not establish that generative retrieval dominates dense or lexical retrieval: BM25 remains stronger on several MSMARCO metrics.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-22/generative/2610.28568/recall_100_correlation_pt.svg\" alt=\"Each point pairs a candidate index&#x27;s proxy and target recall. Their agreement measures whether the proxy ranks index programs usefully; it does not validate transfer for arbitrary components.\" loading=\"lazy\" decoding=\"async\"><figcaption>Each point pairs a candidate index&#x27;s proxy and target recall. Their agreement measures whether the proxy ranks index programs usefully; it does not validate transfer for arbitrary components.</figcaption></figure>\n<p>Across twenty-one calibrated index programs, proxy and target recall have a Spearman rank correlation of 0.90. Accurate absolute prediction is unnecessary if candidate preferences transfer.</p>\n<p>Changing the training objective breaks that logic. Objectives affect how a model learns and interact with architecture, pretraining and optimization. An objective tuned to a tiny model can harm a larger pretrained model. Five observed objective or full-pipeline programs improved proxy fitness while reducing target recall. That small sample illustrates a failure mode rather than establishing a broad statistical law.</p>\n<h2>5. Limitations</h2>\n<p>Search scopes use different starting points, budgets and gates. Joint search beating sequential search is therefore not a controlled intervention on coordination alone. Several index changes occur together, limiting attribution to individual mechanisms.</p>\n<p>The private commerce evaluation withholds absolute scores and provides no online A/B result. Purchases are also different labels from answer relevance or community-content satisfaction. The public collections are reduced subsets, not evidence of unrestricted web-scale deployment.</p>\n<p>Proxy evaluation still requires final target-model checks. Mutation failures and index rebuilding add cost. The experiments also leave incremental document insertion and migration of existing identifiers unresolved.</p>\n<h2>6. Practical implications</h2>\n<p>A team with a generative retriever can freeze its encoder, generator and data, then compare alternative index programs. Measure agreement between proxy and target rankings on the same programs, rather than relying only on collision rate or code balance.</p>\n<p>For short community text, a concrete experiment is to construct codes using query–clicked-document pairs alongside content. This transfers the paper&#x27;s query-aware indexing idea; click bias and noisy short text remain separate data problems. The paper does not report UGC production results.</p>\n<p>Collision suffixes are another inspectable component. If they encode database order, the generator learns arbitrary distinctions. Giving suffixes a consistent geometric interpretation may make that final token easier to learn. Keep automated search focused on shared index structure and verify the selected result with the real target retriever.</p>",
+        "slug": "2610.28568",
+        "chars": 6295,
+        "minutes": 16
+      }
+    },
+    {
+      "id": "arxiv:2610.26948",
+      "title": "LightCRS: Lightweight Multi-Domain Conversational Recommendation System",
+      "authors": "He Ma, Lan You, Qiyang Wu, Chen Liu",
+      "url": "https://arxiv.org/abs/2610.26948",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.AI",
+        "fetch_method": "arxiv_rss"
+      },
+      "rank": 2,
+      "company": [],
+      "summary": "LightCRS caches frozen multimodal product representations offline and uses a shared query-conditioned module to compare candidates online. HR@1 improves by 35.4% over the strongest baseline.",
+      "key_insight": "Separate reusable product evidence from dialogue-dependent matching. Query-conditioned fusion enables a compact shared model to serve multiple domains.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "base_score": 4.0,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "total_score": 4.0,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.3,
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.27580",
+      "title": "Factual Access States in Diffusion Language Models: From Mechanism to Knowledge Editing and Retrieval",
+      "authors": "Yuchen Guo, Zhuoyuan Mao, Yiwen Guo",
+      "url": "https://arxiv.org/abs/2610.27580",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR",
+        "fetch_method": "arxiv_rss"
+      },
+      "rank": 3,
+      "company": [
+        "University of Tokyo",
+        "LIGHTSPEED"
+      ],
+      "summary": "The paper identifies relation-dependent factual access states in diffusion LMs and uses them for editing and retrieval. Dream-7B reverse-QA accuracy on BAKE rises from 20.3% to 83.6%.",
+      "key_insight": "A fact occupies a region of internal states across paraphrases and directions. Editing that region generalizes better than editing a single prompt state.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "total_score": 3.55,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.65,
+      "company_logos": [
+        {
+          "name": "University of Tokyo",
+          "logo": "logos/university-of-tokyo.png",
+          "hue": 56
+        },
+        {
+          "name": "LIGHTSPEED",
+          "logo": "logos/lightspeed.png",
+          "hue": 331
+        }
+      ]
+    },
+    {
+      "id": "hf:2610.28388",
+      "title": "Self-Credit: Credit Assignment for Long-Horizon Agentic RL via Intra-group Rescaling",
+      "authors": "Fangcong Yin, Ming Yin, Tanvi Bhandarkar, Aashu Singh, Eryk Helenowski",
+      "url": "https://huggingface.co/papers/2610.28388",
+      "source": "huggingface",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "rank": 4,
+      "company": [
+        "Meta",
+        "Duke University",
+        "NYU"
+      ],
+      "summary": "Self-Credit asks agents to cite useful earlier actions and rescales that credit across successful and failed rollouts. On BrowseComp-Plus the 8B model beats the strongest agentic RL baseline by 8.5 points.",
+      "key_insight": "Self-reported credit needs cross-rollout checks. Comparing success and failure helps distinguish frequently cited actions from actions that support the answer.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "total_score": 3.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.4,
+      "company_logos": [
+        {
+          "name": "Meta",
+          "logo": "logos/meta.png",
+          "hue": 50
+        },
+        {
+          "name": "Duke University",
+          "logo": "logos/duke.png",
+          "hue": 332
+        },
+        {
+          "name": "NYU",
+          "logo": "logos/nyu.png",
+          "hue": 202
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.26676",
+      "title": "Which Model for Which Role? Cost-Efficient Pareto Recommendation for LLM Agentic Workflows",
+      "authors": "Qian Xie, Wenyue Hua, Yueli He, Sripad Karne, Armaan Agrawal, Nikos Pagonas, Eugene Wu, Kostis Kaffes, Tianyi Peng, Nairen Cao",
+      "url": "https://arxiv.org/abs/2610.26676",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "fetch_method": "arxiv_rss"
+      },
+      "rank": 5,
+      "company": [
+        "Microsoft",
+        "Columbia University",
+        "Cornell University"
+      ],
+      "summary": "CC-Gittins searches model assignments for complete agent workflows while accounting for quality and deployment cost. Across eight benchmarks it recovers a substantial part of the Pareto frontier at roughly 10% of exhaustive evaluation cost.",
+      "key_insight": "Evaluate assignments end to end. Coupled evaluation and deployment costs let each trial inform both quality-seeking and cost-seeking searches.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "total_score": 3.3,
+      "preference_bonus": 0,
+      "adjusted_score": 3.3,
+      "company_logos": [
+        {
+          "name": "Microsoft",
+          "logo": "logos/microsoft.png",
+          "hue": 283
+        },
+        {
+          "name": "Columbia University",
+          "logo": "logos/columbia.png",
+          "hue": 211
+        },
+        {
+          "name": "Cornell University",
+          "logo": "logos/cornell.png",
+          "hue": 125
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.24717",
+      "title": "DiffuPlan: Editable Planning State for Diffusion Language Model Agents",
+      "authors": "Qisheng Zhou, Zhen Xiong, Qiaoyu Tan",
+      "url": "https://arxiv.org/abs/2610.24717",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "fetch_method": "arxiv_rss"
+      },
+      "rank": 6,
+      "company": [
+        "NYU",
+        "NYU Shanghai"
+      ],
+      "summary": "DiffuPlan maintains editable planning state and reconstructs affected steps when search evidence changes. It reaches 50.24 average F1 across four multi-hop QA benchmarks.",
+      "key_insight": "Treat a plan as revisable state. Local reconstruction can replace obsolete hypotheses instead of accumulating corrections in an append-only history.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "total_score": 3.05,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.15,
+      "company_logos": [
+        {
+          "name": "NYU",
+          "logo": "logos/nyu.png",
+          "hue": 202
+        },
+        {
+          "name": "NYU Shanghai",
+          "logo": null,
+          "hue": 281
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.23946",
+      "title": "How Data Scales in Agentic Reinforcement Learning: Laws and Synthesis Strategies",
+      "authors": "Bowei He, Yankai Chen, Xiaokun Zhang, Changjiang Han, Ye Yuan, Chong Li, Xue Liu",
+      "url": "https://arxiv.org/abs/2610.23946",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "fetch_method": "arxiv_rss"
+      },
+      "rank": 7,
+      "company": [],
+      "summary": "The paper separates agentic training data into task, environment and trajectory counts, plus reward density, and studies scaling across models and domains using PPO and GRPO.",
+      "key_insight": "Data volume hides coverage. Track the cost of new tasks, new environments and repeated trajectories separately; the recommendation connection is a proposed transfer, not an evaluated result.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "total_score": 3.05,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.15,
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.26601",
+      "title": "BERT Is Already a Denoiser: Cheaply Unlocking Iterative Generation in Masked Language Models",
+      "authors": "Julio C. Amador Diaz Lopez",
+      "url": "https://arxiv.org/abs/2610.26601",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "fetch_method": "arxiv_rss"
+      },
+      "rank": 8,
+      "company": [
+        "SiftyML"
+      ],
+      "summary": "An iterative confidence-based decoder turns masked LMs into conditional generators without diffusion training. Ordinary MLM adaptation brings BERT to 28.2% on ARC-Easy.",
+      "key_insight": "Denoising pretraining, task adaptation and commitment scheduling play distinct roles. Frozen reconstruction ability alone does not establish task-directed generation.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "total_score": 3.05,
+      "preference_bonus": 0,
+      "adjusted_score": 3.05,
+      "company_logos": [
+        {
+          "name": "SiftyML",
+          "logo": null,
+          "hue": 125
+        }
+      ]
+    },
+    {
+      "id": "hf:2610.28069",
+      "title": "Training the Whole Agent, Not Just the Model",
+      "authors": "Lingxiao Tang, Wei Tao, Yiwen Guo, Lingfeng Bao",
+      "url": "https://huggingface.co/papers/2610.28069",
+      "source": "huggingface",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "rank": 9,
+      "company": [
+        "Zhejiang University",
+        "LIGHTSPEED"
+      ],
+      "summary": "HarnessAdapt-RL updates both the policy and its tools during reinforcement learning. With a 9B model it improves SWE-bench Verified pass@1 by 9.8 percentage points over GRPO.",
+      "key_insight": "The deployment artifact is a model–harness pair. Temporary skills can be removed, but evolved tools and hooks remain part of the learned system.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "total_score": 3.05,
+      "preference_bonus": 0,
+      "adjusted_score": 3.05,
+      "company_logos": [
+        {
+          "name": "Zhejiang University",
+          "logo": "logos/zju.png",
+          "hue": 171
+        },
+        {
+          "name": "LIGHTSPEED",
+          "logo": "logos/lightspeed.png",
+          "hue": 331
+        }
+      ]
+    },
+    {
+      "id": "hf:2610.28522",
+      "title": "DecisionPivot: A Diagnostic Benchmark for Decision Models in LLM Systems",
+      "authors": "Xialie Zhuang, Mingcong Lei, Zunhai Su, Ri Liu, Jianjin Li",
+      "url": "https://huggingface.co/papers/2610.28522",
+      "source": "huggingface",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-21",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "rank": 10,
+      "company": [
+        "StartLux"
+      ],
+      "summary": "DecisionPivot evaluates decision correctness, probability ordering and confidence with controlled contrast groups. Two similarly ranked models score 70.1% and 44.2% contrast-group accuracy.",
+      "key_insight": "Score related cases together. A model can rank probabilities well while making inconsistent decisions when a decisive detail changes.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.85,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "total_score": 3.05,
+      "preference_bonus": 0,
+      "adjusted_score": 3.05,
+      "company_logos": [
+        {
+          "name": "StartLux",
+          "logo": null,
+          "hue": 199
+        }
+      ]
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4691,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-16",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-21",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 4691,
+        "downloads": 1468263,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "deploy:azure",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-16T09:27:28.000Z"
+      },
+      "rank": 1
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3-Flash",
+      "title": "zai-org/GLM-5.3-Flash",
+      "authors": "zai-org",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2911,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-15",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-21",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3-Flash",
+        "likes": 2911,
+        "downloads": 6525701,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm5_next",
+          "image-text-to-text",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:43:14.000Z",
+        "last_modified": "2026-10-15T06:32:52.000Z"
+      },
+      "rank": 2
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2145,
+      "language": "model",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-17",
+      "published": "2026-10-17",
+      "discovered_at": "2026-10-21",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "likes": 2145,
+        "downloads": 42122,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "license:mit",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-10-17T02:40:38.000Z",
+        "last_modified": "2026-10-17T05:46:55.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_model:stepfun-ai/Step-5-Preview",
+      "title": "stepfun-ai/Step-5-Preview",
+      "authors": "stepfun-ai",
+      "description": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "abstract": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "url": "https://huggingface.co/stepfun-ai/Step-5-Preview",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 121,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-10-15",
+      "published": "2026-09-20",
+      "discovered_at": "2026-10-21",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "stepfun-ai/Step-5-Preview",
+        "likes": 121,
+        "downloads": 2065,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "step5_vl",
+          "license:other",
+          "eval-results",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T03:15:06.000Z",
+        "last_modified": "2026-10-15T01:28:10.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:internlm/Intern-Decision-4B",
+      "title": "internlm/Intern-Decision-4B",
+      "authors": "internlm",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, decision-model",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, decision-making, multimodal, structured-prediction, decision-model",
+      "url": "https://huggingface.co/internlm/Intern-Decision-4B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 89,
+      "language": "model",
+      "created_at": "2026-09-26",
+      "updated_at": "2026-10-16",
+      "published": "2026-09-26",
+      "discovered_at": "2026-10-21",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Intern-Decision-4B",
+        "likes": 89,
+        "downloads": 4738,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5",
+          "image-text-to-text",
+          "decision-making",
+          "multimodal",
+          "structured-prediction",
+          "decision-model",
+          "conversational",
+          "base_model:Qwen/Qwen3.5-4B",
+          "base_model:finetune:Qwen/Qwen3.5-4B",
+          "license:apache-2.0",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-09-26T05:36:37.000Z",
+        "last_modified": "2026-10-16T02:33:28.000Z"
+      },
+      "rank": 5
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "industry_evidence": "Coupang semantic-index system paper; Meta Self-Credit",
+    "recent": true,
+    "source_diversity": {
+      "arxiv": 7,
+      "huggingface": 3
+    },
+    "chinese_source": false
+  },
+  "run_notes": [
+    "Semantic Scholar was rate-limited; OpenReview returned 400; DBLP responses failed or were rate-limited. No conference candidates were available.",
+    "All supplements were historical duplicates. No Chinese-language item survived deduplication.",
+    "Two core-track papers; other selections are explicitly labeled by fit and evaluated for transferable methods.",
+    "Crawler discovery dates use UTC; the report is filed under the Asia/Shanghai date."
+  ],
+  "scoring_method": "total_score = weighted dimensions minus track penalty; adjusted_score adds the capped preference bonus."
+}

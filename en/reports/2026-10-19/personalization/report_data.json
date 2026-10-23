@@ -1,0 +1,658 @@
+{
+  "date": "2026-10-19",
+  "track": "personalization",
+  "scenario": "Community search over short user-generated posts, answers and comments. Primary metrics are search relevance (nDCG) and CTR.",
+  "stats": {
+    "papers_scored": 10,
+    "papers_selected": 9,
+    "score_min": 3.05,
+    "score_max": 4.1
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.20913",
+      "title": "TransX Technical Report: Scaling Sequence Transduction for Recommendation",
+      "url": "https://arxiv.org/abs/2610.20913",
+      "authors": "Xu, Da, Fang, Liyan, Venugopalan, Divya, Hsu, Sunny, Wang, Xukai, Chowdhury, Rishav Roy, Liang, Cindy, Lakshmikanth, Nishant Satya",
+      "abstract": "We present TransX, a sequence-transduction framework and co-designed infrastructure for scaling industrial recommendation with explicit control over model-compute allocation and execution amortization. TransX separates sequence encoding, behavior memory, and candidate-conditioned fusion into independently scalable components. Training amortizes causal trajectory computation across behavioral prefixes and fans out memory states to candidates; serving disaggregates bulk prefill, nearline refresh, and online prediction through compact behavior-memory KV. We observe anisotropic scaling returns: encoder scaling may saturate beyond moderate depth at fixed memory resolution and fusion capacity; increasing supervision shifts the allocation frontier toward candidate-conditioned fusion; and the memory resolution needed to preserve quality remains roughly stable as model capacity grows. We train TransX on click and conversion, post-train its shared behavioral interface for retrieval and preference ranking, and explore generative recommendation offline. In separate production A/B experiments, the core TransX model improves CTR by 6.02% and conversion by 4.45%, while post-trained retrieval and preference-ranking variants improve CTR by 2.96% and conversion by 1.33%, respectively, over corresponding production baselines. Under matched training conditions, the training infrastructure increases supervised-target throughput by 84%. In serving, disaggregation reduces TransX's total serving cost by nearly 80% versus colocated serving at matched traffic and SLO, enabling approximately 5X the per-request model FLOPs of the HSTU-style production baseline at the same total serving cost. At matched per-request model FLOPs, TransX delivers approximately 4X higher request throughput per H200. These results show that online serving cost need not grow proportionally with recommendation model capacity.",
+      "published": "2026-10-14",
+      "source": "web_search",
+      "source_detail": "arxiv",
+      "discovered_at": "2026-10-19",
+      "company": [
+        "LinkedIn"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "total_score": 4.1,
+      "base_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "summary": "TransX caches reusable behavior memory and separates sequence encoding from candidate-conditioned scoring. Offline prefill and nearline refresh keep history processing off the request path. Its base model raised CTR by 6.02% over the production baseline in an online experiment.",
+      "key_insight": "Compute history when behavior changes, then reuse the state across candidates. This shifts serving work toward candidate discrimination, while introducing explicit obligations around freshness, version compatibility and recovery.",
+      "rank": 1,
+      "company_logos": [
+        {
+          "name": "LinkedIn",
+          "logo": "logos/linkedin.png",
+          "hue": 223
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.20913",
+        "title": "TransX Technical Report: Scaling Sequence Transduction for Recommendation",
+        "status": "completed",
+        "content": "TransX computes reusable user-history state ahead of requests, then lets each candidate read that state for prediction. LinkedIn co-designs the model, training pipeline and serving infrastructure around this boundary. The report asks both where extra model compute is useful and how often that compute should run.\n\n## 1. Problem and motivation\n\nMany candidates in a request share the same user history, and nearby requests often share most of it as well. Encoding that history separately for every prediction duplicates work. Putting more history processing into the online path also makes model scaling expensive under strict latency constraints.\n\nA single cached user vector reduces repetition but can compress away the distinctions needed to evaluate different candidates. TransX instead exposes a bounded collection of behavior-memory states. Candidates share the representation of history while retaining independent ways to read it.\n\nThe key distinction is between increasing model capacity and increasing request-time computation. TransX makes encoding, memory resolution and candidate fusion independently adjustable, allowing their marginal returns to be measured separately.\n\n## 2. Method: shared history, candidate-specific reads\n\n![The causal encoder produces shared behavior memory; candidate queries read it independently rather than re-encoding the history.](figs/2610.20913/architecture.png)\n\nA causal encoder processes the behavior trajectory. Each training or serving event uses only the history available at its cutoff, so sharing trajectory computation must not introduce future-behavior leakage.\n\nAt that cutoff, TransX constructs global–local memory: recent behavior retains local detail, while older behavior contributes to a global representation. The memory is projected into attention keys and values. It is useful to distinguish this published behavior-memory KV from the encoder continuation state used by nearline workers; they serve different purposes.\n\nEach candidate supplies a query and independently attends to the shared memory, potentially through iterative reads. Candidate-conditioned fusion and prediction features then feed response heads. The expensive history representation is shared without forcing every candidate to use one identical interest vector.\n\nTraining follows the same decomposition. A trajectory is encoded once, multiple event-cutoff memories are extracted, and each memory fans out to the candidates belonging to that event. Their gradients aggregate back into the shared trajectory. This reduces repeated training computation over overlapping prefixes, separately from any serving-cache benefit.\n\n![Offline prefill and nearline refresh maintain state; online prediction consumes compatible memory snapshots.](figs/2610.20913/serving.png)\n\nServing runs on three clocks. Offline prefill favors throughput. Nearline refresh advances behavior state and publishes fresh memory. Online prediction retrieves compatible snapshots and performs candidate-conditioned scoring. Immutable publication and request-scoped snapshot pinning prevent a request from observing a mixture of model or state versions.\n\nThat design makes freshness, compatibility, recovery and state lifetime part of the model interface. A cache hit is useful only if the state is suitable for the request.\n\n## 3. Contributions: allocation and amortization together\n\nThe scaling experiments show different returns across computational roles. At fixed memory and fusion capacity, deeper encoding can saturate. With more supervision, allocating compute to candidate fusion becomes more attractive. These observations are conditional on the studied data and architecture, rather than a universal recommendation scaling law.\n\nThe memory resolution needed to preserve quality remains roughly stable as model capacity grows within the evaluated regime. A compact interface allows heavier background encoding without proportionally expanding online state transfer.\n\nThe same behavioral interface also supports specialization. Starting from click and conversion pretraining, the authors post-train readers and output heads for retrieval and preference ranking. Generative retrieval and slate-ranking extensions remain offline investigations; their evidence should not be conflated with the production variants.\n\n## 4. Experiments: keep the comparisons separate\n\n| Comparison | Metric | Reported result |\n|---|---|---|\n| Base vs. production HSTU | Relative CTR | +6.02% |\n| Retrieval vs. production retriever | Relative CTR | +2.96% |\n| Ranking vs. production ranker | Relative conversion | +1.33% |\n| Matched training vs. straightforward FSDP | Supervised-target throughput | +84% |\n| Matched traffic and SLO vs. colocated serving | Total serving cost | Nearly 80% lower |\n\nThe first three rows come from separate online experiments with different controls and product surfaces. They are not a head-to-head comparison between TransX variants. The base model also has a five-week holdout, and the paper reports positive effects across user-history cohorts.\n\nThe cost result compares disaggregated and colocated execution of the framework. It does not use the same comparison as the CTR result. A separate matched-FLOP experiment tests hardware efficiency at similar offline quality. These measurement scopes answer different questions.\n\n![With cached memory, online latency is largely insensitive to history length, while candidate fanout still adds scoring work.](figs/2610.20913/efficiency.png)\n\nThe serving curves expose the intended boundary: cached latency changes little with history length, while additional candidates still require additional scoring work. History processing has moved off the critical path; candidate-dependent computation has not disappeared.\n\nThe freshness ablation also matters. Staler memory reduces recommendation gains. Memory age must therefore be tracked alongside cache hit rate, throughput and tail latency.\n\n## 5. Limitations\n\nThe authors explicitly qualify the scaling patterns by data, supervision, architecture family and deployment envelope. The experiments neither establish universal laws nor identify a unique causal explanation for every curve.\n\nMaterialized state introduces storage, refresh, compatibility and recovery costs. Some absolute deployment costs are undisclosed, and the resource accounting is not a complete lifecycle-cost analysis. Daily model updates can also require state reconstruction and overlapping versions.\n\nA frozen shared backbone may omit information needed by a specialized task. Changing only the reader is not guaranteed to be optimal. The generative variants have no production validation in this report.\n\n## 6. Practical implications\n\nFor community-content ranking, measure repeated history computation across candidates and neighboring requests before building a large state service. Compare cached-memory and request-time encoding with matched inputs, labels and compute budgets.\n\nSweep encoder and candidate-fusion capacity independently, and segment results by history richness. This makes it possible to test whether more sequence modeling is actually the best use of the next unit of compute.\n\nTrack memory age, version incompatibility, fallback frequency and recovery time together with ranking quality and latency. Snapshot publication and request version pinning should be designed as an explicit data contract, not left as incidental cache behavior.",
+        "content_html": "<p>TransX computes reusable user-history state ahead of requests, then lets each candidate read that state for prediction. LinkedIn co-designs the model, training pipeline and serving infrastructure around this boundary. The report asks both where extra model compute is useful and how often that compute should run.</p>\n<h2>1. Problem and motivation</h2>\n<p>Many candidates in a request share the same user history, and nearby requests often share most of it as well. Encoding that history separately for every prediction duplicates work. Putting more history processing into the online path also makes model scaling expensive under strict latency constraints.</p>\n<p>A single cached user vector reduces repetition but can compress away the distinctions needed to evaluate different candidates. TransX instead exposes a bounded collection of behavior-memory states. Candidates share the representation of history while retaining independent ways to read it.</p>\n<p>The key distinction is between increasing model capacity and increasing request-time computation. TransX makes encoding, memory resolution and candidate fusion independently adjustable, allowing their marginal returns to be measured separately.</p>\n<h2>2. Method: shared history, candidate-specific reads</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-19/personalization/2610.20913/architecture.png\" alt=\"The causal encoder produces shared behavior memory; candidate queries read it independently rather than re-encoding the history.\" loading=\"lazy\" decoding=\"async\"><figcaption>The causal encoder produces shared behavior memory; candidate queries read it independently rather than re-encoding the history.</figcaption></figure>\n<p>A causal encoder processes the behavior trajectory. Each training or serving event uses only the history available at its cutoff, so sharing trajectory computation must not introduce future-behavior leakage.</p>\n<p>At that cutoff, TransX constructs global–local memory: recent behavior retains local detail, while older behavior contributes to a global representation. The memory is projected into attention keys and values. It is useful to distinguish this published behavior-memory KV from the encoder continuation state used by nearline workers; they serve different purposes.</p>\n<p>Each candidate supplies a query and independently attends to the shared memory, potentially through iterative reads. Candidate-conditioned fusion and prediction features then feed response heads. The expensive history representation is shared without forcing every candidate to use one identical interest vector.</p>\n<p>Training follows the same decomposition. A trajectory is encoded once, multiple event-cutoff memories are extracted, and each memory fans out to the candidates belonging to that event. Their gradients aggregate back into the shared trajectory. This reduces repeated training computation over overlapping prefixes, separately from any serving-cache benefit.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-19/personalization/2610.20913/serving.png\" alt=\"Offline prefill and nearline refresh maintain state; online prediction consumes compatible memory snapshots.\" loading=\"lazy\" decoding=\"async\"><figcaption>Offline prefill and nearline refresh maintain state; online prediction consumes compatible memory snapshots.</figcaption></figure>\n<p>Serving runs on three clocks. Offline prefill favors throughput. Nearline refresh advances behavior state and publishes fresh memory. Online prediction retrieves compatible snapshots and performs candidate-conditioned scoring. Immutable publication and request-scoped snapshot pinning prevent a request from observing a mixture of model or state versions.</p>\n<p>That design makes freshness, compatibility, recovery and state lifetime part of the model interface. A cache hit is useful only if the state is suitable for the request.</p>\n<h2>3. Contributions: allocation and amortization together</h2>\n<p>The scaling experiments show different returns across computational roles. At fixed memory and fusion capacity, deeper encoding can saturate. With more supervision, allocating compute to candidate fusion becomes more attractive. These observations are conditional on the studied data and architecture, rather than a universal recommendation scaling law.</p>\n<p>The memory resolution needed to preserve quality remains roughly stable as model capacity grows within the evaluated regime. A compact interface allows heavier background encoding without proportionally expanding online state transfer.</p>\n<p>The same behavioral interface also supports specialization. Starting from click and conversion pretraining, the authors post-train readers and output heads for retrieval and preference ranking. Generative retrieval and slate-ranking extensions remain offline investigations; their evidence should not be conflated with the production variants.</p>\n<h2>4. Experiments: keep the comparisons separate</h2>\n<table><thead><tr><th>Comparison</th><th>Metric</th><th>Reported result</th></tr></thead><tbody><tr><td>Base vs. production HSTU</td><td>Relative CTR</td><td>+6.02%</td></tr><tr><td>Retrieval vs. production retriever</td><td>Relative CTR</td><td>+2.96%</td></tr><tr><td>Ranking vs. production ranker</td><td>Relative conversion</td><td>+1.33%</td></tr><tr><td>Matched training vs. straightforward FSDP</td><td>Supervised-target throughput</td><td>+84%</td></tr><tr><td>Matched traffic and SLO vs. colocated serving</td><td>Total serving cost</td><td>Nearly 80% lower</td></tr></tbody></table>\n<p>The first three rows come from separate online experiments with different controls and product surfaces. They are not a head-to-head comparison between TransX variants. The base model also has a five-week holdout, and the paper reports positive effects across user-history cohorts.</p>\n<p>The cost result compares disaggregated and colocated execution of the framework. It does not use the same comparison as the CTR result. A separate matched-FLOP experiment tests hardware efficiency at similar offline quality. These measurement scopes answer different questions.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-19/personalization/2610.20913/efficiency.png\" alt=\"With cached memory, online latency is largely insensitive to history length, while candidate fanout still adds scoring work.\" loading=\"lazy\" decoding=\"async\"><figcaption>With cached memory, online latency is largely insensitive to history length, while candidate fanout still adds scoring work.</figcaption></figure>\n<p>The serving curves expose the intended boundary: cached latency changes little with history length, while additional candidates still require additional scoring work. History processing has moved off the critical path; candidate-dependent computation has not disappeared.</p>\n<p>The freshness ablation also matters. Staler memory reduces recommendation gains. Memory age must therefore be tracked alongside cache hit rate, throughput and tail latency.</p>\n<h2>5. Limitations</h2>\n<p>The authors explicitly qualify the scaling patterns by data, supervision, architecture family and deployment envelope. The experiments neither establish universal laws nor identify a unique causal explanation for every curve.</p>\n<p>Materialized state introduces storage, refresh, compatibility and recovery costs. Some absolute deployment costs are undisclosed, and the resource accounting is not a complete lifecycle-cost analysis. Daily model updates can also require state reconstruction and overlapping versions.</p>\n<p>A frozen shared backbone may omit information needed by a specialized task. Changing only the reader is not guaranteed to be optimal. The generative variants have no production validation in this report.</p>\n<h2>6. Practical implications</h2>\n<p>For community-content ranking, measure repeated history computation across candidates and neighboring requests before building a large state service. Compare cached-memory and request-time encoding with matched inputs, labels and compute budgets.</p>\n<p>Sweep encoder and candidate-fusion capacity independently, and segment results by history richness. This makes it possible to test whether more sequence modeling is actually the best use of the next unit of compute.</p>\n<p>Track memory age, version incompatibility, fallback frequency and recovery time together with ranking quality and latency. Snapshot publication and request version pinning should be designed as an explicit data contract, not left as incidental cache behavior.</p>",
+        "slug": "2610.20913",
+        "chars": 6248,
+        "minutes": 16
+      }
+    },
+    {
+      "id": "arxiv:2610.21220",
+      "title": "RecSoup: Efficient Model Merging Approach for Controllable Multi-Objective Recommendation",
+      "url": "https://arxiv.org/abs/2610.21220",
+      "authors": "Jia, Zidong, Xie, Guofu, Zhang, Xiao",
+      "abstract": "Recommender systems often need to balance multiple conflicting objectives. Controllable Multi-Objective Recommendation (CMOR) enables dynamic adjustment of objective trade-offs at inference time without retraining, adapting to shifting user or system requirements. Existing CMOR approaches typically rely on output-level reranking or parameter-generating modules, which either limit the scope of feasible trade-offs or incur substantial training and inference cost. Model merging provides a promising alternative by reusing multiple objective-specific models via parameter combination. However, its direct application to recommender systems is challenging due to the lack of a shared linear regime and cross-objective interference. To address these issues, we propose RecSoup, a lightweight two-stage approach for effective CMOR via specialized model merging. RecSoup first mitigates parameter interference across objectives through a pruning strategy that jointly considers objective-specific importance and cross-objective relevance. It then performs adaptive parameter merging via a learnable preference-to-coefficient mapping, allowing dynamic trade-off control at inference time without joint retraining or additional generative modules. Theoretically, we prove that RecSoup outperforms the parameter generation paradigm in effectiveness and efficiency, as it can fully navigate the Pareto front without smoothness constraints. Extensive experiments on multiple benchmarks demonstrate that RecSoup achieves improved Pareto front quality and effective controllability while delivers 165--228x faster inference-time latency than parameter generation approaches. Code is available at this https URL .",
+      "published": "2026-10-15",
+      "source": "web_search",
+      "source_detail": "arxiv",
+      "discovered_at": "2026-10-19",
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "base_score": 4.0,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05,
+      "summary": "RecSoup makes accuracy–diversity trade-offs adjustable by reusing objective-specific checkpoints. It prunes task-vector updates and learns preference-dependent merge coefficients. Parameter construction was about 165–228 times faster than a hypernetwork across three benchmarks.",
+      "key_insight": "Controllability can come from combining existing specialists. Pruning and coefficient learning solve different problems: preserving useful updates and choosing their mixture. The latency claim concerns parameter construction, not the full recommendation pipeline.",
+      "rank": 2,
+      "company_logos": [],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.21220",
+        "title": "RecSoup: Efficient Model Merging Approach for Controllable Multi-Objective Recommendation",
+        "status": "completed",
+        "content": "RecSoup makes recommendation trade-offs adjustable by combining models trained for different objectives. It first prunes their parameter updates, then learns how a requested preference should determine merge coefficients. The goal is to avoid retraining or generating a large parameter set whenever the desired balance changes.\n\n## 1. Problem and motivation\n\nRecommendation systems balance objectives such as accuracy and diversity. A fixed compromise may be unsuitable across users, product surfaces or changing operating requirements.\n\nReranking can adjust a list, but only within the available candidates. Hypernetworks and diffusion-based approaches can generate preference-conditioned parameters, at the cost of auxiliary models and additional construction work. RecSoup asks whether existing objective-specialized checkpoints can provide the necessary building blocks.\n\nNaive averaging is unreliable when objectives change overlapping parameters in competing ways. In addition, objective weights need not equal useful parameter-mixing weights. RecSoup separates choosing which updates to retain from learning how strongly to combine them.\n\n## 2. Method: prune the basis, learn the coefficients\n\n![Pruning refines the task-vector basis; a preference-conditioned mapper chooses merge coefficients while the base and experts stay frozen.](figs/2610.21220/architecture.svg)\n\nEach specialist starts from a common base model. Its difference from that base is a task vector: the parameter update associated with an objective. Merging adds a weighted combination of these updates back to the base, requiring aligned parameter structures and a compatible starting point.\n\nThe pruning stage combines two importance signals. Objective-specific importance measures a coordinate's squared update relative to the vector's total squared norm. Cross-objective relevance measures the magnitude of its interaction with updates at the same coordinate in other objectives.\n\nThe cross-objective term uses an absolute value deliberately. Opposite update directions can encode an important trade-off, so sign disagreement alone is not sufficient reason to discard them. The procedure seeks useful support rather than simply enforcing agreement.\n\nCoordinates are ranked by the combined score. The method retains enough of them to preserve a chosen fraction of objective-specific update energy. Experiments use a norm-retention threshold of 0.9–0.95; this is not the fraction of parameter coordinates retained.\n\nThe second stage trains a lightweight gate from objective preferences to merge coefficients. The coefficients need not numerically match the preference vector. Only the gate is updated; the base and pruned task vectors remain frozen. A preference-weighted loss trains the mapping on a subset of data.\n\n![This subfigure examines cross-objective overlap after pruning, one diagnostic of the parameter basis used for coefficient learning.](figs/2610.21220/pruning.svg)\n\nPruning and adaptive merging solve distinct problems. The former identifies parameter support, while the latter selects a combination for the requested operating point.\n\n## 3. Contributions and the scope of the argument\n\nThe contribution is not model merging in isolation. It is a recommendation-specific way to turn existing specialists into a controllable family of models, rather than one fixed merged checkpoint.\n\nThe authors examine accuracy- and diversity-specialized task vectors using PCA and find that updates are not concentrated in a small shared subspace. This motivates tailored merging, although PCA geometry alone does not establish all claims about nonlinear model behavior.\n\nThe theoretical comparison also has explicit assumptions. It treats the convex hull of two experts as the Pareto-optimal set and considers a parameter generator with a restricted Lipschitz constant. The result establishes a coverage limitation under those conditions; it does not show that arbitrary hypernetworks are universally inferior.\n\nThe empirical contribution is more directly actionable: pruning rules, coefficient mappings and recommendation backbones are evaluated separately through ablations.\n\n## 4. Experiments: parameter construction is one stage\n\nExperiments use MovieLens-1M and Amazon food and toy datasets, with three sequential-recommendation backbones. Accuracy–diversity is the main setting, supplemented by fairness and three-objective experiments. Accuracy specialists use pairwise ranking loss; diversity specialists encourage category novelty and reduce redundancy.\n\nThe table reports mean inference-time parameter construction latency in milliseconds. Standard deviations are omitted here for readability.\n\n| Dataset | Hypernetwork | RecSoup | Speedup |\n|---|---|---|---|\n| MovieLens-1M | 7.5281 | 0.0454 | 165.9× |\n| Amazon Food | 9.3799 | 0.0410 | 228.8× |\n| Amazon Toys | 9.2741 | 0.0436 | 212.7× |\n\nThese measurements concern constructing parameters. They exclude the full feature, retrieval and ranking pipeline, and do not establish the same speedup over every generation method. Serving impact depends on how often preferences change and how long constructed parameters can be reused.\n\nFor quality, hypervolume summarizes the objective-space coverage of the trade-off frontier. Controllability checks whether changing a preference moves its corresponding metric in the intended direction. On MovieLens with SASRec, RecSoup achieves hypervolume 0.7090 versus 0.6536 for simple merging.\n\nThe table does not show universal dominance. In that same setting, an unpruned ablation has higher hypervolume, and some retrained operating points remain stronger. Pruning is an empirical trade-off whose value should be assessed across both quality and controllability.\n\nTraining and evaluation use sampled negatives. Full-catalog ranking may change the effects of popularity, candidate scale and parameter construction costs. Released code provides a basis for checking these conditions.\n\n## 5. Limitations\n\nThe paper's complexity analysis acknowledges that full-parameter merging can be dominated by a large item-embedding table. Generating a few coefficients is cheap, but reading and combining many parameters still consumes bandwidth.\n\nThe evidence concerns offline trade-off quality and parameter construction efficiency. It does not include production CTR or revenue experiments. Specialist training is also an existing cost, even when only a small gate is trained in the final stage.\n\nA serving system must decide whether to merge per request or cache a finite number of preference settings. Highly individualized, rapidly changing preferences have different concurrency and memory implications from shared operating points. The latency table does not settle that deployment choice.\n\n## 6. Practical implications\n\nTeams with aligned accuracy and diversity checkpoints can compare simple averaging, pruning plus averaging, and learned coefficients under identical backbones and candidates. This isolates whether each stage adds value.\n\nCommunity recommendation can begin with a small set of interpretable exploration settings and cache their merged models. Per-request merging is a separate experiment that should include parameter bandwidth and tail latency.\n\nReport accuracy, diversity, preference responsiveness and end-to-end cost independently. A model can improve average quality while responding inconsistently to control inputs. RecSoup's reusable parameter interface is valuable precisely because these properties can be tested separately.",
+        "content_html": "<p>RecSoup makes recommendation trade-offs adjustable by combining models trained for different objectives. It first prunes their parameter updates, then learns how a requested preference should determine merge coefficients. The goal is to avoid retraining or generating a large parameter set whenever the desired balance changes.</p>\n<h2>1. Problem and motivation</h2>\n<p>Recommendation systems balance objectives such as accuracy and diversity. A fixed compromise may be unsuitable across users, product surfaces or changing operating requirements.</p>\n<p>Reranking can adjust a list, but only within the available candidates. Hypernetworks and diffusion-based approaches can generate preference-conditioned parameters, at the cost of auxiliary models and additional construction work. RecSoup asks whether existing objective-specialized checkpoints can provide the necessary building blocks.</p>\n<p>Naive averaging is unreliable when objectives change overlapping parameters in competing ways. In addition, objective weights need not equal useful parameter-mixing weights. RecSoup separates choosing which updates to retain from learning how strongly to combine them.</p>\n<h2>2. Method: prune the basis, learn the coefficients</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-19/personalization/2610.21220/architecture.svg\" alt=\"Pruning refines the task-vector basis; a preference-conditioned mapper chooses merge coefficients while the base and experts stay frozen.\" loading=\"lazy\" decoding=\"async\"><figcaption>Pruning refines the task-vector basis; a preference-conditioned mapper chooses merge coefficients while the base and experts stay frozen.</figcaption></figure>\n<p>Each specialist starts from a common base model. Its difference from that base is a task vector: the parameter update associated with an objective. Merging adds a weighted combination of these updates back to the base, requiring aligned parameter structures and a compatible starting point.</p>\n<p>The pruning stage combines two importance signals. Objective-specific importance measures a coordinate&#x27;s squared update relative to the vector&#x27;s total squared norm. Cross-objective relevance measures the magnitude of its interaction with updates at the same coordinate in other objectives.</p>\n<p>The cross-objective term uses an absolute value deliberately. Opposite update directions can encode an important trade-off, so sign disagreement alone is not sufficient reason to discard them. The procedure seeks useful support rather than simply enforcing agreement.</p>\n<p>Coordinates are ranked by the combined score. The method retains enough of them to preserve a chosen fraction of objective-specific update energy. Experiments use a norm-retention threshold of 0.9–0.95; this is not the fraction of parameter coordinates retained.</p>\n<p>The second stage trains a lightweight gate from objective preferences to merge coefficients. The coefficients need not numerically match the preference vector. Only the gate is updated; the base and pruned task vectors remain frozen. A preference-weighted loss trains the mapping on a subset of data.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-19/personalization/2610.21220/pruning.svg\" alt=\"This subfigure examines cross-objective overlap after pruning, one diagnostic of the parameter basis used for coefficient learning.\" loading=\"lazy\" decoding=\"async\"><figcaption>This subfigure examines cross-objective overlap after pruning, one diagnostic of the parameter basis used for coefficient learning.</figcaption></figure>\n<p>Pruning and adaptive merging solve distinct problems. The former identifies parameter support, while the latter selects a combination for the requested operating point.</p>\n<h2>3. Contributions and the scope of the argument</h2>\n<p>The contribution is not model merging in isolation. It is a recommendation-specific way to turn existing specialists into a controllable family of models, rather than one fixed merged checkpoint.</p>\n<p>The authors examine accuracy- and diversity-specialized task vectors using PCA and find that updates are not concentrated in a small shared subspace. This motivates tailored merging, although PCA geometry alone does not establish all claims about nonlinear model behavior.</p>\n<p>The theoretical comparison also has explicit assumptions. It treats the convex hull of two experts as the Pareto-optimal set and considers a parameter generator with a restricted Lipschitz constant. The result establishes a coverage limitation under those conditions; it does not show that arbitrary hypernetworks are universally inferior.</p>\n<p>The empirical contribution is more directly actionable: pruning rules, coefficient mappings and recommendation backbones are evaluated separately through ablations.</p>\n<h2>4. Experiments: parameter construction is one stage</h2>\n<p>Experiments use MovieLens-1M and Amazon food and toy datasets, with three sequential-recommendation backbones. Accuracy–diversity is the main setting, supplemented by fairness and three-objective experiments. Accuracy specialists use pairwise ranking loss; diversity specialists encourage category novelty and reduce redundancy.</p>\n<p>The table reports mean inference-time parameter construction latency in milliseconds. Standard deviations are omitted here for readability.</p>\n<table><thead><tr><th>Dataset</th><th>Hypernetwork</th><th>RecSoup</th><th>Speedup</th></tr></thead><tbody><tr><td>MovieLens-1M</td><td>7.5281</td><td>0.0454</td><td>165.9×</td></tr><tr><td>Amazon Food</td><td>9.3799</td><td>0.0410</td><td>228.8×</td></tr><tr><td>Amazon Toys</td><td>9.2741</td><td>0.0436</td><td>212.7×</td></tr></tbody></table>\n<p>These measurements concern constructing parameters. They exclude the full feature, retrieval and ranking pipeline, and do not establish the same speedup over every generation method. Serving impact depends on how often preferences change and how long constructed parameters can be reused.</p>\n<p>For quality, hypervolume summarizes the objective-space coverage of the trade-off frontier. Controllability checks whether changing a preference moves its corresponding metric in the intended direction. On MovieLens with SASRec, RecSoup achieves hypervolume 0.7090 versus 0.6536 for simple merging.</p>\n<p>The table does not show universal dominance. In that same setting, an unpruned ablation has higher hypervolume, and some retrained operating points remain stronger. Pruning is an empirical trade-off whose value should be assessed across both quality and controllability.</p>\n<p>Training and evaluation use sampled negatives. Full-catalog ranking may change the effects of popularity, candidate scale and parameter construction costs. Released code provides a basis for checking these conditions.</p>\n<h2>5. Limitations</h2>\n<p>The paper&#x27;s complexity analysis acknowledges that full-parameter merging can be dominated by a large item-embedding table. Generating a few coefficients is cheap, but reading and combining many parameters still consumes bandwidth.</p>\n<p>The evidence concerns offline trade-off quality and parameter construction efficiency. It does not include production CTR or revenue experiments. Specialist training is also an existing cost, even when only a small gate is trained in the final stage.</p>\n<p>A serving system must decide whether to merge per request or cache a finite number of preference settings. Highly individualized, rapidly changing preferences have different concurrency and memory implications from shared operating points. The latency table does not settle that deployment choice.</p>\n<h2>6. Practical implications</h2>\n<p>Teams with aligned accuracy and diversity checkpoints can compare simple averaging, pruning plus averaging, and learned coefficients under identical backbones and candidates. This isolates whether each stage adds value.</p>\n<p>Community recommendation can begin with a small set of interpretable exploration settings and cache their merged models. Per-request merging is a separate experiment that should include parameter bandwidth and tail latency.</p>\n<p>Report accuracy, diversity, preference responsiveness and end-to-end cost independently. A model can improve average quality while responding inconsistently to control inputs. RecSoup&#x27;s reusable parameter interface is valuable precisely because these properties can be tested separately.</p>",
+        "slug": "2610.21220",
+        "chars": 6350,
+        "minutes": 16
+      }
+    },
+    {
+      "id": "arxiv:2610.21938",
+      "title": "Agentic-Priors: Using Large Language Models to Address the Cold Start Problem in Preference Elicitation",
+      "url": "https://arxiv.org/abs/2610.21938",
+      "authors": "Arcanjo, Bruno, Li, Zhaoxing, Stein, Sebastian",
+      "abstract": "An agent that learns a user's preferences from their choices faces a cold start problem: before any choices are observed, it must rely solely on a prior. Informative priors are usually fitted to historical choice data, which new tasks and deployments lack. To address this, we present Agentic-Priors, which lets agentic systems use the implicit knowledge of large language models (LLMs) instead. Specifically, an LLM states a new user's trade-offs in interpretable terms, such as willingness to pay or value of time, which we map to a prior over multinomial logit coefficients. This prior is then refined by a Bayesian learner as choices are observed. Across seven choice datasets, Agentic-Priors improves cold start accuracy over an uninformed prior by 5-40 percentage points. It also outperforms AutoElicit, a state-of-the-art LLM prior-elicitation method, on three datasets and loses on one. It is up to 18 points more accurate than in-context learning, and never significantly worse. Against hierarchical Bayes models fitted to surveys of increasing size, our approach is worth roughly 6-40 surveyed users, in terms of log-loss, so its value is concentrated in a deployment's first users.",
+      "published": "2026-10-15",
+      "source": "web_search",
+      "source_detail": "arxiv",
+      "discovered_at": "2026-10-19",
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "base_score": 4.0,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.05,
+      "summary": "Agentic-Priors asks a language model for interpretable trade-offs, maps them to priors over choice-model coefficients and updates them with observed choices. Across seven datasets, cold-start accuracy exceeded an uninformed prior by 5–40 percentage points.",
+      "key_insight": "Use language-model knowledge as an uncertain starting point rather than a fixed label. Bayesian updates allow individual observations to take over. The approach is most useful before enough historical choice data exist.",
+      "rank": 3,
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.14394",
+      "title": "Understanding and Mitigating Training Instability in Large-Scale Recommender Systems: A Cascade Perspective",
+      "url": "https://arxiv.org/abs/2610.14394",
+      "authors": "Li, Yuening, Wang, Zeyu, Zhang, Zhen, Liu, Jiayi, Jiang, Zhimeng, Roh, Yuji, Xu, Weikai, Gao, Mingyan, Dalal, Onkar, He, Chuan, Liu, Liang",
+      "abstract": "Training large-scale recommender systems on dynamic industrial platforms, such as Short-Form Video (SFV) services with billions of daily interactions, faces critical stability challenges. Rapid distribution shifts in user data and increasing model complexity frequently trigger a divergence cascade, typically initiating with gradient explosion, propagating to weight explosion, and culminating in loss explosion. This G-W-L cascade severely impedes model convergence and performance. This paper provides a systematic analysis of this G-W-L cascade within an industrial SFV recommender context. We then propose and evaluate a structured mitigation framework where interventions are explicitly mapped to counteract specific stages of the cascade: gradient (G) control, weight/activation (W) stabilization, and loss (L) shaping. Our contribution provides a structured framework for understanding and tackling training divergence, offering practical insights for deploying robust, continuously updated recommenders in large-scale, non-stationary settings. We empirically validate the effectiveness of these strategies on a major industrial SFV recommendation system.",
+      "published": "2026-10-09",
+      "source": "web_search",
+      "source_detail": "arxiv",
+      "discovered_at": "2026-10-19",
+      "company": [
+        "Google"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "base_score": 3.65,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.7,
+      "summary": "Google studies training divergence as a gradient–weight–loss cascade and maps interventions to each stage. The combined treatment improved AUC by 0.38% relative to baseline on the second binary classification task.",
+      "key_insight": "Inspect gradients, weights or activations, and task losses on one timeline. A loss spike may be the end of a cascade. Intervention effects differ across classification and regression tasks.",
+      "rank": 4,
+      "company_logos": [
+        {
+          "name": "Google",
+          "logo": "logos/google.png",
+          "hue": 114
+        }
+      ]
+    },
+    {
+      "id": "doi:10.1007/s40747-026-02529-4",
+      "title": "Hybrid transformer-based recommender system with LLM-assisted semantic modeling for sequential and federated learning",
+      "url": "https://link.springer.com/article/10.1007/s40747-026-02529-4",
+      "published": "2026-10-14",
+      "abstract": "LLMTransRec combines item identity, genre metadata and BERT-based semantic embeddings with a Transformer for next-item prediction. Evaluated on four datasets (MovieLens 1M, MovieLens 20M, Goodbooks-10k and Anime). Federated Averaging experiments are a feasibility proof of concept, not a practical federated recommender benchmark.",
+      "source": "web_search",
+      "authors": "",
+      "discovered_at": "2026-10-19",
+      "company": [
+        "IIT (ISM) Dhanbad",
+        "St. Ann’s College"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.65,
+      "base_score": 3.65,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.7,
+      "summary": "LLMTransRec combines item identity, genre metadata and BERT-derived text representations in a Transformer for next-item prediction. It reports offline tests on four benchmarks; the federated component is a feasibility study. The accessible page does not quantify the main gains.",
+      "key_insight": "Semantic content and interactions can share a compact sequence backbone. The appendix specifies BERT representations, rather than an online generative model. Treat the federated result as a proof of concept.",
+      "rank": 5,
+      "company_logos": [
+        {
+          "name": "IIT (ISM) Dhanbad",
+          "logo": null,
+          "hue": 204
+        },
+        {
+          "name": "St. Ann’s College",
+          "logo": null,
+          "hue": 303
+        }
+      ]
+    },
+    {
+      "id": "doi:10.32604/cmc.2026.085600",
+      "title": "CalendarRec: Multi-Order Temporal Context for Sequential Recommendation",
+      "url": "https://www.techscience.com/cmc/online/detail/28538",
+      "published": "2026-10-08",
+      "abstract": "CalendarRec models multi-order temporal context for sequential recommendation in health functional food e-commerce, using calendar information with state-space sequence models.",
+      "source": "web_search",
+      "authors": "",
+      "discovered_at": "2026-10-19",
+      "company": [
+        "Korea University",
+        "Chung-Ang University"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "total_score": 3.55,
+      "base_score": 3.55,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.6,
+      "summary": "CalendarRec adds separate month, day and weekday representations to a Mamba-based sequential recommender. On health-functional-food click logs, NDCG@10 improved by 14.2% relative to Mamba4Rec.",
+      "key_insight": "Calendar position captures recurring demand that interaction order alone misses. Separate temporal embeddings offer a concrete feature-design option; the headline result is from health-food e-commerce.",
+      "rank": 6,
+      "company_logos": [
+        {
+          "name": "Korea University",
+          "logo": "logos/korea-university.png",
+          "hue": 352
+        },
+        {
+          "name": "Chung-Ang University",
+          "logo": "logos/chung-ang-university.png",
+          "hue": 194
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.21713",
+      "title": "Encoded but Exposed: Language Embeddings can Reveal More Than They Should in Recommender Systems",
+      "url": "https://arxiv.org/abs/2610.21713",
+      "authors": "Beková, Linda, Alves, Rodrigo",
+      "abstract": "Language embeddings are increasingly used in recommenders to represent item content, but their privacy risks remain poorly understood. We study whether item embeddings can reveal item identities when an adversary has access to auxiliary item text from external sources. We show that a simple cosine-similarity attack can recover item identities with high mean reciprocal rank across language models and candidate-set settings on two real-world datasets. Leakage is strongest when the adversary's partial information overlaps with the victim representation, but it also persists through semantic alignment between independently sourced descriptions. We further show that item leakage can propagate to user re-identification from sparse ratings. Finally, we evaluate obfuscated descriptions as a mitigation and find a clear leakage-utility tradeoff.",
+      "published": "2026-10-15",
+      "source": "web_search",
+      "source_detail": "arxiv",
+      "discovered_at": "2026-10-19",
+      "company": [
+        "CTU"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.35,
+      "base_score": 3.65,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.4,
+      "summary": "Language embeddings can expose item identities through similarity matching against public descriptions. Experiments on two datasets also show that item leakage can enable user re-identification from sparse ratings. Obfuscation reduces leakage but harms recommendation utility.",
+      "key_insight": "Unreadable vectors are not anonymous records. Public catalogs can provide the auxiliary information needed for identification. Evaluate both item recovery and user linkage when assessing embedding-sharing risks.",
+      "rank": 7,
+      "company_logos": [
+        {
+          "name": "CTU",
+          "logo": null,
+          "hue": 96
+        }
+      ]
+    },
+    {
+      "id": "doi:10.3389/fdata.2026.1911540",
+      "title": "Reliability-aware ensemble recommendation for open-network commerce: a dual-metric framework for jointly evaluating ranking accuracy and serving correctness",
+      "url": "https://www.frontiersin.org/journals/big-data/articles/10.3389/fdata.2026.1911540/full",
+      "published": "2026-10-08",
+      "abstract": "An ensemble recommender for open-network commerce separately measures ranking quality and serving correctness under catalog, retrieval and identifier failures, with fallback mechanisms and graph/neural collaborative filtering.",
+      "source": "web_search",
+      "authors": "",
+      "discovered_at": "2026-10-19",
+      "company": [
+        "VIT"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "total_score": 3.25,
+      "base_score": 3.55,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.3,
+      "summary": "This study separates ranking quality from serving correctness in open-network commerce. In controlled trace replays, routing and identifier fixes raised route resolution success from 60.0% to 99.8%. These are reproducible system experiments, not production A/B results.",
+      "key_insight": "Ranking metrics cannot detect broken destinations or inconsistent item identities. Track accessibility alongside relevance. The study tests those failure surfaces independently with model-only and reliability-only configurations.",
+      "rank": 8,
+      "company_logos": [
+        {
+          "name": "VIT",
+          "logo": null,
+          "hue": 337
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.21685",
+      "title": "MARS: A Momentum-Aware Adaptive Rating System for Personalized Assessment",
+      "url": "https://arxiv.org/abs/2610.21685",
+      "authors": "Sahu, Vikrant, Naik, Khethavath Sunil, Gupta, Gagan Raj",
+      "abstract": "Adaptive assessment systems personalize learning by estimating learner proficiency and recommending suitable questions. However, many existing approaches rely on fixed difficulty labels, static rating updates, or black-box prediction models that provide limited control over rating stability, interpretability, and time-constrained routing. This paper proposes MARS, a Momentum-Aware Adaptive Rating System for interpretable adaptive assessment. MARS represents the question bank as a directed weighted knowledge graph and updates learner proficiency using dynamic rating sensitivity, response quality, and momentum-aware learner velocity. We also formulate a time-budgeted mark-maximization objective in which the policy selects questions within a fixed test duration under negative marking. Experiments on ASSISTments 2009 and MARS-SimExam evaluate MARS for prediction, rating stability, and adaptive routing. Results show that MARS provides smoother rating updates than Fixed Elo and achieves the highest score under time-budgeted negative-marking routing, improving the total score by 8.09 over the strongest baseline and reducing overtime violations from 50% to 5.6%. These results suggest that MARS is suitable for real-time, interpretable, and deployment-friendly adaptive assessment.",
+      "published": "2026-10-15",
+      "source": "web_search",
+      "source_detail": "arxiv",
+      "discovered_at": "2026-10-19",
+      "company": [],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.05,
+      "base_score": 3.35,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0,
+      "adjusted_score": 3.05,
+      "summary": "MARS combines a question knowledge graph with momentum-sensitive proficiency updates and time-budgeted routing. In its negative-marking experiment, overtime violations fell from 50% to 5.6%. The evaluation concerns adaptive assessment rather than media recommendation.",
+      "key_insight": "The rate at which a user state changes can inform the next decision. MARS links rating stability to reward and remaining time, offering a transferable idea for budget-constrained personalization.",
+      "rank": 9,
+      "company_logos": []
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:mizaawa/ZakoProxyCLI",
+      "title": "ZakoProxyCLI",
+      "authors": "mizaawa",
+      "abstract": "A Rust API proxy supporting several model API formats and providers.",
+      "url": "https://github.com/mizaawa/ZakoProxyCLI",
+      "source": "github",
+      "published": "2026-10-15",
+      "discovered_at": "2026-10-19",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "mizaawa/ZakoProxyCLI",
+        "owner": "mizaawa",
+        "description": "A Rust API proxy supporting several model API formats and providers.",
+        "created_at": "2026-10-15T13:50:55Z",
+        "updated_at": "2026-10-18",
+        "pushed_at": "2026-10-18",
+        "stargazers_count": 39,
+        "language": "Rust",
+        "topics": []
+      },
+      "description": "A Rust API proxy supporting several model API formats and providers.",
+      "language": "Rust",
+      "stars": 39,
+      "created_at": "2026-10-15",
+      "rank": 1
+    },
+    {
+      "id": "github:cryer/agent-eval",
+      "title": "agent-eval: CI for LLM agents — change the prompt, swap the model, edit a tool, refactor the loop: replay the eval suite and let statistics decide if anything got worse. OTel tracing, calibrated LLM-as-judge,adversarial simulated users, and a GitHub Actions gate that blocks significant regressions.",
+      "authors": "cryer",
+      "abstract": "CI for LLM agents — change the prompt, swap the model, edit a tool, refactor the loop: replay the eval suite and let statistics decide if anything got worse. OTel tracing, calibrated LLM-as-judge,adversarial simulated users, and a GitHub Actions gate that blocks significant regressions.",
+      "url": "https://github.com/cryer/agent-eval",
+      "source": "github",
+      "published": "2026-10-15",
+      "discovered_at": "2026-10-19",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "cryer/agent-eval",
+        "owner": "cryer",
+        "description": "CI for LLM agents — change the prompt, swap the model, edit a tool, refactor the loop: replay the eval suite and let statistics decide if anything got worse. OTel tracing, calibrated LLM-as-judge,adversarial simulated users, and a GitHub Actions gate that blocks significant regressions.",
+        "created_at": "2026-10-15T02:06:16Z",
+        "updated_at": "2026-10-18",
+        "pushed_at": "2026-10-15",
+        "stargazers_count": 9,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "CI for LLM agents — change the prompt, swap the model, edit a tool, refactor the loop: replay the eval suite and let statistics decide if anything got worse. OTel tracing, calibrated LLM-as-judge,adversarial simulated users, and a GitHub Actions gate that blocks significant regressions.",
+      "language": "Python",
+      "stars": 9,
+      "created_at": "2026-10-15",
+      "rank": 2
+    },
+    {
+      "id": "github:MartinsMessias/radeon-sparse",
+      "title": "radeon-sparse: High-performance OpenCL GPU compute engine for sparse LLM inference (Gather-GEMV & SwiGLU contextual sparsity) on AMD Radeon GPUs.",
+      "authors": "MartinsMessias",
+      "abstract": "High-performance OpenCL GPU compute engine for sparse LLM inference (Gather-GEMV & SwiGLU contextual sparsity) on AMD Radeon GPUs.",
+      "url": "https://github.com/MartinsMessias/radeon-sparse",
+      "source": "github",
+      "published": "2026-10-16",
+      "discovered_at": "2026-10-19",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "MartinsMessias/radeon-sparse",
+        "owner": "MartinsMessias",
+        "description": "High-performance OpenCL GPU compute engine for sparse LLM inference (Gather-GEMV & SwiGLU contextual sparsity) on AMD Radeon GPUs.",
+        "created_at": "2026-10-16T22:01:14Z",
+        "updated_at": "2026-10-18",
+        "pushed_at": "2026-10-18",
+        "stargazers_count": 7,
+        "language": "C",
+        "topics": []
+      },
+      "description": "High-performance OpenCL GPU compute engine for sparse LLM inference (Gather-GEMV & SwiGLU contextual sparsity) on AMD Radeon GPUs.",
+      "language": "C",
+      "stars": 7,
+      "created_at": "2026-10-16",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4637,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-16",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-19",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 4637,
+        "downloads": 1316711,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "deploy:azure",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-16T09:27:28.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3-Flash",
+      "title": "zai-org/GLM-5.3-Flash",
+      "authors": "zai-org",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2888,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-15",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-19",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3-Flash",
+        "likes": 2888,
+        "downloads": 6549444,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm5_next",
+          "image-text-to-text",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:43:14.000Z",
+        "last_modified": "2026-10-15T06:32:52.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3",
+      "title": "zai-org/GLM-5.3",
+      "authors": "zai-org",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2258,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-14",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-19",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3",
+        "likes": 2258,
+        "downloads": 1834350,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm_moe_dsa",
+          "text-generation",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:other",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:42:50.000Z",
+        "last_modified": "2026-10-14T12:22:48.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1339,
+      "language": "model",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-17",
+      "published": "2026-10-17",
+      "discovered_at": "2026-10-19",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "likes": 1339,
+        "downloads": 10233,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "license:mit",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-10-17T02:40:38.000Z",
+        "last_modified": "2026-10-17T05:46:55.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:stepfun-ai/Step-5-Preview",
+      "title": "stepfun-ai/Step-5-Preview",
+      "authors": "stepfun-ai",
+      "description": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "abstract": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "url": "https://huggingface.co/stepfun-ai/Step-5-Preview",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 108,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-10-15",
+      "published": "2026-09-20",
+      "discovered_at": "2026-10-19",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "stepfun-ai/Step-5-Preview",
+        "likes": 108,
+        "downloads": 1206,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "step5_vl",
+          "license:other",
+          "eval-results",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T03:15:06.000Z",
+        "last_modified": "2026-10-15T01:28:10.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recent": true,
+    "source_diversity": false,
+    "chinese_source": false
+  },
+  "warnings": [
+    "All selected items came from web supplementation; the 70% source-diversity cap could not be met.",
+    "The three-day crawler window yielded no eligible new papers. Supplements use the permitted 90-day horizon with original publication dates.",
+    "No eligible Chinese-language source remained after deduplication.",
+    "Nine items met the 3.0 threshold. Quantum recommendation was scored below threshold.",
+    "Some discovery endpoints returned rate limits, API errors or SSL failures.",
+    "The accessible LLMTransRec page does not quantify its main metric gains."
+  ]
+}

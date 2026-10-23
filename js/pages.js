@@ -1,5 +1,7 @@
 (function () {
   "use strict";
+  const IS_EN = (document.documentElement.lang || "").toLowerCase().indexOf("en") === 0;
+  function TR(zh, en) { return IS_EN ? en : zh; }
   // Paper Daily static SPA — design direction C "Newsletter / magazine" (2026-10-10).
   // Display order everywhere (user preference); data.json "tracks" overrides at boot.
   let TRACKS = ["personalization", "generative", "retrieval", "agentic", "infra"];
@@ -8,19 +10,19 @@
     agentic: "Agentic", infra: "Infra",
   };
   let TRACK_ZH = {
-    personalization: "个性化推荐", generative: "生成式推荐", retrieval: "检索与RAG",
-    agentic: "智能体搜索", infra: "系统与索引",
+    personalization: TR("个性化推荐", ""), generative: TR("生成式推荐", ""), retrieval: TR("检索与RAG", ""),
+    agentic: TR("智能体搜索", ""), infra: TR("系统与索引", ""),
   };
   const SOURCE_LABELS = {
     arxiv: "arXiv", huggingface: "HuggingFace", semantic_scholar: "Semantic Scholar",
     conference_papers: "Conference", github: "GitHub", web_search: "Web Search", blog_rss: "Blog",
   };
   const DIMS = [
-    ["business_relevance", "Relevance", "相关"], ["technical_novelty", "Novelty", "新颖"],
-    ["practicality", "Practical", "实用"], ["evidence_quality", "Evidence", "证据"],
-    ["timeliness", "Timely", "时效"],
+    ["business_relevance", "Relevance", TR("相关", "Rel")], ["technical_novelty", "Novelty", TR("新颖", "Nov")],
+    ["practicality", "Practical", TR("实用", "Prac")], ["evidence_quality", "Evidence", TR("证据", "Evid")],
+    ["timeliness", "Timely", TR("时效", "Time")],
   ];
-  const WEEKDAY_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+  const WEEKDAY_ZH = [TR("日", "Sun"), TR("一", "Mon"), TR("二", "Tue"), TR("三", "Wed"), TR("四", "Thu"), TR("五", "Fri"), TR("六", "Sat")];
 
   let DATA = { days: [], day_count: 0, latest_date: null, generated_at: "" };
   let reportCache = {};
@@ -40,11 +42,11 @@
   function pad2(v) { const n = parseInt(v, 10); return isNaN(n) ? escapeHtml(v) : (n < 10 ? "0" + n : String(n)); }
   function weekdayChinese(dateStr) {
     const d = new Date(dateStr + "T00:00:00");
-    return Number.isNaN(d.getTime()) ? "" : "周" + WEEKDAY_ZH[d.getDay()];
+    return Number.isNaN(d.getTime()) ? "" : TR("周", "") + WEEKDAY_ZH[d.getDay()];
   }
   function dateLine(d) {
     if (!d || d.length !== 10) return escapeHtml(d || "");
-    return d.slice(0, 4) + " 年 " + d.slice(5, 7) + " 月 " + d.slice(8, 10) + " 日 " + weekdayChinese(d);
+    return d.slice(0, 4) + TR(" 年 ", "-") + d.slice(5, 7) + TR(" 月 ", "-") + d.slice(8, 10) + TR(" 日 ", " ") + weekdayChinese(d);
   }
   function trackClass(t) { return "t-" + String(t || "").toLowerCase().replace(/[^a-z0-9_-]/g, ""); }
   function trackLabel(t) { return TRACK_LABELS[t] || t; }
@@ -60,7 +62,7 @@
       : companiesOf(p).map(function (n) { return { name: n, logo: null, hue: 210 }; });
     return L.slice(0, max || 99).map(function (c) {
       const icon = c.logo
-        ? '<img class="clogo" src="' + escapeHtml(c.logo) + '" alt="" width="16" height="16" loading="lazy" decoding="async" onerror="this.remove()">'
+        ? '<img class="clogo" src="' + escapeHtml((document.documentElement.getAttribute("data-root") || "") + c.logo) + '" alt="" width="16" height="16" loading="lazy" decoding="async" onerror="this.remove()">'
         : '<span class="clogo mono" style="--h:' + (Number(c.hue) || 0) + '" aria-hidden="true">' + escapeHtml(String(c.name || "?").trim().charAt(0).toUpperCase()) + "</span>";
       return '<span class="cname">' + icon + escapeHtml(c.name) + "</span>";
     });
@@ -68,7 +70,7 @@
   function linkLabel(p) {
     const url = String(p.url || "");
     if (url.indexOf("arxiv.org") !== -1) return "arXiv";
-    return p.source ? sourceLabel(p.source) : "原文";
+    return p.source ? sourceLabel(p.source) : TR("原文", "Source");
   }
   function dots(v) {
     const r = Math.round(num(v) || 0);
@@ -103,11 +105,11 @@
     }).join("");
     const aria = DIMS.map(function (d) { return d[1] + " " + (sc[d[0]] != null ? sc[d[0]] : "-"); }).join("，");
     return '<svg class="radar" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + " " + size +
-      '" role="img" aria-label="五维评分：' + escapeHtml(aria) + '">' + g + '<polygon class="rp" points="' + poly + '"/>' + lab + "</svg>";
+      TR('" role="img" aria-label="五维评分：', '" role="img" aria-label="Scores: ') + escapeHtml(aria) + '">' + g + '<polygon class="rp" points="' + poly + '"/>' + lab + "</svg>";
   }
   function xpBlock(inner, cls) {
     return '<div class="xp ' + (cls || "") + '"><div class="xp-body">' + inner +
-      '</div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div>';
+      TR('</div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div>', '</div><button type="button" class="xp-btn" aria-expanded="false">Read more &#9662;</button></div>');
   }
   function measureXp(root) {
     (root || document).querySelectorAll(".xp").forEach(function (x) {
@@ -138,7 +140,7 @@
     const rawPid = paper.id || dr.paper_id || "";
     const domId = String(rawPid).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "x";
     const pageLink = dr.slug
-      ? '<a class="deep-read-page-link" href="deep-readings/' + encodeURIComponent(dr.slug) + '.html">独立页面阅读 &#8599;</a>'
+      ? '<a class="deep-read-page-link" href="deep-readings/' + encodeURIComponent(dr.slug) + TR('.html">独立页面阅读 &#8599;</a>', '.html">Open as page &#8599;</a>')
       : "";
     const mins = readingMinutes(dr);
     return (
@@ -146,11 +148,11 @@
       '" id="dr-' + escapeHtml(domId) + '">' +
       '<div class="deep-read-toggle-row">' +
       '<button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">' +
-      '<span class="deep-read-trigger-icon">&#9660;</span><span>&#128214; 展开深度解读' + (mins ? " · " + mins + " 分钟" : "") + "</span>" +
+      TR('<span class="deep-read-trigger-icon">&#9660;</span><span>&#128214; 展开深度解读', '<span class="deep-read-trigger-icon">&#9660;</span><span>&#128214; Expand deep dive') + (mins ? " · " + mins + TR(" 分钟", " min") : "") + "</span>" +
       "</button>" + pageLink + "</div>" +
       '<div class="deep-read-section" hidden><div class="deep-read-header-bar">' +
       '<button type="button" class="deep-read-trigger expanded" data-deep-collapse>' +
-      '<span class="deep-read-trigger-icon">&#9650;</span><span>收起深度解读</span></button>' + pageLink + "</div>" +
+      TR('<span class="deep-read-trigger-icon">&#9650;</span><span>收起深度解读</span></button>', '<span class="deep-read-trigger-icon">&#9650;</span><span>Collapse deep dive</span></button>') + pageLink + "</div>" +
       '<div class="deep-read-content">' + htmlBody + "</div></div></div>"
     );
   }
@@ -210,7 +212,7 @@
     return { date: null, track: null };
   }
   function reportDataHref(date, track) { return "reports/" + date + "/" + track + "/report_data.json"; }
-  function reportHtmlHref(date, track) { return "reports/" + date + "/" + track + "/report.html"; }
+  function reportHtmlHref(date, track) { return IS_EN ? "reports/" + date + "/" + track + ".html" : "reports/" + date + "/" + track + "/report.html"; }
   function viewHash(date, track) { return "#/view/" + date + "/" + track; }
 
   // ---------- day report body (lead story + cards + other tracks + 开源雷达) ----------
@@ -219,8 +221,8 @@
   function insightInner(p) {
     let s = "";
     if (p.key_insight) s += '<p><b class="lab">INSIGHT</b>' + hlText(escapeHtml(p.key_insight)) + "</p>";
-    if (p.business_connection) s += '<p><b class="lab">业务关联</b>' + escapeHtml(p.business_connection) + "</p>";
-    if (p.evidence) s += '<p><b class="lab">证据</b>' + escapeHtml(p.evidence) + "</p>";
+    if (p.business_connection) s += TR('<p><b class="lab">业务关联</b>', '<p><b class="lab">Business link</b>') + escapeHtml(p.business_connection) + "</p>";
+    if (p.evidence) s += TR('<p><b class="lab">证据</b>', '<p><b class="lab">Evidence</b>') + escapeHtml(p.evidence) + "</p>";
     return s;
   }
 
@@ -231,26 +233,26 @@
     let btns = "";
     if (dr && dr.slug) {
       const m = readingMinutes(dr);
-      btns += '<a class="btn w" href="deep-readings/' + encodeURIComponent(dr.slug) + '.html">&#128214; 深度解读' + (m ? " · " + m + " 分钟" : "") + "</a>";
+      btns += '<a class="btn w" href="deep-readings/' + encodeURIComponent(dr.slug) + TR('.html">&#128214; 深度解读', '.html">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</a>";
     }
     if (p.url) btns += '<a class="btn ghost" href="' + escapeHtml(p.url) + '" target="_blank" rel="noopener">' + escapeHtml(linkLabel(p)) + " &#8599;</a>";
     const adj = num(p.adjusted_score);
     let more = "";
-    if (p.business_connection) more += '<span class="more"><b>业务关联</b> ' + escapeHtml(p.business_connection) + "</span>";
-    if (p.evidence) more += '<span class="more"><b>证据</b> ' + escapeHtml(p.evidence) + "</span>";
+    if (p.business_connection) more += TR('<span class="more"><b>业务关联</b> ', '<span class="more"><b>Business link</b> ') + escapeHtml(p.business_connection) + "</span>";
+    if (p.evidence) more += TR('<span class="more"><b>证据</b> ', '<span class="more"><b>Evidence</b> ') + escapeHtml(p.evidence) + "</span>";
     const pq = p.key_insight || more
-      ? '<div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>' + hlText(escapeHtml(p.key_insight || "")) + more + "</div>" : "";
+      ? TR('<div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>', '<div class="pq"><small>KEY INSIGHT · What it means for the business</small>') + hlText(escapeHtml(p.key_insight || "")) + more + "</div>" : "";
     const foot = [truncate(p.authors, 90), p.published, sourceLabel(p.source)].filter(Boolean).map(escapeHtml).join(" · ");
     const deep = dr ? renderDeepRead(p) : "";
     return (
       '<section class="lead ' + trackClass(track) + '" id="paper-' + escapeHtml(pid) + '" data-paper-id="' + escapeHtml(pid) + '" data-card>' +
       '<div class="art" data-n="' + pad2(p.rank || i + 1) + '"><div>' +
-      '<div class="k">LEAD STORY · 今日必读' + (comp.length ? " · " + compHtml(p, 3).join(" / ") : "") + "</div>" +
+      TR('<div class="k">LEAD STORY · 今日必读', '<div class="k">LEAD STORY · Must-read today') + (comp.length ? " · " + compHtml(p, 3).join(" / ") : "") + "</div>" +
       '<h2><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h2>" +
       "<p>" + hlText(escapeHtml(p.summary || "")) + "</p></div>" +
       '<div class="btns">' + btns + "</div></div>" +
       '<div class="side"><div class="ring">' + radarSvg(p.scores, 170) +
-      '<div><div class="big">' + fmt2(p.total_score) + '</div><div class="lbl">综合分 / 5' + (adj !== null ? "<br>偏好调整 " + fmt2(adj) : "") + "</div></div></div>" +
+      '<div><div class="big">' + fmt2(p.total_score) + TR('</div><div class="lbl">综合分 / 5', '</div><div class="lbl">Score / 5') + (adj !== null ? TR("<br>偏好调整 ", "<br>Adjusted ") + fmt2(adj) : "") + "</div></div></div>" +
       pq + '<div class="foot">' + foot + "</div></div>" +
       (deep ? '<div class="lead-dr">' + deep + "</div>" : "") +
       "</section>"
@@ -261,7 +263,7 @@
     const pid = pidOf(p, i);
     const dr = p.deep_reading && p.deep_reading.status === "completed" ? p.deep_reading : null;
     let chips = compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
-    if (dr) { const m = readingMinutes(dr); chips += '<span class="chip deep">&#128214; 有深读' + (m ? " · " + m + " 分钟" : "") + "</span>"; }
+    if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
     const ins = insightInner(p);
     let foot = "<span>" + escapeHtml(sourceLabel(p.source)) + "</span>";
     if (p.published) foot += "<span>·</span><span>" + escapeHtml(p.published) + "</span>";
@@ -269,7 +271,7 @@
     if (dl) foot += '<span>·</span><span class="score-detail">' + dl + "</span>";
     return (
       '<article class="card ' + trackClass(track) + '" id="paper-' + escapeHtml(pid) + '" data-paper-id="' + escapeHtml(pid) + '" data-card>' +
-      '<div class="top"><span class="n">' + pad2(p.rank || i + 1) + '</span><span class="sb" title="综合分">' + dots(p.total_score) + " " + fmt2(p.total_score) + "</span></div>" +
+      '<div class="top"><span class="n">' + pad2(p.rank || i + 1) + TR('</span><span class="sb" title="综合分">', '</span><span class="sb" title="Score">') + dots(p.total_score) + " " + fmt2(p.total_score) + "</span></div>" +
       '<h4><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h4>" +
       (chips ? "<div>" + chips + "</div>" : "") +
       (p.summary ? "<p>" + hlText(escapeHtml(p.summary)) + "</p>" : "") +
@@ -297,11 +299,11 @@
     const meta = day.meta || {};
     const others = r.tracks.filter(function (t) { return t !== r.track; });
     if (!others.length) return "";
-    return '<div class="secT"><h3>其他赛道今日</h3><span>点击切换</span></div><div class="other">' +
+    return TR('<div class="secT"><h3>其他赛道今日</h3><span>点击切换</span></div><div class="other">', '<div class="secT"><h3>Other tracks today</h3><span>Click to switch</span></div><div class="other">') +
       others.map(function (t) {
         const c = meta[t] && meta[t].papers_selected != null ? meta[t].papers_selected : "-";
         return '<a class="ot ' + trackClass(t) + '" data-track="' + escapeHtml(t) + '" href="' + viewHash(r.date, t) + '"><b>' + escapeHtml(trackLabel(t)) +
-          "</b><div>" + escapeHtml(c) + '</div><span class="os">' + escapeHtml(TRACK_ZH[t] || "") + " · 篇入选</span></a>";
+          "</b><div>" + escapeHtml(c) + '</div><span class="os">' + escapeHtml(TRACK_ZH[t] || "") + TR(" · 篇入选</span></a>", " papers</span></a>");
       }).join("") + "</div>";
   }
 
@@ -312,29 +314,29 @@
     const track = r.track;
     let out = "";
     const st = [];
-    if (stats.papers_scored != null) st.push("评分 " + escapeHtml(stats.papers_scored) + " 篇");
-    st.push("入选 " + papers.length + " 篇");
-    if (stats.score_max != null) st.push("分数 " + fmt2(stats.score_min) + " – " + fmt2(stats.score_max));
-    out += '<p class="scen"><b>今日场景</b>' + escapeHtml(report.scenario || "") + ' <span class="sc-stat">— ' + st.join("，") + "</span></p>";
+    if (stats.papers_scored != null) st.push(TR("评分 ", "Scored ") + escapeHtml(stats.papers_scored) + TR(" 篇", ""));
+    st.push(TR("入选 ", "selected ") + papers.length + TR(" 篇", ""));
+    if (stats.score_max != null) st.push(TR("分数 ", "scores ") + fmt2(stats.score_min) + " – " + fmt2(stats.score_max));
+    out += TR('<p class="scen"><b>今日场景</b>', '<p class="scen"><b>Scenario</b>') + escapeHtml(report.scenario || "") + ' <span class="sc-stat">— ' + st.join("，") + "</span></p>";
     if (papers.length > 1) {
-      out += '<details class="issue-toc"><summary>本期目录 · ' + papers.length + " 篇</summary><ol>" +
+      out += TR('<details class="issue-toc"><summary>本期目录 · ', '<details class="issue-toc"><summary>In this issue · ') + papers.length + TR(" 篇</summary><ol>", " papers</summary><ol>") +
         papers.map(function (p, i) {
           return '<li><a class="outline-paper" href="#paper-' + escapeHtml(pidOf(p, i)) + '" title="' + escapeHtml(p.title) + '"><i>' +
             pad2(i + 1) + "</i><span>" + escapeHtml(p.title || "Untitled") + "</span></a></li>";
         }).join("") + "</ol></details>";
     }
     if (!papers.length) {
-      out += '<div class="empty-state"><span class="icon">&#128237;</span><h3>本期无入选论文</h3><p>该方向当日没有入选论文。</p></div>';
+      out += TR('<div class="empty-state"><span class="icon">&#128237;</span><h3>本期无入选论文</h3><p>该方向当日没有入选论文。</p></div>', '<div class="empty-state"><span class="icon">&#128237;</span><h3>No papers selected</h3><p>No papers were selected for this track on this day.</p></div>');
     } else {
       out += renderLead(papers[0], 0, track);
       if (papers.length > 1) {
-        out += '<div class="secT"><h3>今日其余入选</h3><span>' + (papers.length - 1) + " 篇 · 按综合排名</span></div>" +
+        out += TR('<div class="secT"><h3>今日其余入选</h3><span>', '<div class="secT"><h3>More picks today</h3><span>') + (papers.length - 1) + TR(" 篇 · 按综合排名</span></div>", " papers · by overall rank</span></div>") +
           '<div class="grid">' + papers.slice(1).map(function (p, i) { return renderCard(p, i + 1, track); }).join("") + "</div>";
       }
     }
     out += renderOther(r);
     if (projects.length) {
-      out += '<div class="secT"><h3>开源雷达</h3><span>GitHub / HuggingFace 热门 · ' + projects.length + " 个项目</span></div>" +
+      out += TR('<div class="secT"><h3>开源雷达</h3><span>GitHub / HuggingFace 热门 · ', '<div class="secT"><h3>Open-source radar</h3><span>Trending on GitHub / HuggingFace · ') + projects.length + TR(" 个项目</span></div>", " projects</span></div>") +
         '<div class="codes">' + projects.map(renderCode).join("") + "</div>";
     }
     return out;
@@ -370,7 +372,7 @@
       idx = dayIndex(route.date);
       if (idx < 0) {
         idx = nearestDayIndex(route.date);
-        notice = route.date + " 没有日报，已显示最近的 " + DATA.days[idx].date;
+        notice = route.date + TR(" 没有日报，已显示最近的 ", " has no issue; showing the nearest, ") + DATA.days[idx].date;
       }
     }
     const day = DATA.days[idx];
@@ -378,7 +380,7 @@
     let track = tracks[0] || "";
     if (route.track) {
       if (tracks.indexOf(route.track) !== -1) track = route.track;
-      else if (!notice) notice = day.date + " 没有 " + trackLabel(route.track) + " 日报，已显示 " + trackLabel(track);
+      else if (!notice) notice = day.date + TR(" 没有 ", " has no ") + trackLabel(route.track) + TR(" 日报，已显示 ", " issue; showing ") + trackLabel(track);
     }
     return { idx: idx, date: day.date, tracks: tracks, track: track, notice: notice };
   }
@@ -387,7 +389,7 @@
     if (location.hash === h) render();
     else location.hash = h; // pushes history entry -> hashchange -> render (no reload)
   }
-  function issueNo(idx) { return DATA.days.length - idx; } // counted from the oldest day; latest = day_count
+  function issueNo(idx) { const d = DATA.days[idx]; return d && d.issue_no ? d.issue_no : DATA.days.length - idx; } // counted from the oldest day; latest = day_count
 
   function setMast(left, right) {
     const a = document.getElementById("mast-issue"), b = document.getElementById("mast-date");
@@ -412,18 +414,18 @@
     }).join("");
     return (
       '<div class="date-nav" id="date-nav">' +
-      '<button class="date-nav-btn" type="button" data-date-prev title="前一天 (更早)" aria-label="前一天"' + (r.idx >= n - 1 ? " disabled" : "") + ">&#8249;</button>" +
+      TR('<button class="date-nav-btn" type="button" data-date-prev title="前一天 (更早)" aria-label="前一天"', '<button class="date-nav-btn" type="button" data-date-prev title="Previous day (older)" aria-label="Previous day"') + (r.idx >= n - 1 ? " disabled" : "") + ">&#8249;</button>" +
       '<div class="date-label" id="date-label" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="' +
-      (state.pickerOpen ? "true" : "false") + '" title="往期：选择日期">' +
+      (state.pickerOpen ? "true" : "false") + TR('" title="往期：选择日期">', '" title="Archive: pick a date">') +
       "<span>" + escapeHtml(r.date) + "</span>" +
       '<span class="date-weekday">(' + escapeHtml(weekdayChinese(r.date)) + ")</span>" +
       '<span class="date-caret' + (state.pickerOpen ? " open" : "") + '">&#9660;</span>' +
-      (r.idx === 0 ? '<span class="date-latest-tag">最新</span>' : "") + "</div>" +
-      '<button class="date-nav-btn" type="button" data-date-next title="后一天 (更新)" aria-label="后一天"' + (r.idx <= 0 ? " disabled" : "") + ">&#8250;</button>" +
+      (r.idx === 0 ? TR('<span class="date-latest-tag">最新</span>', '<span class="date-latest-tag">Latest</span>') : "") + "</div>" +
+      TR('<button class="date-nav-btn" type="button" data-date-next title="后一天 (更新)" aria-label="后一天"', '<button class="date-nav-btn" type="button" data-date-next title="Next day (newer)" aria-label="Next day"') + (r.idx <= 0 ? " disabled" : "") + ">&#8250;</button>" +
       '<div class="date-picker-dropdown" id="date-picker"' + (state.pickerOpen ? "" : " hidden") + ">" +
       '<div class="date-picker-jump"><input type="date" id="date-jump" value="' + escapeHtml(r.date) + '" min="' + escapeHtml(oldest) +
-      '" max="' + escapeHtml(latest) + '" aria-label="跳转日期"><button type="button" data-date-go>Go</button></div>' +
-      '<div class="date-picker-count">往期 · ' + n + " 天有日报（无日报的日期自动跳到最近一期）</div>" +
+      '" max="' + escapeHtml(latest) + TR('" aria-label="跳转日期"><button type="button" data-date-go>Go</button></div>', '" aria-label="Jump to date"><button type="button" data-date-go>Go</button></div>') +
+      TR('<div class="date-picker-count">往期 · ', '<div class="date-picker-count">Archive · ') + n + TR(" 天有日报（无日报的日期自动跳到最近一期）</div>", " English issues (dates without one jump to the nearest)</div>") +
       '<ul class="date-picker-list" role="listbox">' + items + "</ul></div></div>"
     );
   }
@@ -436,18 +438,18 @@
       const c = meta[t] && meta[t].papers_selected != null ? meta[t].papers_selected : "-";
       return '<a class="track-tab ' + trackClass(t) + (t === r.track ? " active" : "") + '" data-track="' + escapeHtml(t) +
         '" href="' + viewHash(r.date, t) + '"' + (t === r.track ? ' aria-current="page"' : "") + "><b>" + escapeHtml(trackLabel(t)) +
-        '</b><span class="rs">' + escapeHtml(TRACK_ZH[t] || "") + " · <em>" + escapeHtml(c) + "</em> 篇</span></a>";
+        '</b><span class="rs">' + escapeHtml(TRACK_ZH[t] || "") + " · <em>" + escapeHtml(c) + TR("</em> 篇</span></a>", "</em> papers</span></a>");
     }).join("");
     main.innerHTML =
-      '<div class="issue-bar"><div class="ib-info"><b>第 ' + issueNo(r.idx) + " 期</b> · " + escapeHtml(dateLine(r.date)) +
-      " · " + r.tracks.length + " 个方向</div>" + renderDateNav(r) + "</div>" +
+      TR('<div class="issue-bar"><div class="ib-info"><b>第 ', '<div class="issue-bar"><div class="ib-info"><b>Issue ') + issueNo(r.idx) + TR(" 期</b> · ", "</b> · ") + escapeHtml(dateLine(r.date)) +
+      " · " + r.tracks.length + TR(" 个方向</div>", " tracks</div>") + renderDateNav(r) + "</div>" +
       (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
       '<div class="weekly-rule"><a class="open-raw" href="' + reportHtmlHref(r.date, r.track) +
-      '" target="_blank" rel="noopener">独立报告页 report.html &#8599;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读' +
-      (DATA.deep_reading_entries ? " " + DATA.deep_reading_entries + " 篇" : "") + " &#8594;</a></div>";
-    setMast("第 " + issueNo(r.idx) + " 期", dateLine(r.date));
+      TR('" target="_blank" rel="noopener">独立报告页 report.html &#8599;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读', '" target="_blank" rel="noopener">Standalone report page &#8599;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; Deep dives') +
+      (DATA.deep_reading_entries ? " " + DATA.deep_reading_entries + TR(" 篇", "") : "") + " &#8594;</a></div>";
+    setMast(TR("第 ", "Issue ") + issueNo(r.idx) + TR(" 期", ""), dateLine(r.date));
     setBodyTrack(r.track);
   }
 
@@ -475,19 +477,24 @@
   function setDocMeta(route) {
     let t = HOME_TITLE, d = HOME_DESC;
     if (route.weekly) {
-      t = "周榜 Weekly Top " + (DATA.weekly_top_n || 10) + (route.week ? " · " + route.week + " 周" : "") + " | Paper Daily";
-      d = "Paper Daily 周榜：按周汇总搜索、推荐与 GenAI 各方向日报入选论文，按偏好调整分排序、去重后的每周 Top " +
-        (DATA.weekly_top_n || 10) + "，附深度解读链接。";
+      t = TR("周榜 Weekly Top ", "Weekly Top ") + (DATA.weekly_top_n || 10) + (route.week ? " · " + route.week + TR(" 周", " week") : "") + " | Paper Daily";
+      d = TR("Paper Daily 周榜：按周汇总搜索、推荐与 GenAI 各方向日报入选论文，按偏好调整分排序、去重后的每周 Top ", "Paper Daily weekly ranking: deduplicated top ") +
+        (DATA.weekly_top_n || 10) + TR("，附深度解读链接。", " papers per track each week, with deep-dive links.");
     } else if (route.archive) {
-      t = "往期日报 · " + (DATA.days || []).length + " 期 | Paper Daily";
+      t = TR("往期日报 · ", "Archive · ") + (DATA.days || []).length + TR(" 期 | Paper Daily", " issues | Paper Daily");
     } else if (route.date) {
-      t = route.date + (route.track ? " " + trackLabel(route.track) : "") + " 论文日报 | Paper Daily";
+      t = route.date + (route.track ? " " + trackLabel(route.track) : "") + TR(" 论文日报 | Paper Daily", " papers | Paper Daily");
     }
     document.title = t;
     if (descEl) descEl.setAttribute("content", d);
   }
 
+  function syncLangToggle() {
+    const a = document.querySelector(".lang-tg[data-base]");
+    if (a) a.setAttribute("href", a.getAttribute("data-base") + (location.hash || ""));
+  }
   function render() {
+    syncLangToggle();
     const route = parseRoute();
     try { setDocMeta(route); } catch (e) { /* never block rendering */ }
     if (route.weekly) {
@@ -583,13 +590,13 @@
       idx = weekIndex(route.week);
       if (idx < 0) {
         idx = weekIndexForDate(route.week);
-        notice = route.week + " 所在周没有日报，已显示 " + weekRangeLabel(ws[idx]);
+        notice = route.week + TR(" 所在周没有日报，已显示 ", " falls in a week without issues; showing ") + weekRangeLabel(ws[idx]);
       }
     }
     let track = TRACKS[0];
     if (route.track) {
       if (TRACKS.indexOf(route.track) !== -1) track = route.track;
-      else if (!notice) notice = "未知方向 " + route.track + "，已显示 " + trackLabel(track);
+      else if (!notice) notice = TR("未知方向 ", "Unknown track ") + route.track + TR("，已显示 ", "; showing ") + trackLabel(track);
     }
     return { idx: idx, week: ws[idx], track: track, notice: notice };
   }
@@ -601,26 +608,26 @@
     const items = ws.map(function (x) {
       const live = weekInProgress(x);
       return '<li class="date-picker-item' + (x.week_start === w.week_start ? " active" : "") + '" data-week="' + escapeHtml(x.week_start) +
-        '" tabindex="0" role="option"><span class="dp-date">' + escapeHtml(weekRangeLabel(x)) + '</span><span class="dp-weekday">第' +
-        escapeHtml(x.iso_week) + '周</span><span class="dp-tracks"><span class="dp-track-badge">' + escapeHtml(x.day_count) + " 天日报</span>" +
-        (live ? '<span class="dp-track-badge weekly-live-badge">进行中</span>' : "") + "</span></li>";
+        '" tabindex="0" role="option"><span class="dp-date">' + escapeHtml(weekRangeLabel(x)) + TR('</span><span class="dp-weekday">第', '</span><span class="dp-weekday">W') +
+        escapeHtml(x.iso_week) + TR('周</span><span class="dp-tracks"><span class="dp-track-badge">', '</span><span class="dp-tracks"><span class="dp-track-badge">') + escapeHtml(x.day_count) + TR(" 天日报</span>", " days</span>") +
+        (live ? TR('<span class="dp-track-badge weekly-live-badge">进行中</span>', '<span class="dp-track-badge weekly-live-badge">In progress</span>') : "") + "</span></li>";
     }).join("");
     const live = weekInProgress(w);
     return (
       '<div class="date-nav weekly-nav" id="date-nav">' +
-      '<button class="date-nav-btn" type="button" data-week-prev title="上一周 (更早)" aria-label="上一周"' + (r.idx >= n - 1 ? " disabled" : "") + ">&#8249;</button>" +
+      TR('<button class="date-nav-btn" type="button" data-week-prev title="上一周 (更早)" aria-label="上一周"', '<button class="date-nav-btn" type="button" data-week-prev title="Previous week" aria-label="Previous week"') + (r.idx >= n - 1 ? " disabled" : "") + ">&#8249;</button>" +
       '<div class="date-label" id="date-label" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="' +
-      (state.pickerOpen ? "true" : "false") + '" title="选择周">' +
+      (state.pickerOpen ? "true" : "false") + TR('" title="选择周">', '" title="Pick a week">') +
       '<span class="weekly-range">' + escapeHtml(weekRangeLabel(w)) + "</span>" +
-      '<span class="date-weekday">(第' + escapeHtml(w.iso_week) + "周)</span>" +
+      TR('<span class="date-weekday">(第', '<span class="date-weekday">(W') + escapeHtml(w.iso_week) + TR("周)</span>", ")</span>") +
       '<span class="date-caret' + (state.pickerOpen ? " open" : "") + '">&#9660;</span>' +
-      (live ? '<span class="date-latest-tag weekly-live-tag">进行中</span>' : r.idx === 0 ? '<span class="date-latest-tag">最新</span>' : "") +
+      (live ? TR('<span class="date-latest-tag weekly-live-tag">进行中</span>', '<span class="date-latest-tag weekly-live-tag">In progress</span>') : r.idx === 0 ? TR('<span class="date-latest-tag">最新</span>', '<span class="date-latest-tag">Latest</span>') : "") +
       "</div>" +
-      '<button class="date-nav-btn" type="button" data-week-next title="下一周 (更新)" aria-label="下一周"' + (r.idx <= 0 ? " disabled" : "") + ">&#8250;</button>" +
+      TR('<button class="date-nav-btn" type="button" data-week-next title="下一周 (更新)" aria-label="下一周"', '<button class="date-nav-btn" type="button" data-week-next title="Next week" aria-label="Next week"') + (r.idx <= 0 ? " disabled" : "") + ">&#8250;</button>" +
       '<div class="date-picker-dropdown" id="date-picker"' + (state.pickerOpen ? "" : " hidden") + ">" +
       '<div class="date-picker-jump"><input type="date" id="week-jump" value="' + escapeHtml(w.week_start) + '" min="' +
-      escapeHtml(ws[n - 1].week_start) + '" max="' + escapeHtml(ws[0].week_end) + '" aria-label="跳转到某天所在周"><button type="button" data-week-go>Go</button></div>' +
-      '<div class="date-picker-count">' + n + " 周有日报 · 周一至周日</div>" +
+      escapeHtml(ws[n - 1].week_start) + '" max="' + escapeHtml(ws[0].week_end) + TR('" aria-label="跳转到某天所在周"><button type="button" data-week-go>Go</button></div>', '" aria-label="Jump to the week of a date"><button type="button" data-week-go>Go</button></div>') +
+      '<div class="date-picker-count">' + n + TR(" 周有日报 · 周一至周日</div>", " weeks · Mon–Sun</div>") +
       '<ul class="date-picker-list" role="listbox">' + items + "</ul></div></div>"
     );
   }
@@ -632,20 +639,20 @@
       const c = counts[t] || 0;
       return '<a class="track-tab ' + trackClass(t) + (t === r.track ? " active" : "") + (c ? "" : " weekly-empty-tab") + '" data-track="' +
         escapeHtml(t) + '" href="' + weeklyHash(r.week.week_start, t) + '"><b>' + escapeHtml(trackLabel(t)) +
-        '</b><span class="rs">本周去重 <em>' + escapeHtml(c) + "</em> 篇</span></a>";
+        TR('</b><span class="rs">本周去重 <em>', '</b><span class="rs">unique this week <em>') + escapeHtml(c) + TR("</em> 篇</span></a>", "</em> papers</span></a>");
     }).join("");
     const w = r.week;
     main.innerHTML =
-      '<div class="wkhead"><div class="k">Weekly Top ' + escapeHtml(DATA.weekly_top_n || 10) + " · 第" + escapeHtml(w.iso_week) + "周</div>" +
+      '<div class="wkhead"><div class="k">Weekly Top ' + escapeHtml(DATA.weekly_top_n || 10) + TR(" · 第", " · W") + escapeHtml(w.iso_week) + TR("周</div>", "</div>") +
       "<h2>" + escapeHtml(w.week_start.slice(5).replace("-", ".")) + "–" + escapeHtml(w.week_end.slice(5).replace("-", ".")) + "</h2>" +
       '<div class="wk-sel">' + renderWeekNav(r) + "</div>" +
-      '<p id="wk-stats">' + escapeHtml(w.day_count) + " 期日报 · " + escapeHtml(trackLabel(r.track)) + " 本周去重 " + escapeHtml(counts[r.track] || 0) + " 篇 · 按偏好调整分</p></div>" +
+      '<p id="wk-stats">' + escapeHtml(w.day_count) + TR(" 期日报 · ", " issues · ") + escapeHtml(trackLabel(r.track)) + TR(" 本周去重 ", " unique this week: ") + escapeHtml(counts[r.track] || 0) + TR(" 篇 · 按偏好调整分</p></div>", " · by adjusted score</p></div>") +
       (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
-      '<div class="weekly-rule">排序：adjusted_score（含偏好加分）降序，其次 total_score；按 arXiv id / URL / 标题去重 · ' +
-      '<a class="open-raw" href="#/">今日 &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读 &#8594;</a></div>';
-    setMast("第 " + (DATA.days.length || DATA.day_count || "") + " 期", dateLine(DATA.latest_date || ""));
+      TR('<div class="weekly-rule">排序：adjusted_score（含偏好加分）降序，其次 total_score；按 arXiv id / URL / 标题去重 · ', '<div class="weekly-rule">Order: adjusted_score (with preference bonus) desc, then total_score; deduped by arXiv id / URL / title · ') +
+      TR('<a class="open-raw" href="#/">今日 &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读 &#8594;</a></div>', '<a class="open-raw" href="#/">Today &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; Deep dives &#8594;</a></div>');
+    setMast(TR("第 ", "Issue ") + (DATA.days.length || DATA.day_count || "") + TR(" 期", ""), dateLine(DATA.latest_date || ""));
     setBodyTrack(r.track);
   }
 
@@ -656,24 +663,24 @@
     let scoreLine = "Total " + fmt2(paper.total_score);
     if (paper.adjusted_score != null) {
       const bonus = num(paper.preference_bonus);
-      scoreLine += " · 偏好 " + (bonus === null ? "-" : (bonus >= 0 ? "+" : "") + bonus.toFixed(2)) + " · Adjusted " + fmt2(paper.adjusted_score);
+      scoreLine += TR(" · 偏好 ", " · bonus ") + (bonus === null ? "-" : (bonus >= 0 ? "+" : "") + bonus.toFixed(2)) + " · Adjusted " + fmt2(paper.adjusted_score);
     }
     const apps = (paper.appearances || []).map(function (a) {
       return '<a href="' + viewHash(a.date, track) + "?p=" + encodeURIComponent(a.id || pid) + '">' + escapeHtml(shortDay(a.date)) +
-        (a.rank != null ? " · 当日 #" + escapeHtml(a.rank) : "") + "</a>";
+        (a.rank != null ? TR(" · 当日 #", " · #") + escapeHtml(a.rank) : "") + "</a>";
     }).join("");
     const dr = paper.deep_reading && paper.deep_reading.status === "completed" ? paper.deep_reading : null;
     let chips = compHtml(paper, 3).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
-    if (dr) { const m = readingMinutes(dr); chips += '<span class="chip deep">&#128214; 有深读' + (m ? " · " + m + " 分钟" : "") + "</span>"; }
+    if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
     const dl = dimLine(paper.scores);
-    const first = paper.best_date ? "首见 " + escapeHtml(shortDay(paper.best_date)) : "";
+    const first = paper.best_date ? TR("首见 ", "First seen ") + escapeHtml(shortDay(paper.best_date)) : "";
     return {
       pid: pid,
       chips: chips,
       scoreLine: '<div class="weekly-score-line">' + escapeHtml(scoreLine) + "</div>",
       meta: '<div class="foot">' + [first, escapeHtml(sourceLabel(paper.source)), paper.published ? escapeHtml(paper.published) : ""]
         .filter(Boolean).join(" · ") + (dl ? ' · <span class="score-detail">' + dl + "</span>" : "") + "</div>",
-      apps: '<div class="dr-appearances weekly-appearances">出现于日报：' + apps + "</div>",
+      apps: TR('<div class="dr-appearances weekly-appearances">出现于日报：', '<div class="dr-appearances weekly-appearances">Appeared in: ') + apps + "</div>",
       title: '<a href="' + escapeHtml(paper.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(paper.title || "Untitled") + "</a>",
     };
   }
@@ -685,7 +692,7 @@
     const sum = paper.summary ? (n === 1 ? "<p>" + hlText(escapeHtml(paper.summary)) + "</p>" : xpBlock("<p>" + hlText(escapeHtml(paper.summary)) + "</p>", "sum")) : "";
     return (
       '<div class="pod g' + n + " weekly-card " + trackClass(track) + '" id="paper-' + escapeHtml(k.pid) + '" data-paper-id="' + escapeHtml(k.pid) + '" data-card>' +
-      '<div class="ph"><span class="medal m' + n + ' weekly-rank weekly-rank-' + n + '">' + n + '</span><span class="big badge" title="周榜排序分 (adjusted_score，缺失时为 total_score)">' +
+      '<div class="ph"><span class="medal m' + n + ' weekly-rank weekly-rank-' + n + '">' + n + TR('</span><span class="big badge" title="周榜排序分 (adjusted_score，缺失时为 total_score)">', '</span><span class="big badge" title="Weekly rank score (adjusted_score, else total_score)">') +
       fmt2(paper.rank_score) + "</span></div>" +
       '<h4 class="card-title">' + k.title + "</h4>" +
       (k.chips ? "<div>" + k.chips + "</div>" : "") +
@@ -706,7 +713,7 @@
       (k.chips ? "<div>" + k.chips + "</div>" : "") + k.meta +
       (body ? '<div class="paper-body">' + xpBlock(body, "sum") + "</div>" : "") +
       k.scoreLine + k.apps + renderDeepRead(paper) + "</div>" +
-      '<span class="s badge" title="周榜排序分">' + fmt2(paper.rank_score) + "</span></div>"
+      TR('<span class="s badge" title="周榜排序分">', '<span class="s badge" title="Weekly rank score">') + fmt2(paper.rank_score) + "</span></div>"
     );
   }
 
@@ -715,22 +722,22 @@
     const papers = td.papers || [];
     const stats = document.getElementById("wk-stats");
     if (stats) {
-      stats.textContent = (td.days || []).length + " 期日报 · " + trackLabel(r.track) + " " + td.raw_count + " 条入选 → 去重 " +
-        td.unique_count + " 篇 · 显示 Top " + papers.length + " · 按偏好调整分";
+      stats.textContent = (td.days || []).length + TR(" 期日报 · ", " issues · ") + trackLabel(r.track) + " " + td.raw_count + TR(" 条入选 → 去重 ", " picks → ") +
+        td.unique_count + TR(" 篇 · 显示 Top ", " unique · showing top ") + papers.length + TR(" · 按偏好调整分", " · by adjusted score");
     }
     const dayLinks = (td.days || []).map(function (d) { return '<a href="' + viewHash(d, r.track) + '">' + escapeHtml(shortDay(d)) + "</a>"; }).join(" · ");
-    const head = dayLinks ? '<div class="wkhead" style="margin:12px 0 0"><div class="weekly-days">当周日报：' + dayLinks + "</div></div>" : "";
+    const head = dayLinks ? TR('<div class="wkhead" style="margin:12px 0 0"><div class="weekly-days">当周日报：', '<div class="wkhead" style="margin:12px 0 0"><div class="weekly-days">Issues this week: ') + dayLinks + "</div></div>" : "";
     if (!papers.length) {
       const msg = (td.days || []).length
-        ? "本周该方向的日报没有入选论文。"
-        : "本周 " + escapeHtml(weekRangeLabel(r.week)) + " 没有 " + escapeHtml(trackLabel(r.track)) + " 日报" +
-          (r.week.days.length ? "（本周日报日期：" + r.week.days.map(shortDay).map(escapeHtml).join("、") + "）" : "") + "。";
-      return head + '<div class="empty-state"><span class="icon">📭</span><h3>暂无周榜数据</h3><p>' + msg + "</p></div>";
+        ? TR("本周该方向的日报没有入选论文。", "No papers selected for this track this week.")
+        : TR("本周 ", "Week ") + escapeHtml(weekRangeLabel(r.week)) + TR(" 没有 ", " has no ") + escapeHtml(trackLabel(r.track)) + TR(" 日报", " issues") +
+          (r.week.days.length ? TR("（本周日报日期：", " (issue dates: ") + r.week.days.map(shortDay).map(escapeHtml).join("、") + "）" : "") + "。";
+      return head + TR('<div class="empty-state"><span class="icon">📭</span><h3>暂无周榜数据</h3><p>', '<div class="empty-state"><span class="icon">📭</span><h3>No weekly data</h3><p>') + msg + "</p></div>";
     }
     const top = papers.slice(0, 3), rest = papers.slice(3);
     return head +
       '<div class="podium">' + top.map(function (p) { return renderPodium(p, r.track); }).join("") + "</div>" +
-      (rest.length ? '<div class="secT"><h3>第 4 – ' + papers.length + ' 名</h3><span>&#128214; = 已有深度解读 · 点击日期回到当日日报</span></div>' +
+      (rest.length ? TR('<div class="secT"><h3>第 4 – ', '<div class="secT"><h3>#4 – ') + papers.length + TR(' 名</h3><span>&#128214; = 已有深度解读 · 点击日期回到当日日报</span></div>', '</h3><span>&#128214; = has a deep dive · click a date to open that issue</span></div>') +
         '<div class="rest">' + rest.map(function (p) { return renderRow(p, r.track); }).join("") + "</div>" : "");
   }
 
@@ -746,7 +753,7 @@
 
   function renderWeekly(route) {
     if (!DATA.weeks || !DATA.weeks.length) {
-      document.getElementById("main").innerHTML = '<div class="empty-state"><span class="icon">🏆</span><h3>暂无周榜</h3><p>还没有任何日报数据。</p></div>';
+      document.getElementById("main").innerHTML = TR('<div class="empty-state"><span class="icon">🏆</span><h3>暂无周榜</h3><p>还没有任何日报数据。</p></div>', '<div class="empty-state"><span class="icon">🏆</span><h3>No weekly ranking</h3><p>No issues yet.</p></div>');
       return;
     }
     const r = resolveWeek(route);
@@ -765,7 +772,7 @@
       })
       .catch(function (err) {
         if (seq !== renderSeq) return;
-        document.getElementById("report-body").innerHTML = '<div class="empty-state"><h3>周榜加载失败</h3><p>' + escapeHtml(String(err)) + "</p></div>";
+        document.getElementById("report-body").innerHTML = TR('<div class="empty-state"><h3>周榜加载失败</h3><p>', '<div class="empty-state"><h3>Failed to load weekly ranking</h3><p>') + escapeHtml(String(err)) + "</p></div>";
       });
     const older = DATA.weeks[r.idx + 1];
     if (older) loadWeek(older.week_start).catch(function () {});
@@ -824,7 +831,7 @@
     const b = document.getElementById("theme-toggle");
     if (!b) return;
     const d = document.documentElement.getAttribute("data-theme") === "dark";
-    b.innerHTML = (d ? "&#9681;" : "&#9680;") + '<span class="tg-l"> ' + (d ? "浅色模式" : "深色模式") + "</span>";
+    b.innerHTML = (d ? "&#9681;" : "&#9680;") + '<span class="tg-l"> ' + (d ? TR("浅色模式", "Light") : TR("深色模式", "Dark")) + "</span>";
     b.setAttribute("aria-pressed", d ? "true" : "false");
   }
   function setTheme(t, store) {
@@ -853,9 +860,9 @@
         const foot = document.getElementById("site-foot");
         if (foot && DATA.latest_date) {
           const counter = document.getElementById("busuanzi_container_site_pv"); // 不蒜子 counter: keep the live node
-          foot.innerHTML = "<span>Paper Daily · 静态站</span><span>·</span><span>数据最新 " + escapeHtml(DATA.latest_date) +
-            "</span><span>·</span><span>共 " + escapeHtml(DATA.days.length) + " 期</span><span>·</span><span>" +
-            escapeHtml(DATA.deep_reading_entries || 0) + " 篇深度解读</span>";
+          foot.innerHTML = TR("<span>Paper Daily · 静态站</span><span>·</span><span>数据最新 ", "<span>Paper Daily · English edition</span><span>·</span><span>Latest ") + escapeHtml(DATA.latest_date) +
+            TR("</span><span>·</span><span>共 ", "</span><span>·</span><span>") + escapeHtml(DATA.days.length) + TR(" 期</span><span>·</span><span>", " issues</span><span>·</span><span>") +
+            escapeHtml(DATA.deep_reading_entries || 0) + TR(" 篇深度解读</span>", " deep dives</span>");
           if (counter) foot.appendChild(counter);
         }
         render();
@@ -879,7 +886,7 @@
       const x = xb.closest(".xp");
       const o = !x.classList.contains("open");
       x.classList.toggle("open", o);
-      xb.innerHTML = o ? "收起 &#9652;" : "展开全文 &#9662;";
+      xb.innerHTML = o ? TR("收起 &#9652;", "Collapse &#9652;") : TR("展开全文 &#9662;", "Read more &#9662;");
       xb.setAttribute("aria-expanded", o ? "true" : "false");
       return;
     }

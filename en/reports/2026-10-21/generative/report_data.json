@@ -1,0 +1,762 @@
+{
+  "date": "2026-10-21",
+  "track": "generative",
+  "scenario": "Community search over user-generated posts, questions, answers, and comments; relevance, nDCG, CTR, query understanding, and language-model applications.",
+  "stats": {
+    "papers_scored": 172,
+    "papers_selected": 10,
+    "score_min": 3.0,
+    "score_max": 4.9
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.26831",
+      "title": "AGR: Agentic Generative Retrieval with Tool-Augmented Search",
+      "authors": "Ming Yang, Yaqi Yin, Zhibo Wang, Xiaoze Jiang, Jingwei Zhuo, Chao Zhang, Quanzhi Zhu, Weiguo Zheng, Liang Zeng, Yunfeng Zhao, Jiaqiang Liu, Kefeng Wang, Yupeng Huang, Kaiqiao Zhan, Xuanping Li",
+      "url": "https://arxiv.org/abs/2610.26831",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "base_score": 4.5,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.4,
+      "adjusted_score": 4.9,
+      "total_score": 4.5,
+      "company": [
+        "Kuaishou",
+        "Fudan"
+      ],
+      "summary": "Generative retrieval need not encode every available feature up front. AGR requests intent, location, or behavioral evidence while decoding item identifiers, then resumes generation with a compact observation. A Kuaishou online experiment reports a 0.205% increase in requests with strongly relevant top-four results.",
+      "key_insight": "Feature value depends on the current identifier prefix. Learning when to request evidence can reduce redundant history encoding, although tool use still costs more than the feature-free baseline.",
+      "evidence_url": "https://arxiv.org/html/2610.26831",
+      "rank": 1,
+      "company_logos": [
+        {
+          "name": "Kuaishou",
+          "logo": "logos/kuaishou.png",
+          "hue": 21
+        },
+        {
+          "name": "Fudan",
+          "logo": "logos/fudan.png",
+          "hue": 168
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.26831",
+        "title": "AGR: Agentic Generative Retrieval with Tool-Augmented Search",
+        "status": "completed",
+        "content": "AGR lets a generative retriever request features when they become useful instead of reading every available signal on every request. The model generates an item identifier, pauses to acquire intent or behavioral evidence, and continues along a better-informed branch. The Kuaishou and Fudan team evaluates this interface in production search as well as public benchmarks.\n\n## 1. Why more features are not always better\n\nGenerative retrieval replaces direct item scoring with prediction of a short semantic identifier. Related items share parts of that identifier, so decoding progressively narrows the catalog. Industrial search, however, relies on more than the query: user history, location, intent, and freshness can all matter.\n\nEncoding every feature up front creates two problems. Some signals are redundant or irrelevant for the current request. Others become useful only at a particular point in the identifier tree. Intent may distinguish a movie from a game early in decoding, while behavioral history may distinguish individual games later. Static injection does not explicitly make that distinction.\n\nAGR treats feature acquisition as a decoding decision. Its contribution concerns when and where existing evidence enters the retriever, rather than the discovery of a new feature source.\n\n## 2. How feature tools enter decoding\n\n![Follow the tree on the right: intent rules out the movie branch, then historical preference separates game candidates. The lower-left panel shows how tool decisions and returned observations participate in decoding.](figs/2610.26831/agr_system_overview.png)\n\nThe output vocabulary includes tool-call tokens alongside item-code tokens. At each step the model can extend the identifier or request a feature. A request executes an external function whose result becomes a compact observation embedding. The call token triggers the action; the returned observation, rather than the call token itself, enters the next-step context.\n\nCategorical features such as intent and location map to learned observation embeddings. Observations have a distinct positional representation and do not advance the item-identifier depth. The final retrieved output remains an ordinary identifier, with tool tokens removed.\n\nBehavioral tools compress a sequence of historical interactions into evidence relevant to the current prefix. The default voting implementation retains historical items with matching identifier prefixes and returns their most frequent next code. The attention implementation retrieves nearby histories in embedding space and aggregates their successor information, allowing approximate rather than exact prefix matches.\n\n![Voting on the left counts histories with an exact prefix match. Attention on the right also admits nearby prefixes, yielding a richer observation at additional computational cost.](figs/2610.26831/sequential_feature_tool.png)\n\nThe voting tool asks a narrower question than a full user-history encoder: given the branch reached so far, which continuation has this user preferred? That narrower interface explains why it can avoid repeatedly encoding a long sequence.\n\nTraining first teaches ordinary identifier generation, then introduces tool-augmented trajectories. Rule-based construction checks that a request-side feature agrees with the positive item and is not already explicit in the query. Placement reflects the depth at which the observation most sharply narrows the candidate set. Tool-token losses receive dynamic scaling because newly introduced tokens would otherwise dominate the already-learned identifier objective.\n\nThe reported backbone is an encoder–decoder model with roughly 574 million parameters. This is supervised tool learning from constructed demonstrations, rather than a reinforcement-learning policy discovered through online interaction. At inference, each beam has its own call budget. Valid identifier transitions and length-normalized comparisons keep tool use compatible with catalog-constrained search.\n\n## 3. What the contribution amounts to\n\nThe central change is moving feature selection inside retrieval. A fixed user vector supplies the same representation throughout decoding; a prefix-conditioned tool can return different evidence at different branches.\n\nThe paper also supplies the training and serving machinery needed to make that idea concrete. Tool decisions, external observations, and item codes have distinct roles. Constructed trajectories supervise placement, while call budgets constrain inference. These details matter because adding an intent feature alone would not demonstrate adaptive acquisition.\n\nThe relevant comparison therefore holds the feature set constant and varies injection strategy. Otherwise a gain could come entirely from additional information rather than from the decision about when to read it.\n\n## 4. Read quality and cost together\n\nThe industrial history-encoding comparison reports the following values. Cost figures are comparable within that experiment’s matched configuration.\n\n| Industrial configuration | Recall@50 | Training seconds/step | Serving GPUs/1K requests |\n|---|---:|---:|---:|\n| Feature-free baseline | 0.2863 | 1.163 | 2.38 |\n| Direct long-history encoding | 0.3241 | 10.794 | 8.33 |\n| AGR with history tool only | 0.3237 | 1.969 | 4.76 |\n| Full AGR | 0.3264 | — | — |\n\nThe history tool nearly matches direct long-history encoding while reducing its serving cost by about 42.9%. This is a comparison between two ways of using history. The feature-free baseline remains cheaper than either of them.\n\nA separate ablation holds the feature set constant. Static injection reaches Recall@50 of 0.3159, while adaptive injection reaches 0.3264; fixed-position tool calls fall between them. This supports a benefit from placement beyond the benefit of simply supplying more information.\n\nThe online experiment uses an initial A/A check followed by an A/B traffic split. The paper reports average serving latency of 35 ms and a 0.205% improvement in its relevance measure: the fraction of requests whose top-four results are strongly relevant. That is neither nDCG nor CTR. Offline comparisons use a generative-retrieval baseline, while the online comparison uses the production system, so their gains should retain their original baselines and metric definitions.\n\n## 5. Remaining limitations\n\nThe authors identify rule-constructed demonstrations, a limited tool ecosystem, and training along correct identifier prefixes as key limitations. The last creates a concrete deployment gap: a tool that helps on the correct branch may not help the model recover after it has already generated an incorrect prefix.\n\nEvaluation under model-generated prefixes would test that gap more directly. A successful production deployment also does not establish a fixed benefit for other businesses. Sparse histories, slow tools, or different relevance objectives can change the trade-off.\n\n## 6. Practical experiments for search\n\nStart with one existing feature source, such as query intent or recent clicks. Keep the catalog and identifier scheme fixed, then compare feature-free retrieval, fixed injection, and adaptive injection while measuring both relevance and request latency. This separates feature quality from acquisition policy.\n\nA prefix-conditioned voting tool offers a relatively small history experiment. Break results down by history length and query ambiguity to check whether gains concentrate on requests that need additional evidence.\n\nFinally, record call counts, tool latency, and ranking changes after each call. The useful design principle is to make established features available at the moment they distinguish candidates, with enough instrumentation to see whether the extra computation pays for itself.",
+        "content_html": "<p>AGR lets a generative retriever request features when they become useful instead of reading every available signal on every request. The model generates an item identifier, pauses to acquire intent or behavioral evidence, and continues along a better-informed branch. The Kuaishou and Fudan team evaluates this interface in production search as well as public benchmarks.</p>\n<h2>1. Why more features are not always better</h2>\n<p>Generative retrieval replaces direct item scoring with prediction of a short semantic identifier. Related items share parts of that identifier, so decoding progressively narrows the catalog. Industrial search, however, relies on more than the query: user history, location, intent, and freshness can all matter.</p>\n<p>Encoding every feature up front creates two problems. Some signals are redundant or irrelevant for the current request. Others become useful only at a particular point in the identifier tree. Intent may distinguish a movie from a game early in decoding, while behavioral history may distinguish individual games later. Static injection does not explicitly make that distinction.</p>\n<p>AGR treats feature acquisition as a decoding decision. Its contribution concerns when and where existing evidence enters the retriever, rather than the discovery of a new feature source.</p>\n<h2>2. How feature tools enter decoding</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/generative/2610.26831/agr_system_overview.png\" alt=\"Follow the tree on the right: intent rules out the movie branch, then historical preference separates game candidates. The lower-left panel shows how tool decisions and returned observations participate in decoding.\" loading=\"lazy\" decoding=\"async\"><figcaption>Follow the tree on the right: intent rules out the movie branch, then historical preference separates game candidates. The lower-left panel shows how tool decisions and returned observations participate in decoding.</figcaption></figure>\n<p>The output vocabulary includes tool-call tokens alongside item-code tokens. At each step the model can extend the identifier or request a feature. A request executes an external function whose result becomes a compact observation embedding. The call token triggers the action; the returned observation, rather than the call token itself, enters the next-step context.</p>\n<p>Categorical features such as intent and location map to learned observation embeddings. Observations have a distinct positional representation and do not advance the item-identifier depth. The final retrieved output remains an ordinary identifier, with tool tokens removed.</p>\n<p>Behavioral tools compress a sequence of historical interactions into evidence relevant to the current prefix. The default voting implementation retains historical items with matching identifier prefixes and returns their most frequent next code. The attention implementation retrieves nearby histories in embedding space and aggregates their successor information, allowing approximate rather than exact prefix matches.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/generative/2610.26831/sequential_feature_tool.png\" alt=\"Voting on the left counts histories with an exact prefix match. Attention on the right also admits nearby prefixes, yielding a richer observation at additional computational cost.\" loading=\"lazy\" decoding=\"async\"><figcaption>Voting on the left counts histories with an exact prefix match. Attention on the right also admits nearby prefixes, yielding a richer observation at additional computational cost.</figcaption></figure>\n<p>The voting tool asks a narrower question than a full user-history encoder: given the branch reached so far, which continuation has this user preferred? That narrower interface explains why it can avoid repeatedly encoding a long sequence.</p>\n<p>Training first teaches ordinary identifier generation, then introduces tool-augmented trajectories. Rule-based construction checks that a request-side feature agrees with the positive item and is not already explicit in the query. Placement reflects the depth at which the observation most sharply narrows the candidate set. Tool-token losses receive dynamic scaling because newly introduced tokens would otherwise dominate the already-learned identifier objective.</p>\n<p>The reported backbone is an encoder–decoder model with roughly 574 million parameters. This is supervised tool learning from constructed demonstrations, rather than a reinforcement-learning policy discovered through online interaction. At inference, each beam has its own call budget. Valid identifier transitions and length-normalized comparisons keep tool use compatible with catalog-constrained search.</p>\n<h2>3. What the contribution amounts to</h2>\n<p>The central change is moving feature selection inside retrieval. A fixed user vector supplies the same representation throughout decoding; a prefix-conditioned tool can return different evidence at different branches.</p>\n<p>The paper also supplies the training and serving machinery needed to make that idea concrete. Tool decisions, external observations, and item codes have distinct roles. Constructed trajectories supervise placement, while call budgets constrain inference. These details matter because adding an intent feature alone would not demonstrate adaptive acquisition.</p>\n<p>The relevant comparison therefore holds the feature set constant and varies injection strategy. Otherwise a gain could come entirely from additional information rather than from the decision about when to read it.</p>\n<h2>4. Read quality and cost together</h2>\n<p>The industrial history-encoding comparison reports the following values. Cost figures are comparable within that experiment’s matched configuration.</p>\n<table><thead><tr><th>Industrial configuration</th><th>Recall@50</th><th>Training seconds/step</th><th>Serving GPUs/1K requests</th></tr></thead><tbody><tr><td>Feature-free baseline</td><td>0.2863</td><td>1.163</td><td>2.38</td></tr><tr><td>Direct long-history encoding</td><td>0.3241</td><td>10.794</td><td>8.33</td></tr><tr><td>AGR with history tool only</td><td>0.3237</td><td>1.969</td><td>4.76</td></tr><tr><td>Full AGR</td><td>0.3264</td><td>—</td><td>—</td></tr></tbody></table>\n<p>The history tool nearly matches direct long-history encoding while reducing its serving cost by about 42.9%. This is a comparison between two ways of using history. The feature-free baseline remains cheaper than either of them.</p>\n<p>A separate ablation holds the feature set constant. Static injection reaches Recall@50 of 0.3159, while adaptive injection reaches 0.3264; fixed-position tool calls fall between them. This supports a benefit from placement beyond the benefit of simply supplying more information.</p>\n<p>The online experiment uses an initial A/A check followed by an A/B traffic split. The paper reports average serving latency of 35 ms and a 0.205% improvement in its relevance measure: the fraction of requests whose top-four results are strongly relevant. That is neither nDCG nor CTR. Offline comparisons use a generative-retrieval baseline, while the online comparison uses the production system, so their gains should retain their original baselines and metric definitions.</p>\n<h2>5. Remaining limitations</h2>\n<p>The authors identify rule-constructed demonstrations, a limited tool ecosystem, and training along correct identifier prefixes as key limitations. The last creates a concrete deployment gap: a tool that helps on the correct branch may not help the model recover after it has already generated an incorrect prefix.</p>\n<p>Evaluation under model-generated prefixes would test that gap more directly. A successful production deployment also does not establish a fixed benefit for other businesses. Sparse histories, slow tools, or different relevance objectives can change the trade-off.</p>\n<h2>6. Practical experiments for search</h2>\n<p>Start with one existing feature source, such as query intent or recent clicks. Keep the catalog and identifier scheme fixed, then compare feature-free retrieval, fixed injection, and adaptive injection while measuring both relevance and request latency. This separates feature quality from acquisition policy.</p>\n<p>A prefix-conditioned voting tool offers a relatively small history experiment. Break results down by history length and query ambiguity to check whether gains concentrate on requests that need additional evidence.</p>\n<p>Finally, record call counts, tool latency, and ranking changes after each call. The useful design principle is to make established features available at the moment they distinguish candidates, with enough instrumentation to see whether the extra computation pays for itself.</p>",
+        "slug": "2610.26831",
+        "chars": 6496,
+        "minutes": 17
+      }
+    },
+    {
+      "id": "arxiv:2610.25801",
+      "title": "Learning Complementary Agent Groups via Task Hypergraphs for Next-POI Recommendation with Missing Modalities",
+      "authors": "Jinze Wang, Yuze Liu, Liang Yuan, Gaoyuan Du, Xiaohang Xu, Yong Xiang, Jiong Jin",
+      "url": "https://arxiv.org/abs/2610.25801",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "total_score": 4.1,
+      "company": [
+        "Swinburne",
+        "Australian Catholic University",
+        "University of Tennessee",
+        "University of Tokyo",
+        "Deakin"
+      ],
+      "summary": "POI recommendation often lacks text or images. CATH selects complementary agents for each request, shares candidate-specific evidence, and adjusts a fixed base ranking. Across three naturally incomplete datasets, relative NDCG@20 gains over the strongest evaluated prior baseline range from 8.4% to 9.1%.",
+      "key_insight": "Agent complementarity matters alongside agent count. Jointly optimizing group selection, ranking quality, and execution cost directs work toward candidates with missing evidence.",
+      "evidence_url": "https://arxiv.org/html/2610.25801",
+      "rank": 2,
+      "company_logos": [
+        {
+          "name": "Swinburne",
+          "logo": null,
+          "hue": 301
+        },
+        {
+          "name": "Australian Catholic University",
+          "logo": "logos/australian-catholic-university.png",
+          "hue": 248
+        },
+        {
+          "name": "University of Tennessee",
+          "logo": null,
+          "hue": 330
+        },
+        {
+          "name": "University of Tokyo",
+          "logo": "logos/university-of-tokyo.png",
+          "hue": 56
+        },
+        {
+          "name": "Deakin",
+          "logo": "logos/deakin.png",
+          "hue": 31
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.26035",
+      "title": "Decision4Rec: A Jev-Inspired Framework of Decision Models on Knowledge and Active Graphs for Multi-Agent Recommender Systems",
+      "authors": "Marco Polignano, Het Darshan Mehta, Pasquale Lops, Ernesto William De Luca, Giovanni Semeraro",
+      "url": "https://arxiv.org/abs/2610.26035",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.2,
+      "total_score": 4.1,
+      "company": [
+        "University of Bari",
+        "Otto von Guericke University",
+        "Leibniz GEI"
+      ],
+      "summary": "A language model can score choices directly rather than generate an explanation first. Decision4Rec combines graph-grounded candidate knowledge, agent evidence, and a base ranker. A trained decision model improves NDCG@10 by 25–36% over the best trained baseline in three sparse product domains.",
+      "key_insight": "Much of the gain comes from knowledge about existing candidates. Holding the candidate pool constant helps separate knowledge enrichment from coverage and model-size effects.",
+      "evidence_url": "https://arxiv.org/html/2610.26035",
+      "rank": 3,
+      "company_logos": [
+        {
+          "name": "University of Bari",
+          "logo": null,
+          "hue": 76
+        },
+        {
+          "name": "Otto von Guericke University",
+          "logo": null,
+          "hue": 201
+        },
+        {
+          "name": "Leibniz GEI",
+          "logo": null,
+          "hue": 223
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.25182",
+      "title": "Dialogue Generation for Conversational Recommendation Using User Search Interactions and Knowledge Graphs",
+      "authors": "Minsung Hwang, Donggyu Yoon, Gowoon Hwang, Kwanghee Jang, Joyce Jiyoung Whang",
+      "url": "https://arxiv.org/abs/2610.25182",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "base_score": 3.75,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.3,
+      "adjusted_score": 4.05,
+      "total_score": 3.75,
+      "company": [
+        "KAIST",
+        "LG"
+      ],
+      "summary": "SearCl builds conversational recommendation data from search and click logs. A configurable state machine constrains the two dialogue models, while item knowledge graphs ground their responses. The authors generate 3,538 dialogues and assess quality with an LLM judge.",
+      "key_insight": "Observed clicks ground the target; a state machine governs the interaction. This makes generation controllable, while judge-rated dialogue quality remains distinct from real user acceptance.",
+      "evidence_url": "https://arxiv.org/html/2610.25182",
+      "rank": 4,
+      "company_logos": [
+        {
+          "name": "KAIST",
+          "logo": "logos/kaist.png",
+          "hue": 133
+        },
+        {
+          "name": "LG",
+          "logo": "logos/lg.png",
+          "hue": 24
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.24458",
+      "title": "Generative Retrieval for Reverse Target Fishing with a Proteome-Scale Benchmark",
+      "authors": "Zhichao Deng, Haichuan Tan, Xin Hong, Huaizhi Wang, Tao Huang, Bowen Gao, Yanyan Lan",
+      "url": "https://arxiv.org/abs/2610.24458",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 2,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.5,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.3,
+      "adjusted_score": 3.8,
+      "total_score": 3.5,
+      "company": [
+        "AIPher",
+        "Tsinghua",
+        "Peking University"
+      ],
+      "summary": "Drug-target retrieval also suffers from unknown associations being mislabeled as negatives. GenFish generates shared protein identifiers conditioned on a molecule, avoiding explicit negative labels for every unmeasured pair. Its benchmark catalog contains 20,431 human proteins.",
+      "key_insight": "The transferable idea is how retrieval handles incomplete supervision. Protein experiments offer a useful false-negative audit design, although their objects and metrics differ from community search.",
+      "evidence_url": "https://arxiv.org/html/2610.24458",
+      "rank": 5,
+      "company_logos": [
+        {
+          "name": "AIPher",
+          "logo": null,
+          "hue": 271
+        },
+        {
+          "name": "Tsinghua",
+          "logo": "logos/tsinghua.png",
+          "hue": 199
+        },
+        {
+          "name": "Peking University",
+          "logo": "logos/pku.png",
+          "hue": 125
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.07708",
+      "title": "Evidence Before Sampling: Interpretable Implicit Negative Candidate Discovery for Recommendation",
+      "authors": "Shreya Rajpal, Sonia Sharma, Swapnil Parekh, Lisa Li, Jeyendran Balakrishnan, Nagaraj Janardhana, Andrew Mattarella-Micke",
+      "url": "https://arxiv.org/abs/2610.07708",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "base_score": 3.9,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.7,
+      "total_score": 3.9,
+      "company": [
+        "Intuit",
+        "Michigan State"
+      ],
+      "summary": "An unobserved interaction is not proof of dislike. The authors extract behavioral rules, screen negative candidates using statistical evidence, and use an LLM to interpret their business meaning. In an industrial task with four negatives per positive, test PR-AUC improves by 12.5% over random selection.",
+      "key_insight": "Evaluate negative-label validity separately from downstream training gains. The distinction is useful when unexposed items are routinely treated as negatives in sparse click logs.",
+      "evidence_url": "https://arxiv.org/html/2610.07708",
+      "rank": 6,
+      "company_logos": [
+        {
+          "name": "Intuit",
+          "logo": "logos/intuit.png",
+          "hue": 282
+        },
+        {
+          "name": "Michigan State",
+          "logo": null,
+          "hue": 21
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.26296",
+      "title": "Answering While You Type: Optimizing Time-to-Answer with Streaming Generation",
+      "authors": "Nikita Dragunov, Matvey Mikhalchuk, Anton Razzhigaev",
+      "url": "https://arxiv.org/abs/2610.26296",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "base_score": 3.75,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0,
+      "adjusted_score": 3.45,
+      "total_score": 3.75,
+      "company": [],
+      "summary": "The model can start answering before the user submits a request. Streaming generation drafts from partial input, then verifies and revises as more text arrives. On HumanEval, ReFusion-8B reaches a 3.68× median speedup in post-submission wall time with unchanged accuracy.",
+      "key_insight": "Residual waiting time differs from total computation. Gains depend strongly on task structure and are much smaller for dialogue than for specification-first coding tasks.",
+      "evidence_url": "https://arxiv.org/html/2610.26296",
+      "rank": 7,
+      "company_logos": []
+    },
+    {
+      "id": "hf:2610.25964",
+      "title": "Token-Set Choice Confounds POPE: A Systematic Audit of Yes/No Extraction in VLM Hallucination Evaluation",
+      "authors": "Kesav Kumar Jayakumar, Karthigeyan Thilak",
+      "url": "https://huggingface.co/papers/2610.25964",
+      "source": "huggingface",
+      "published": "2026-10-18",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.8,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "preference_bonus": 0,
+      "adjusted_score": 3.0,
+      "total_score": 3.8,
+      "company": [],
+      "summary": "A benchmark score can change with the token IDs used to read yes/no answers. This audit finds that common extraction rules miss leading-space forms emitted by the model. Correcting the readout shifts adversarial POPE F1 by 6.13 percentage points.",
+      "key_insight": "The measurement interface is part of the experiment. Normalize answer forms and token mappings before attributing a score difference to a model or prompting method.",
+      "evidence_url": "https://arxiv.org/html/2610.25964",
+      "rank": 8,
+      "company_logos": []
+    },
+    {
+      "id": "hf:2610.26834",
+      "title": "Kronecker Delta Rule for Long Context Linear Attention",
+      "authors": "Anamaria-Roberta Hartl, Levente Zólyomi, Michael List, Günter Klambauer, Sebastian Böck",
+      "url": "https://huggingface.co/papers/2610.26834",
+      "source": "huggingface",
+      "published": "2026-10-18",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.8,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "preference_bonus": 0,
+      "adjusted_score": 3.0,
+      "total_score": 3.8,
+      "company": [],
+      "summary": "Writing new associations can damage a recurrent model’s existing memory. KronLSTM uses a more localized matrix update to reduce interference. Its hybrid model reaches 37.40% average accuracy on a six-task real-world recall suite.",
+      "key_insight": "Control how widely each memory update changes stored associations. This is a potential building block for long histories, with evidence currently coming from language and contextual-retrieval tasks rather than recommendation.",
+      "evidence_url": "https://arxiv.org/html/2610.26834",
+      "rank": 9,
+      "company_logos": []
+    },
+    {
+      "id": "hf:2610.26830",
+      "title": "Competing Learning in Hybrid Architectures",
+      "authors": "Xingyu Shen, Yingfa Chen, Ziqing Qiao, Chaojun Xiao, Xu Han",
+      "url": "https://huggingface.co/papers/2610.26830",
+      "source": "huggingface",
+      "published": "2026-10-18",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 3.8,
+      "track_fit": "off",
+      "track_penalty": 0.8,
+      "preference_bonus": 0,
+      "adjusted_score": 3.0,
+      "total_score": 3.8,
+      "company": [
+        "Tsinghua"
+      ],
+      "summary": "Combining recurrence and attention does not guarantee useful specialization. The authors find that the mixer learning retrieval first suppresses the other’s signal and introduce staged training. In one Gated DeltaNet hybrid experiment, Recall rises from 17.33 to 32.05.",
+      "key_insight": "Architectural complementarity does not ensure complementary learning. Freezing interventions and layer attribution test whether the intended long-range component actually learns its role.",
+      "evidence_url": "https://arxiv.org/html/2610.26830",
+      "rank": 10,
+      "company_logos": [
+        {
+          "name": "Tsinghua",
+          "logo": "logos/tsinghua.png",
+          "hue": 199
+        }
+      ]
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:TacoTakumi/VoiceManager",
+      "title": "VoiceManager: A low latency streaming STT / STT server to add a voice to your LLM. Also supports batch mode.",
+      "authors": "TacoTakumi",
+      "abstract": "A low latency streaming STT / STT server to add a voice to your LLM. Also supports batch mode.",
+      "url": "https://github.com/TacoTakumi/VoiceManager",
+      "source": "github",
+      "published": "2026-10-17",
+      "discovered_at": "2026-10-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "TacoTakumi/VoiceManager",
+        "owner": "TacoTakumi",
+        "description": "A low latency streaming STT / STT server to add a voice to your LLM. Also supports batch mode.",
+        "created_at": "2026-10-17T17:49:43Z",
+        "updated_at": "2026-10-20",
+        "pushed_at": "2026-10-19",
+        "stargazers_count": 21,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "A low latency streaming STT / STT server to add a voice to your LLM. Also supports batch mode.",
+      "language": "Python",
+      "stars": 21,
+      "created_at": "2026-10-17",
+      "rank": 1
+    },
+    {
+      "id": "github:ernie-research/DCore",
+      "title": "DCore: More accepted tokens ≠ faster LLMs. This repo reveals how fair comparisons reshape drafter rankings—and when better acceptance pays off in throughput.",
+      "authors": "ernie-research",
+      "abstract": "More accepted tokens ≠ faster LLMs. This repo reveals how fair comparisons reshape drafter rankings—and when better acceptance pays off in throughput.",
+      "url": "https://github.com/ernie-research/DCore",
+      "source": "github",
+      "published": "2026-10-20",
+      "discovered_at": "2026-10-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "ernie-research/DCore",
+        "owner": "ernie-research",
+        "description": "More accepted tokens ≠ faster LLMs. This repo reveals how fair comparisons reshape drafter rankings—and when better acceptance pays off in throughput.",
+        "created_at": "2026-10-20T07:15:34Z",
+        "updated_at": "2026-10-20",
+        "pushed_at": "2026-10-20",
+        "stargazers_count": 19,
+        "language": "",
+        "topics": []
+      },
+      "description": "More accepted tokens ≠ faster LLMs. This repo reveals how fair comparisons reshape drafter rankings—and when better acceptance pays off in throughput.",
+      "language": "",
+      "stars": 19,
+      "created_at": "2026-10-20",
+      "rank": 2
+    },
+    {
+      "id": "github:EliotAndres/iphone-use-app",
+      "title": "iphone-use-app: An iPhone app where an LLM controls the phone it runs on",
+      "authors": "EliotAndres",
+      "abstract": "An iPhone app where an LLM controls the phone it runs on",
+      "url": "https://github.com/EliotAndres/iphone-use-app",
+      "source": "github",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "EliotAndres/iphone-use-app",
+        "owner": "EliotAndres",
+        "description": "An iPhone app where an LLM controls the phone it runs on",
+        "created_at": "2026-10-19T14:05:48Z",
+        "updated_at": "2026-10-20",
+        "pushed_at": "2026-10-19",
+        "stargazers_count": 16,
+        "language": "C",
+        "topics": []
+      },
+      "description": "An iPhone app where an LLM controls the phone it runs on",
+      "language": "C",
+      "stars": 16,
+      "created_at": "2026-10-19",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4669,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-16",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 4669,
+        "downloads": 1431582,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "deploy:azure",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-16T09:27:28.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3-Flash",
+      "title": "zai-org/GLM-5.3-Flash",
+      "authors": "zai-org",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2897,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-15",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3-Flash",
+        "likes": 2897,
+        "downloads": 6548525,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm5_next",
+          "image-text-to-text",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:43:14.000Z",
+        "last_modified": "2026-10-15T06:32:52.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3",
+      "title": "zai-org/GLM-5.3",
+      "authors": "zai-org",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2272,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-14",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3",
+        "likes": 2272,
+        "downloads": 1873260,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm_moe_dsa",
+          "text-generation",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:other",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:42:50.000Z",
+        "last_modified": "2026-10-14T12:22:48.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1930,
+      "language": "model",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-17",
+      "published": "2026-10-17",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "likes": 1930,
+        "downloads": 27737,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "license:mit",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-10-17T02:40:38.000Z",
+        "last_modified": "2026-10-17T05:46:55.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:stepfun-ai/Step-5-Preview",
+      "title": "stepfun-ai/Step-5-Preview",
+      "authors": "stepfun-ai",
+      "description": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "abstract": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "url": "https://huggingface.co/stepfun-ai/Step-5-Preview",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 118,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-10-15",
+      "published": "2026-09-20",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "stepfun-ai/Step-5-Preview",
+        "likes": 118,
+        "downloads": 1766,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "step5_vl",
+          "license:other",
+          "eval-results",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T03:15:06.000Z",
+        "last_modified": "2026-10-15T01:28:10.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recency": true,
+    "source_diversity": true,
+    "chinese_source": false
+  },
+  "run_notes": [
+    "Semantic Scholar rate-limited; OpenReview failed; DBLP returned invalid responses or rate limits.",
+    "Report date follows Asia/Shanghai; crawler status used the preceding UTC date.",
+    "All five web additions were filtered as duplicates or stale.",
+    "Source mix: arXiv 70%, HuggingFace 30%. Kuaishou AGR supplies industrial evidence.",
+    "GenPage was excluded by the 90-day gate.",
+    "Relevant Chinese engineering sources were already in the historical database."
+  ]
+}

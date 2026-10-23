@@ -1,0 +1,752 @@
+{
+  "date": "2026-10-21",
+  "track": "personalization",
+  "scenario": "Community UGC search: relevance (nDCG), CTR, semantic matching, user interest modeling, and ranking efficiency.",
+  "stats": {
+    "papers_scored": 149,
+    "papers_selected": 10,
+    "score_min": 3.75,
+    "score_max": 4.4
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.26143",
+      "title": "FLMNet: Self-Ensemble Distillation from Masks to Seeds for Single-Tower CTR Prediction",
+      "authors": "Yifan Wang, Yifei Du",
+      "url": "https://arxiv.org/abs/2610.26143",
+      "source": "arxiv",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.4,
+      "base_score": 4.4,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.45,
+      "scoring_note": "Separate mask disagreement from seed disagreement: regularize the former within a run and distill the latter across runs. The moment formulas require gates that do not read masked intermediate activations.",
+      "rank": 1,
+      "company": [
+        "NUS",
+        "USTC"
+      ],
+      "summary": "CTR self-distillation can be replaced with a computable disagreement penalty. FLMNet keeps gates on clean inputs and distills independently trained towers into one serving model. The distilled model reaches 0.8169 AUC on Criteo.",
+      "key_insight": "Separate mask disagreement from seed disagreement: regularize the former within a run and distill the latter across runs. The moment formulas require gates that do not read masked intermediate activations.",
+      "company_logos": [
+        {
+          "name": "NUS",
+          "logo": "logos/nus.png",
+          "hue": 21
+        },
+        {
+          "name": "USTC",
+          "logo": "logos/ustc.png",
+          "hue": 325
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.26143",
+        "title": "FLMNet: Self-Ensemble Distillation from Masks to Seeds for Single-Tower CTR Prediction",
+        "status": "completed",
+        "content": "FLMNet replaces repeated masked predictions with a computable disagreement penalty, then distills the agreement of independently trained models into one serving tower. The paper separates two sources of variation: masks within a model and training seeds across models.\n\n## 1. Problem and motivation\n\nCTR models combine categorical user, item, and context features. Possible feature combinations greatly outnumber training examples, so the model must generalize beyond observed combinations. Dropout exposes it to incomplete views during training. Self-distillation additionally encourages these views to agree with an ensemble prediction.\n\nThe open question is what that extra objective buys. Is random sampling essential, or is it a noisy way of applying a useful regularizer? Repeated forward passes also make training more expensive, even when only one network is served.\n\n![Mask variants and independently trained seeds are distinct sources of disagreement; both routes end in one serving tower.](figs/2610.26143/intro_members.svg)\n\n## 2. Method\n\nThe derivation pools logits, the scores before conversion to click probabilities. Averaging logits and averaging probabilities are different operations. The exact result applies to the specified pooling objective, rather than every loss described as self-distillation.\n\nAs the number of masks tends to infinity, the objective decomposes into label loss at the mean logit and a penalty on disagreement. That penalty is a Jensen gap: the expected value of a convex function minus its value at the expected input. This is an identity about the objective, not a guarantee about optimization trajectories or test accuracy.\n\nFLMNet makes the required moments tractable by keeping its gates off the masked path. Gates read clean input embeddings. If gates instead read masked intermediate representations, later factors inherit earlier randomness and independence assumptions fail.\n\n![Follow the clean input into the gates: the control path avoids masked intermediate activations, enabling the moment calculation.](figs/2610.26143/mask_flow.svg)\n\nTraining still approximates the true disagreement gap. It replaces the mask distribution with a Gaussian of matching variance and uses three-point quadrature. Variance truncation is a separate approximation examined in the paper. One unmasked forward pass supplies the prediction and statistics; computing their gradients still costs work.\n\nThe second stage addresses seed disagreement. Independently initialized and trained towers remain different even after mask disagreement is regularized. Their pooled scores become a teacher for a single student. This saves serving cost but requires extra offline training runs.\n\n## 3. Main contribution\n\nThe useful distinction is between within-run regularization and across-run distillation. Their gains largely add in the experiments. The architecture also exposes a concrete condition to audit: whether random masking reaches the gates that control feature interactions.\n\nSingle-pass training should not be confused with free training. Moment computation, differentiation, teacher training, and student fitting all belong in a cost comparison.\n\n## 4. Results\n\nThe main comparison covers five benchmarks and seventeen established models. Selected advertising results are test-mean AUC values; higher is better.\n\n| Model | Criteo AUC | Avazu AUC |\n|---|---:|---:|\n| FinalNet | 0.8151 | 0.7607 |\n| QNN, one head | 0.8153 | 0.7572 |\n| FLMNet-CF | 0.8162 | 0.7617 |\n| FLMNet-KD | 0.8169 | 0.7620 |\n\nCF uses the closed-form penalty approximation; KD adds cross-seed distillation. On Criteo, each step contributes. Same-backbone regularizer comparisons help separate the loss effect from architecture changes.\n\nThe timing intervention is especially informative. Turning the penalty on slows the growth of the train–validation gap; turning it off accelerates overfitting. Applying it from the first epoch can also slow early learning.\n\n![Delayed activation preserves more benefit in this Criteo experiment, while early removal loses benefit; the right panel tracks overfitting growth.](figs/2610.26143/onset_sched.svg)\n\nThat intervention uses one dataset and a constant learning rate. It supports the proposed mechanism without establishing a universal activation epoch.\n\n## 5. Limitations\n\nThe authors identify three boundaries: moment formulas require the stated architectural conditions, training uses a Gaussian surrogate, and the recoverable cross-seed gain is known empirically rather than in closed form.\n\nEvaluation details matter too. Avazu uses a disclosed re-splitting and retraining protocol. Some distilled students share teacher sets, so they are not independent replications. Public benchmark AUC gains do not establish an online CTR lift.\n\nAn additional engineering implication is refresh cost. A frequently updated service must budget for teacher runs, score caching, and student training, alongside its single-tower serving savings.\n\n## 6. Practical implications\n\nAudit the pooling rule and the gate inputs before adapting the formula to an existing CTR model. Hold the backbone, embedding sizes, and training budget fixed when comparing no penalty, sampling-based regularization, and the deterministic approximation.\n\nReport paired-seed differences and train–validation curves. Evaluate cross-seed distillation as a separate budget decision, with calibration, latency, and refresh interval alongside AUC.\n\nSources: Sections 3–5, the conclusion, and Appendix B. All figures are original assets from the paper’s arXiv HTML.",
+        "content_html": "<p>FLMNet replaces repeated masked predictions with a computable disagreement penalty, then distills the agreement of independently trained models into one serving tower. The paper separates two sources of variation: masks within a model and training seeds across models.</p>\n<h2>1. Problem and motivation</h2>\n<p>CTR models combine categorical user, item, and context features. Possible feature combinations greatly outnumber training examples, so the model must generalize beyond observed combinations. Dropout exposes it to incomplete views during training. Self-distillation additionally encourages these views to agree with an ensemble prediction.</p>\n<p>The open question is what that extra objective buys. Is random sampling essential, or is it a noisy way of applying a useful regularizer? Repeated forward passes also make training more expensive, even when only one network is served.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/personalization/2610.26143/intro_members.svg\" alt=\"Mask variants and independently trained seeds are distinct sources of disagreement; both routes end in one serving tower.\" loading=\"lazy\" decoding=\"async\"><figcaption>Mask variants and independently trained seeds are distinct sources of disagreement; both routes end in one serving tower.</figcaption></figure>\n<h2>2. Method</h2>\n<p>The derivation pools logits, the scores before conversion to click probabilities. Averaging logits and averaging probabilities are different operations. The exact result applies to the specified pooling objective, rather than every loss described as self-distillation.</p>\n<p>As the number of masks tends to infinity, the objective decomposes into label loss at the mean logit and a penalty on disagreement. That penalty is a Jensen gap: the expected value of a convex function minus its value at the expected input. This is an identity about the objective, not a guarantee about optimization trajectories or test accuracy.</p>\n<p>FLMNet makes the required moments tractable by keeping its gates off the masked path. Gates read clean input embeddings. If gates instead read masked intermediate representations, later factors inherit earlier randomness and independence assumptions fail.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/personalization/2610.26143/mask_flow.svg\" alt=\"Follow the clean input into the gates: the control path avoids masked intermediate activations, enabling the moment calculation.\" loading=\"lazy\" decoding=\"async\"><figcaption>Follow the clean input into the gates: the control path avoids masked intermediate activations, enabling the moment calculation.</figcaption></figure>\n<p>Training still approximates the true disagreement gap. It replaces the mask distribution with a Gaussian of matching variance and uses three-point quadrature. Variance truncation is a separate approximation examined in the paper. One unmasked forward pass supplies the prediction and statistics; computing their gradients still costs work.</p>\n<p>The second stage addresses seed disagreement. Independently initialized and trained towers remain different even after mask disagreement is regularized. Their pooled scores become a teacher for a single student. This saves serving cost but requires extra offline training runs.</p>\n<h2>3. Main contribution</h2>\n<p>The useful distinction is between within-run regularization and across-run distillation. Their gains largely add in the experiments. The architecture also exposes a concrete condition to audit: whether random masking reaches the gates that control feature interactions.</p>\n<p>Single-pass training should not be confused with free training. Moment computation, differentiation, teacher training, and student fitting all belong in a cost comparison.</p>\n<h2>4. Results</h2>\n<p>The main comparison covers five benchmarks and seventeen established models. Selected advertising results are test-mean AUC values; higher is better.</p>\n<table><thead><tr><th>Model</th><th>Criteo AUC</th><th>Avazu AUC</th></tr></thead><tbody><tr><td>FinalNet</td><td>0.8151</td><td>0.7607</td></tr><tr><td>QNN, one head</td><td>0.8153</td><td>0.7572</td></tr><tr><td>FLMNet-CF</td><td>0.8162</td><td>0.7617</td></tr><tr><td>FLMNet-KD</td><td>0.8169</td><td>0.7620</td></tr></tbody></table>\n<p>CF uses the closed-form penalty approximation; KD adds cross-seed distillation. On Criteo, each step contributes. Same-backbone regularizer comparisons help separate the loss effect from architecture changes.</p>\n<p>The timing intervention is especially informative. Turning the penalty on slows the growth of the train–validation gap; turning it off accelerates overfitting. Applying it from the first epoch can also slow early learning.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/personalization/2610.26143/onset_sched.svg\" alt=\"Delayed activation preserves more benefit in this Criteo experiment, while early removal loses benefit; the right panel tracks overfitting growth.\" loading=\"lazy\" decoding=\"async\"><figcaption>Delayed activation preserves more benefit in this Criteo experiment, while early removal loses benefit; the right panel tracks overfitting growth.</figcaption></figure>\n<p>That intervention uses one dataset and a constant learning rate. It supports the proposed mechanism without establishing a universal activation epoch.</p>\n<h2>5. Limitations</h2>\n<p>The authors identify three boundaries: moment formulas require the stated architectural conditions, training uses a Gaussian surrogate, and the recoverable cross-seed gain is known empirically rather than in closed form.</p>\n<p>Evaluation details matter too. Avazu uses a disclosed re-splitting and retraining protocol. Some distilled students share teacher sets, so they are not independent replications. Public benchmark AUC gains do not establish an online CTR lift.</p>\n<p>An additional engineering implication is refresh cost. A frequently updated service must budget for teacher runs, score caching, and student training, alongside its single-tower serving savings.</p>\n<h2>6. Practical implications</h2>\n<p>Audit the pooling rule and the gate inputs before adapting the formula to an existing CTR model. Hold the backbone, embedding sizes, and training budget fixed when comparing no penalty, sampling-based regularization, and the deterministic approximation.</p>\n<p>Report paired-seed differences and train–validation curves. Evaluate cross-seed distillation as a separate budget decision, with calibration, latency, and refresh interval alongside AUC.</p>\n<p>Sources: Sections 3–5, the conclusion, and Appendix B. All figures are original assets from the paper’s arXiv HTML.</p>",
+        "slug": "2610.26143",
+        "chars": 4605,
+        "minutes": 12
+      }
+    },
+    {
+      "id": "arxiv:2610.24481",
+      "title": "DuoLM: Fast and Effective Personalized Recommendation with Language Models",
+      "authors": "Jiang Wu, Yutong Song, Hongbo Wang, Guanghe Cao, Jeff Liang",
+      "url": "https://arxiv.org/abs/2610.24481",
+      "source": "arxiv",
+      "published": "2026-10-17",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.3,
+      "base_score": 4.3,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.35,
+      "scoring_note": "Train reusable content representations and personalized judgments jointly. Compression pays off in end-to-end serving only when repeated history prefill, input transmission, and scheduling are reduced too.",
+      "rank": 2,
+      "company": [
+        "Google DeepMind",
+        "Oracle",
+        "UC Irvine"
+      ],
+      "summary": "DuoLM precomputes one vector per item and uses a personalized ranker with user history and feedback. Shared history computation and a specialized runtime reduce online work. Throughput reaches about 26,400 candidate scores per second on one H100.",
+      "key_insight": "Train reusable content representations and personalized judgments jointly. Compression pays off in end-to-end serving only when repeated history prefill, input transmission, and scheduling are reduced too.",
+      "company_logos": [
+        {
+          "name": "Google DeepMind",
+          "logo": "logos/deepmind.png",
+          "hue": 29
+        },
+        {
+          "name": "Oracle",
+          "logo": "logos/oracle.png",
+          "hue": 313
+        },
+        {
+          "name": "UC Irvine",
+          "logo": "logos/uc-irvine.png",
+          "hue": 68
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.24481",
+        "title": "DuoLM: Fast and Effective Personalized Recommendation with Language Models",
+        "status": "completed",
+        "content": "DuoLM reads item content offline and reserves online computation for deciding whether a particular user will like it. An encoder language model compresses each item, while a ranker uses those representations with user history and feedback. The system design turns that reuse into measured serving gains.\n\n## 1. Problem and motivation\n\nA full-text cross-encoder reads item descriptions together with user context. Its representations depend on the request and cannot simply be cached across users. Repeating this work for every candidate makes language-model recommendation expensive.\n\nA compact item vector is cheaper, but a generic text embedding may discard details needed for personalized judgments. DuoLM trains content compression and personalized ranking together.\n\nThere is also overhead outside the model. Candidates in one request share a user history, yet input construction, transmission, and scheduling can repeat. Prefix caching does not necessarily remove those operations. As model execution gets faster, they become a larger share of total cost.\n\n![Training jointly learns the item encoder and ranker; serving precomputes item vectors and keeps personalized scoring online.](figs/2610.24481/framework-overview.svg)\n\n## 2. Method\n\nThe encoder reads templated item text and uses its final EOS hidden state as one item representation. A continuous interface normalizes and calibrates its scale against the ranker’s native token embeddings. Both history items and candidates use this interface; textual feedback remains beside the relevant history entries.\n\nDuring training, ranking gradients flow through the interface into the encoder. Item vectors are recomputed while learning and cached only after training. A frozen full-text teacher supplies scores for the exact histories and candidate groups used by the student. The student learns both observed targets and the teacher’s relative preferences.\n\nThe paper compares feedback in the encoder with feedback in the ranker. The former caches an item–rating pair; the latter caches one representation per item. Their quality is close, and the latter provides a simpler reuse boundary.\n\n![Each candidate reads the shared history but cannot attend to another candidate, preserving independent scoring when candidates are batched.](figs/2610.24481/input-layout.svg)\n\nAt serving time, virtual token IDs reference a GPU-resident item-vector table. Requests carry IDs and feedback instead of transmitting complete vectors. These IDs are an access mechanism for continuous representations, rather than generated semantic item codes.\n\nThe multi-item scoring path prefills the user history once and shares its key–value cache across candidate branches. A tree-structured mask keeps branches independent. CUDA Graph replay further reduces launch and scheduling overhead. These changes save work at different points in the request path.\n\n![The ranker reuses a shared history cache while each candidate follows its own scoring branch.](figs/2610.24481/scoring-example-single-column-compact.svg)\n\n## 3. Main contribution\n\nThe central design boundary separates reusable content understanding from request-specific preference judgment. The representation is shared across users, the history computation is shared across candidates, and candidate scores remain independent.\n\nThe paper measures complete requests rather than treating lower model FLOPs as proof of faster serving. Runtime ablations help explain where the end-to-end improvement comes from.\n\n## 4. Results\n\nRecommendation quality is evaluated on Amazon Books and Video Games. NDCG@10 rewards relevant items appearing earlier in the ranking; absolute values should not be compared across datasets.\n\n| Model | Books | Video Games |\n|---|---:|---:|\n| HLLM | 0.5508 | 0.5025 |\n| DuoLM | 0.5586 | 0.5298 |\n| Full-text teacher | 0.5440 | 0.5313 |\n\nThe student exceeds the teacher on Books and approaches it on Video Games. This demonstrates useful compression in these settings, not lossless compression for every domain.\n\nOn one H100, with 100 candidates per request, high-concurrency throughput reaches about 26,400 candidate scores per second. The unit is candidate scores, not user requests. Full-request p99 latency is about 537 ms at that concurrency.\n\nThe teacher comparison includes vLLM with automatic prefix caching. The gain combines a different model representation with a specialized serving path; it cannot all be attributed to switching inference engines.\n\nAblations also favor restraint: the simple EOS readout beats the tested learned readouts, stronger distillation does not keep improving quality, and extra hidden-state self-alignment hurts the reported setting.\n\n## 5. Limitations\n\nThe evidence covers two product categories and specified hardware, without an online UGC search experiment. It does not establish behavior on rapidly edited posts, long comment threads, or breaking events.\n\nTwo engineering implications follow from the architecture. First, cached item vectors need versioning, incremental refresh, and memory budgeting. Moving encoding offline relocates its cost rather than eliminating it. Second, prefix reuse requires identical user history and context; candidate-isolation masks must remain correct.\n\nIndependent scoring also differs from list-level optimization for diversity or competition. Evaluation should preserve the paper’s candidate construction before expanding to a production recall pool. NDCG values from different candidate protocols are not interchangeable.\n\n## 6. Practical implications\n\nA content-rich ranking stage is a useful trial setting. Compare compressed and full-text scoring on long-tail items and narrow preference segments, where a single vector might hide important details.\n\nMeasure cache hits, history prefill, input preparation, and GPU execution separately. Report both candidate throughput and request throughput, plus tail latency. For UGC, include new and edited posts, recording the time until refreshed vectors become visible and the representation version used for ranking.\n\nSources: Sections 2–4 and Appendices A, C, and D. All figures are original assets from the paper’s arXiv HTML.",
+        "content_html": "<p>DuoLM reads item content offline and reserves online computation for deciding whether a particular user will like it. An encoder language model compresses each item, while a ranker uses those representations with user history and feedback. The system design turns that reuse into measured serving gains.</p>\n<h2>1. Problem and motivation</h2>\n<p>A full-text cross-encoder reads item descriptions together with user context. Its representations depend on the request and cannot simply be cached across users. Repeating this work for every candidate makes language-model recommendation expensive.</p>\n<p>A compact item vector is cheaper, but a generic text embedding may discard details needed for personalized judgments. DuoLM trains content compression and personalized ranking together.</p>\n<p>There is also overhead outside the model. Candidates in one request share a user history, yet input construction, transmission, and scheduling can repeat. Prefix caching does not necessarily remove those operations. As model execution gets faster, they become a larger share of total cost.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/personalization/2610.24481/framework-overview.svg\" alt=\"Training jointly learns the item encoder and ranker; serving precomputes item vectors and keeps personalized scoring online.\" loading=\"lazy\" decoding=\"async\"><figcaption>Training jointly learns the item encoder and ranker; serving precomputes item vectors and keeps personalized scoring online.</figcaption></figure>\n<h2>2. Method</h2>\n<p>The encoder reads templated item text and uses its final EOS hidden state as one item representation. A continuous interface normalizes and calibrates its scale against the ranker’s native token embeddings. Both history items and candidates use this interface; textual feedback remains beside the relevant history entries.</p>\n<p>During training, ranking gradients flow through the interface into the encoder. Item vectors are recomputed while learning and cached only after training. A frozen full-text teacher supplies scores for the exact histories and candidate groups used by the student. The student learns both observed targets and the teacher’s relative preferences.</p>\n<p>The paper compares feedback in the encoder with feedback in the ranker. The former caches an item–rating pair; the latter caches one representation per item. Their quality is close, and the latter provides a simpler reuse boundary.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/personalization/2610.24481/input-layout.svg\" alt=\"Each candidate reads the shared history but cannot attend to another candidate, preserving independent scoring when candidates are batched.\" loading=\"lazy\" decoding=\"async\"><figcaption>Each candidate reads the shared history but cannot attend to another candidate, preserving independent scoring when candidates are batched.</figcaption></figure>\n<p>At serving time, virtual token IDs reference a GPU-resident item-vector table. Requests carry IDs and feedback instead of transmitting complete vectors. These IDs are an access mechanism for continuous representations, rather than generated semantic item codes.</p>\n<p>The multi-item scoring path prefills the user history once and shares its key–value cache across candidate branches. A tree-structured mask keeps branches independent. CUDA Graph replay further reduces launch and scheduling overhead. These changes save work at different points in the request path.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-21/personalization/2610.24481/scoring-example-single-column-compact.svg\" alt=\"The ranker reuses a shared history cache while each candidate follows its own scoring branch.\" loading=\"lazy\" decoding=\"async\"><figcaption>The ranker reuses a shared history cache while each candidate follows its own scoring branch.</figcaption></figure>\n<h2>3. Main contribution</h2>\n<p>The central design boundary separates reusable content understanding from request-specific preference judgment. The representation is shared across users, the history computation is shared across candidates, and candidate scores remain independent.</p>\n<p>The paper measures complete requests rather than treating lower model FLOPs as proof of faster serving. Runtime ablations help explain where the end-to-end improvement comes from.</p>\n<h2>4. Results</h2>\n<p>Recommendation quality is evaluated on Amazon Books and Video Games. NDCG@10 rewards relevant items appearing earlier in the ranking; absolute values should not be compared across datasets.</p>\n<table><thead><tr><th>Model</th><th>Books</th><th>Video Games</th></tr></thead><tbody><tr><td>HLLM</td><td>0.5508</td><td>0.5025</td></tr><tr><td>DuoLM</td><td>0.5586</td><td>0.5298</td></tr><tr><td>Full-text teacher</td><td>0.5440</td><td>0.5313</td></tr></tbody></table>\n<p>The student exceeds the teacher on Books and approaches it on Video Games. This demonstrates useful compression in these settings, not lossless compression for every domain.</p>\n<p>On one H100, with 100 candidates per request, high-concurrency throughput reaches about 26,400 candidate scores per second. The unit is candidate scores, not user requests. Full-request p99 latency is about 537 ms at that concurrency.</p>\n<p>The teacher comparison includes vLLM with automatic prefix caching. The gain combines a different model representation with a specialized serving path; it cannot all be attributed to switching inference engines.</p>\n<p>Ablations also favor restraint: the simple EOS readout beats the tested learned readouts, stronger distillation does not keep improving quality, and extra hidden-state self-alignment hurts the reported setting.</p>\n<h2>5. Limitations</h2>\n<p>The evidence covers two product categories and specified hardware, without an online UGC search experiment. It does not establish behavior on rapidly edited posts, long comment threads, or breaking events.</p>\n<p>Two engineering implications follow from the architecture. First, cached item vectors need versioning, incremental refresh, and memory budgeting. Moving encoding offline relocates its cost rather than eliminating it. Second, prefix reuse requires identical user history and context; candidate-isolation masks must remain correct.</p>\n<p>Independent scoring also differs from list-level optimization for diversity or competition. Evaluation should preserve the paper’s candidate construction before expanding to a production recall pool. NDCG values from different candidate protocols are not interchangeable.</p>\n<h2>6. Practical implications</h2>\n<p>A content-rich ranking stage is a useful trial setting. Compare compressed and full-text scoring on long-tail items and narrow preference segments, where a single vector might hide important details.</p>\n<p>Measure cache hits, history prefill, input preparation, and GPU execution separately. Report both candidate throughput and request throughput, plus tail latency. For UGC, include new and edited posts, recording the time until refreshed vectors become visible and the representation version used for ranking.</p>\n<p>Sources: Sections 2–4 and Appendices A, C, and D. All figures are original assets from the paper’s arXiv HTML.</p>",
+        "slug": "2610.24481",
+        "chars": 5089,
+        "minutes": 13
+      }
+    },
+    {
+      "id": "arxiv:2610.25221",
+      "title": "When Semantics Fall Short: Persona-Guided Cross-Domain Sequential Recommendation with Large Language Models",
+      "authors": "Jundong Chen, Honglei Zhang, Shuai An, Enneng Yang, Han Yu",
+      "url": "https://arxiv.org/abs/2610.25221",
+      "source": "arxiv",
+      "published": "2026-10-18",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.1,
+      "base_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "scoring_note": "Transfer user behavioral tendencies rather than relying on global item-text similarity. Local semantic links and persona-guided cross-domain links serve different purposes.",
+      "rank": 3,
+      "company": [],
+      "summary": "PerCDR uses inferred user personas to transfer behavior across domains, while local semantic relations strengthen within-domain modeling. On the Movie domain, NDCG@10 improves 15.40% over the strongest baseline.",
+      "key_insight": "Transfer user behavioral tendencies rather than relying on global item-text similarity. Local semantic links and persona-guided cross-domain links serve different purposes.",
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.26024",
+      "title": "Multimodal Decoupling for Diversified Recommendation through Semantic and Structural Shaping",
+      "authors": "Changran He, Jiaming Wei, Jianghong Ma, Tianjun Wei, Haijun Zhang, Xiaofeng Zhang",
+      "url": "https://arxiv.org/abs/2610.26024",
+      "source": "arxiv",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.1,
+      "base_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "scoring_note": "Diversity depends on representation geometry as well as the final ranking objective. Compare accuracy-oriented and diversity-oriented configurations separately rather than combining their best numbers.",
+      "rank": 4,
+      "company": [
+        "HIT"
+      ],
+      "summary": "MOSS decouples multimodal features, alternates collaborative and semantic graph propagation, and regularizes category exposure. Its diversity-oriented configuration reaches 0.6348 Coverage@10 on Game.",
+      "key_insight": "Diversity depends on representation geometry as well as the final ranking objective. Compare accuracy-oriented and diversity-oriented configurations separately rather than combining their best numbers.",
+      "company_logos": [
+        {
+          "name": "HIT",
+          "logo": "logos/hit.png",
+          "hue": 27
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.26105",
+      "title": "Don't Rewrite the SID Map: Topology Preservation for Generative Retrieval in Dynamic E-Commerce Search",
+      "authors": "Jianbo Zhu, Xing Fang, Xiaopeng Chu, Mingmin Jin, Jing Wang, Bokang Wang, Jiaqi Ye, Xiang Zhang",
+      "url": "https://arxiv.org/abs/2610.26105",
+      "source": "arxiv",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.8,
+      "base_score": 4.1,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.23,
+      "adjusted_score": 4.03,
+      "scoring_note": "Treat code stability as part of the learned model. Small-beam hit rate and the fraction of remapped old items expose drift that a wide beam can conceal.",
+      "rank": 5,
+      "company": [
+        "Alibaba",
+        "Nankai University",
+        "USTC"
+      ],
+      "summary": "Updating semantic item codes can invalidate paths learned by a generative retriever. Preserving old codes, inserting new items, and warm-starting the model yields a 1.16% GMV lift in a three-week TmallAPP test.",
+      "key_insight": "Treat code stability as part of the learned model. Small-beam hit rate and the fraction of remapped old items expose drift that a wide beam can conceal.",
+      "company_logos": [
+        {
+          "name": "Alibaba",
+          "logo": "logos/alibaba.png",
+          "hue": 324
+        },
+        {
+          "name": "Nankai University",
+          "logo": "logos/nankai-university.png",
+          "hue": 155
+        },
+        {
+          "name": "USTC",
+          "logo": "logos/ustc.png",
+          "hue": 325
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.26199",
+      "title": "TaQFormer: A Treatment-as-Query Transformer with Data-Fusion for Multidimensional Treatment Modeling in Coupon Allocation",
+      "authors": "Jiahong Li, Zeqin Yang, Yu Xiang, Zhifan Jiang, Jingqi Ma, Enzheng Hua, Jixing Xu, Jun Wu, Fei Wang, Enyun Yu, Jiecheng Guo",
+      "url": "https://arxiv.org/abs/2610.26199",
+      "source": "arxiv",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "total_score": 3.95,
+      "base_score": 3.95,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.0,
+      "scoring_note": "A frozen observational branch preserves broad patterns while a randomized-data branch corrects policy bias. Request-specific fusion makes their roles clearer than simply mixing the logs.",
+      "rank": 6,
+      "company": [
+        "Didi"
+      ],
+      "summary": "TaQFormer models interactions among category-specific coupon discounts. Observational pretraining is followed by randomized-data adaptation and request-specific fusion. At essentially unchanged subsidy cost rate, business value per user rises 1.26%.",
+      "key_insight": "A frozen observational branch preserves broad patterns while a randomized-data branch corrects policy bias. Request-specific fusion makes their roles clearer than simply mixing the logs.",
+      "company_logos": [
+        {
+          "name": "Didi",
+          "logo": "logos/didi.png",
+          "hue": 244
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.25093",
+      "title": "Structure-Aligned History Learning with Subspace-Structured Semantic IDs for Generative Recommendation",
+      "authors": "Kaiwen Wei, Kejun He, Jie Zhang, Xiaomian Kang, Yuming Yang, Aijia Zhou, Xie Zhou, Yining Wang, Nayu Liu, Li Jin, Zhenyang Li, Jiang Zhong, He Bai, Jingxuan Wei, Junnan Zhu",
+      "url": "https://arxiv.org/abs/2610.25093",
+      "source": "arxiv",
+      "published": "2026-10-18",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.8,
+      "base_score": 4.1,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.17,
+      "adjusted_score": 3.97,
+      "scoring_note": "Align reconstruction units with the code hierarchy. Shuffle the preceding history while retaining current-item clues to test whether reconstruction truly uses the user trajectory.",
+      "rank": 7,
+      "company": [
+        "Chongqing University",
+        "China Telecom",
+        "CAS"
+      ],
+      "summary": "SAHL reconstructs masked history at granularities defined by its structured item codes. This links item representation and persistent preference learning. NDCG@10 improves 18.6–30.0% over RPG across four Amazon categories.",
+      "key_insight": "Align reconstruction units with the code hierarchy. Shuffle the preceding history while retaining current-item clues to test whether reconstruction truly uses the user trajectory.",
+      "company_logos": [
+        {
+          "name": "Chongqing University",
+          "logo": "logos/chongqing-university.png",
+          "hue": 47
+        },
+        {
+          "name": "China Telecom",
+          "logo": "logos/china-telecom.png",
+          "hue": 259
+        },
+        {
+          "name": "CAS",
+          "logo": "logos/cas.png",
+          "hue": 31
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.25805",
+      "title": "OneChord: Distill What You Rank, Recommend in One Pass",
+      "authors": "Zesheng Li, Chengchang Pan, Honggang Qi",
+      "url": "https://arxiv.org/abs/2610.25805",
+      "source": "arxiv",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.8,
+      "base_score": 4.1,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.85,
+      "scoring_note": "Distill the distribution actually used for ranking, including its candidate set and normalization. Matching an intermediate code objective alone can leave a training–serving mismatch.",
+      "rank": 8,
+      "company": [
+        "UCAS"
+      ],
+      "summary": "OneChord aligns recommendation supervision, refinement distillation, and serving through one normalized ranking fusion. Across six Amazon datasets, average relative NDCG@5 improves 7.12% over the strongest baseline.",
+      "key_insight": "Distill the distribution actually used for ranking, including its candidate set and normalization. Matching an intermediate code objective alone can leave a training–serving mismatch.",
+      "company_logos": [
+        {
+          "name": "UCAS",
+          "logo": "logos/ucas.png",
+          "hue": 180
+        }
+      ]
+    },
+    {
+      "id": "hf:2610.26824",
+      "title": "SpecMRL: Redesign Matryoshka Representation Learning within Parametric Spectrum",
+      "authors": "Zhongxin Chen, Songhao Wu, Heng Cui, Cong Li, Xiao Zhou",
+      "url": "https://huggingface.co/papers/2610.26824",
+      "source": "huggingface",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.8,
+      "base_score": 4.1,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.85,
+      "scoring_note": "Compact embeddings need a useful coordinate ordering as well as useful information. Changing the readout basis can improve short vectors while retaining one shared representation model.",
+      "rank": 9,
+      "company": [],
+      "summary": "SpecMRL derives an ordered spectral basis from model parameters so compact embedding prefixes retain more useful information. On MTEB, half-dimensional representations exceed full-dimensional standard MRL.",
+      "key_insight": "Compact embeddings need a useful coordinate ordering as well as useful information. Changing the readout basis can improve short vectors while retaining one shared representation model.",
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.24200",
+      "title": "Candidate-dependent residual routing trades top-of-list accuracy for recall in sequential recommendation",
+      "authors": "Han Chen, Yingrui Li",
+      "url": "https://arxiv.org/abs/2610.24200",
+      "source": "arxiv",
+      "published": "Tue, 20 Oct 2026 00:00:00 -0400",
+      "discovered_at": "2026-10-20",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "base_score": 3.75,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.8,
+      "scoring_note": "Recall gains can cancel a decline in first-hit rank. Inspect where additional hits appear before deciding whether a module belongs in candidate expansion or top-of-list ranking.",
+      "rank": 10,
+      "company": [],
+      "summary": "Candidate-dependent residual routing reweights a user history for each item. Paired-seed comparisons on REES46 show Recall@10 increasing 1.81%, with many new hits appearing lower in the top ten.",
+      "key_insight": "Recall gains can cancel a decline in first-hit rank. Inspect where additional hits appear before deciding whether a module belongs in candidate expansion or top-of-list ranking.",
+      "company_logos": []
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:grwth404/Sequence_Scheduling",
+      "title": "Sequence_Scheduling: PyTorch implementation of paper \"Response Length Perception and Sequence Scheduling: An LLM-Empowered LLM Inference Pipeline\".",
+      "authors": "grwth404",
+      "abstract": "PyTorch implementation of paper \"Response Length Perception and Sequence Scheduling: An LLM-Empowered LLM Inference Pipeline\".",
+      "url": "https://github.com/grwth404/Sequence_Scheduling",
+      "source": "github",
+      "published": "2026-10-16",
+      "discovered_at": "2026-10-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "grwth404/Sequence_Scheduling",
+        "owner": "grwth404",
+        "description": "PyTorch implementation of paper \"Response Length Perception and Sequence Scheduling: An LLM-Empowered LLM Inference Pipeline\".",
+        "created_at": "2026-10-16T15:43:58Z",
+        "updated_at": "2026-10-20",
+        "pushed_at": "2026-10-16",
+        "stargazers_count": 13,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "PyTorch implementation of paper \"Response Length Perception and Sequence Scheduling: An LLM-Empowered LLM Inference Pipeline\".",
+      "language": "Python",
+      "stars": 13,
+      "created_at": "2026-10-16",
+      "rank": 1
+    },
+    {
+      "id": "github:kindlingai/glm-5.3-flash-exlr8-gx10",
+      "title": "glm-5.3-flash-exlr8-gx10: GLM-5.3-Flash exlr8 (EXL3-trellis experts) serving recipe for GB10: vLLM + mentat, TP=1/2/3/4, exlr8 MoE kernels",
+      "authors": "kindlingai",
+      "abstract": "GLM-5.3-Flash exlr8 (EXL3-trellis experts) serving recipe for GB10: vLLM + mentat, TP=1/2/3/4, exlr8 MoE kernels",
+      "url": "https://github.com/kindlingai/glm-5.3-flash-exlr8-gx10",
+      "source": "github",
+      "published": "2026-10-18",
+      "discovered_at": "2026-10-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "kindlingai/glm-5.3-flash-exlr8-gx10",
+        "owner": "kindlingai",
+        "description": "GLM-5.3-Flash exlr8 (EXL3-trellis experts) serving recipe for GB10: vLLM + mentat, TP=1/2/3/4, exlr8 MoE kernels",
+        "created_at": "2026-10-18T16:24:56Z",
+        "updated_at": "2026-10-20",
+        "pushed_at": "2026-10-19",
+        "stargazers_count": 5,
+        "language": "Python",
+        "topics": []
+      },
+      "description": "GLM-5.3-Flash exlr8 (EXL3-trellis experts) serving recipe for GB10: vLLM + mentat, TP=1/2/3/4, exlr8 MoE kernels",
+      "language": "Python",
+      "stars": 5,
+      "created_at": "2026-10-18",
+      "rank": 2
+    },
+    {
+      "id": "github:ZoneTree/ZoneTree.FullTextSearch",
+      "title": "ZoneTree.FullTextSearch: ZoneTree.FullTextSearch is an open-source library that extends ZoneTree to provide efficient full-text search capabilities. It offers a fast, embedded search engine suitable for applications that require high performance and do not rely on external databases.",
+      "authors": "ZoneTree",
+      "abstract": "ZoneTree.FullTextSearch is an open-source library that extends ZoneTree to provide efficient full-text search capabilities. It offers a fast, embedded search engine suitable for applications that require high performance and do not rely on external databases.",
+      "url": "https://github.com/ZoneTree/ZoneTree.FullTextSearch",
+      "source": "github",
+      "published": "2024-08-18",
+      "discovered_at": "2026-10-20",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "ZoneTree/ZoneTree.FullTextSearch",
+        "owner": "ZoneTree",
+        "description": "ZoneTree.FullTextSearch is an open-source library that extends ZoneTree to provide efficient full-text search capabilities. It offers a fast, embedded search engine suitable for applications that require high performance and do not rely on external databases.",
+        "created_at": "2024-08-18T00:17:17Z",
+        "updated_at": "2026-10-20",
+        "pushed_at": "2026-10-20",
+        "stargazers_count": 101,
+        "language": "C#",
+        "topics": []
+      },
+      "description": "ZoneTree.FullTextSearch is an open-source library that extends ZoneTree to provide efficient full-text search capabilities. It offers a fast, embedded search engine suitable for applications that require high performance and do not rely on external databases.",
+      "language": "C#",
+      "stars": 101,
+      "created_at": "2024-08-18",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 4669,
+      "language": "model",
+      "created_at": "2026-09-10",
+      "updated_at": "2026-10-16",
+      "published": "2026-09-10",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+        "likes": 4669,
+        "downloads": 1431582,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "deploy:azure",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-09-10T02:17:58.000Z",
+        "last_modified": "2026-10-16T09:27:28.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3-Flash",
+      "title": "zai-org/GLM-5.3-Flash",
+      "authors": "zai-org",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, glm5_next, image-text-to-text, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3-Flash",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2897,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-15",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3-Flash",
+        "likes": 2897,
+        "downloads": 6548525,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm5_next",
+          "image-text-to-text",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:43:14.000Z",
+        "last_modified": "2026-10-15T06:32:52.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:zai-org/GLM-5.3",
+      "title": "zai-org/GLM-5.3",
+      "authors": "zai-org",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, glm_moe_dsa, text-generation, conversational, en, zh, arxiv:2602.15763",
+      "url": "https://huggingface.co/zai-org/GLM-5.3",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2272,
+      "language": "model",
+      "created_at": "2026-08-25",
+      "updated_at": "2026-10-14",
+      "published": "2026-08-25",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "zai-org/GLM-5.3",
+        "likes": 2272,
+        "downloads": 1873260,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "glm_moe_dsa",
+          "text-generation",
+          "conversational",
+          "en",
+          "zh",
+          "arxiv:2602.15763",
+          "license:other",
+          "eval-results",
+          "endpoints_compatible",
+          "fp8",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-08-25T06:42:50.000Z",
+        "last_modified": "2026-10-14T12:22:48.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, license:mit, endpoints_compatible, 8-bit",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1928,
+      "language": "model",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-17",
+      "published": "2026-10-17",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "likes": 1928,
+        "downloads": 27737,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "license:mit",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-10-17T02:40:38.000Z",
+        "last_modified": "2026-10-17T05:46:55.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:stepfun-ai/Step-5-Preview",
+      "title": "stepfun-ai/Step-5-Preview",
+      "authors": "stepfun-ai",
+      "description": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "abstract": "tags: safetensors, step5_vl, license:other, eval-results, fp8, region:us",
+      "url": "https://huggingface.co/stepfun-ai/Step-5-Preview",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 118,
+      "language": "model",
+      "created_at": "2026-09-20",
+      "updated_at": "2026-10-15",
+      "published": "2026-09-20",
+      "discovered_at": "2026-10-20",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "stepfun-ai/Step-5-Preview",
+        "likes": 118,
+        "downloads": 1766,
+        "pipeline_tag": "",
+        "tags": [
+          "safetensors",
+          "step5_vl",
+          "license:other",
+          "eval-results",
+          "fp8",
+          "region:us"
+        ],
+        "created_at": "2026-09-20T03:15:06.000Z",
+        "last_modified": "2026-10-15T01:28:10.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recent": true,
+    "source_diversity": false,
+    "chinese_source": false,
+    "warnings": [
+      "Source diversity gap: arXiv accounts for 9/10 selections; HuggingFace accounts for 1/10. Relevant engineering posts were historical duplicates; the remaining product announcement lacks quantitative technical evaluation.",
+      "No Chinese-language technical blog selected after deduplication.",
+      "Semantic Scholar returned 429, OpenReview 400, and DBLP invalid JSON or 429; no conference candidates were obtained.",
+      "The crawler initially used local date 2026-10-20. Report dating and subsequent deduplication and ingestion use Asia/Shanghai date 2026-10-21."
+    ]
+  },
+  "run_notes": [
+    "Source diversity gap: arXiv accounts for 9/10 selections; HuggingFace accounts for 1/10. Relevant engineering posts were historical duplicates; the remaining product announcement lacks quantitative technical evaluation.",
+    "No Chinese-language technical blog selected after deduplication.",
+    "Semantic Scholar returned 429, OpenReview 400, and DBLP invalid JSON or 429; no conference candidates were obtained.",
+    "The crawler initially used local date 2026-10-20. Report dating and subsequent deduplication and ingestion use Asia/Shanghai date 2026-10-21."
+  ]
+}
