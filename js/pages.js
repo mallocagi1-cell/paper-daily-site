@@ -103,7 +103,7 @@
       return '<text x="' + p[0] + '" y="' + (Math.round((p[1] + 3) * 100) / 100) + '" text-anchor="middle">' + d[2] + " " +
         escapeHtml(sc[d[0]] != null ? sc[d[0]] : "-") + "</text>";
     }).join("");
-    const aria = DIMS.map(function (d) { return d[1] + " " + (sc[d[0]] != null ? sc[d[0]] : "-"); }).join("，");
+    const aria = DIMS.map(function (d) { return d[1] + " " + (sc[d[0]] != null ? sc[d[0]] : "-"); }).join(TR("，", ", "));
     return '<svg class="radar" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + " " + size +
       TR('" role="img" aria-label="五维评分：', '" role="img" aria-label="Scores: ') + escapeHtml(aria) + '">' + g + '<polygon class="rp" points="' + poly + '"/>' + lab + "</svg>";
   }
@@ -317,7 +317,7 @@
     if (stats.papers_scored != null) st.push(TR("评分 ", "Scored ") + escapeHtml(stats.papers_scored) + TR(" 篇", ""));
     st.push(TR("入选 ", "selected ") + papers.length + TR(" 篇", ""));
     if (stats.score_max != null) st.push(TR("分数 ", "scores ") + fmt2(stats.score_min) + " – " + fmt2(stats.score_max));
-    out += TR('<p class="scen"><b>今日场景</b>', '<p class="scen"><b>Scenario</b>') + escapeHtml(report.scenario || "") + ' <span class="sc-stat">— ' + st.join("，") + "</span></p>";
+    out += TR('<p class="scen"><b>今日场景</b>', '<p class="scen"><b>Scenario</b>') + escapeHtml(report.scenario || "") + ' <span class="sc-stat">— ' + st.join(TR("，", ", ")) + "</span></p>";
     if (papers.length > 1) {
       out += TR('<details class="issue-toc"><summary>本期目录 · ', '<details class="issue-toc"><summary>In this issue · ') + papers.length + TR(" 篇</summary><ol>", " papers</summary><ol>") +
         papers.map(function (p, i) {
@@ -731,7 +731,7 @@
       const msg = (td.days || []).length
         ? TR("本周该方向的日报没有入选论文。", "No papers selected for this track this week.")
         : TR("本周 ", "Week ") + escapeHtml(weekRangeLabel(r.week)) + TR(" 没有 ", " has no ") + escapeHtml(trackLabel(r.track)) + TR(" 日报", " issues") +
-          (r.week.days.length ? TR("（本周日报日期：", " (issue dates: ") + r.week.days.map(shortDay).map(escapeHtml).join("、") + "）" : "") + "。";
+          (r.week.days.length ? TR("（本周日报日期：", " (issue dates: ") + r.week.days.map(shortDay).map(escapeHtml).join(TR("、", ", ")) + TR("）", ")") : "") + TR("。", ".");
       return head + TR('<div class="empty-state"><span class="icon">📭</span><h3>暂无周榜数据</h3><p>', '<div class="empty-state"><span class="icon">📭</span><h3>No weekly data</h3><p>') + msg + "</p></div>";
     }
     const top = papers.slice(0, 3), rest = papers.slice(3);
