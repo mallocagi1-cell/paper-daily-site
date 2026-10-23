@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../css/pages.css?v=91f306f139" />
+  <link rel="stylesheet" href="../css/pages.css?v=42e5eae828" />
 </head>
 <body class="t-infra">
 <div class="navwrap"><div class="wrap"><nav class="nav" aria-label="主导航">
@@ -60,7 +60,7 @@
     <article class="long deep-read-article" id="article">
       <details class="toc-m"><summary>目录 · 5 节</summary><a href="#s1"><i>1</i><span>问题：存储空间大多被副本占掉</span></a><a href="#s2"><i>2</i><span>方法</span></a><a href="#s3"><i>3</i><span>实验</span></a><a href="#s4"><i>4</i><span>局限</span></a><a href="#s5"><i>5</i><span>实践意义</span></a></details>
       <div class="r-narrow"><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 4，Evidence 4，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg></div>
-      <p class="lede">稀疏注意力（例如 DeepSeek-V4.1-Flash、GLM-5 系列使用的按索引选取历史 token 的注意力）让每步解码只读一部分 KV cache，但没被选中的历史以后还可能被选中，所以全部历史仍要保存。长上下文、多请求时，存这些历史的显存决定了能同时解码多少请求。Scitix.AI 的 UlaCache 把所有 GPU 的 KV 池和可选的 CPU 内存编进同一个&quot;逻辑地址空间&quot;：推理引擎只拿逻辑地址分配和选取 KV，数据实际放在哪张卡或 CPU 上由 UlaCache 负责搬运和更新映射。这样 GPU 和 CPU 各存不同的历史，而不是 CPU 存全量、GPU 存副本。在 SGLang 中用 GLM-5.3、输入 64K–128K token 的 Multi-LexSum 请求测试，开启投机解码、GPU 和 CPU 内存预算相同时，<strong class="hl">峰值解码吞吐相对 HiSparse 在 8×H200 上提高 1.16 倍（DP）和 1.70 倍（TP），在 8×B300 上提高 1.73 倍（DP）和 2.51 倍（TP）</strong>。</p>
+      <p class="lede">稀疏注意力（例如 DeepSeek-V4.1-Flash、GLM-5 系列使用的按索引选取历史 token 的注意力）让每步解码只读一部分 KV cache，但没被选中的历史以后还可能被选中，所以全部历史仍要保存。长上下文、多请求时，存这些历史的显存决定了能同时解码多少请求。Scitix.AI 的 UlaCache 把所有 GPU 的 KV 池和可选的 CPU 内存编进同一个&quot;逻辑地址空间&quot;：推理引擎只拿逻辑地址分配和选取 KV，数据实际放在哪张卡或 CPU 上由 UlaCache 负责搬运和更新映射。<strong class="hl">这样 GPU 和 CPU 各存不同的历史，而不是 CPU 存全量、GPU 存副本</strong>。在 SGLang 中用 GLM-5.3、输入 64K–128K token 的 Multi-LexSum 请求测试，开启投机解码、GPU 和 CPU 内存预算相同时，峰值解码吞吐相对 HiSparse 在 8×H200 上提高 1.16 倍（DP）和 1.70 倍（TP），在 8×B300 上提高 1.73 倍（DP）和 2.51 倍（TP）。</p>
 <h2 id="s1">1. 问题：存储空间大多被副本占掉</h2>
 <p>作者用 GLM-5.3 在 8×B300 上统计了两种现有做法的 KV 分配：</p>
 <figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig2_replicas.png" alt="GLM-5.3 在 8×B300 上的 KV 分配（论文 Figure 2）。(a) TP 模式下，SGLang 和 HiSparse 只有 12.5% 的空间存不重复的历史，87.5% 是各卡之间的重复副本；(b) SGLang 只用 GPU 存 2710 万个历史位置；HiSparse 用 CPU 存 3000 万个完整历史，另用 2330 万个 GPU 槽存其中一部分的副本。" loading="lazy" decoding="async"><figcaption>GLM-5.3 在 8×B300 上的 KV 分配（论文 Figure 2）。(a) TP 模式下，SGLang 和 HiSparse 只有 12.5% 的空间存不重复的历史，87.5% 是各卡之间的重复副本；(b) SGLang 只用 GPU 存 2710 万个历史位置；HiSparse 用 CPU 存 3000 万个完整历史，另用 2330 万个 GPU 槽存其中一部分的副本。</figcaption></figure>
@@ -84,7 +84,7 @@
 <figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig8_capacity.png" alt="有效 KV 容量（上，百万槽，实心为 GPU、斜线为 CPU）和可接纳的请求数（下）（论文 Figure 8 左半）。" loading="lazy" decoding="async"><figcaption>有效 KV 容量（上，百万槽，实心为 GPU、斜线为 CPU）和可接纳的请求数（下）（论文 Figure 8 左半）。</figcaption></figure>
 <p>可接纳的请求数：</p>
 <div class="tbl"><table><thead><tr><th>配置</th><th>SGLang</th><th>HiSparse</th><th>UlaCache</th></tr></thead><tbody><tr><td>8×H200 TP，不开投机</td><td>7</td><td>22</td><td>128</td></tr><tr><td>8×H200 TP，开投机</td><td>6</td><td>25</td><td>70</td></tr><tr><td>8×H200 DP，不开投机</td><td>31</td><td>174</td><td>220</td></tr><tr><td>8×H200 DP，开投机</td><td>29</td><td>197</td><td>213</td></tr><tr><td>8×B300 TP，不开投机</td><td>37</td><td>37</td><td>452</td></tr><tr><td>8×B300 TP，开投机</td><td>36</td><td>37</td><td>363</td></tr><tr><td>8×B300 DP，不开投机</td><td>267</td><td>295</td><td>578</td></tr><tr><td>8×B300 DP，开投机</td><td>260</td><td>295</td><td>566</td></tr></tbody></table></div>
-<p><strong class="hl">TP 模式下差距最大</strong>，因为 UlaCache 消除了 MLA 的跨卡重复。DP 模式下 HiSparse 本来就用 CPU 存历史，差距较小。</p>
+<p>TP 模式下差距最大，<strong class="hl">因为 UlaCache 消除了 MLA 的跨卡重复</strong>。DP 模式下 HiSparse 本来就用 CPU 存历史，差距较小。</p>
 <h3>3.2 吞吐与延迟</h3>
 <p>这组实验检验容量增加能否变成吞吐提升，以及低负载时多出来的查找和调度是否拖慢单请求。</p>
 <ul>

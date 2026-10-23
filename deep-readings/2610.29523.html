@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../css/pages.css?v=91f306f139" />
+  <link rel="stylesheet" href="../css/pages.css?v=42e5eae828" />
 <link rel="stylesheet" href="../vendor/katex/katex.min.css"><style>.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:1em 0}.katex{font-size:1.08em}</style>
 </head>
 <body class="t-retrieval">
@@ -61,7 +61,7 @@
     <article class="long deep-read-article" id="article">
       <details class="toc-m"><summary>目录 · 5 节</summary><a href="#s1"><i>1</i><span>为什么做后期交互，为什么要蒸馏</span></a><a href="#s2"><i>2</i><span>训练流程</span></a><a href="#s3"><i>3</i><span>实验</span></a><a href="#s4"><i>4</i><span>局限</span></a><a href="#s5"><i>5</i><span>实践意义</span></a></details>
       <div class="r-narrow"><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 5，Novelty 4，Practical 5，Evidence 4，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,22.0 141.74,73.19 129.97,145.01 58.02,134.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 5</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 5</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg></div>
-      <p class="lede">Perplexity 发布了两个多向量检索模型 pplx-embed-v2-late，参数量分别是 0.6B 和 9B，能编码文本、图片和文档页面截图。它们属于&quot;后期交互&quot;检索：文档里每个 token 都存一个 128 维向量，查询的每个 token 也各算一个向量，打分时每个查询向量找文档里内积最大的那个向量，再把这些最大值加起来（MaxSim）。两个模型不是各自用对比学习训出来的，而是都去逐 token 模仿同一个 18B 教师模型输出的向量，所以<strong class="hl">两者落在同一个向量空间</strong>：文档库可以离线用 9B 建索引，线上查询用 0.6B 编码，直接拿来打分。在作者整理的 72 个领域检索任务上，9B 平均 nDCG@10 为 81.3%，比次优的 nemotron-3-embed-8b 高 1.6 个百分点；0.6B 查询配 9B 文档索引得到 79.6%，比两端都用 0.6B 高 1.6 个百分点，查询端成本不变。需要注意，这 72 个任务的完整清单作者没有公开，分数无法独立复现。</p>
+      <p class="lede">Perplexity 发布了两个多向量检索模型 pplx-embed-v2-late，参数量分别是 0.6B 和 9B，能编码文本、图片和文档页面截图。它们属于&quot;后期交互&quot;检索：文档里每个 token 都存一个 128 维向量，查询的每个 token 也各算一个向量，打分时每个查询向量找文档里内积最大的那个向量，再把这些最大值加起来（MaxSim）。两个模型不是各自用对比学习训出来的，而是<strong class="hl">都去逐 token 模仿同一个 18B 教师模型输出的向量</strong>，所以两者落在同一个向量空间：文档库可以离线用 9B 建索引，线上查询用 0.6B 编码，直接拿来打分。在作者整理的 72 个领域检索任务上，9B 平均 nDCG@10 为 81.3%，比次优的 nemotron-3-embed-8b 高 1.6 个百分点；0.6B 查询配 9B 文档索引得到 79.6%，比两端都用 0.6B 高 1.6 个百分点，查询端成本不变。需要注意，这 72 个任务的完整清单作者没有公开，分数无法独立复现。</p>
 <h2 id="s1">1. 为什么做后期交互，为什么要蒸馏</h2>
 <p>检索模型通常在两种方案之间取舍。单向量模型把整段文档压成一个向量，用近似最近邻搜索很快，但细节信息会丢。交叉编码器把查询和文档拼在一起过一遍模型，效果好，但每个候选都要单独算一次，只能用于重排。后期交互介于两者之间：文档 token 向量离线算好存下来，查询时只算查询的向量，再做 MaxSim。代价是存储大，所以这篇把每个 token 的向量压到 128 维。</p>
 <p>作者的另一个判断是：小模型直接做对比学习效果不够，让它去拟合大模型给出的 token 向量更好。这样做还带来一个副产品，同一个教师蒸馏出的不同尺寸学生可以互换使用。</p>
@@ -80,7 +80,7 @@
 <p>Q2D-Web 更接近 Perplexity 的线上场景：约 7 万条由智能体改写过的线上搜索查询，语料是 1.9 亿个网页，看 Recall@1000。相关文档的标注合并了三种来源：智能体实际引用的、线上检索系统排得靠前的、以及大模型判定相关的。在这个合并标注上，9B 和 0.6B 分别是 74.8% 和 73.6%，最强的基线 nemotron-3-embed-8b 是 69.3%。这个基准来自 Perplexity 自己的流量，其他模型没有针对它调过。</p>
 <h3>3.2 文档截图和图片检索</h3>
 <div class="tbl"><table><thead><tr><th>模型</th><th>维度</th><th>ViDoRe-V3（截图）</th><th>MIRACL-Vision</th><th>PPLX-Q2I</th></tr></thead><tbody><tr><td>pplx-embed-v2-late-9b</td><td>128</td><td>65.2</td><td>75.7</td><td>65.0</td></tr><tr><td>pplx-embed-v2-late-0.6b</td><td>128</td><td>62.3</td><td>67.5</td><td>60.4</td></tr><tr><td>gemini-embedding-2</td><td>3072</td><td>46.0</td><td><strong>77.5</strong></td><td><strong>67.0</strong></td></tr><tr><td>qwen3-vl-embedding-8b</td><td>4096</td><td>58.3</td><td>68.5</td><td>50.6</td></tr><tr><td>evie-8b（只做图像检索）</td><td>4096</td><td><strong>66.4</strong></td><td>–</td><td>–</td></tr></tbody></table></div>
-<p>图片侧它不是全面领先。ViDoRe-V3 上，专门为图像检索训练的 EVIE-8B（66.4%）和 EVIE-4.5B（65.9%）更高，但它们每个 token 存 4,096 和 2,048 维，而 pplx-embed-v2-late 只存 128 维。MIRACL-Vision（维基百科页面截图）和 PPLX-Q2I（Perplexity 线上图片搜索日志，1 万查询、10 万图片）上，<strong class="hl">gemini-embedding-2 都更高</strong>。</p>
+<p>图片侧它不是全面领先。ViDoRe-V3 上，专门为图像检索训练的 EVIE-8B（66.4%）和 EVIE-4.5B（65.9%）更高，但它们每个 token 存 4,096 和 2,048 维，<strong class="hl">而 pplx-embed-v2-late 只存 128 维</strong>。MIRACL-Vision（维基百科页面截图）和 PPLX-Q2I（Perplexity 线上图片搜索日志，1 万查询、10 万图片）上，gemini-embedding-2 都更高。</p>
 <h3>3.3 小模型查询 + 大模型索引</h3>
 <figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/retrieval/2610.29523/fig2_cross_model.png" alt="三种查询/文档模型组合在六个领域上的 nDCG@10（论文 Figure 2）。深蓝是两端都用 9B，中蓝是 0.6B 查询配 9B 文档，浅蓝是两端都用 0.6B。" loading="lazy" decoding="async"><figcaption>三种查询/文档模型组合在六个领域上的 nDCG@10（论文 Figure 2）。深蓝是两端都用 9B，中蓝是 0.6B 查询配 9B 文档，浅蓝是两端都用 0.6B。</figcaption></figure>
 <p>这组实验检验共享向量空间在部署上是否真的可用。做法是用 9B 给文档建索引，再分别用 9B 和 0.6B 编码查询。0.6B 查询配 9B 文档在六个领域都高于两端都用 0.6B，平均从 78.0% 升到 79.6%，两端都用 9B 是 81.3%。查询编码成本和纯 0.6B 一样，文档索引的成本在整个索引生命周期里摊销。</p>
