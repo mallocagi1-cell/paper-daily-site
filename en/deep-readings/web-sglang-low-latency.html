@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>SGLang Low-Latency Mode: Kernels and Runtime — Deep dive | Paper Daily</title>
+  <meta name="description" content="Deep dive: SGLang Low-Latency Mode: Kernels and Runtime. SGLang, NVIDIA, and AMD use a plugin framework to plug specialized fused kernels into SGLang…" />
+  <link rel="canonical" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/web-sglang-low-latency.html" />
+  <meta property="og:site_name" content="Paper Daily" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="SGLang Low-Latency Mode: Kernels and Runtime — Deep dive | Paper Daily" />
+  <meta property="og:description" content="Deep dive: SGLang Low-Latency Mode: Kernels and Runtime. SGLang, NVIDIA, and AMD use a plugin framework to plug specialized fused kernels into SGLang…" />
+  <meta property="og:url" content="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/web-sglang-low-latency.html" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="SGLang Low-Latency Mode: Kernels and Runtime — Deep dive | Paper Daily" />
+  <meta name="twitter:description" content="Deep dive: SGLang Low-Latency Mode: Kernels and Runtime. SGLang, NVIDIA, and AMD use a plugin framework to plug specialized fused kernels into SGLang…" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"SGLang Low-Latency Mode: Kernels and Runtime","inLanguage":"en","datePublished":"2026-10-23","url":"https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/web-sglang-low-latency.html"}</script>
+  <link rel="alternate" hreflang="zh-CN" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/web-sglang-low-latency.html" />
+  <link rel="alternate" hreflang="x-default" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/web-sglang-low-latency.html" />
+  <link rel="alternate" hreflang="en" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/web-sglang-low-latency.html" />
+  <script>(function(){try{var t=localStorage.getItem('pd-theme');if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../css/pages.css?v=4f13b04082" />
+</head>
+<body class="lang-en t-infra">
+<div class="navwrap"><div class="wrap"><nav class="nav" aria-label="Main">
+  <a class="hb" href="../../en/index.html" title="Daily GenAI papers for search &amp; recommendation engineers — scored, summarized, deep-read.">Paper <span>Daily</span></a>
+  <div class="hl">
+  <a href="../../en/index.html">Latest</a>
+  <a href="../../en/index.html#issues">Issues</a>
+  </div>
+  <div class="hm"><a class="lang-tg" href="../../deep-readings/web-sglang-low-latency.html" hreflang="zh-CN" lang="zh-CN" title="中文版">中文</a>
+  <button type="button" class="tg" id="theme-toggle" aria-pressed="false" title="Toggle dark mode">&#9680;<span class="tg-l"> Dark</span></button></div>
+</nav></div></div>
+<main id="main">
+<div class="wrap">
+  <div class="rhead">
+    <a class="back" href="../reports/2026-10-23/infra.html">&#8592; Infra · 2026-10-23</a>
+    <div class="k">&#128214; DEEP DIVE · INFRA</div>
+    <h1>SGLang Low-Latency Mode: Kernels and Runtime</h1>
+    <div class="by"></div>
+  </div>
+  <div class="rmeta"><span><b>13 min</b>read</span><span><b>4.25</b>score</span></div>
+  <div class="rbody"><nav class="toc" id="toc"></nav>
+    <article class="long deep-read-article" id="article"><p>At low concurrency (for example an agent app with only one or two sessions per user), each request computes little data per step, and latency is spent on kernel launches, waits between kernels, and multi-GPU communication. SGLang, NVIDIA, and AMD describe SGLang&#x27;s low-latency mode in this LMSYS blog: a plugin framework that <strong class="hl">plugs vendor-written, highly fused kernels for specific models and hardware into SGLang without merging that code into the SGLang main repo</strong>. The test model is DeepSeek-V4.1-Flash with DSpark speculative decoding. On AgentX agent-trajectory replay, with 4 NVIDIA GB300 GPUs and 1 concurrent session, per-user P90 generation speed rises from 671.2 to 928.4 token/s (1.38×); with 4 AMD MI355X GPUs and 4 concurrent sessions, from 331.6 to 516.0 token/s (1.56×). Controls are standard SGLang on the same hardware.</p>
+<h2>1. Where time goes at small batch sizes</h2>
+<p>With one request, DSpark verifies only 6 token rows per step, so each kernel does little compute and dependencies plus cross-GPU communication dominate. Deep fusion for a specific model, hardware, and concurrency can cut latency a lot, but every combination needs its own implementation; putting them all in the SGLang main repo would keep growing code and review burden.</p>
+<h2>2. Method</h2>
+<h3>2.1 NVIDIA: overlap dependent kernels and communication (sgl-nvidia-mega)</h3>
+<p>After warmup under a CUDA graph, the authors profile one decode layer (1 request, median per segment):</p>
+<p>Kernel count only falls from 1,205 to 1,189; <strong class="hl">latency drops mainly by cutting waits and overlapping work</strong>, not by cutting kernel count. They do four things:</p>
+<ol>
+<li><strong>Start the next kernel earlier.</strong> Using PDL (programmatic dependent launch, which lets a later kernel begin while an earlier one still runs), the &quot;ready&quot; signal is sent sooner so the next kernel can prepare barriers and load weights. Attention starts gathering KV before the query is ready; RoPE is done while loading the query, removing a separate kernel.</li>
+<li><strong>Send results during the epilogue of the matmul.</strong> After the attention output projection each GPU holds a partial sum that must be reduced across GPUs. The baseline writes the matmul back to HBM and has the next kernel read it for the send; the plugin lets each thread block multicast over NVLink as soon as its tile finishes, without waiting for the whole matmul.</li>
+<li><strong>Start expert matmuls before routing finishes.</strong> With at most 8 rows, tokens selected per expert fit in one 8-row tile; the plugin locates them with a bitmap and counts—no scan or sort—and starts the first expert matmul early. MoE median time falls from 44.4 µs to 36.5 µs.</li>
+<li><strong>Pack speculative draft sampling into one kernel.</strong> DSpark&#x27;s draft head proposes 5 tokens in order; the plugin finishes that on each GPU with one kernel launch, cutting draft time from 85.1 µs to 34.2 µs with the acceptance logic unchanged.</li>
+</ol>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-23/infra/sglang-low-latency/nvidia-output-handoff.png" alt="Where cross-GPU sends happen after the attention output projection (blog figure). Top: standard SGLang writes partial sums back to HBM, then the next kernel reads and sends to 4 GPUs. Bottom: the plugin multicasts to 4 GPUs during the matmul epilogue." loading="lazy" decoding="async"><figcaption>Where cross-GPU sends happen after the attention output projection (blog figure). Top: standard SGLang writes partial sums back to HBM, then the next kernel reads and sends to 4 GPUs. Bottom: the plugin multicasts to 4 GPUs during the matmul epilogue.</figcaption></figure>
+<h3>2.2 AMD: merge each layer into two resident kernels (sgl-amd-mono)</h3>
+<p>On AMD the authors see three large costs: even with HIP graphs each small kernel still costs 2–4 µs on the GPU; idle gaps between kernels; and no compute during two cross-GPU all-reduces per layer. The plugin uses FlyDSL to write two resident kernels covering most of a layer: K1 does mHC update, Q/KV projection, and KV-cache writes; K2 does attention, output projection, MoE, and both all-reduces. Stages pass &quot;values tagged with the decode-step id&quot;; matching ids start work without a separate flag. All-reduce is inside the kernel: each finished output tile is pushed to all GPUs while other workgroups keep computing. Each cross-GPU wait has a shorter timeout than the SGLang watchdog; on timeout all GPUs abort that launch instead of hanging the service.</p>
+<h3>2.3 Plugin framework</h3>
+<p>An external kernel library plugs in in four steps: register (declare supported model structures), check (before loading weights, verify hardware, precision, and parallelism, failing early on mismatch), build (prepare weights and resources at init, before KV-cache size is fixed so memory use is counted), and runtime dispatch (the plugin covers only some step types and token counts; uncovered steps fall back to SGLang&#x27;s existing forward).</p>
+<h2>3. Experiments</h2>
+<h3>3.1 AgentX trajectory replay</h3>
+<p>This measures how much the plugin speeds up a near-production agent load. Setup: DeepSeek-V4.1-Flash + DSpark, TP4, per-user P90 generation speed, only the plugin switched.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-23/infra/sglang-low-latency/figure-1.png" alt="AgentX replay results (blog figure). Gray is standard SGLang; blue is low-latency mode." loading="lazy" decoding="async"><figcaption>AgentX replay results (blog figure). Gray is standard SGLang; blue is low-latency mode.</figcaption></figure>
+<p>On NVIDIA the speedup shrinks as concurrency rises; on AMD all three tiers stay above 1.45×.</p>
+<h3>3.2 NVIDIA fixed-length load</h3>
+<p>With 8K input and 1K output and a simulated mean acceptance length of 3.51, the NVIDIA plugin raises per-user decode speed by 12%–38% at 1–8 concurrent requests.</p>
+<h2>4. Limitations</h2>
+<p>Only DeepSeek-V4.1-Flash + DSpark is supported so far; GLM-5.3, K3, MiniMax M3 and others are still in development. The blog notes that profiling itself affects timing; per-segment numbers explain mechanisms, not serve as service SLOs. External kernels skip SGLang&#x27;s usual code review; CI and performance regression for the plugin API are still planned; the API itself is early and will change. The blog gives no accuracy comparison and only states that speculative acceptance logic is unchanged.</p>
+<h2>5. Takeaways</h2>
+<p>If your load is low-concurrency and sensitive to per-user latency (for example coding or agent sessions) and you deploy DeepSeek-V4.1-Flash on GB300 or MI355X, try this mode. For other models, the transferable pieces are the method: at small batches, profile waits and communication first, then decide which kernels to fuse; and isolate specialized kernels outside the main framework with plugins.</p></article>
+    <aside class="aside"><div class="box"><h6>Scores</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 5，Evidence 4，Timely 4"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 129.97,145.01 58.02,134.01 38.26,73.19"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 5</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 4</text></svg></div><a class="btn" href="https://www.lmsys.org/blog/2026-10-18-sglang-low-latency-mode" target="_blank" rel="noopener">Original paper &#8599;</a></aside>
+  </div>
+</div>
+</main>
+<div class="wrap"><footer class="site-foot"><span>Paper Daily · English edition</span><span>·</span><span><a href="../../deep-readings/web-sglang-low-latency.html">中文版</a></span></footer></div>
+<script>
+(function(){
+  var root=document.documentElement;
+  function label(){var b=document.getElementById('theme-toggle');if(!b)return;var d=root.getAttribute('data-theme')==='dark';
+    b.innerHTML=(d?'&#9681;':'&#9680;')+'<span class="tg-l"> '+(d?'Light':'Dark')+'</span>';b.setAttribute('aria-pressed',d?'true':'false');}
+  function set(t,store){root.setAttribute('data-theme',t);if(store){try{localStorage.setItem('pd-theme',t)}catch(e){}}label();}
+  document.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#theme-toggle');
+    if(b)set(root.getAttribute('data-theme')==='dark'?'light':'dark',true);});
+  try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
+    var s=null;try{s=localStorage.getItem('pd-theme')}catch(x){}if(s!=='light'&&s!=='dark')set(e.matches?'dark':'light',false);});}catch(e){}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',label);else label();
+})();
+</script>
+<script src="../../js/lightbox.js?v=4f13b04082" defer></script>
+</body>
+</html>

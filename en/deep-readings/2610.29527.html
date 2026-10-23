@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding — Deep dive | Paper Daily</title>
+  <meta name="description" content="Deep dive: RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding. Hisense&#x27;s RCSD continues training a speculative-decoding…" />
+  <link rel="canonical" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.29527.html" />
+  <meta property="og:site_name" content="Paper Daily" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding — Deep dive | Paper Daily" />
+  <meta property="og:description" content="Deep dive: RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding. Hisense&#x27;s RCSD continues training a speculative-decoding…" />
+  <meta property="og:url" content="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.29527.html" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding — Deep dive | Paper Daily" />
+  <meta name="twitter:description" content="Deep dive: RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding. Hisense&#x27;s RCSD continues training a speculative-decoding…" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding","inLanguage":"en","datePublished":"2026-10-23","url":"https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.29527.html"}</script>
+  <link rel="alternate" hreflang="zh-CN" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/2610.29527.html" />
+  <link rel="alternate" hreflang="x-default" href="https://mallocagi1-cell.github.io/paper-daily-site/deep-readings/2610.29527.html" />
+  <link rel="alternate" hreflang="en" href="https://mallocagi1-cell.github.io/paper-daily-site/en/deep-readings/2610.29527.html" />
+  <script>(function(){try{var t=localStorage.getItem('pd-theme');if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../css/pages.css?v=4f13b04082" />
+</head>
+<body class="lang-en t-infra">
+<div class="navwrap"><div class="wrap"><nav class="nav" aria-label="Main">
+  <a class="hb" href="../../en/index.html" title="Daily GenAI papers for search &amp; recommendation engineers — scored, summarized, deep-read.">Paper <span>Daily</span></a>
+  <div class="hl">
+  <a href="../../en/index.html">Latest</a>
+  <a href="../../en/index.html#issues">Issues</a>
+  </div>
+  <div class="hm"><a class="lang-tg" href="../../deep-readings/2610.29527.html" hreflang="zh-CN" lang="zh-CN" title="中文版">中文</a>
+  <button type="button" class="tg" id="theme-toggle" aria-pressed="false" title="Toggle dark mode">&#9680;<span class="tg-l"> Dark</span></button></div>
+</nav></div></div>
+<main id="main">
+<div class="wrap">
+  <div class="rhead">
+    <a class="back" href="../reports/2026-10-23/infra.html">&#8592; Infra · 2026-10-23</a>
+    <div class="k">&#128214; DEEP DIVE · INFRA</div>
+    <h1>RCSD: Reinforcement and Continual Learning for Domain-Specific Speculative Decoding</h1>
+    <div class="by">Mingkang Liu, Weiming Meng, Peipei Jiao, Jiawei Zhang, Tianyuan Liu, Junyan Li, Lichen Pang</div>
+  </div>
+  <div class="rmeta"><span><b>11 min</b>read</span><span><b>4.10</b>score</span></div>
+  <div class="rbody"><nav class="toc" id="toc"></nav>
+    <article class="long deep-read-article" id="article"><p>Speculative decoding has a small draft model guess several tokens, then a large model verify them in one parallel pass; the more guesses accepted (longer acceptance length), the faster. Draft models are usually distilled so their output distribution matches the target, including low-probability tokens the target itself is unsure about. Hisense&#x27;s authors argue that target is wrong: verification only cares whether the draft&#x27;s tokens are accepted, so <strong class="hl">the draft only needs to rank the most likely few tokens correctly and need not reproduce the full distribution</strong>. They propose RCSD: in the EAGLE framework, start from a draft trained with HASS (a distillation method for draft models) and continue with DPO or GRPO, using contrast between sequences from the target alone and sequences that alternate target and draft. On Qwen3-1.7B and Llama-3.1-8B, acceptance length exceeds HASS on HumanEval, MT-Bench, GSM8K, and ShareGPT for draft steps 3–6; the paper reports a 35% average gain and 1.35× end-to-end speedup on ShareGPT-like loads.</p>
+<h2>1. Distillation target ≠ acceptance length</h2>
+<p>Distillation minimizes forward KL and forces the draft to spend capacity on every region of the target distribution, including the low-probability tail. The draft is orders of magnitude smaller and cannot fully match. The authors&#x27; claim: low KL need not mean high acceptance, and high KL can still accept well—what matters is whether the top few candidate tokens are ordered like the target.</p>
+<h2>2. Method</h2>
+<p>Both training variants start from a HASS-trained draft and keep it as a frozen reference.</p>
+<p><strong>DPO variant.</strong> For the same prompt, build a pair:</p>
+<ul>
+<li>&quot;Good&quot; sequence: fully autoregressive from the target;</li>
+<li>&quot;Bad&quot; sequence: the target emits 1 token, the draft continues for k tokens without verification, then repeat.</li>
+</ul>
+<p>Standard DPO then raises the draft&#x27;s probability of the good sequence relative to the reference and lowers the bad one. Tokens in the bad sequence that the target itself generated are masked out of the loss so the draft is not punished for matching the target.</p>
+<p><strong>GRPO variant.</strong> For the same prompt, generate a group: one sequence from the target alone, and several that alternate with different k (draft continues 1, 2, or 3 tokens). Each sequence&#x27;s score is the sum of two normalized terms: the target&#x27;s log probability of the sequence, and the sequence&#x27;s acceptance rate. Train with GRPO&#x27;s clipped objective plus a KL constraint.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-23/infra/2610.29527/fig3_overview.png" alt="RCSD framework (paper Figure 3). Left: during speculative decoding, verification splits outputs into accepted and early-rejected parts. Right: A uses DPO with target-only sequences as good and target–draft alternating sequences as bad; B uses GRPO and scores a group by acceptance rate. Bottom: after optimization the draft mass concentrates on the target&#x27;s high-probability tokens." loading="lazy" decoding="async"><figcaption>RCSD framework (paper Figure 3). Left: during speculative decoding, verification splits outputs into accepted and early-rejected parts. Right: A uses DPO with target-only sequences as good and target–draft alternating sequences as bad; B uses GRPO and scores a group by acceptance rate. Bottom: after optimization the draft mass concentrates on the target&#x27;s high-probability tokens.</figcaption></figure>
+<h2>3. Experiments</h2>
+<h3>3.1 Acceptance length</h3>
+<p>This checks whether DPO/GRPO continued training makes more draft tokens accepted. Setup: Qwen3-1.7B and Llama-3.1-8B as targets, train on 90% of ShareGPT; test on HumanEval, MT-Bench, GSM8K, and the remaining 10% ShareGPT; draft steps 3–6.</p>
+<p>Qwen3-1.7B at step 6 mean acceptance length; Llama-3.1-8B at step 6:</p>
+<p>Both methods clearly beat HASS; GRPO is usually slightly better than DPO, with a small gap. Larger step sizes gain more—for example Qwen3-1.7B on GSM8K rises from +31% at step 3 to +49% at step 6. On Llama-3.1-8B the ShareGPT gain is largest, matching the training distribution.</p>
+<h3>3.2 Throughput</h3>
+<p>This checks whether longer acceptance becomes real speed. Setup: Llama-3.1-8B-Instruct, SGLang 5.5.0. The paper does not state the draft step for this plot; the acceptance lengths match the step-3 table above.</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-23/infra/2610.29527/fig2_tps.png" alt="Throughput (top) and mean acceptance length (bottom) (paper Figure 2). Gray = no speculation; blue HASS; orange HASS + DPO; red HASS + GRPO." loading="lazy" decoding="async"><figcaption>Throughput (top) and mean acceptance length (bottom) (paper Figure 2). Gray = no speculation; blue HASS; orange HASS + DPO; red HASS + GRPO.</figcaption></figure>
+<p>(token/s) On ShareGPT, GRPO rises from 142.3 to 176.6 token/s; the other three datasets gain less.</p>
+<h2>4. Limitations</h2>
+<ul>
+<li>The paper repeatedly claims &quot;no quality impact&quot; but gives no quality metrics. Speculative verification should make the target decide the output, but that is not separately checked.</li>
+<li>The title mentions continual learning and domain-specific settings; the body has no continual-learning experiment and evaluates only general datasets.</li>
+<li>Method text is inconsistent: Figure 3 left describes good/bad sequences from accepted versus early-rejected tokens, while the method section and the right panel use target-only versus target–draft alternating sequences.</li>
+<li>Figure 2&#x27;s caption says the baseline is SFT; the legend says HASS.</li>
+<li>Throughput is measured only for one Llama-3.1-8B setup; training cost is unreported, and there is no comparison to non-distillation training methods.</li>
+</ul>
+<h2>5. Takeaways</h2>
+<p>If you already deploy an EAGLE/HASS-style draft, this paper suggests a low-cost next step: continue with one round of DPO on data from the target itself—no human labels or extra reward model. The GRPO variant is only slightly better and harder to implement. Without quality evals and training-cost numbers, check output consistency and training cost yourself before shipping.</p></article>
+    <aside class="aside"><div class="box"><h6>Scores</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 4，Evidence 4，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg></div><a class="btn" href="https://arxiv.org/abs/2610.29527" target="_blank" rel="noopener">Original paper &#8599;</a></aside>
+  </div>
+</div>
+</main>
+<div class="wrap"><footer class="site-foot"><span>Paper Daily · English edition</span><span>·</span><span><a href="../../deep-readings/2610.29527.html">中文版</a></span></footer></div>
+<script>
+(function(){
+  var root=document.documentElement;
+  function label(){var b=document.getElementById('theme-toggle');if(!b)return;var d=root.getAttribute('data-theme')==='dark';
+    b.innerHTML=(d?'&#9681;':'&#9680;')+'<span class="tg-l"> '+(d?'Light':'Dark')+'</span>';b.setAttribute('aria-pressed',d?'true':'false');}
+  function set(t,store){root.setAttribute('data-theme',t);if(store){try{localStorage.setItem('pd-theme',t)}catch(e){}}label();}
+  document.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#theme-toggle');
+    if(b)set(root.getAttribute('data-theme')==='dark'?'light':'dark',true);});
+  try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
+    var s=null;try{s=localStorage.getItem('pd-theme')}catch(x){}if(s!=='light'&&s!=='dark')set(e.matches?'dark':'light',false);});}catch(e){}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',label);else label();
+})();
+</script>
+<script src="../../js/lightbox.js?v=4f13b04082" defer></script>
+</body>
+</html>
