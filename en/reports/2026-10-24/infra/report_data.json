@@ -1,0 +1,288 @@
+{
+  "date": "2026-10-24",
+  "track": "infra",
+  "scenario": "Community search over short user-generated posts, questions, answers and comments. Key metrics are search relevance (nDCG) and CTR. Focus: semantic matching, query understanding, short-text retrieval, ranking models, and LLM applications in search.",
+  "stats": {
+    "papers_scored": 8,
+    "papers_selected": 8,
+    "score_min": 3.0,
+    "score_max": 4.15
+  },
+  "code_projects": [],
+  "papers": [
+    {
+      "rank": 1,
+      "id": "web:google-llmd-1.0-2026-10-20",
+      "title": "llm-d 1.0, an open source stack for distributed inference",
+      "url": "https://cloud.google.com/blog/topics/ai-infrastructure/llm-d-1-0-an-open-source-stack-for-distributed-inference/",
+      "authors": "Google Cloud",
+      "company": [
+        "Google"
+      ],
+      "source": "industry_blog",
+      "published": "2026-10-20",
+      "track_fit": "core",
+      "total_score": 4.15,
+      "preference_bonus": 0.1,
+      "adjusted_score": 4.25,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "Agent traffic is multi-step, shares long prefixes and arrives in bursts. Behind an ordinary round-robin load balancer, replicas recompute the same prompts and accelerator memory fills up with duplicate KV cache. llm-d 1.0, released at the PyTorch Conference by Google together with Red Hat, IBM and others, is an open-source distributed inference stack that runs on Kubernetes and organizes a set of vLLM and SGLang model servers into one serving pool: the router tracks which replicas hold each cached prefix and picks a replica using load and predicted latency; when accelerator memory fills up, KV cache is moved first to host memory and then to SSD; prefill and decode are split into two pools. Version 1.0 adds flow control that queues requests by priority and fairness, and rolling upgrades that do not interrupt sessions. On an agentic coding workload on Ironwood TPU, prefix-aware routing plus host-memory offload cut median time-to-first-token by more than 85% and delivered 2.4x the total throughput of a plain Kubernetes Service. ==The gain comes mainly from sending a session's requests back to the replica that already holds its context, which removes repeated prefill==.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "Today at the PyTorch Conference, we released llm-d 1.0, an open-source, Kubernetes-native stack for distributed LLM inference. llm-d solves this for teams serving their own models by turning a cluster of model servers into a coordinated serving pool.",
+      "company_logos": [
+        {
+          "name": "Google",
+          "logo": "logos/google.png",
+          "hue": 114
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "web:google-llmd-1.0-2026-10-20",
+        "title": "llm-d 1.0, an open source stack for distributed inference",
+        "status": "completed",
+        "content": "A year ago, most inference traffic was still chat: one prompt in, one response out. Now more and more requests come from multi-step agents and reinforcement-learning rollouts, which fan out across several tools, share very long prefixes and arrive in bursts. Put this traffic on a single machine, or behind an ordinary round-robin load balancer, and the replicas recompute the same prompts, accelerator memory fills up with duplicate KV cache, and one bursty agent loop can stall interactive users' requests. llm-d 1.0, released at the PyTorch Conference by Google together with Red Hat, IBM and others, is an open-source distributed inference stack that runs on Kubernetes and organizes a set of vLLM and SGLang model servers into one serving pool: the router knows which replicas hold each cached prefix and sends a session's requests back to them; when accelerator memory runs short, KV cache is moved to host memory and storage; high-priority requests can jump the queue. On an agentic coding workload on Ironwood TPU, prefix-aware routing plus host-memory offload cut median time-to-first-token (TTFT) by more than 85% and delivered 2.4x the total throughput of a plain Kubernetes Service. ==Most of these gains come from no longer recomputing prefixes that have already been computed, not from faster kernels==.\n\nThis is a Google Cloud product blog, read together with IBM Research's introduction from the same day. Below, I first explain the problem llm-d solves, then break down four components, routing, KV-cache tiering, prefill/decode disaggregation and flow control, and finally look at the production numbers the blog gives. All numbers come from these two blogs, and most of them come without a full experimental setup.\n\n## 1. The problem: why agent traffic breaks ordinary load balancing\n\n![The three stages of llm-d's evolution (Google blog Figure 1). On the left is an ordinary Kubernetes Service that hands requests round-robin to model servers that each do both prefill and decode; in the middle, a cache- and load-aware router is added, prefill and decode pools are separated, and KV cache is split into three tiers, accelerator memory, CPU memory and storage; on the right, flow control is added to the router, queuing requests in three tiers, free, standard and high priority. The components that appear from left to right are exactly what 1.0 does beyond an ordinary deployment.](figs/google-llmd-1.0-2026-10-20/fig1_evolution.png)\n\nLLM inference has two steps: prefill reads the whole prompt once and computes the KV cache for every token; decode then generates new tokens one by one from that cache. The compute of prefill grows with prompt length. An agent calls the model many times within one task, and every prompt contains the same system instructions, code and conversation history, with only a few new turns appended at the end.\n\nIf the second call is sent round-robin to a different replica, that replica has no cache from the first call and has to prefill the whole prefix again. The more replicas there are, the lower the chance of landing on the original one. IBM's blog puts it directly: if every step requires the model to reread the same material, you are repeatedly paying for work the system has already done.\n\nThe second problem is mixed load. Interactive requests need low latency, background agent loops and RL rollouts need throughput, and demand swings by the minute. Without priorities, interactive requests queue behind a large batch of background requests.\n\n## 2. Method: four components\n\n**Cache-aware routing.** The llm-d router is built on the Gateway API Inference extension for Kubernetes. It tracks which replicas hold each cached prefix and, when choosing a replica, weighs that information together with replica load and predicted latency. Version 1.0 adds session-aware routing and turn-priority scheduling, and stores Responses API state natively at the routing layer so agents can reuse context across turns. In IBM's words, multi-turn requests stay pinned to the appropriate replicas so that their prefix caches remain usable.\n\n**Tiered KV-cache offloading.** Once accelerator memory is full, llm-d does not simply drop old cache; it uses vLLM's OffloadingConnector, Mooncake or SGLang's HiCache to move it to host memory, and further down to SSD or Google Cloud Managed Lustre. ==The point is to avoid many prefixes being pushed out of accelerator memory at once under multi-turn, long-context load and then recomputed all together==; the blog calls this a prefix-eviction storm.\n\n**Prefill/decode disaggregation.** Prefill is compute-heavy and decode is bound by memory bandwidth, so running both on the same replicas makes each wait on the other. llm-d splits prefill, decode and multimodal encode into separate pools, and uses wide expert parallelism to spread large MoE models across nodes. DisaggregatedSet, new in 1.0 and built on LeaderWorkerSet, the Kubernetes API for multi-host inference, manages these pools as one unit: during rolling updates, prefill and decode move together to matching versions, while scaling stays independent for each.\n\n**Flow control and async processing.** Flow control queues requests by priority and fairness, so latency-sensitive requests and bursty agent workloads can share one set of hardware without starving each other. Version 1.0 also adds llm-d-async-processor, which pulls latency-tolerant requests from queues such as Pub/Sub or Redis, routes them alongside real-time traffic, runs them only on spare capacity, and enforces strict priority lanes and quotas.\n\n![The full stack on Google Cloud (Google blog Figure 2). From top to bottom: 1,000 agents running in Agent Substrate sandboxes; llm-d's multi-node orchestration layer, including the router, flow control, tiered KV cache and prefill/decode disaggregation; the single-node model engines vLLM, SGLang and TorchTPU; and TPU hardware at the bottom. Look at the division of labor between the middle two layers: llm-d handles only cross-node scheduling, and single-node performance is left to the inference engines.](figs/google-llmd-1.0-2026-10-20/fig2_stack.png)\n\nThis figure also shows where llm-d sits. It does not replace vLLM or SGLang; it sits in front of them and does the scheduling. ==Teams can keep their existing inference engine, models and cluster, and plug in only the components they need==; the order the blog recommends is to first add prefix-aware routing in front of an existing vLLM deployment, then add flow control, KV-cache offloading and prefill/decode disaggregation.\n\n## 3. What is new in 1.0\n\nIBM's blog points out that the five techniques, prefix-cache-aware routing, KV-cache offloading, batch inference optimization, prefill/decode disaggregation and wide expert parallelism, existed before 1.0; what changes in 1.0 is that they can run long-term as a critical service. Specifically:\n\n- Multi-tenant quality of service: flow control by priority and fairness.\n- Stability: v1 APIs and a hardened request path, validated on multiple clouds and accelerator types.\n- Safer upgrades: router high availability, zero-downtime updates, and the DisaggregatedSet described above.\n- Agent-aware serving: session-aware routing, turn-priority scheduling and native Responses API state.\n- TPU support: TorchTPU runs PyTorch models natively on TPUs inside vLLM and SGLang, with cooperative time-slicing.\n\nTime-slicing targets idle time in RL training. The blog says that during rollout generation or weight updates, accelerators sit idle 40% to 60% of the time; llm-d fits async inference into these gaps, raising aggregate accelerator duty cycles from a baseline of about 40% to more than 70%.\n\n## 4. Experiments and production numbers\n\nThe blog's numbers fall into two kinds: Google's own tests and production traffic, and user reports. Each set gives only the comparison and the result, without a full experimental configuration; below they are organized by what they aim to show, what they compare against and the result.\n\n| Scenario | Compared against | Result |\n|---|---|---|\n| Agentic coding workload on Ironwood TPU (TPU 7x), prefix-aware routing + host-memory offload | Plain Kubernetes Service | Median TTFT down more than 85%, total throughput 2.4x |\n| Gemini platform (formerly Vertex AI) production traffic through GKE Inference Gateway | Not stated in the blog | Prefix-cache hit rate from 35% to 70%; TTFT for coding agents down more than 35%; P95 TTFT under bursty chat traffic down more than 50% |\n| 17,000-node multi-region GKE deployment across the US and Europe serving an MoE model | Not stated in the blog (result is for three clusters combined) | Throughput scaled 2.9x across three clusters, 99.9% success rate, routing overhead below 1% |\n| A3 Mega cluster serving a 70B model, 50k-token prompts, KV cache offloaded to both Managed Lustre and host memory | Offload to host memory only | TTFT improved about 40%, end-to-end latency down 30%, GPU-hour requirement down nearly 60% |\n| Agentic coding workload test (IBM) | Upper limit of reusable cache | Prefix-aware router captured 97% of the available cache reuse |\n| 3,000 concurrent software-engineering agents, self-hosted deployment (IBM and Red Hat) | Buying the same open model as a service | Cost 5 to 10 times lower |\n\nThe first row answers how much cache-aware routing itself brings: on the same hardware, simply replacing round-robin with prefix-based routing and adding host-memory offload cut median TTFT by more than 85%. The second row is a check on production traffic: the prefix-cache hit rate doubled, consistent in direction with the drop in TTFT. The third row tests scale: routing overhead below 1% shows that the router's own computation did not become a bottleneck. The fourth row compares two KV-cache offloading schemes; with long 50k-token prompts, adding a shared storage tier has a clearer effect.\n\nAmong user reports, Snap reached prefix-cache hit rates of up to 75–80% with prefix-cache-aware routing; ZenteiQ raised daily generated tokens per 1,000 TPU v6e accelerators from 1.47 billion to 5.97 billion, more than 4x higher aggregate throughput; Mistral uses flow control to enforce strict priorities across its commercial tiers, automatically holding or shedding lower-priority requests when pools saturate.\n\n## 5. Limitations\n\nThe blog itself does not discuss limitations. Two facts to add: first, most numbers in the table come with only a comparison and a result, so the baseline configuration, workload mix and measurement method need to be checked in the original sources linked from the blog; second, many capabilities (GKE Inference Gateway's managed routing, cross-region failover, the Managed Lustre storage tier) are Google Cloud managed services, and on other clouds or self-built clusters you need to deploy the corresponding open-source components yourself.\n\n## 6. Practical takeaways\n\n- If you serve agents or multi-turn chat with vLLM or SGLang and still have round-robin load balancing in front, check the prefix-cache hit rate first. If it is low, prefix-based routing is the step with the smallest change and the most direct gain.\n- When interactive requests and batch jobs share the same GPUs, flow control and async queues let batch jobs use only spare capacity, so interactive latency is not affected by batch work.",
+        "content_html": "<p>A year ago, most inference traffic was still chat: one prompt in, one response out. Now more and more requests come from multi-step agents and reinforcement-learning rollouts, which fan out across several tools, share very long prefixes and arrive in bursts. Put this traffic on a single machine, or behind an ordinary round-robin load balancer, and the replicas recompute the same prompts, accelerator memory fills up with duplicate KV cache, and one bursty agent loop can stall interactive users&#x27; requests. llm-d 1.0, released at the PyTorch Conference by Google together with Red Hat, IBM and others, is an open-source distributed inference stack that runs on Kubernetes and organizes a set of vLLM and SGLang model servers into one serving pool: the router knows which replicas hold each cached prefix and sends a session&#x27;s requests back to them; when accelerator memory runs short, KV cache is moved to host memory and storage; high-priority requests can jump the queue. On an agentic coding workload on Ironwood TPU, prefix-aware routing plus host-memory offload cut median time-to-first-token (TTFT) by more than 85% and delivered 2.4x the total throughput of a plain Kubernetes Service. <strong class=\"hl\">Most of these gains come from no longer recomputing prefixes that have already been computed, not from faster kernels</strong>.</p>\n<p>This is a Google Cloud product blog, read together with IBM Research&#x27;s introduction from the same day. Below, I first explain the problem llm-d solves, then break down four components, routing, KV-cache tiering, prefill/decode disaggregation and flow control, and finally look at the production numbers the blog gives. All numbers come from these two blogs, and most of them come without a full experimental setup.</p>\n<h2>1. The problem: why agent traffic breaks ordinary load balancing</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-24/infra/google-llmd-1.0-2026-10-20/fig1_evolution.png\" alt=\"The three stages of llm-d&#x27;s evolution (Google blog Figure 1). On the left is an ordinary Kubernetes Service that hands requests round-robin to model servers that each do both prefill and decode; in the middle, a cache- and load-aware router is added, prefill and decode pools are separated, and KV cache is split into three tiers, accelerator memory, CPU memory and storage; on the right, flow control is added to the router, queuing requests in three tiers, free, standard and high priority. The components that appear from left to right are exactly what 1.0 does beyond an ordinary deployment.\" loading=\"lazy\" decoding=\"async\"><figcaption>The three stages of llm-d&#x27;s evolution (Google blog Figure 1). On the left is an ordinary Kubernetes Service that hands requests round-robin to model servers that each do both prefill and decode; in the middle, a cache- and load-aware router is added, prefill and decode pools are separated, and KV cache is split into three tiers, accelerator memory, CPU memory and storage; on the right, flow control is added to the router, queuing requests in three tiers, free, standard and high priority. The components that appear from left to right are exactly what 1.0 does beyond an ordinary deployment.</figcaption></figure>\n<p>LLM inference has two steps: prefill reads the whole prompt once and computes the KV cache for every token; decode then generates new tokens one by one from that cache. The compute of prefill grows with prompt length. An agent calls the model many times within one task, and every prompt contains the same system instructions, code and conversation history, with only a few new turns appended at the end.</p>\n<p>If the second call is sent round-robin to a different replica, that replica has no cache from the first call and has to prefill the whole prefix again. The more replicas there are, the lower the chance of landing on the original one. IBM&#x27;s blog puts it directly: if every step requires the model to reread the same material, you are repeatedly paying for work the system has already done.</p>\n<p>The second problem is mixed load. Interactive requests need low latency, background agent loops and RL rollouts need throughput, and demand swings by the minute. Without priorities, interactive requests queue behind a large batch of background requests.</p>\n<h2>2. Method: four components</h2>\n<p><strong>Cache-aware routing.</strong> The llm-d router is built on the Gateway API Inference extension for Kubernetes. It tracks which replicas hold each cached prefix and, when choosing a replica, weighs that information together with replica load and predicted latency. Version 1.0 adds session-aware routing and turn-priority scheduling, and stores Responses API state natively at the routing layer so agents can reuse context across turns. In IBM&#x27;s words, multi-turn requests stay pinned to the appropriate replicas so that their prefix caches remain usable.</p>\n<p><strong>Tiered KV-cache offloading.</strong> Once accelerator memory is full, llm-d does not simply drop old cache; it uses vLLM&#x27;s OffloadingConnector, Mooncake or SGLang&#x27;s HiCache to move it to host memory, and further down to SSD or Google Cloud Managed Lustre. <strong class=\"hl\">The point is to avoid many prefixes being pushed out of accelerator memory at once under multi-turn, long-context load and then recomputed all together</strong>; the blog calls this a prefix-eviction storm.</p>\n<p><strong>Prefill/decode disaggregation.</strong> Prefill is compute-heavy and decode is bound by memory bandwidth, so running both on the same replicas makes each wait on the other. llm-d splits prefill, decode and multimodal encode into separate pools, and uses wide expert parallelism to spread large MoE models across nodes. DisaggregatedSet, new in 1.0 and built on LeaderWorkerSet, the Kubernetes API for multi-host inference, manages these pools as one unit: during rolling updates, prefill and decode move together to matching versions, while scaling stays independent for each.</p>\n<p><strong>Flow control and async processing.</strong> Flow control queues requests by priority and fairness, so latency-sensitive requests and bursty agent workloads can share one set of hardware without starving each other. Version 1.0 also adds llm-d-async-processor, which pulls latency-tolerant requests from queues such as Pub/Sub or Redis, routes them alongside real-time traffic, runs them only on spare capacity, and enforces strict priority lanes and quotas.</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-24/infra/google-llmd-1.0-2026-10-20/fig2_stack.png\" alt=\"The full stack on Google Cloud (Google blog Figure 2). From top to bottom: 1,000 agents running in Agent Substrate sandboxes; llm-d&#x27;s multi-node orchestration layer, including the router, flow control, tiered KV cache and prefill/decode disaggregation; the single-node model engines vLLM, SGLang and TorchTPU; and TPU hardware at the bottom. Look at the division of labor between the middle two layers: llm-d handles only cross-node scheduling, and single-node performance is left to the inference engines.\" loading=\"lazy\" decoding=\"async\"><figcaption>The full stack on Google Cloud (Google blog Figure 2). From top to bottom: 1,000 agents running in Agent Substrate sandboxes; llm-d&#x27;s multi-node orchestration layer, including the router, flow control, tiered KV cache and prefill/decode disaggregation; the single-node model engines vLLM, SGLang and TorchTPU; and TPU hardware at the bottom. Look at the division of labor between the middle two layers: llm-d handles only cross-node scheduling, and single-node performance is left to the inference engines.</figcaption></figure>\n<p>This figure also shows where llm-d sits. It does not replace vLLM or SGLang; it sits in front of them and does the scheduling. <strong class=\"hl\">Teams can keep their existing inference engine, models and cluster, and plug in only the components they need</strong>; the order the blog recommends is to first add prefix-aware routing in front of an existing vLLM deployment, then add flow control, KV-cache offloading and prefill/decode disaggregation.</p>\n<h2>3. What is new in 1.0</h2>\n<p>IBM&#x27;s blog points out that the five techniques, prefix-cache-aware routing, KV-cache offloading, batch inference optimization, prefill/decode disaggregation and wide expert parallelism, existed before 1.0; what changes in 1.0 is that they can run long-term as a critical service. Specifically:</p>\n<ul>\n<li>Multi-tenant quality of service: flow control by priority and fairness.</li>\n<li>Stability: v1 APIs and a hardened request path, validated on multiple clouds and accelerator types.</li>\n<li>Safer upgrades: router high availability, zero-downtime updates, and the DisaggregatedSet described above.</li>\n<li>Agent-aware serving: session-aware routing, turn-priority scheduling and native Responses API state.</li>\n<li>TPU support: TorchTPU runs PyTorch models natively on TPUs inside vLLM and SGLang, with cooperative time-slicing.</li>\n</ul>\n<p>Time-slicing targets idle time in RL training. The blog says that during rollout generation or weight updates, accelerators sit idle 40% to 60% of the time; llm-d fits async inference into these gaps, raising aggregate accelerator duty cycles from a baseline of about 40% to more than 70%.</p>\n<h2>4. Experiments and production numbers</h2>\n<p>The blog&#x27;s numbers fall into two kinds: Google&#x27;s own tests and production traffic, and user reports. Each set gives only the comparison and the result, without a full experimental configuration; below they are organized by what they aim to show, what they compare against and the result.</p>\n<table><thead><tr><th>Scenario</th><th>Compared against</th><th>Result</th></tr></thead><tbody><tr><td>Agentic coding workload on Ironwood TPU (TPU 7x), prefix-aware routing + host-memory offload</td><td>Plain Kubernetes Service</td><td>Median TTFT down more than 85%, total throughput 2.4x</td></tr><tr><td>Gemini platform (formerly Vertex AI) production traffic through GKE Inference Gateway</td><td>Not stated in the blog</td><td>Prefix-cache hit rate from 35% to 70%; TTFT for coding agents down more than 35%; P95 TTFT under bursty chat traffic down more than 50%</td></tr><tr><td>17,000-node multi-region GKE deployment across the US and Europe serving an MoE model</td><td>Not stated in the blog (result is for three clusters combined)</td><td>Throughput scaled 2.9x across three clusters, 99.9% success rate, routing overhead below 1%</td></tr><tr><td>A3 Mega cluster serving a 70B model, 50k-token prompts, KV cache offloaded to both Managed Lustre and host memory</td><td>Offload to host memory only</td><td>TTFT improved about 40%, end-to-end latency down 30%, GPU-hour requirement down nearly 60%</td></tr><tr><td>Agentic coding workload test (IBM)</td><td>Upper limit of reusable cache</td><td>Prefix-aware router captured 97% of the available cache reuse</td></tr><tr><td>3,000 concurrent software-engineering agents, self-hosted deployment (IBM and Red Hat)</td><td>Buying the same open model as a service</td><td>Cost 5 to 10 times lower</td></tr></tbody></table>\n<p>The first row answers how much cache-aware routing itself brings: on the same hardware, simply replacing round-robin with prefix-based routing and adding host-memory offload cut median TTFT by more than 85%. The second row is a check on production traffic: the prefix-cache hit rate doubled, consistent in direction with the drop in TTFT. The third row tests scale: routing overhead below 1% shows that the router&#x27;s own computation did not become a bottleneck. The fourth row compares two KV-cache offloading schemes; with long 50k-token prompts, adding a shared storage tier has a clearer effect.</p>\n<p>Among user reports, Snap reached prefix-cache hit rates of up to 75–80% with prefix-cache-aware routing; ZenteiQ raised daily generated tokens per 1,000 TPU v6e accelerators from 1.47 billion to 5.97 billion, more than 4x higher aggregate throughput; Mistral uses flow control to enforce strict priorities across its commercial tiers, automatically holding or shedding lower-priority requests when pools saturate.</p>\n<h2>5. Limitations</h2>\n<p>The blog itself does not discuss limitations. Two facts to add: first, most numbers in the table come with only a comparison and a result, so the baseline configuration, workload mix and measurement method need to be checked in the original sources linked from the blog; second, many capabilities (GKE Inference Gateway&#x27;s managed routing, cross-region failover, the Managed Lustre storage tier) are Google Cloud managed services, and on other clouds or self-built clusters you need to deploy the corresponding open-source components yourself.</p>\n<h2>6. Practical takeaways</h2>\n<ul>\n<li>If you serve agents or multi-turn chat with vLLM or SGLang and still have round-robin load balancing in front, check the prefix-cache hit rate first. If it is low, prefix-based routing is the step with the smallest change and the most direct gain.</li>\n<li>When interactive requests and batch jobs share the same GPUs, flow control and async queues let batch jobs use only spare capacity, so interactive latency is not affected by batch work.</li>\n</ul>",
+        "slug": "web-google-llmd-1.0-2026-10-20",
+        "chars": 9345,
+        "minutes": 24
+      }
+    },
+    {
+      "rank": 2,
+      "id": "web:alibaba-ai-search-full-stack-2026-08-19",
+      "title": "From VDBBench to the Top of MMEB: Full-Stack Optimization of Alibaba Cloud AI Search, from Engine to Model",
+      "url": "https://developer.aliyun.com/article/1756804",
+      "authors": "Alibaba Cloud",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "industry_blog",
+      "published": "2026-08-19",
+      "track_fit": "core",
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "This is an article on the Alibaba Cloud developer community about full-stack optimization of AI Search, from the retrieval engine to the embedding model. The authors' starting point is that once agents go into production, search has to keep supplying the model with high-quality context, and the pipeline covers model understanding, vector and full-text recall, hybrid retrieval, fusion reranking and engine execution. The article says AI Search achieved breakthroughs on VDBBench vector retrieval, Big5 and Tantivy traditional retrieval, and MMEB multimodal document retrieval, backed by FalconSeek, an in-house Elasticsearch engine, and a multimodal embedding model. ==Its reference value is that it breaks an AI search pipeline into stages that can be optimized separately==; the article summary gives no specific scores, so for a selection decision the raw results need to be checked on each leaderboard.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "当 Agent 开始进入生产环境，搜索正在从找到相关文档的工具升级为持续供给高质量上下文的基础设施。AI Search 不再只是搜索引擎，而是贯穿模型理解、向量与全文召回、混合检索、融合重排和引擎执行的完整链路。阿里云 AI Search 在 VDBBench 向量检索、Big5 与 Tantivy 传统检索，以及 MMEB 多模态文档检索等评测中进行全栈优化。",
+      "company_logos": [
+        {
+          "name": "Alibaba",
+          "logo": "logos/alibaba.png",
+          "hue": 324
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "id": "web:ibm-llmd-production-2026-10-20",
+      "title": "llm-d 1.0 hardens open-source AI inference for production",
+      "url": "https://research.ibm.com/blog/llmd-1-0-is-ready-for-production-inference-serving",
+      "authors": "IBM Research",
+      "company": [
+        "IBM"
+      ],
+      "source": "industry_blog",
+      "published": "2026-10-20",
+      "track_fit": "core",
+      "total_score": 3.35,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "IBM Research's introduction to llm-d 1.0 focuses on day-to-day operations after deployment. The five techniques llm-d has always worked on are prefix-cache-aware routing, KV-cache offloading across GPU, CPU and storage, batch inference optimization, prefill/decode disaggregation and wide expert parallelism; 1.0 adds no new technique, and the change is that they are integrated to the point where they can be operated long-term: a stable API, multiple tenants sharing the same hardware by priority, and upgrades that do not interrupt service. Multi-turn requests are pinned to the same replicas so that their prefix caches stay usable. In one agentic coding workload test, the prefix-aware router captured 97% of the available cache reuse; IBM and Red Hat ran 3,000 software-engineering agents concurrently on a self-hosted deployment at one-fifth to one-tenth of the price of buying the same open model as a service. ==Agents keep returning to the same code, documents and instructions, so pinning a session to the same replica pays off more than in chat==.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "The distributed inference framework makes serving large models on your own infrastructure reliable and affordable for the agentic era. llm-d 1.0 focuses on day-two production operations for distributed inference.",
+      "company_logos": [
+        {
+          "name": "IBM",
+          "logo": "logos/ibm.png",
+          "hue": 183
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "id": "web:amazon-torchneuron-2026-10-20",
+      "title": "Amazon targets Trainium gains with new TorchNeuron developer tool",
+      "url": "https://www.itpro.com/software/development/amazon-targets-trainium-gains-with-new-torchneuron-developer-tool",
+      "authors": "ITPro",
+      "company": [
+        "Amazon"
+      ],
+      "source": "web_search",
+      "published": "2026-10-20",
+      "track_fit": "core",
+      "total_score": 3.35,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.35,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "summary": "Amazon released TorchNeuron, which lets existing PyTorch code run on AWS Trainium chips by changing a single line of configuration, open-sourced under the Apache 2.0 license. Amazon says that when the same training script ran on a conventional chip and on Trainium, the model learned the same things at the same rate, and the tools used for testing, debugging and scaling need no changes. The voice AI company Cartesia says small, fast ops go through the native path directly, so its team only has to hand-write NKI kernels for the layers that are called repeatedly and drive end-to-end latency. Amazon is also contributing changes upstream to PyTorch to remove code that ties the framework to specific chips. ==For inference teams, what it lowers is the cost of rewriting and revalidating code when switching hardware==; the article gives no performance comparison between Trainium and GPUs.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "TorchNeuron allows developers to run existing PyTorch code on AWS Trainium chips by changing one line of configuration. Amazon reports equivalent learning behavior between conventional hardware and Trainium while reducing hardware-specific changes, and is contributing upstream changes to PyTorch.",
+      "company_logos": [
+        {
+          "name": "Amazon",
+          "logo": "logos/amazon.png",
+          "hue": 13
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "id": "web:hysen-fastllm-2026-10-10",
+      "title": "FastLLM: a C++ LLM inference engine",
+      "url": "https://hysenlabs.com/projects/ztxz16-fastllm",
+      "authors": "Hysen Labs",
+      "company": [
+        "Hysen Labs"
+      ],
+      "source": "web_search",
+      "published": "2026-10-10",
+      "track_fit": "core",
+      "total_score": 3.2,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.3,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "FastLLM is an LLM inference engine written in C++ that does not depend on PyTorch, reads Hugging Face weights directly, and serves OpenAI- and Anthropic-compatible endpoints. Its core design is that model weights do not have to fit entirely in GPU memory: ordinary layers and MoE expert layers can be placed separately on GPU, CPU, NUMA memory or disk, in proportions the user chooses. The author says that on a dual 9004/9005 server with one GPU, full-precision DeepSeek reaches 20 tokens/s at single concurrency, the INT4 version 30 tokens/s, and more than 60 under multiple concurrent requests; these are the author's own numbers, and the repository has no benchmark data to verify them. ==It targets machines whose GPU memory cannot hold the model but which have plenty of host memory and SSD==, and when running MoE models it gives precise control over which layers live where.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "FastLLM is a dependency-free, high-performance LLM inference library. On dual 9004/9005 servers with a single GPU, the full-precision DeepSeek model reaches 20 tokens per second, while the INT4 model reaches 30 tokens per second at single concurrency and more than 60 with multiple concurrent requests. It can place dense and mixture-of-experts layers across GPU, CPU, NUMA memory, and disk.",
+      "company_logos": [
+        {
+          "name": "Hysen Labs",
+          "logo": null,
+          "hue": 148
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "id": "web:aliyun-tair-vector-engine-2026-08-26",
+      "title": "Choosing a Vector Retrieval Database: The Built-in Vector Engine of Tair (Redis Enterprise Edition)",
+      "url": "https://developer.aliyun.com/article/1758314",
+      "authors": "Alibaba Cloud",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "industry_blog",
+      "published": "2026-08-26",
+      "track_fit": "core",
+      "total_score": 3.2,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.2,
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 2
+      },
+      "summary": "This is a vector-database selection article on the Alibaba Cloud developer community that introduces TairVector, the vector engine built into Tair (Redis Enterprise Edition): it supports HNSW and FLAT indexes, hybrid retrieval that combines vector search with BM25 full-text search, and millisecond-level retrieval latency. The article argues that RAG systems no longer need to bring in Milvus or Qdrant, since one Tair deployment can handle caching, vector retrieval and state management at once, and it reports 510,000 QPS on a single node. ==The main selling point of this approach is one less standalone vector database to maintain==; the summary does not state the vector dimension, data size or recall behind the 510,000 QPS figure, so a selection decision should re-test on your own data.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "向量检索是 RAG 和 AI 应用的核心基础设施，向量数据库选型直接影响系统复杂度和性能。文章介绍 Tair 内置向量引擎方案及其工程取舍，并报告单节点 51 万 QPS 的性能数据。",
+      "company_logos": [
+        {
+          "name": "Alibaba",
+          "logo": "logos/alibaba.png",
+          "hue": 324
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "id": "web:huggingface-superfluid-2026-10-08",
+      "title": "Introducing Superfluid: the local-AI native LLM server for multi-agent inference",
+      "url": "https://huggingface.co/blog/basecompute/superfluid",
+      "authors": "BaseCompute",
+      "company": [
+        "BaseCompute"
+      ],
+      "source": "industry_blog",
+      "published": "2026-10-08",
+      "track_fit": "core",
+      "total_score": 3.05,
+      "preference_bonus": 0.0,
+      "adjusted_score": 3.05,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 2
+      },
+      "summary": "Superfluid is a local LLM server open-sourced by BaseCompute (Apache-2.0) for the case where several agents run on one machine at the same time; it is compatible with the OpenAI, Anthropic and Ollama APIs and can use llama.cpp, MLX or its own BaseRT engine underneath. Interactive requests preempt running batch work at the next scheduler tick; every token is written to a log before it is returned, so after a worker crash a session resumes where it stopped; 32 requests sharing the same system prompt need only one prefill. Running Qwen3.8-27B at 4 bits on an Apple M5 Pro with 8 agents working in the background, a chat request's time-to-first-token is 1.5 s, versus 291 s for llama-server. ==The gap comes from priority preemption: with the same model and runtime, the chat request no longer waits behind batch work==.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "Superfluid is an open-source Apache-2.0 server for running LLMs on your own machine. It supports the OpenAI, Anthropic and Ollama APIs and multiple runtimes, including llama.cpp for GGUF models, MLX for MLX directories, and the BaseRT engine for .base bundles.",
+      "company_logos": [
+        {
+          "name": "BaseCompute",
+          "logo": null,
+          "hue": 26
+        }
+      ]
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2610.19405",
+      "title": "Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off",
+      "url": "https://arxiv.org/abs/2610.19405",
+      "authors": "",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-10-14",
+      "track_fit": "core",
+      "total_score": 3.0,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.1,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 3
+      },
+      "summary": "This is a measurement paper from Dell's Office of the CTO on how to choose a parallelism scheme for LLM inference. Inference has two phases, prefill and decode: prefill determines time-to-first-token (TTFT), and decode determines the latency between consecutive tokens (ITL). The authors ran Qwen2.5-14B with vLLM on 8 H200 GPUs, compared tensor parallelism (TP), pipeline parallelism (PP) and hybrid configurations, and plotted Pareto frontiers of TTFT against ITL. The more prefill-heavy the workload, the more the best configuration shifts from TP-dominant to PP-dominant; under strict TTFT requirements PP-dominant configurations do better, and as the SLO is relaxed, TP-dominant configurations win because of their higher throughput; as context grows longer, PP-dominant configurations scale better. ==The best parallelism scheme changes with workload mix, SLO and context length, so it is better treated as a parameter that can be tuned at runtime==.",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "This paper presents a systematic study of LLM inference parallelism from the perspectives of latency trade-offs, SLO-aware serving, and long-context scalability. It examines tensor, context, and expert parallelism and characterizes their communication and scaling behavior in distributed large language model inference.",
+      "company_logos": []
+    }
+  ]
+}
