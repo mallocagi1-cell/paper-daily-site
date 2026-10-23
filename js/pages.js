@@ -26,6 +26,8 @@
   let reportCache = {};
 
   // ---------- small helpers ----------
+  // ==text== -> key-info highlight (bold + accent); apply after escaping
+  function hlText(s) { return String(s).replace(/==(?=\S)(.+?)(?<=\S)==/g, '<strong class="hl">$1</strong>'); }
   function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -216,7 +218,7 @@
 
   function insightInner(p) {
     let s = "";
-    if (p.key_insight) s += '<p><b class="lab">INSIGHT</b>' + escapeHtml(p.key_insight) + "</p>";
+    if (p.key_insight) s += '<p><b class="lab">INSIGHT</b>' + hlText(escapeHtml(p.key_insight)) + "</p>";
     if (p.business_connection) s += '<p><b class="lab">业务关联</b>' + escapeHtml(p.business_connection) + "</p>";
     if (p.evidence) s += '<p><b class="lab">证据</b>' + escapeHtml(p.evidence) + "</p>";
     return s;
@@ -237,7 +239,7 @@
     if (p.business_connection) more += '<span class="more"><b>业务关联</b> ' + escapeHtml(p.business_connection) + "</span>";
     if (p.evidence) more += '<span class="more"><b>证据</b> ' + escapeHtml(p.evidence) + "</span>";
     const pq = p.key_insight || more
-      ? '<div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>' + escapeHtml(p.key_insight || "") + more + "</div>" : "";
+      ? '<div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>' + hlText(escapeHtml(p.key_insight || "")) + more + "</div>" : "";
     const foot = [truncate(p.authors, 90), p.published, sourceLabel(p.source)].filter(Boolean).map(escapeHtml).join(" · ");
     const deep = dr ? renderDeepRead(p) : "";
     return (
@@ -245,7 +247,7 @@
       '<div class="art" data-n="' + pad2(p.rank || i + 1) + '"><div>' +
       '<div class="k">LEAD STORY · 今日必读' + (comp.length ? " · " + compHtml(p, 3).join(" / ") : "") + "</div>" +
       '<h2><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h2>" +
-      "<p>" + escapeHtml(p.summary || "") + "</p></div>" +
+      "<p>" + hlText(escapeHtml(p.summary || "")) + "</p></div>" +
       '<div class="btns">' + btns + "</div></div>" +
       '<div class="side"><div class="ring">' + radarSvg(p.scores, 170) +
       '<div><div class="big">' + fmt2(p.total_score) + '</div><div class="lbl">综合分 / 5' + (adj !== null ? "<br>偏好调整 " + fmt2(adj) : "") + "</div></div></div>" +
@@ -270,7 +272,7 @@
       '<div class="top"><span class="n">' + pad2(p.rank || i + 1) + '</span><span class="sb" title="综合分">' + dots(p.total_score) + " " + fmt2(p.total_score) + "</span></div>" +
       '<h4><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h4>" +
       (chips ? "<div>" + chips + "</div>" : "") +
-      (p.summary ? "<p>" + escapeHtml(p.summary) + "</p>" : "") +
+      (p.summary ? "<p>" + hlText(escapeHtml(p.summary)) + "</p>" : "") +
       (ins ? '<div class="ins">' + xpBlock(ins) + "</div>" : "") +
       (p.authors ? '<div class="foot">' + escapeHtml(truncate(p.authors, 100)) + "</div>" : "") +
       '<div class="foot">' + foot + "</div>" +
@@ -680,7 +682,7 @@
     const k = weeklyParts(paper, track);
     const n = paper.weekly_rank;
     const ins = insightInner(paper);
-    const sum = paper.summary ? (n === 1 ? "<p>" + escapeHtml(paper.summary) + "</p>" : xpBlock("<p>" + escapeHtml(paper.summary) + "</p>", "sum")) : "";
+    const sum = paper.summary ? (n === 1 ? "<p>" + hlText(escapeHtml(paper.summary)) + "</p>" : xpBlock("<p>" + hlText(escapeHtml(paper.summary)) + "</p>", "sum")) : "";
     return (
       '<div class="pod g' + n + " weekly-card " + trackClass(track) + '" id="paper-' + escapeHtml(k.pid) + '" data-paper-id="' + escapeHtml(k.pid) + '" data-card>' +
       '<div class="ph"><span class="medal m' + n + ' weekly-rank weekly-rank-' + n + '">' + n + '</span><span class="big badge" title="周榜排序分 (adjusted_score，缺失时为 total_score)">' +
@@ -696,7 +698,7 @@
   function renderRow(paper, track) {
     const k = weeklyParts(paper, track);
     const ins = insightInner(paper);
-    const body = (paper.summary ? "<p>" + escapeHtml(paper.summary) + "</p>" : "") + ins;
+    const body = (paper.summary ? "<p>" + hlText(escapeHtml(paper.summary)) + "</p>" : "") + ins;
     return (
       '<div class="rr weekly-card ' + trackClass(track) + '" id="paper-' + escapeHtml(k.pid) + '" data-paper-id="' + escapeHtml(k.pid) + '" data-card>' +
       '<span class="weekly-rank weekly-rank-' + escapeHtml(paper.weekly_rank) + '">' + escapeHtml(paper.weekly_rank) + "</span>" +
