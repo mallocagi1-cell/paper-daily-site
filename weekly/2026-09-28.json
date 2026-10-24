@@ -11,6 +11,388 @@
  "top_n": 10,
  "rule": "adjusted_score desc, total_score desc; dedupe by arXiv id / URL / id / title",
  "tracks": {
+  "generative": {
+   "raw_count": 15,
+   "unique_count": 15,
+   "days": [
+    "2026-09-30",
+    "2026-10-01",
+    "2026-10-02"
+   ],
+   "papers": [
+    {
+     "id": "arxiv:oai:arXiv.org:2609.39327",
+     "title": "Generative End-to-end Ad Retrieval at Douyin",
+     "url": "https://arxiv.org/abs/2609.39327",
+     "source": "arxiv",
+     "company": [
+      "ByteDance"
+     ],
+     "published": "2026-09-30",
+     "authors": "Shaowen Zeng, Yanhua Huang, Jiacheng Sun, Jiarui Liu, Qian Dai, Zhikai Yang, Hancheng Li, Boya Wu, Tuoyu Zhang, Yekui Ch...",
+     "total_score": 4.45,
+     "adjusted_score": 4.75,
+     "preference_bonus": 0.3,
+     "rank_score": 4.75,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 5
+     },
+     "summary": "针对广告生成式检索中的码本坍缩和物品碰撞，GEAR联合训练分词器、生成器与轻量重排器。BasisVQ以正交基参数化码本，前缀感知量化增强区分能力。抖音全量部署的ADSS和ADVV分别提升0.563%和0.658%，冷启动广告激活率相对提升1.46%。",
+     "key_insight": "社区UGC内容持续新增，语义ID碰撞与在线分布变化同样影响召回稳定性。可先借鉴码本全局梯度共享和生成后桶内重排，再评估端到端联训。论文最优配置仍有52.3%的物品碰撞率，因此不能把生成ID直接等同于唯一帖子，也不能把广告收益直接折算为社区搜索CTR。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2609.39327",
+       "total_score": 4.45,
+       "adjusted_score": 4.75
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:oai:arXiv.org:2609.39327",
+      "slug": "2609.39327",
+      "content_html": "<h1>GEAR：抖音广告生成式检索的端到端联训与碰撞消歧</h1>\n<p>来源：https://arxiv.org/html/2609.39327 。本解读依据正文第3、5、6节及附录C；数字来自论文在线实验和分词器对照。下文将作者报告的结果与面向社区搜索的迁移建议分别说明。</p>\n<h2>1. 问题与动机</h2>\n<p>生成式检索把候选检索变成离散物品词元的自回归生成，但工业内容池持续变化，新广告、特征更新与兴趣迁移会同时改变物品表示。作者指出，冻结分词器虽然避开在线量化训练不稳定，却无法适应这种分布变化；直接更新码本又常出现少数码字得到训练、大量码字失活的表示坍缩。EMA或重初始化提供了工程缓解，但没有解决稳定直接梯度优化的问题。</p>\n<p>另一个困难是多个物品共用同一个语义ID。生成器只能判断这组词元的概率，无法区分组内广告。给每个物品添加唯一词元会损失语义共享；外接复杂精排则可能增加开销并形成割裂的训练目标。更棘手的是两者耦合：扩大码本想减少碰撞，可能让更新更稀疏、坍缩更严重。因此论文同时改造分词器和组内消歧，而不是孤立优化ID。</p>\n<p>这一问题在本文对照中有明确量化依据：普通RQ的物品碰撞率为84.2%，最优方案仍有52.3%，说明碰撞绝非仅靠增大词表就能消失。对不断新增帖子、评论和问答的社区UGC，这种动态内容池和语义近邻的共存具有实际参考价值。</p>\n<h2>2. 方法详解</h2>\n<p>系统由物品分词器、用户条件生成器、联合重排器组成。物品塔先把静态多模态特征和动态稀疏特征编码，再用三层残差量化得到ID。第l层量化当前表示减去此前选中码向量的残差，选出最近码字；其目标仍是离散序列，但训练要使连续表示和码本共同适应业务数据。</p>\n<p>BasisVQ将码本C改写为C乘以一个近似正交矩阵。矩阵W先除以自身Frobenius范数与1e-6中的较大值，使初始谱范数不超过1；然后执行Newton–Schulz迭代：把W更新为二分之一乘W乘括号中的3I减W转置乘W。论文认为五次迭代已足够。活跃码字上的梯度由共同基矩阵传播到整个码本，正交约束让坐标系近似刚性旋转，保持码向量的范数和相互空间结构，使失活码字随整体运动重新接触新数据分布，而不是被不受约束的线性变换拉离数据流形。</p>\n<p>前缀感知BasisRQ再使后层码本依赖前层决策。根据此前词元查询逐维缩放与偏置，按顺序合成为当前层的缩放γ和偏置β。最直接的实现会为每个样本物化一个完整码本，产生批量×码字数×维度的中间张量。作者把平方距离拆成三项：移除偏置后的输入平方范数、缩放后的码本平方范数，以及输入与缩放码本的交叉乘积，借矩阵乘法得到距离矩阵，维持普通量化的O(bNd)渐近时间复杂度。</p>\n<p>生成器采用轻量编码器加两层Transformer解码器。非序列特征分成28组，各组通过独立FFN投影；点击序列长度200、转化序列长度100，与非序列特征拼接成共享KV，供所有解码层交叉注意力使用。每层包含预归一化的交叉注意力、门控FFN、因果自注意力和第二个门控FFN；采用RMSNorm，门控形式为SiLU投影与另一投影逐元素相乘。解码器6个注意力头，每头64维，中间FFN维度384。</p>\n<p>三层ID生成完后再做一次解码，得到用户和当前ID共同条件化的状态，经MLP映射成96维用户向量，与对应桶内物品塔向量点积打分。该状态不是所有候选共享的单个用户向量：不同ID桶具有不同表示，因此轻量点积仍能表达上下文差异。</p>\n<p>训练按三个阶段开启损失：先训练双塔排序，再启用量化，最后加入生成和重排，防止生成器依赖尚不稳定的ID。双塔与重排均用LambdaLoss，成对排序误差以交换两物品造成的绝对ΔNDCG加权。量化损失包括码本项与commitment项，后者权重0.1。生成使用teacher forcing及因果掩码，对曝光样本按log(1+secpm)加权，其他样本生成权重为0。四项总损失权重依次是1、1、10、1，LambdaLoss缩放系数为1。附录披露双塔输出96维、码向量128维，但没有解释二者之间的具体映射；复现时需要核实，不能自行把这段补成作者设置。论文未披露优化器、学习率、全局batch、GPU型号、训练步数及训练样本总量，这些必须保留为空缺。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是以正交基共享梯度改进码本动态更新。与只更新选中码字的普通VQ相比，它让未选中码字也受到基变换影响；与不受约束的线性变换相比，正交约束减少空间形变。需要注意，几何解释说的是基变换部分保持拓扑，不能外推为整个可训练码本在所有更新中距离不变。对照中非前缀BasisRQ的利用率7.45%，普通RQ为4.22%，碰撞率分别63.8%和84.2%。</p>\n<p>第二项贡献是前缀条件化量化与低内存距离计算。后层码本不再忽视粗层所属区域，而以已有前缀改变自身有效几何结构。完整方案相对去掉前缀感知，把碰撞率从63.8%降到52.3%，重构误差从2.03e-3降到1.82e-3。这里的收益来自表达能力和量化稳定性共同作用；在线消融替换了整个分词器，不能从该消融单独分离正交化的线上贡献。</p>\n<p>第三项贡献是复用生成状态完成联合组内排序，避免唯一ID破坏语义分享，也避免为每个物品重新运行重模型。只有一个额外解码步与桶内点积，且训练目标直接对齐相对顺序。去掉重排后，子集ADVV增益从0.498%变成0.341%，支持生成概率不足以区分共享ID物品的论点，但论文没有给出独立毫秒延迟量化。</p>\n<p>第四项贡献是训练、近线索引和在线算图协同。所有物品相关计算离开在线关键路径，模型与ID索引一起更新；在线串联生成、桶展开和打分。这样动态分词器才能在生产中持续变化，而不是依赖永久固定的语义索引。</p>\n<h2>4. 实验结果分析</h2>\n<p>在线A/B在抖音广告平台进行7天，每个实验组使用5%流量。基线是没有GEAR附加通路的原生产系统，其余组件不变。论文部署方式是新增生成式召回通路，不能读成替换全部已有稠密检索系统。以下所有数字均为相对生产基线的收益百分比；子集消融与全量部署是不同范围。</p>\n<table><thead><tr><th>范围与方法</th><th>ADSS增益</th><th>ADVV增益</th></tr></thead><tbody><tr><td>子集完整GEAR</td><td>0.446%</td><td>0.498%</td></tr><tr><td>子集去掉前缀感知BasisRQ</td><td>0.288%</td><td>0.219%</td></tr><tr><td>子集去掉联合重排</td><td>0.358%</td><td>0.341%</td></tr><tr><td>子集去掉secpm加权</td><td>0.395%</td><td>0.354%</td></tr><tr><td>全量部署GEAR</td><td>0.563%</td><td>0.658%</td></tr></tbody></table>\n<p>在同一子集范围，替换分词器导致ADSS增益少0.158个百分点、ADVV少0.279个百分点，是三项消融中最大损失。移除重排分别少0.088和0.157个百分点；移除价值加权分别少0.051和0.144个百分点。不能将全量0.658%和子集0.219%直接相减当作分词器贡献。secpm加权影响说明业务价值目标不仅存在于末端排序，生成候选阶段也需要价值对齐。</p>\n<table><thead><tr><th>分词器配置</th><th>ID组合利用率</th><th>物品碰撞率</th><th>MSE（乘10^-3）</th></tr></thead><tbody><tr><td>前缀感知BasisRQ，2048/512/128</td><td>8.83%</td><td>52.3%</td><td>1.82</td></tr><tr><td>前缀感知BasisRQ，512/512/512</td><td>6.16%</td><td>75.6%</td><td>2.04</td></tr><tr><td>无前缀感知BasisRQ，2048/512/128</td><td>7.45%</td><td>63.8%</td><td>2.03</td></tr><tr><td>普通RQ，2048/512/128</td><td>4.22%</td><td>84.2%</td><td>2.32</td></tr></tbody></table>\n<p>两组大小配置的组合空间同为134217728，但每层容量分配不同，前大后小的方案在三个指标都更好。需要区分组合空间相同与实际参数数目相同：两配置码字总数不同，论文的比较不能被解读为严格等参数消融。碰撞率下降31.9个百分点是最优完整方案对普通RQ的差值；20.4个百分点则是无前缀BasisRQ对普通RQ的差值，二者不可混用。利用率衡量被激活的词元组合比例，也不能当作单层码字利用率。</p>\n<p>冷启动广告激活率相对提高1.46%，定义为新广告主在给定时间窗内达到预设流量门槛的比例。正文没有披露门槛与时间窗的具体值，因此证据支持冷启动收益方向，但不足以重建完整统计协议。论文没有按公开数据集报告细分结果，不能补造商品或社区数据上的泛化性能。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者结论明确提出未来要提高解码效率、降低推理延迟并扩展部署场景。正文讨论也承认，即使改进前缀量化，海量候选池仍会有共享ID，必须依赖重排消歧。52.3%的最优碰撞率说明ID是语义桶，不是唯一物品地址。BasisVQ在推理时可缓存变换码本，所谓零额外延迟仅针对该量化变换，不能扩展到完整生成、桶展开及重排流程。</p>\n<p>以下是本解读根据披露范围指出的限制，而非作者声明：虽然论文称在线收益显著，但表格未提供置信区间、p值、不同实验组样本量或多次重复；训练超参数和硬件披露有限，也没有吞吐、峰值显存和P95延迟。因此无法只凭论文把生产成本和统计可靠性完整复现。分词器消融更换整个方案，不能严格区分正交约束和前缀感知各自对线上收益的份额。现有结果来自广告价值指标，适用于社区搜索的nDCG与CTR仍需直接验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区UGC搜索，最可迁移的是动态语义桶和桶内消歧的联合设计。帖子同主题、评论同事件常共享粗语义，不应为了唯一地址把所有共享结构拆散。可以先把GEAR作为额外召回通路，与原稀疏及向量检索合并候选，固定最终精排预算，评估是否补充新帖和长尾帖子，而不是直接移除成熟检索。本文生成器以用户特征为条件，社区搜索还必须显式加入query；这是迁移设计，并非论文已验证模块。</p>\n<p>部署部分提供了具体实现线索。参数服务器保存每个物品的ID和连续向量，实例监控器周期刷新旧物品并编码新物品；近线索引构造器生成类似CSR的映射，从排序后的ID目录指向物品列表和预计算向量。索引按分钟级刷新，并与模型一起分发。在线使用KV缓存的束搜索，三步宽度256、256、512；读取桶内向量后用有符号packed-INT4用户与物品向量点积，并对每个桶保留有限物品，防止一个大桶垄断最终候选。这里每桶截断上限没有具体数值，复现需另行选取并做召回损失评估。</p>\n<p>实操可分三次验证。首先在固定数据与模型下比较普通RQ、正交BasisRQ和前缀版本，监控码组合利用率、碰撞率、重构误差及内容新鲜度。然后固定生成候选，比较随机桶内截断与联合重排，查看收益是否来自碰撞消歧。最后在相同用户流量、召回配额和最终排序预算下上线额外通路，跟踪搜索nDCG、CTR、空召回率、新帖曝光和P95延迟。社区不应直接沿用广告secpm权重；可选用经过偏差审计的相关性或满意度监督，并保留曝光选择偏差诊断。</p>\n<p>训练显存方面，前缀距离矩阵改写值得优先实现，避免生成批量×码本×维度张量。近线动态ID则要求模型和索引版本一致，以防新模型生成的桶ID对不上旧快照；这是由作者部署架构推导的工程要求。由于公开论文未给出端到端延迟数字，在线预算必须本地压测后确定。最终应把生成式检索当作候选覆盖和内容泛化的一次可测尝试，以业务指标验证收益，不能把抖音的广告价值百分比当成社区CTR承诺。</p>",
+      "chars": 4379,
+      "minutes": 11
+     },
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2609.38646",
+     "title": "Exploring Forum Post Retrieval with Generative Modeling",
+     "url": "https://arxiv.org/abs/2609.38646",
+     "source": "arxiv",
+     "company": [
+      "Meta",
+      "William & Mary"
+     ],
+     "published": "2026-09-29",
+     "authors": "Yang Li, Yaguang Liu, Heng Liu, Shengbo Guo, Samson Komo, Jane Kou, Yulian Zhou, Gang Yang, Shubhojeet Sarkar, Gaurav Ch...",
+     "total_score": 4.4,
+     "adjusted_score": 4.7,
+     "preference_bonus": 0.3,
+     "rank_score": 4.7,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "Facebook Forum在自身行为稀疏时，复用Facebook Groups训练行为和Feed语义ID，用3B语言模型直接生成帖子ID。固定训练预算下，三层ID的HR@10为0.0667，四层为0.0303；文本与ID对齐加动作描述使NDCG@10达到0.0420。更大模型和1000步GRPO均未带来收益。",
+     "key_insight": "与社区UGC业务最接近的启示是优先复用成熟内容侧语义空间，并把点赞等动作写入历史提示。三层ID优势部分来自更高碰撞率，必须接桶内重排后再比较最终帖子命中。短历史与长历史的评测用户集合不同，不能把结果解读为长历史无用；先统一用户集合、训练预算及搜索nDCG口径。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 3,
+       "id": "arxiv:oai:arXiv.org:2609.38646",
+       "total_score": 4.4,
+       "adjusted_score": 4.7
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 2
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2609.39312",
+     "title": "Learning Multiresolution Relevance for Hierarchical Generative Retrieval",
+     "url": "https://arxiv.org/abs/2609.39312",
+     "source": "arxiv",
+     "company": [
+      "Meituan",
+      "Beihang University"
+     ],
+     "published": "2026-09-30",
+     "authors": "Weihao Shen, Wei Chen, Fuwei Zhang, Guojun Liu, Qingsong Hua, Wei Lin, Fuzhen Zhuang",
+     "total_score": 4.4,
+     "adjusted_score": 4.7,
+     "preference_bonus": 0.3,
+     "rank_score": 4.7,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "RARS把文档级相关性聚合为语义ID各层的一致条件分布，显式监督同一前缀下相关性的分支分配，避免完整ID单目标训练丢失多相关文档结构。在ESCI-US的四层RQ-VAE配置下，Recall@100从38.24提升到39.62，NDCG@10从12.00提升到13.00，均为五种子均值。",
+     "key_insight": "社区短文本搜索常有多个相关帖子共享粗主题而在细节上分叉，层级软监督可减少早期前缀选择过度确定的问题。应从同一批多级相关性标注构造所有层的目标，并固定SID和解码预算进行对照。论文发现标注稀疏会制造虚假的确定性，因此先检查多正例覆盖，再比较nDCG和召回。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 2,
+       "id": "arxiv:oai:arXiv.org:2609.39312",
+       "total_score": 4.4,
+       "adjusted_score": 4.7
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 3
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2609.39696",
+     "title": "When the Label Ignores the Request: Auditing Policy-Selected Targets in Synthetic Conversational Music Recommendation",
+     "url": "https://arxiv.org/abs/2609.39696",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-09-30",
+     "authors": "Sanjeev Suresh",
+     "total_score": 4.4,
+     "adjusted_score": 4.55,
+     "preference_bonus": 0.15,
+     "rank_score": 4.55,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 3,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "论文审计LLM合成对话推荐中的标签与真实请求冲突：TalkPlay开发集82个明确歌曲请求中，41个官方标签指向其他歌曲。仅对约1.5%的训练轮次补充请求满足目标，冲突切片nDCG@20从0.5231升至0.8018，相对提升53.3%，全量官方指标从0.1908升至0.1914。",
+     "key_insight": "社区搜索用LLM生成训练样本时，应同时保留用户明确约束和生成策略给出的目标，不把后者自动当成真值。可对帖子标题、作者或实体的精确查询建立可自动验证的切片，再增加小比例纠正监督。53.3%仅对应冲突切片，不能外推为全量收益；CTR和nDCG需分别检查精确满足与主题推荐。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 4,
+       "id": "arxiv:oai:arXiv.org:2609.39696",
+       "total_score": 4.4,
+       "adjusted_score": 4.55
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 4
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2609.39319",
+     "title": "Residual Trajectory Distillation for Generative Retrieval",
+     "url": "https://arxiv.org/abs/2609.39319",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-09-30",
+     "authors": "Weihao Shen, Wei Chen, Fuwei Zhang, Guojun Liu, Qingsong Hua, Wei Lin, Fuzhen Zhuang",
+     "total_score": 4.15,
+     "adjusted_score": 4.45,
+     "preference_bonus": 0.3,
+     "rank_score": 4.45,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "ResTD将冻结残差量化索引器视为过程教师，把硬语义ID丢弃的码字偏好与多步残差轨迹蒸馏到检索训练。ESCI-US在相同1200次更新预算下，Base-FT的Recall@100为37.60、NDCG@10为11.25，四步ResTD分别达到39.58和12.99；打乱教师轨迹后收益基本消失。",
+     "key_insight": "对社区搜索，码本构建过程不必只输出最终离散标签，还可保留候选码字概率作为额外监督。先固定索引器、模型和解码，再比较单层、两步及四步蒸馏，检验提升是否源于正确轨迹。该方法主要增加训练侧信息，部署仍需评估ID碰撞处理；离线商品检索增益不能直接替代UGC线上验证。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 5,
+       "id": "arxiv:oai:arXiv.org:2609.39319",
+       "total_score": 4.15,
+       "adjusted_score": 4.45
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2609.36688",
+     "title": "GRP v0.1 Technical Report",
+     "url": "https://arxiv.org/abs/2609.36688",
+     "source": "arxiv",
+     "company": [
+      "Snap"
+     ],
+     "published": "2026-09-29",
+     "authors": "Wenfeng Zhuo, Vincent Xue, Charles Wei, Cong Ni, Ruiming Lu, Jiwen Ren, Mo Li, Peng Yang, Xufei Wang, Dongheng Li, Jiaco...",
+     "total_score": 4.2,
+     "adjusted_score": 4.4,
+     "preference_bonus": 0.2,
+     "rank_score": 4.4,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 5,
+      "practicality": 3,
+      "evidence_quality": 5,
+      "timeliness": 5
+     },
+     "summary": "Snap 将召回、排序与奖励建模整合进同一编码器—解码器：生成多模态语义 ID，再用共同训练的多头模块打分，并冻结该模块用于强化学习奖励。线上先作为一路召回源，逐步旁路预排和替换弱源；最终组合实验相对生产基线使观看时长提升 0.82%、分享提升 2.56%，服务链路延迟降低 69%。",
+     "key_insight": "对社区 UGC 短文本推荐与搜索，可借鉴“先接入一路召回、再逐步替换”的迁移方式，并把生成候选与排序质量放在同一评测面板。其止梯度排序头和带参考边际的 mGRPO 让奖励优化不明显牺牲召回；但短视频目录快速更新，论文指出冻结模型的精确物品召回会在数日内衰退，需要持续训练与异步映射更新。",
+     "best_date": "2026-09-30",
+     "appearances": [
+      {
+       "date": "2026-09-30",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2609.36688",
+       "total_score": 4.2,
+       "adjusted_score": 4.4
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:oai:arXiv.org:2609.36688",
+      "slug": "2609.36688",
+      "content_html": "<h1>GRP v0.1 Technical Report 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>Snap 的短视频推荐仍依赖多路召回、预排、精排和业务规则串联。论文明确说，团队曾尝试让单一生成模型直接替换成熟漏斗，但线上结果为负：旧系统积累的候选资格、内容新鲜度、校准和多样性控制无法在一次替换中复制。生成式模型只会给出语义 ID 的概率顺序，却不天然具备最终排序质量；一个语义 ID 还可能映射多个实际视频。更棘手的是目录几乎每天换新，训练截止后数日，冻结模型对具体视频的召回迅速衰退，虽然粗粒度语义簇召回仍稳定。因而论文的目标不是宣布漏斗已消失，而是设计能逐步上线、逐项衡量替代程度的统一模型：先成为一路召回源，再撤掉较弱来源，最后让部分候选绕过预排。对社区 UGC 系统，这一动机尤其贴近新帖持续进入、老帖快速过时的场景；是否能迁移仍需在本站目录更新速度和点击目标下验证。</p>\n<h2>2. 方法详解</h2>\n<p>模型由编码器、解码器和多头预测模块 MHP 组成。物品先经 Qwen3-VL 内容表征和协同参与信号构造多模态层级语义 ID；用户上下文及历史行为进入编码器。每个历史物品的多个 ID 码融合为一个 token，使相同编码长度容纳四倍历史。显式动作如收藏、分享与大量被动观看共用序列，但显式组获保护预算：各动作类型分配量近似为“预算乘以该类型计数的 p 次幂占所有类型幂次和的比例”，另设下限，p 在 0 与 1 之间，剩余位置由观看填充。该设计避免稀有却强意图的行为被观看淹没。编码器自注意力使用 RoPE，变长 FlashAttention 与打包输入避免对长短不一的用户历史计算填充位。</p>\n<p>解码器按候选物品分块，每块内部自回归生成层级 ID，块之间禁止互看，因此同一请求可独立产生多个候选。生成目标是对目标码位置的逐 token 交叉熵，分隔符和填充位不计入损失。模型把总深度更多分给短序列解码器，而非昂贵的长历史编码器。MHP 将候选 ID 嵌入汇聚为查询，与编码历史做交叉注意力；再把候选查询、候选感知用户向量与用户上下文一同送入 DCNv2 交叉网络，分别预测观看、完成、跳过、分享、收藏等。所有送入 MHP 的编码器状态、候选嵌入和上下文均止梯度，故排序损失不会扭曲生成主干；分类头使用 BCE，观看时长回归头使用 MSE，和生成损失相加仅是一次前向计算中的目标汇总。</p>\n<p>预训练采用权重矩阵 Muon、偏置与归一化参数 Lamb、稀疏嵌入行式自适应优化，并使用 bf16、预热后余弦退火。论文给出批量学习率按全局 batch 平方根缩放，但没有公开可复现的绝对样本量、batch、硬件节点总配置与训练步数，不能据此杜撰。后训练冻结编码器、嵌入、归一化和 MHP，只训练解码器。每位用户按温度抽样一组语义 ID，冻结 MHP 的各头经固定权重合成奖励，组内标准化得到优势，再用 PPO 裁剪和相对冻结参考解码器的 KL 约束优化。mGRPO 另外比较真实日志目标相对最优抽样候选的对数概率差：只有当前策略把真实目标的竞争位置降到参考策略以下时，单侧边际才惩罚。线上服务则以 KV cache 和 CUDA graph 生成候选，异步维护 ID 到当前有效内容的反向映射，按配置决定哪些候选绕过已有预排。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，生成与排序同模训练却以止梯度隔离目标。相较只输出语义 ID 的 TIGER 类召回模型，它可在同一次服务调用中对生成候选输出多种互动分数；相较外置奖励模型，冻结的 MHP 可直接充当强化学习奖励。关键前提是候选信号必须能真正穿过排序头。团队发现原交叉注意力几乎只看用户不看物品，组内奖励变化仅为其量级的 0.005% 至 0.16%；把候选查询沿残差路径直接送进交叉网络后，奖励中位离散度超过 200%。</p>\n<p>第二，mGRPO 明确保护日志正样本的相对位置。普通 GRPO 会追逐高预测奖励但丢失真实互动物品；参考锚定边际使奖励召回改善的同时保住原始召回。第三，论文把可部署的渐进迁移本身当成方法：每个阶段沿同一用户和线上指标比较 GRP 与原召回源，从替换弱源到预排旁路均有独立开关。第四，服务优化覆盖模型外链路，消息体裁剪、事件展开重写、批量反向查表、缓存和 CUDA 图使端到端召回 p95 延迟下降 69.0%，展示算法收益需要连同系统预算评估。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线评估采用生产短视频场景的未来留出用户会话，主要指标为 HR@K、Recall@K 和按奖励加权的 Recall@K。历史融合在训练速度基本不变时，把可用历史增为四倍：HR@10 从 0.1734 到 0.1764；再将历史加倍仅到 0.1751，吞吐从每秒 0.57 步降到 0.32 步。固定总层数把编码器:解码器从 2:1 调至 1:2，HR@20 从 0.2293 到 0.2332，吞吐从 0.57 升至 0.69 步/秒。高分辨率语义 ID 相较旧 MM-SID 的 Recall@20 为 0.0592 对 0.0529，增 11.9%。显式行为保护预算相较无保护的方案，Recall@20 相对增加 20.0%，奖励召回增加 7.0%。</p>\n<table><thead><tr><th>对照设置</th><th>Reward Recall@10 相对基座</th><th>Recall@10 相对基座</th></tr></thead><tbody><tr><td>仅 GRPO</td><td>−0.1%</td><td>−1.25%</td></tr><tr><td>仅边际保护</td><td>+0.5%</td><td>+0.4%</td></tr><tr><td>mGRPO，单节点</td><td>+1.6%</td><td>+0.3%</td></tr><tr><td>mGRPO，双节点</td><td>+3.1%</td><td>+0.9%</td></tr></tbody></table>\n<p>排序头重设计后，看满 10 秒 AUROC 从 0.6628 到 0.7759，分享 AUPRC 从 0.0213 到 0.0457；但跳过 AUROC 从 0.6281 降到 0.6102，提示优化不是所有标签同向。线上把 GRP 作为召回源时，相对生产基线观看时长 +0.46%、分享 +0.77%；在旁路预排并替换较弱来源的另一组实验中，浏览量 +0.47%、观看时长 +0.82%、分享 +2.56%，平台守护指标中性。两组实验配置不同，不能把数字当成同一模型逐步累加。仅监督训练加旁路使观看时长显著下降 0.45%，说明强化学习的价值还包括消除旁路带来的损失。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确承认，系统尚未完全端到端：MHP 尚未证明足以绕过末级精排，部分单路来源在平均观看时长和跳过率上仍优于 GRP，辅助召回源仍必需。冻结模型对新物品的精确召回在数日内衰退，必须持续增量训练；异步 ID 映射只能把已生成的码解析到新目录，并不能替模型学习新的具体兴趣。论文也指出奖励头校准与候选区分度会直接决定强化学习方向。对外部复现而言，绝对训练规模、硬件与数据细节披露有限；短视频实验不能直接外推到社区搜索的 nDCG、CTR 或问答内容质量。</p>\n<h2>6. 工业实践意义</h2>\n<p>社区平台可先将生成式语义 ID 模型接成一路候选源，保持现有资格过滤、去重和精排，按同一请求比较来源通过率、点击率、长停留、分享与新帖覆盖。若 GRP 类模型要服务 UGC 搜索，语义 ID 应结合帖子文本和互动信号训练；历史序列既保留浏览，也为收藏、评论、关注等显式行为保留动态预算。实验顺序应先验证四倍历史融合和解码器侧容量配置，再比较生成候选与传统召回的覆盖，最后才试预排旁路与弱源替换。</p>\n<p>上线前要单独监控新帖与长尾帖的精确物品召回，设置增量训练节奏和 ID 到现役帖子的异步映射。奖励头需按用户内候选检验分数离散度与校准，避免一个几乎只看用户的头产生虚假强化学习信号。mGRPO 的参考边际可用来防止追求点击或停留时丢失日志正样本，但线上仍应同时看 nDCG、CTR、内容质量和时延，不能以单个奖励指标替代整体评测。论文 p95 召回延迟降低 69% 的经验说明，预处理、请求体、反向查表与 GPU 解码应一起剖析；其具体收益不能直接照搬到另一套基础设施。</p>",
+      "chars": 3002,
+      "minutes": 8
+     },
+     "weekly_rank": 6
+    },
+    {
+     "id": "arxiv:2609.35430",
+     "title": "Can Generative Retrievers Learn Semantic IDs Without Forgetting How to Speak?",
+     "url": "https://arxiv.org/abs/2609.35430",
+     "source": "web_search",
+     "company": [
+      "Brave",
+      "University of Glasgow"
+     ],
+     "published": "2026-09-28",
+     "authors": "Fu, Junchen, Katevas, Kleomenis, Rajan, Vandana, Celi, Sofía, Haddadi, Hamed",
+     "total_score": 4.05,
+     "adjusted_score": 4.35,
+     "preference_bonus": 0.3,
+     "rank_score": 4.35,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "SpeakGR解决语言模型学习文档语义ID后自然语言能力退化的问题，在SID监督之外，对学生生成前缀施加冻结原模型的前向KL蒸馏，并可自适应调节保护强度。在三个模型上，MS MARCO的WikiText-2前向KL相对纯SFT下降81.3%至93.8%，同时保持有效检索。",
+     "key_insight": "社区搜索若同一模型既输出帖子ID又生成解释，应同步监控语言分布漂移与召回质量。保护损失只在原文本词表归一化，避免新增SID词元干扰语言蒸馏。WikiText分布恢复不等于推理、代码或所有对话能力都被保留，需要补充业务解释质量和用户指令测试，并核算冻结教师带来的训练成本。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 6,
+       "id": "arxiv:2609.35430",
+       "total_score": 4.05,
+       "adjusted_score": 4.35
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "arxiv:2609.36670",
+     "title": "FineSID: Scalable and Efficient Semantic Identifier Learning for Generative Recommendation",
+     "url": "https://arxiv.org/abs/2609.36670",
+     "source": "web_search",
+     "company": [],
+     "published": "2026-09-29",
+     "authors": "Wu, Song-Li, Gan, Weinan, Du, Zhaocheng, Wang, Xianquan, Wang, Jingyi",
+     "total_score": 4.0,
+     "adjusted_score": 4.3,
+     "preference_bonus": 0.3,
+     "rank_score": 4.3,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "FineSID通过全局与局部量化和语义一致性约束，将梯度分配到整个码本，缓解Top-1硬分配导致的大量码字欠训练及ID碰撞。在Instrument数据上Recall@10从CAR的0.0624升至0.0703，Game数据上从0.0947升至0.1031；实验还检验初始化、码本利用率和训练效率。",
+     "key_insight": "社区内容规模扩大时，应把码本利用率、碰撞率与搜索相关性一起监控，不能只追求重构误差下降。可先在固定生成器下替换SID学习模块，核验软梯度是否提高长尾内容的可区分性。公开商品推荐结果与UGC检索仍有场景差异，需统一候选集、碰撞消歧和排序预算再判断可迁移收益。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 7,
+       "id": "arxiv:2609.36670",
+       "total_score": 4.0,
+       "adjusted_score": 4.3
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2609.35285",
+     "title": "Textual User Taste: Natural-Language User Context for Foundation-Model Recommender System at Scale",
+     "url": "https://arxiv.org/abs/2609.35285",
+     "source": "web_search",
+     "company": [
+      "Spotify"
+     ],
+     "published": "2026-09-28",
+     "authors": "Fazelnia, Ghazal, Gigioli, Paul, Klyce, Eliza, Zheng, Sharon, Zelvin, Katie, Thein, Ye Myat, Deshpande, Anurag, Davtyan,...",
+     "total_score": 4.0,
+     "adjusted_score": 4.15,
+     "preference_bonus": 0.15,
+     "rank_score": 4.15,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 3,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "Spotify把收听历史、内容元数据和用户反馈生成结构化自然语言偏好，部署到数百万用户。文本与行为向量联合使用时，未来歌曲预测MRR从0.956升至0.962；搜索排序相对无上下文的NDCG@7提升2.2%，而单独行为上下文提升1.7%。画像还支持正向语言调节，但否定指令和短期适应存在困难。",
+     "key_insight": "社区搜索可将偏好文本作为可解释的个性化上下文，与行为向量联合输入，先验证主题意图和历史兴趣是否互补。2.2%的提升以无上下文为基线，不能当作对行为向量的增益。应分别测试无画像、文本、行为及融合四组，并审计用户纠正、隐私过滤和过期兴趣对nDCG与CTR的影响。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 8,
+       "id": "arxiv:2609.35285",
+       "total_score": 4.0,
+       "adjusted_score": 4.15
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2609.39828",
+     "title": "KUAISHOU Explorer LLM-Rec Challenge 2026: Reasoning Generative Recommendation",
+     "url": "https://arxiv.org/abs/2609.39828",
+     "source": "arxiv",
+     "company": [
+      "Kuaishou"
+     ],
+     "published": "2026-09-30",
+     "authors": "Jiangxia Cao, Hao Peng, Wenlong Xu, Jiaxin Deng, Zhixin Ling, Xingmei Wang, Kun Shang, Can Tang, Zhihuai Cai, Jun Du, Fa...",
+     "total_score": 3.75,
+     "adjusted_score": 4.05,
+     "preference_bonus": 0.3,
+     "rank_score": 4.05,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 3,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "快手LLM-Rec挑战将物品理解、用户理解、推荐和通识能力放入统一语义ID与自然语言空间，以多粒度对齐预训练和分阶段后训练研究推理推荐。公开历史统计覆盖50万用户，其中短视频行为为409416641条、平均长度818.8；短视频语义ID共享比例为20.84%，说明碰撞必须进入评测。",
+     "key_insight": "社区业务可借鉴统一评测设计，将兴趣解释质量与最终帖子命中分开度量，并避免让推理文本直接泄漏目标。历史跨度、动作含义和内容语义对齐比单纯延长思维链更值得先验证。挑战报告的资源统计不等于线上增益，推理是否改善nDCG和CTR还需匹配模型预算与数据量的消融实验。",
+     "best_date": "2026-10-02",
+     "appearances": [
+      {
+       "date": "2026-10-02",
+       "rank": 10,
+       "id": "arxiv:oai:arXiv.org:2609.39828",
+       "total_score": 3.75,
+       "adjusted_score": 4.05
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
   "personalization": {
    "raw_count": 15,
    "unique_count": 15,
@@ -411,388 +793,6 @@
        "id": "arxiv:2609.23111",
        "total_score": 3.9,
        "adjusted_score": 3.95
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 10
-    }
-   ]
-  },
-  "generative": {
-   "raw_count": 15,
-   "unique_count": 15,
-   "days": [
-    "2026-09-30",
-    "2026-10-01",
-    "2026-10-02"
-   ],
-   "papers": [
-    {
-     "id": "arxiv:oai:arXiv.org:2609.39327",
-     "title": "Generative End-to-end Ad Retrieval at Douyin",
-     "url": "https://arxiv.org/abs/2609.39327",
-     "source": "arxiv",
-     "company": [
-      "ByteDance"
-     ],
-     "published": "2026-09-30",
-     "authors": "Shaowen Zeng, Yanhua Huang, Jiacheng Sun, Jiarui Liu, Qian Dai, Zhikai Yang, Hancheng Li, Boya Wu, Tuoyu Zhang, Yekui Ch...",
-     "total_score": 4.45,
-     "adjusted_score": 4.75,
-     "preference_bonus": 0.3,
-     "rank_score": 4.75,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 5
-     },
-     "summary": "针对广告生成式检索中的码本坍缩和物品碰撞，GEAR联合训练分词器、生成器与轻量重排器。BasisVQ以正交基参数化码本，前缀感知量化增强区分能力。抖音全量部署的ADSS和ADVV分别提升0.563%和0.658%，冷启动广告激活率相对提升1.46%。",
-     "key_insight": "社区UGC内容持续新增，语义ID碰撞与在线分布变化同样影响召回稳定性。可先借鉴码本全局梯度共享和生成后桶内重排，再评估端到端联训。论文最优配置仍有52.3%的物品碰撞率，因此不能把生成ID直接等同于唯一帖子，也不能把广告收益直接折算为社区搜索CTR。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 1,
-       "id": "arxiv:oai:arXiv.org:2609.39327",
-       "total_score": 4.45,
-       "adjusted_score": 4.75
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:oai:arXiv.org:2609.39327",
-      "slug": "2609.39327",
-      "content_html": "<h1>GEAR：抖音广告生成式检索的端到端联训与碰撞消歧</h1>\n<p>来源：https://arxiv.org/html/2609.39327 。本解读依据正文第3、5、6节及附录C；数字来自论文在线实验和分词器对照。下文将作者报告的结果与面向社区搜索的迁移建议分别说明。</p>\n<h2>1. 问题与动机</h2>\n<p>生成式检索把候选检索变成离散物品词元的自回归生成，但工业内容池持续变化，新广告、特征更新与兴趣迁移会同时改变物品表示。作者指出，冻结分词器虽然避开在线量化训练不稳定，却无法适应这种分布变化；直接更新码本又常出现少数码字得到训练、大量码字失活的表示坍缩。EMA或重初始化提供了工程缓解，但没有解决稳定直接梯度优化的问题。</p>\n<p>另一个困难是多个物品共用同一个语义ID。生成器只能判断这组词元的概率，无法区分组内广告。给每个物品添加唯一词元会损失语义共享；外接复杂精排则可能增加开销并形成割裂的训练目标。更棘手的是两者耦合：扩大码本想减少碰撞，可能让更新更稀疏、坍缩更严重。因此论文同时改造分词器和组内消歧，而不是孤立优化ID。</p>\n<p>这一问题在本文对照中有明确量化依据：普通RQ的物品碰撞率为84.2%，最优方案仍有52.3%，说明碰撞绝非仅靠增大词表就能消失。对不断新增帖子、评论和问答的社区UGC，这种动态内容池和语义近邻的共存具有实际参考价值。</p>\n<h2>2. 方法详解</h2>\n<p>系统由物品分词器、用户条件生成器、联合重排器组成。物品塔先把静态多模态特征和动态稀疏特征编码，再用三层残差量化得到ID。第l层量化当前表示减去此前选中码向量的残差，选出最近码字；其目标仍是离散序列，但训练要使连续表示和码本共同适应业务数据。</p>\n<p>BasisVQ将码本C改写为C乘以一个近似正交矩阵。矩阵W先除以自身Frobenius范数与1e-6中的较大值，使初始谱范数不超过1；然后执行Newton–Schulz迭代：把W更新为二分之一乘W乘括号中的3I减W转置乘W。论文认为五次迭代已足够。活跃码字上的梯度由共同基矩阵传播到整个码本，正交约束让坐标系近似刚性旋转，保持码向量的范数和相互空间结构，使失活码字随整体运动重新接触新数据分布，而不是被不受约束的线性变换拉离数据流形。</p>\n<p>前缀感知BasisRQ再使后层码本依赖前层决策。根据此前词元查询逐维缩放与偏置，按顺序合成为当前层的缩放γ和偏置β。最直接的实现会为每个样本物化一个完整码本，产生批量×码字数×维度的中间张量。作者把平方距离拆成三项：移除偏置后的输入平方范数、缩放后的码本平方范数，以及输入与缩放码本的交叉乘积，借矩阵乘法得到距离矩阵，维持普通量化的O(bNd)渐近时间复杂度。</p>\n<p>生成器采用轻量编码器加两层Transformer解码器。非序列特征分成28组，各组通过独立FFN投影；点击序列长度200、转化序列长度100，与非序列特征拼接成共享KV，供所有解码层交叉注意力使用。每层包含预归一化的交叉注意力、门控FFN、因果自注意力和第二个门控FFN；采用RMSNorm，门控形式为SiLU投影与另一投影逐元素相乘。解码器6个注意力头，每头64维，中间FFN维度384。</p>\n<p>三层ID生成完后再做一次解码，得到用户和当前ID共同条件化的状态，经MLP映射成96维用户向量，与对应桶内物品塔向量点积打分。该状态不是所有候选共享的单个用户向量：不同ID桶具有不同表示，因此轻量点积仍能表达上下文差异。</p>\n<p>训练按三个阶段开启损失：先训练双塔排序，再启用量化，最后加入生成和重排，防止生成器依赖尚不稳定的ID。双塔与重排均用LambdaLoss，成对排序误差以交换两物品造成的绝对ΔNDCG加权。量化损失包括码本项与commitment项，后者权重0.1。生成使用teacher forcing及因果掩码，对曝光样本按log(1+secpm)加权，其他样本生成权重为0。四项总损失权重依次是1、1、10、1，LambdaLoss缩放系数为1。附录披露双塔输出96维、码向量128维，但没有解释二者之间的具体映射；复现时需要核实，不能自行把这段补成作者设置。论文未披露优化器、学习率、全局batch、GPU型号、训练步数及训练样本总量，这些必须保留为空缺。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一项贡献是以正交基共享梯度改进码本动态更新。与只更新选中码字的普通VQ相比，它让未选中码字也受到基变换影响；与不受约束的线性变换相比，正交约束减少空间形变。需要注意，几何解释说的是基变换部分保持拓扑，不能外推为整个可训练码本在所有更新中距离不变。对照中非前缀BasisRQ的利用率7.45%，普通RQ为4.22%，碰撞率分别63.8%和84.2%。</p>\n<p>第二项贡献是前缀条件化量化与低内存距离计算。后层码本不再忽视粗层所属区域，而以已有前缀改变自身有效几何结构。完整方案相对去掉前缀感知，把碰撞率从63.8%降到52.3%，重构误差从2.03e-3降到1.82e-3。这里的收益来自表达能力和量化稳定性共同作用；在线消融替换了整个分词器，不能从该消融单独分离正交化的线上贡献。</p>\n<p>第三项贡献是复用生成状态完成联合组内排序，避免唯一ID破坏语义分享，也避免为每个物品重新运行重模型。只有一个额外解码步与桶内点积，且训练目标直接对齐相对顺序。去掉重排后，子集ADVV增益从0.498%变成0.341%，支持生成概率不足以区分共享ID物品的论点，但论文没有给出独立毫秒延迟量化。</p>\n<p>第四项贡献是训练、近线索引和在线算图协同。所有物品相关计算离开在线关键路径，模型与ID索引一起更新；在线串联生成、桶展开和打分。这样动态分词器才能在生产中持续变化，而不是依赖永久固定的语义索引。</p>\n<h2>4. 实验结果分析</h2>\n<p>在线A/B在抖音广告平台进行7天，每个实验组使用5%流量。基线是没有GEAR附加通路的原生产系统，其余组件不变。论文部署方式是新增生成式召回通路，不能读成替换全部已有稠密检索系统。以下所有数字均为相对生产基线的收益百分比；子集消融与全量部署是不同范围。</p>\n<table><thead><tr><th>范围与方法</th><th>ADSS增益</th><th>ADVV增益</th></tr></thead><tbody><tr><td>子集完整GEAR</td><td>0.446%</td><td>0.498%</td></tr><tr><td>子集去掉前缀感知BasisRQ</td><td>0.288%</td><td>0.219%</td></tr><tr><td>子集去掉联合重排</td><td>0.358%</td><td>0.341%</td></tr><tr><td>子集去掉secpm加权</td><td>0.395%</td><td>0.354%</td></tr><tr><td>全量部署GEAR</td><td>0.563%</td><td>0.658%</td></tr></tbody></table>\n<p>在同一子集范围，替换分词器导致ADSS增益少0.158个百分点、ADVV少0.279个百分点，是三项消融中最大损失。移除重排分别少0.088和0.157个百分点；移除价值加权分别少0.051和0.144个百分点。不能将全量0.658%和子集0.219%直接相减当作分词器贡献。secpm加权影响说明业务价值目标不仅存在于末端排序，生成候选阶段也需要价值对齐。</p>\n<table><thead><tr><th>分词器配置</th><th>ID组合利用率</th><th>物品碰撞率</th><th>MSE（乘10^-3）</th></tr></thead><tbody><tr><td>前缀感知BasisRQ，2048/512/128</td><td>8.83%</td><td>52.3%</td><td>1.82</td></tr><tr><td>前缀感知BasisRQ，512/512/512</td><td>6.16%</td><td>75.6%</td><td>2.04</td></tr><tr><td>无前缀感知BasisRQ，2048/512/128</td><td>7.45%</td><td>63.8%</td><td>2.03</td></tr><tr><td>普通RQ，2048/512/128</td><td>4.22%</td><td>84.2%</td><td>2.32</td></tr></tbody></table>\n<p>两组大小配置的组合空间同为134217728，但每层容量分配不同，前大后小的方案在三个指标都更好。需要区分组合空间相同与实际参数数目相同：两配置码字总数不同，论文的比较不能被解读为严格等参数消融。碰撞率下降31.9个百分点是最优完整方案对普通RQ的差值；20.4个百分点则是无前缀BasisRQ对普通RQ的差值，二者不可混用。利用率衡量被激活的词元组合比例，也不能当作单层码字利用率。</p>\n<p>冷启动广告激活率相对提高1.46%，定义为新广告主在给定时间窗内达到预设流量门槛的比例。正文没有披露门槛与时间窗的具体值，因此证据支持冷启动收益方向，但不足以重建完整统计协议。论文没有按公开数据集报告细分结果，不能补造商品或社区数据上的泛化性能。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者结论明确提出未来要提高解码效率、降低推理延迟并扩展部署场景。正文讨论也承认，即使改进前缀量化，海量候选池仍会有共享ID，必须依赖重排消歧。52.3%的最优碰撞率说明ID是语义桶，不是唯一物品地址。BasisVQ在推理时可缓存变换码本，所谓零额外延迟仅针对该量化变换，不能扩展到完整生成、桶展开及重排流程。</p>\n<p>以下是本解读根据披露范围指出的限制，而非作者声明：虽然论文称在线收益显著，但表格未提供置信区间、p值、不同实验组样本量或多次重复；训练超参数和硬件披露有限，也没有吞吐、峰值显存和P95延迟。因此无法只凭论文把生产成本和统计可靠性完整复现。分词器消融更换整个方案，不能严格区分正交约束和前缀感知各自对线上收益的份额。现有结果来自广告价值指标，适用于社区搜索的nDCG与CTR仍需直接验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区UGC搜索，最可迁移的是动态语义桶和桶内消歧的联合设计。帖子同主题、评论同事件常共享粗语义，不应为了唯一地址把所有共享结构拆散。可以先把GEAR作为额外召回通路，与原稀疏及向量检索合并候选，固定最终精排预算，评估是否补充新帖和长尾帖子，而不是直接移除成熟检索。本文生成器以用户特征为条件，社区搜索还必须显式加入query；这是迁移设计，并非论文已验证模块。</p>\n<p>部署部分提供了具体实现线索。参数服务器保存每个物品的ID和连续向量，实例监控器周期刷新旧物品并编码新物品；近线索引构造器生成类似CSR的映射，从排序后的ID目录指向物品列表和预计算向量。索引按分钟级刷新，并与模型一起分发。在线使用KV缓存的束搜索，三步宽度256、256、512；读取桶内向量后用有符号packed-INT4用户与物品向量点积，并对每个桶保留有限物品，防止一个大桶垄断最终候选。这里每桶截断上限没有具体数值，复现需另行选取并做召回损失评估。</p>\n<p>实操可分三次验证。首先在固定数据与模型下比较普通RQ、正交BasisRQ和前缀版本，监控码组合利用率、碰撞率、重构误差及内容新鲜度。然后固定生成候选，比较随机桶内截断与联合重排，查看收益是否来自碰撞消歧。最后在相同用户流量、召回配额和最终排序预算下上线额外通路，跟踪搜索nDCG、CTR、空召回率、新帖曝光和P95延迟。社区不应直接沿用广告secpm权重；可选用经过偏差审计的相关性或满意度监督，并保留曝光选择偏差诊断。</p>\n<p>训练显存方面，前缀距离矩阵改写值得优先实现，避免生成批量×码本×维度张量。近线动态ID则要求模型和索引版本一致，以防新模型生成的桶ID对不上旧快照；这是由作者部署架构推导的工程要求。由于公开论文未给出端到端延迟数字，在线预算必须本地压测后确定。最终应把生成式检索当作候选覆盖和内容泛化的一次可测尝试，以业务指标验证收益，不能把抖音的广告价值百分比当成社区CTR承诺。</p>",
-      "chars": 4379,
-      "minutes": 11
-     },
-     "weekly_rank": 1
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2609.38646",
-     "title": "Exploring Forum Post Retrieval with Generative Modeling",
-     "url": "https://arxiv.org/abs/2609.38646",
-     "source": "arxiv",
-     "company": [
-      "Meta",
-      "William & Mary"
-     ],
-     "published": "2026-09-29",
-     "authors": "Yang Li, Yaguang Liu, Heng Liu, Shengbo Guo, Samson Komo, Jane Kou, Yulian Zhou, Gang Yang, Shubhojeet Sarkar, Gaurav Ch...",
-     "total_score": 4.4,
-     "adjusted_score": 4.7,
-     "preference_bonus": 0.3,
-     "rank_score": 4.7,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "Facebook Forum在自身行为稀疏时，复用Facebook Groups训练行为和Feed语义ID，用3B语言模型直接生成帖子ID。固定训练预算下，三层ID的HR@10为0.0667，四层为0.0303；文本与ID对齐加动作描述使NDCG@10达到0.0420。更大模型和1000步GRPO均未带来收益。",
-     "key_insight": "与社区UGC业务最接近的启示是优先复用成熟内容侧语义空间，并把点赞等动作写入历史提示。三层ID优势部分来自更高碰撞率，必须接桶内重排后再比较最终帖子命中。短历史与长历史的评测用户集合不同，不能把结果解读为长历史无用；先统一用户集合、训练预算及搜索nDCG口径。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 3,
-       "id": "arxiv:oai:arXiv.org:2609.38646",
-       "total_score": 4.4,
-       "adjusted_score": 4.7
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 2
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2609.39312",
-     "title": "Learning Multiresolution Relevance for Hierarchical Generative Retrieval",
-     "url": "https://arxiv.org/abs/2609.39312",
-     "source": "arxiv",
-     "company": [
-      "Meituan",
-      "Beihang University"
-     ],
-     "published": "2026-09-30",
-     "authors": "Weihao Shen, Wei Chen, Fuwei Zhang, Guojun Liu, Qingsong Hua, Wei Lin, Fuzhen Zhuang",
-     "total_score": 4.4,
-     "adjusted_score": 4.7,
-     "preference_bonus": 0.3,
-     "rank_score": 4.7,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "RARS把文档级相关性聚合为语义ID各层的一致条件分布，显式监督同一前缀下相关性的分支分配，避免完整ID单目标训练丢失多相关文档结构。在ESCI-US的四层RQ-VAE配置下，Recall@100从38.24提升到39.62，NDCG@10从12.00提升到13.00，均为五种子均值。",
-     "key_insight": "社区短文本搜索常有多个相关帖子共享粗主题而在细节上分叉，层级软监督可减少早期前缀选择过度确定的问题。应从同一批多级相关性标注构造所有层的目标，并固定SID和解码预算进行对照。论文发现标注稀疏会制造虚假的确定性，因此先检查多正例覆盖，再比较nDCG和召回。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 2,
-       "id": "arxiv:oai:arXiv.org:2609.39312",
-       "total_score": 4.4,
-       "adjusted_score": 4.7
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 3
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2609.39696",
-     "title": "When the Label Ignores the Request: Auditing Policy-Selected Targets in Synthetic Conversational Music Recommendation",
-     "url": "https://arxiv.org/abs/2609.39696",
-     "source": "arxiv",
-     "company": [],
-     "published": "2026-09-30",
-     "authors": "Sanjeev Suresh",
-     "total_score": 4.4,
-     "adjusted_score": 4.55,
-     "preference_bonus": 0.15,
-     "rank_score": 4.55,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 3,
-      "practicality": 5,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "论文审计LLM合成对话推荐中的标签与真实请求冲突：TalkPlay开发集82个明确歌曲请求中，41个官方标签指向其他歌曲。仅对约1.5%的训练轮次补充请求满足目标，冲突切片nDCG@20从0.5231升至0.8018，相对提升53.3%，全量官方指标从0.1908升至0.1914。",
-     "key_insight": "社区搜索用LLM生成训练样本时，应同时保留用户明确约束和生成策略给出的目标，不把后者自动当成真值。可对帖子标题、作者或实体的精确查询建立可自动验证的切片，再增加小比例纠正监督。53.3%仅对应冲突切片，不能外推为全量收益；CTR和nDCG需分别检查精确满足与主题推荐。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 4,
-       "id": "arxiv:oai:arXiv.org:2609.39696",
-       "total_score": 4.4,
-       "adjusted_score": 4.55
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 4
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2609.39319",
-     "title": "Residual Trajectory Distillation for Generative Retrieval",
-     "url": "https://arxiv.org/abs/2609.39319",
-     "source": "arxiv",
-     "company": [],
-     "published": "2026-09-30",
-     "authors": "Weihao Shen, Wei Chen, Fuwei Zhang, Guojun Liu, Qingsong Hua, Wei Lin, Fuzhen Zhuang",
-     "total_score": 4.15,
-     "adjusted_score": 4.45,
-     "preference_bonus": 0.3,
-     "rank_score": 4.45,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "ResTD将冻结残差量化索引器视为过程教师，把硬语义ID丢弃的码字偏好与多步残差轨迹蒸馏到检索训练。ESCI-US在相同1200次更新预算下，Base-FT的Recall@100为37.60、NDCG@10为11.25，四步ResTD分别达到39.58和12.99；打乱教师轨迹后收益基本消失。",
-     "key_insight": "对社区搜索，码本构建过程不必只输出最终离散标签，还可保留候选码字概率作为额外监督。先固定索引器、模型和解码，再比较单层、两步及四步蒸馏，检验提升是否源于正确轨迹。该方法主要增加训练侧信息，部署仍需评估ID碰撞处理；离线商品检索增益不能直接替代UGC线上验证。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 5,
-       "id": "arxiv:oai:arXiv.org:2609.39319",
-       "total_score": 4.15,
-       "adjusted_score": 4.45
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 5
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2609.36688",
-     "title": "GRP v0.1 Technical Report",
-     "url": "https://arxiv.org/abs/2609.36688",
-     "source": "arxiv",
-     "company": [
-      "Snap"
-     ],
-     "published": "2026-09-29",
-     "authors": "Wenfeng Zhuo, Vincent Xue, Charles Wei, Cong Ni, Ruiming Lu, Jiwen Ren, Mo Li, Peng Yang, Xufei Wang, Dongheng Li, Jiaco...",
-     "total_score": 4.2,
-     "adjusted_score": 4.4,
-     "preference_bonus": 0.2,
-     "rank_score": 4.4,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 5,
-      "practicality": 3,
-      "evidence_quality": 5,
-      "timeliness": 5
-     },
-     "summary": "Snap 将召回、排序与奖励建模整合进同一编码器—解码器：生成多模态语义 ID，再用共同训练的多头模块打分，并冻结该模块用于强化学习奖励。线上先作为一路召回源，逐步旁路预排和替换弱源；最终组合实验相对生产基线使观看时长提升 0.82%、分享提升 2.56%，服务链路延迟降低 69%。",
-     "key_insight": "对社区 UGC 短文本推荐与搜索，可借鉴“先接入一路召回、再逐步替换”的迁移方式，并把生成候选与排序质量放在同一评测面板。其止梯度排序头和带参考边际的 mGRPO 让奖励优化不明显牺牲召回；但短视频目录快速更新，论文指出冻结模型的精确物品召回会在数日内衰退，需要持续训练与异步映射更新。",
-     "best_date": "2026-09-30",
-     "appearances": [
-      {
-       "date": "2026-09-30",
-       "rank": 1,
-       "id": "arxiv:oai:arXiv.org:2609.36688",
-       "total_score": 4.2,
-       "adjusted_score": 4.4
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:oai:arXiv.org:2609.36688",
-      "slug": "2609.36688",
-      "content_html": "<h1>GRP v0.1 Technical Report 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>Snap 的短视频推荐仍依赖多路召回、预排、精排和业务规则串联。论文明确说，团队曾尝试让单一生成模型直接替换成熟漏斗，但线上结果为负：旧系统积累的候选资格、内容新鲜度、校准和多样性控制无法在一次替换中复制。生成式模型只会给出语义 ID 的概率顺序，却不天然具备最终排序质量；一个语义 ID 还可能映射多个实际视频。更棘手的是目录几乎每天换新，训练截止后数日，冻结模型对具体视频的召回迅速衰退，虽然粗粒度语义簇召回仍稳定。因而论文的目标不是宣布漏斗已消失，而是设计能逐步上线、逐项衡量替代程度的统一模型：先成为一路召回源，再撤掉较弱来源，最后让部分候选绕过预排。对社区 UGC 系统，这一动机尤其贴近新帖持续进入、老帖快速过时的场景；是否能迁移仍需在本站目录更新速度和点击目标下验证。</p>\n<h2>2. 方法详解</h2>\n<p>模型由编码器、解码器和多头预测模块 MHP 组成。物品先经 Qwen3-VL 内容表征和协同参与信号构造多模态层级语义 ID；用户上下文及历史行为进入编码器。每个历史物品的多个 ID 码融合为一个 token，使相同编码长度容纳四倍历史。显式动作如收藏、分享与大量被动观看共用序列，但显式组获保护预算：各动作类型分配量近似为“预算乘以该类型计数的 p 次幂占所有类型幂次和的比例”，另设下限，p 在 0 与 1 之间，剩余位置由观看填充。该设计避免稀有却强意图的行为被观看淹没。编码器自注意力使用 RoPE，变长 FlashAttention 与打包输入避免对长短不一的用户历史计算填充位。</p>\n<p>解码器按候选物品分块，每块内部自回归生成层级 ID，块之间禁止互看，因此同一请求可独立产生多个候选。生成目标是对目标码位置的逐 token 交叉熵，分隔符和填充位不计入损失。模型把总深度更多分给短序列解码器，而非昂贵的长历史编码器。MHP 将候选 ID 嵌入汇聚为查询，与编码历史做交叉注意力；再把候选查询、候选感知用户向量与用户上下文一同送入 DCNv2 交叉网络，分别预测观看、完成、跳过、分享、收藏等。所有送入 MHP 的编码器状态、候选嵌入和上下文均止梯度，故排序损失不会扭曲生成主干；分类头使用 BCE，观看时长回归头使用 MSE，和生成损失相加仅是一次前向计算中的目标汇总。</p>\n<p>预训练采用权重矩阵 Muon、偏置与归一化参数 Lamb、稀疏嵌入行式自适应优化，并使用 bf16、预热后余弦退火。论文给出批量学习率按全局 batch 平方根缩放，但没有公开可复现的绝对样本量、batch、硬件节点总配置与训练步数，不能据此杜撰。后训练冻结编码器、嵌入、归一化和 MHP，只训练解码器。每位用户按温度抽样一组语义 ID，冻结 MHP 的各头经固定权重合成奖励，组内标准化得到优势，再用 PPO 裁剪和相对冻结参考解码器的 KL 约束优化。mGRPO 另外比较真实日志目标相对最优抽样候选的对数概率差：只有当前策略把真实目标的竞争位置降到参考策略以下时，单侧边际才惩罚。线上服务则以 KV cache 和 CUDA graph 生成候选，异步维护 ID 到当前有效内容的反向映射，按配置决定哪些候选绕过已有预排。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，生成与排序同模训练却以止梯度隔离目标。相较只输出语义 ID 的 TIGER 类召回模型，它可在同一次服务调用中对生成候选输出多种互动分数；相较外置奖励模型，冻结的 MHP 可直接充当强化学习奖励。关键前提是候选信号必须能真正穿过排序头。团队发现原交叉注意力几乎只看用户不看物品，组内奖励变化仅为其量级的 0.005% 至 0.16%；把候选查询沿残差路径直接送进交叉网络后，奖励中位离散度超过 200%。</p>\n<p>第二，mGRPO 明确保护日志正样本的相对位置。普通 GRPO 会追逐高预测奖励但丢失真实互动物品；参考锚定边际使奖励召回改善的同时保住原始召回。第三，论文把可部署的渐进迁移本身当成方法：每个阶段沿同一用户和线上指标比较 GRP 与原召回源，从替换弱源到预排旁路均有独立开关。第四，服务优化覆盖模型外链路，消息体裁剪、事件展开重写、批量反向查表、缓存和 CUDA 图使端到端召回 p95 延迟下降 69.0%，展示算法收益需要连同系统预算评估。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线评估采用生产短视频场景的未来留出用户会话，主要指标为 HR@K、Recall@K 和按奖励加权的 Recall@K。历史融合在训练速度基本不变时，把可用历史增为四倍：HR@10 从 0.1734 到 0.1764；再将历史加倍仅到 0.1751，吞吐从每秒 0.57 步降到 0.32 步。固定总层数把编码器:解码器从 2:1 调至 1:2，HR@20 从 0.2293 到 0.2332，吞吐从 0.57 升至 0.69 步/秒。高分辨率语义 ID 相较旧 MM-SID 的 Recall@20 为 0.0592 对 0.0529，增 11.9%。显式行为保护预算相较无保护的方案，Recall@20 相对增加 20.0%，奖励召回增加 7.0%。</p>\n<table><thead><tr><th>对照设置</th><th>Reward Recall@10 相对基座</th><th>Recall@10 相对基座</th></tr></thead><tbody><tr><td>仅 GRPO</td><td>−0.1%</td><td>−1.25%</td></tr><tr><td>仅边际保护</td><td>+0.5%</td><td>+0.4%</td></tr><tr><td>mGRPO，单节点</td><td>+1.6%</td><td>+0.3%</td></tr><tr><td>mGRPO，双节点</td><td>+3.1%</td><td>+0.9%</td></tr></tbody></table>\n<p>排序头重设计后，看满 10 秒 AUROC 从 0.6628 到 0.7759，分享 AUPRC 从 0.0213 到 0.0457；但跳过 AUROC 从 0.6281 降到 0.6102，提示优化不是所有标签同向。线上把 GRP 作为召回源时，相对生产基线观看时长 +0.46%、分享 +0.77%；在旁路预排并替换较弱来源的另一组实验中，浏览量 +0.47%、观看时长 +0.82%、分享 +2.56%，平台守护指标中性。两组实验配置不同，不能把数字当成同一模型逐步累加。仅监督训练加旁路使观看时长显著下降 0.45%，说明强化学习的价值还包括消除旁路带来的损失。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确承认，系统尚未完全端到端：MHP 尚未证明足以绕过末级精排，部分单路来源在平均观看时长和跳过率上仍优于 GRP，辅助召回源仍必需。冻结模型对新物品的精确召回在数日内衰退，必须持续增量训练；异步 ID 映射只能把已生成的码解析到新目录，并不能替模型学习新的具体兴趣。论文也指出奖励头校准与候选区分度会直接决定强化学习方向。对外部复现而言，绝对训练规模、硬件与数据细节披露有限；短视频实验不能直接外推到社区搜索的 nDCG、CTR 或问答内容质量。</p>\n<h2>6. 工业实践意义</h2>\n<p>社区平台可先将生成式语义 ID 模型接成一路候选源，保持现有资格过滤、去重和精排，按同一请求比较来源通过率、点击率、长停留、分享与新帖覆盖。若 GRP 类模型要服务 UGC 搜索，语义 ID 应结合帖子文本和互动信号训练；历史序列既保留浏览，也为收藏、评论、关注等显式行为保留动态预算。实验顺序应先验证四倍历史融合和解码器侧容量配置，再比较生成候选与传统召回的覆盖，最后才试预排旁路与弱源替换。</p>\n<p>上线前要单独监控新帖与长尾帖的精确物品召回，设置增量训练节奏和 ID 到现役帖子的异步映射。奖励头需按用户内候选检验分数离散度与校准，避免一个几乎只看用户的头产生虚假强化学习信号。mGRPO 的参考边际可用来防止追求点击或停留时丢失日志正样本，但线上仍应同时看 nDCG、CTR、内容质量和时延，不能以单个奖励指标替代整体评测。论文 p95 召回延迟降低 69% 的经验说明，预处理、请求体、反向查表与 GPU 解码应一起剖析；其具体收益不能直接照搬到另一套基础设施。</p>",
-      "chars": 3002,
-      "minutes": 8
-     },
-     "weekly_rank": 6
-    },
-    {
-     "id": "arxiv:2609.35430",
-     "title": "Can Generative Retrievers Learn Semantic IDs Without Forgetting How to Speak?",
-     "url": "https://arxiv.org/abs/2609.35430",
-     "source": "web_search",
-     "company": [
-      "Brave",
-      "University of Glasgow"
-     ],
-     "published": "2026-09-28",
-     "authors": "Fu, Junchen, Katevas, Kleomenis, Rajan, Vandana, Celi, Sofía, Haddadi, Hamed",
-     "total_score": 4.05,
-     "adjusted_score": 4.35,
-     "preference_bonus": 0.3,
-     "rank_score": 4.35,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "SpeakGR解决语言模型学习文档语义ID后自然语言能力退化的问题，在SID监督之外，对学生生成前缀施加冻结原模型的前向KL蒸馏，并可自适应调节保护强度。在三个模型上，MS MARCO的WikiText-2前向KL相对纯SFT下降81.3%至93.8%，同时保持有效检索。",
-     "key_insight": "社区搜索若同一模型既输出帖子ID又生成解释，应同步监控语言分布漂移与召回质量。保护损失只在原文本词表归一化，避免新增SID词元干扰语言蒸馏。WikiText分布恢复不等于推理、代码或所有对话能力都被保留，需要补充业务解释质量和用户指令测试，并核算冻结教师带来的训练成本。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 6,
-       "id": "arxiv:2609.35430",
-       "total_score": 4.05,
-       "adjusted_score": 4.35
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 7
-    },
-    {
-     "id": "arxiv:2609.36670",
-     "title": "FineSID: Scalable and Efficient Semantic Identifier Learning for Generative Recommendation",
-     "url": "https://arxiv.org/abs/2609.36670",
-     "source": "web_search",
-     "company": [],
-     "published": "2026-09-29",
-     "authors": "Wu, Song-Li, Gan, Weinan, Du, Zhaocheng, Wang, Xianquan, Wang, Jingyi",
-     "total_score": 4.0,
-     "adjusted_score": 4.3,
-     "preference_bonus": 0.3,
-     "rank_score": 4.3,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "FineSID通过全局与局部量化和语义一致性约束，将梯度分配到整个码本，缓解Top-1硬分配导致的大量码字欠训练及ID碰撞。在Instrument数据上Recall@10从CAR的0.0624升至0.0703，Game数据上从0.0947升至0.1031；实验还检验初始化、码本利用率和训练效率。",
-     "key_insight": "社区内容规模扩大时，应把码本利用率、碰撞率与搜索相关性一起监控，不能只追求重构误差下降。可先在固定生成器下替换SID学习模块，核验软梯度是否提高长尾内容的可区分性。公开商品推荐结果与UGC检索仍有场景差异，需统一候选集、碰撞消歧和排序预算再判断可迁移收益。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 7,
-       "id": "arxiv:2609.36670",
-       "total_score": 4.0,
-       "adjusted_score": 4.3
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 8
-    },
-    {
-     "id": "arxiv:2609.35285",
-     "title": "Textual User Taste: Natural-Language User Context for Foundation-Model Recommender System at Scale",
-     "url": "https://arxiv.org/abs/2609.35285",
-     "source": "web_search",
-     "company": [
-      "Spotify"
-     ],
-     "published": "2026-09-28",
-     "authors": "Fazelnia, Ghazal, Gigioli, Paul, Klyce, Eliza, Zheng, Sharon, Zelvin, Katie, Thein, Ye Myat, Deshpande, Anurag, Davtyan,...",
-     "total_score": 4.0,
-     "adjusted_score": 4.15,
-     "preference_bonus": 0.15,
-     "rank_score": 4.15,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 3,
-      "practicality": 5,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "Spotify把收听历史、内容元数据和用户反馈生成结构化自然语言偏好，部署到数百万用户。文本与行为向量联合使用时，未来歌曲预测MRR从0.956升至0.962；搜索排序相对无上下文的NDCG@7提升2.2%，而单独行为上下文提升1.7%。画像还支持正向语言调节，但否定指令和短期适应存在困难。",
-     "key_insight": "社区搜索可将偏好文本作为可解释的个性化上下文，与行为向量联合输入，先验证主题意图和历史兴趣是否互补。2.2%的提升以无上下文为基线，不能当作对行为向量的增益。应分别测试无画像、文本、行为及融合四组，并审计用户纠正、隐私过滤和过期兴趣对nDCG与CTR的影响。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 8,
-       "id": "arxiv:2609.35285",
-       "total_score": 4.0,
-       "adjusted_score": 4.15
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 9
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2609.39828",
-     "title": "KUAISHOU Explorer LLM-Rec Challenge 2026: Reasoning Generative Recommendation",
-     "url": "https://arxiv.org/abs/2609.39828",
-     "source": "arxiv",
-     "company": [
-      "Kuaishou"
-     ],
-     "published": "2026-09-30",
-     "authors": "Jiangxia Cao, Hao Peng, Wenlong Xu, Jiaxin Deng, Zhixin Ling, Xingmei Wang, Kun Shang, Can Tang, Zhihuai Cai, Jun Du, Fa...",
-     "total_score": 3.75,
-     "adjusted_score": 4.05,
-     "preference_bonus": 0.3,
-     "rank_score": 4.05,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 3,
-      "practicality": 4,
-      "evidence_quality": 3,
-      "timeliness": 5
-     },
-     "summary": "快手LLM-Rec挑战将物品理解、用户理解、推荐和通识能力放入统一语义ID与自然语言空间，以多粒度对齐预训练和分阶段后训练研究推理推荐。公开历史统计覆盖50万用户，其中短视频行为为409416641条、平均长度818.8；短视频语义ID共享比例为20.84%，说明碰撞必须进入评测。",
-     "key_insight": "社区业务可借鉴统一评测设计，将兴趣解释质量与最终帖子命中分开度量，并避免让推理文本直接泄漏目标。历史跨度、动作含义和内容语义对齐比单纯延长思维链更值得先验证。挑战报告的资源统计不等于线上增益，推理是否改善nDCG和CTR还需匹配模型预算与数据量的消融实验。",
-     "best_date": "2026-10-02",
-     "appearances": [
-      {
-       "date": "2026-10-02",
-       "rank": 10,
-       "id": "arxiv:oai:arXiv.org:2609.39828",
-       "total_score": 3.75,
-       "adjusted_score": 4.05
       }
      ],
      "deep_reading": null,

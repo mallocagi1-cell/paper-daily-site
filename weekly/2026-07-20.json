@@ -13,6 +13,424 @@
  "top_n": 10,
  "rule": "adjusted_score desc, total_score desc; dedupe by arXiv id / URL / id / title",
  "tracks": {
+  "generative": {
+   "raw_count": 28,
+   "unique_count": 28,
+   "days": [
+    "2026-07-20",
+    "2026-07-21",
+    "2026-07-22",
+    "2026-07-23",
+    "2026-07-24"
+   ],
+   "papers": [
+    {
+     "id": "dblp:journals/corr/abs-2602-02338",
+     "title": "Rethinking Generative Recommender Tokenizer: Recsys-Native Encoding and Semantic Quantization Beyond LLMs.",
+     "url": "https://doi.org/10.48550/arXiv.2602.02338",
+     "source": "conference_papers",
+     "company": [],
+     "published": "2026-01-01",
+     "authors": "Yu Liang, Zhongjin Zhang, Yuxuan Zhu, Kerui Zhang, Zhiluohan Guo, Wenhang Zhou, Zonqi Yang, Kangle Wu, Yabo Ni, Anxiang ...",
+     "total_score": 5.0,
+     "adjusted_score": 5.0,
+     "preference_bonus": 0.0,
+     "rank_score": 5.0,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 5,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 5
+     },
+     "summary": "论文针对生成式推荐中语义 ID 与协同目标错位的问题，提出 ReSID：用字段感知掩码自编码器学习推荐原生表征，再以全局对齐正交量化降低前缀条件不确定性。在 10 个 Amazon-2023 子集上，相对最佳 SID 基线的 Recall@5/10 提升 16.0%/13.8%，分词成本最高降低 122 倍。",
+     "key_insight": "生成式推荐的瓶颈不只是主干模型，而是物品 tokenizer 是否保留协同信息并适合自回归解码。对社区 UGC，可将帖子类别、作者、主题及交互字段直接纳入掩码预训练，再用全局一致的层级码替代纯文本 embedding 量化；这条路线兼顾短文本语义、协同信号与大规模候选解码效率。",
+     "best_date": "2026-07-21",
+     "appearances": [
+      {
+       "date": "2026-07-21",
+       "rank": 1,
+       "id": "dblp:journals/corr/abs-2602-02338",
+       "total_score": 5.0,
+       "adjusted_score": 5.0
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "dblp:journals/corr/abs-2602-02338",
+      "slug": "2602.02338",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>ReSID 聚焦生成式推荐里一个常被主干模型规模掩盖的问题：物品如何被编码成可生成的 Semantic ID（SID）。现有流程通常先用 Sentence-T5 或多模态大模型得到语义 embedding，再用 RQ-VAE、层级 K-Means 等通用量化器离散化，最后让 T5 类模型逐 token 生成 SID。作者指出这条“语义优先”流水线存在两处错位。第一，内容语义与协同关系不等价：零食、气球、餐具在文本空间里类别很远，却可能因为聚会场景高频共购；强行把协同损失叠加到大语义编码器上，又会形成相互竞争的几何约束。第二，通用量化器只关注重构误差或局部树结构，没有显式降低自回归解码面对的前缀条件不确定性；同一个第二层代码在不同父节点下可能表示完全不同的方向，生成器很难复用 token 语义。</p>\n<p>论文因此把目标从“让 SID 看起来有语义”改为“让 SID 保留推荐所需信息，并且按顺序可预测”。这也回应了此前评测中的混杂因素：SID 方法往往使用丰富侧信息，而 SASRec 等 item-ID 基线只用 ID，所谓生成式收益可能只是多看了特征。作者在所有基线中对齐侧信息后重新比较，并要求编码、量化、生成三个阶段分别服务同一个推荐目标。这个问题对超大候选库尤其重要，因为 SID 的价值正是用短代码和 beam search 替代巨型 embedding 表与全库相似度扫描。</p>\n<h2>2. 方法详解</h2>\n<p>ReSID 保留三阶段架构，但重新设计前两阶段。E-stage 的 Field-Aware Masked Auto-Encoding（FAMAE）接收用户历史与目标物品的结构化字段。每个位置将 item ID、店铺 ID、一级至三级类别等字段 embedding 求和，再送入双向 Transformer；目标物品采用两级随机掩码，先采样要遮蔽的字段数，再随机选择具体字段，并为每种字段使用独立的 mask token。模型通过 scaled cosine similarity 预测被遮蔽字段。其损失可以解释为提高隐藏表示与目标字段之间互信息下界：最小化各字段加权交叉熵，相当于最大化对下游预测有用的信息，而不要求依赖大型语言模型。</p>\n<p>FAMAE 输出并不直接使用混入用户历史的上下文向量，而是拼接目标物品各字段的已学习 embedding，形成用户无关、可稳定量化的物品表示。作者还给出两个轻量诊断指标：全字段遮蔽时预测目标物品，测试协同建模能力；只遮蔽 item ID 时预测物品，测试结构化语义和区分能力。两项指标随训练提高时，固定量化器和生成器下的 Recall@10 也同步提高，因此团队可以在不反复端到端训练的情况下筛选 E-stage checkpoint。</p>\n<p>Q-stage 的 Globally Aligned Orthogonal Quantization（GAOQ）先做平衡层级聚类，让每一层逐步缩小条件方差；关键改动是全局对齐索引。每个父簇的子簇质心先减去父质心，统一平移到原点，再与一组跨父节点共享、近似正交的参考方向计算余弦相似度，使用 Hungarian Matching 分配代码。这样，同层同编号 token 在不同前缀下尽量表示一致方向，既降低重构不确定性，也降低 <code>H(C_l | C_&lt;l)</code> 与索引的前缀歧义。平衡 K-Means 还约束各代码的边际熵，避免 code collapse。</p>\n<p>G-stage 对所有 SID 方法使用相同的 T5-style encoder-decoder：4 层编码器、4 层解码器，hidden size 128、FFN 512、4 个注意力头、每头 key/value 32、dropout 0.1。AdamW 学习率 0.005、weight decay 1e-5、cosine scheduler，batch 2048，最多 500 epoch；推理时每步 beam size 50。FAMAE 与顺序基线同样控制为 hidden 128、2 层 Transformer、4 头、FFN 512、dropout 0.1，AdamW 学习率 0.001、batch 2048、最多 500 epoch、early-stopping patience 3，并在大词表采样分类中取 128 个负例。</p>\n<p>数据来自 Amazon Reviews 2023 的 10 个子集，采用 5-core 过滤、最大历史长度 32 和 leave-one-out；规模从 Musical Instruments 的 57,359 用户、23,742 物品、490,522 次交互，到 Books 的 775,503 用户、485,218 物品、8,680,494 次交互。论文未给出明确 GPU 型号、卡数或总训练时长，这是复现成本评估中的缺口。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，FAMAE 把“语义—协同融合”从向大模型追加辅助损失，改成直接预测推荐系统已有的结构化字段。它以用户历史提供协同上下文，以字段级监督保留类别与属性身份；相比纯 Sentence-T5 只形成语义簇、BERT4Rec 只形成行为簇，FAMAE 在 t-SNE 中同时保持类别和行为社区结构。其作用不是制造更漂亮的 embedding，而是为后续有损量化提供推荐充分统计量。</p>\n<p>第二，GAOQ 把 SID token 本身的跨前缀一致性纳入量化。普通层级 K-Means 只保证父节点内部的局部编号，GAOQ 则通过共享正交方向和 Hungarian 匹配，让同一编号尽量复用含义。论文测得，GAOQ 第二层同码物品的平均余弦相似度是层级 K-Means 的 3–10 倍，说明索引歧义显著降低。</p>\n<p>第三，论文强调受控公平比较。所有生成式方法共享同一 T5 主干，传统顺序基线也增加相同结构化侧信息；结果显示 SASRec<em>、BERT4Rec</em> 常能追平或超过旧 SID 方法，揭示过去部分收益来自侧信息不对称。ReSID 在这种更严格设置下仍全面领先，才更能说明 tokenizer 设计有效。</p>\n<p>第四，ReSID 用非参数 GAOQ 替代昂贵训练型 tokenizer。大型数据集上 LETTER 量化需要 3,356–7,380 分钟，ReSID 仅需 27–96 分钟；在 Beauty &amp; Personal Care 上为 95.96 对 7,379.83 分钟，约 77 倍，论文报告最高达到 122 倍。这使频繁重建 SID、纳入新内容的工程路线更现实。</p>\n<h2>4. 实验结果分析</h2>\n<p>主实验覆盖 10 个 Amazon 子集，指标为 Recall@5/10 与 NDCG@5/10。下面是论文报告的宏平均相对提升：</p>\n<table><thead><tr><th>对比方法</th><th>R@5</th><th>R@10</th><th>NDCG@5</th><th>NDCG@10</th></tr></thead><tbody><tr><td>SASRec*</td><td>+13.05%</td><td>+3.75%</td><td>+29.24%</td><td>+18.38%</td></tr><tr><td>LETTER（最强 SID 基线）</td><td>+16.03%</td><td>+13.81%</td><td>+16.17%</td><td>+14.86%</td></tr><tr><td>ETEGRec</td><td>+47.07%</td><td>+40.30%</td><td>+50.94%</td><td>+45.86%</td></tr><tr><td>TIGER</td><td>+22.21%</td><td>+19.47%</td><td>+23.66%</td><td>+21.50%</td></tr></tbody></table>\n<p>ReSID 是论文中唯一在所有数据集和指标上都超过带侧信息 item-ID 基线的 SID 方法。相对 LETTER，Recall@5/10 分别提升 16.0%/13.8%，NDCG@5/10 提升 16.2%/14.9%。ETEGRec 虽然端到端联合训练 tokenizer 与生成器，反而明显落后；作者的解释是 SID 同时作为中间表示和训练目标，代码持续变化会使生成器输入与监督非平稳，阶段解耦更稳定。</p>\n<p>消融将 FAMAE 替换为 LLM、SASRec、BERT4Rec 表征（E1–E3），或将 GAOQ 替换成 RQ-VAE、层级 K-Means（Q1–Q2）。完整 ReSID 相对 E1 的 R@5/R@10 提升 5.40%/4.60%；相对 E2、E3 的 NDCG@10 分别提升 9.22% 和 9.61%，表明单纯语义或单纯协同表征都不足。量化侧相对 Q1 的 R@5/NDCG@5 提升 5.64%/4.88%，相对 Q2 提升 5.15%/4.72%；全局对齐的贡献并非只体现在重构，而是确实传递到下游排序。</p>\n<p>具体数据上，Musical Instruments 的 ReSID R@10 为 0.0645，高于 E1 的 0.0629、E2 的 0.0621 和 Q1 的 0.0609；Baby Products 的 R@10 为 0.0441，高于 E2/E3 的 0.0373。敏感性实验显示分支因子并非越大越好：Musical Instruments 在 <code>(b1,b2)=(32,40)</code> 时 R@10 为 6.4465，扩到 <code>(48,56)</code> 反而降至 5.9941，说明代码容量需要按数据密度调优。附录的 scaling 实验还发现低数据区间末端可能过拟合，不能把更大 SID 空间等同于必然收益。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在独立局限章节明确承认两点。其一，FAMAE 已有任务感知诊断指标，但 GAOQ 缺少同样原则化、可在下游训练前计算的质量诊断；当前主要依赖重构歧义、条件不确定性与最终推荐实验。其二，即使 ReSID 大幅降低了 SID 构建成本，SID 生成模型的收敛速度仍比 SASRec 等 item-ID 方法慢数十倍，训练主干而非 tokenizer 会成为新的瓶颈。</p>\n<p>论文没有充分讨论的边界还包括：实验全部基于 Amazon 离线公开数据，没有在线 A/B、动态新品或持续更新测试；结构化字段包含店铺和三级类别，字段质量较差或 UGC 元数据稀疏时效果可能下降；leave-one-out 与固定 beam 50 没有覆盖高 QPS 服务的 P95 延迟、内存和索引刷新成本。GAOQ 是离线层级量化，新物品加入后是否局部插入、怎样避免大规模重编码也未说明。FAMAE 假设结构化字段与历史足以作为预测统计量，对纯文本细粒度内容、跨域冷启动和多模态信号的边界仍需验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/推荐团队，最直接的启示是先审计 tokenizer，再扩主干。可以建立三组对照：纯文本 embedding+RQ-VAE、协同序列 embedding+量化、字段感知 FAMAE+全局对齐量化；所有组共享生成器和侧信息，避免把收益错误归因于 SID。UGC 字段可包含作者、话题、内容类型、语言、发布时间桶、质量等级与行为社区，但需控制泄漏，不能把未来统计写进训练目标。</p>\n<p>FAMAE 的两项诊断很适合工程门禁：全字段遮蔽测试“只看历史能否猜中目标”，只遮 item ID 测试“其他字段能否区分具体帖子”。只有两项同时提升的 checkpoint 才进入昂贵的量化和生成训练。GAOQ 则可通过跨父节点同码余弦相似度、代码利用率、前缀条件熵和每层冲突率监控；若同编号在不同主题下含义漂移，应优先修量化，而不是盲目加大解码模型。</p>\n<p>部署上可先把 SID 作为现有召回的旁路候选源。用 beam search 生成几十到几百个候选，与双塔、图召回合并后交给现有精排；观测候选覆盖、长尾率、nDCG、CTR、重复率和 P95。论文的量化速度优势支持按天或小时重建部分代码，但主模型收敛仍慢，因此实际系统应把 tokenizer 刷新与生成器重训解耦，并准备旧码到新码的版本映射。</p>\n<p>最需要避免的是三种误区：只用通用 LLM embedding 便认为获得了“语义推荐”；给传统基线更少侧信息后夸大生成收益；以及端到端让持续变化的代码与生成目标相互追逐。ReSID 的核心价值不是又一种更复杂的模型，而是把信息保留、代码可预测性和公平评测拆开验证。对资源有限的团队，先复用结构化推荐字段与非参数量化，比直接训练超大生成式推荐主干更可能在六个月内形成可控试点。</p>",
+      "chars": 4528,
+      "minutes": 12
+     },
+     "weekly_rank": 1
+    },
+    {
+     "id": "web:arxiv:2604.14878",
+     "title": "GenRec: A Preference-Oriented Generative Framework for Large-Scale Recommendation",
+     "url": "https://arxiv.org/abs/2604.14878",
+     "source": "web_search",
+     "company": [
+      "JD"
+     ],
+     "published": "2026-07-20",
+     "authors": "Yanyan Zou, Junbo Qi, Lunsong Huang, Yu Li, Kewei Xu, Jiabao Gao, Binglei Zhao, Xuanhua Yang, Sulong Xu, Shengjie Li",
+     "total_score": 4.75,
+     "adjusted_score": 5.0,
+     "preference_bonus": 0.25,
+     "rank_score": 5.0,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 5
+     },
+     "summary": "GenRec 面向京东 App 大规模推荐中的翻页输出不一致、长行为序列成本与偏好对齐难题，在单一解码器中引入页级下一词预测、非对称 Token Merger 和 GRPO-SR。Token Merger 将输入长度约压缩 2 倍；持续一个月的线上 A/B 实验中，点击数提升 9.5%，成交数提升 8.7%。",
+     "key_insight": "页级监督把一次请求内的多条正反馈共同建模，避免逐物品训练造成的一对多歧义；预填充侧压缩、解码侧保留完整语义 ID，则兼顾吞吐与可生成性。社区 UGC 场景可借鉴其“页级目标＋偏好奖励＋NLL 正则”组合，将点击、停留和互动信号统一进生成式召回。",
+     "best_date": "2026-07-22",
+     "appearances": [
+      {
+       "date": "2026-07-22",
+       "rank": 1,
+       "id": "web:arxiv:2604.14878",
+       "total_score": 4.75,
+       "adjusted_score": 5.0
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "web:arxiv:2604.14878",
+      "slug": "2604.14878",
+      "content_html": "<h1>深度解读：GenRec</h1>\n<h2>1. 问题与动机</h2>\n<p>GenRec 关心的不是生成式推荐在公开小数据上能否跑通，而是它为何在亿级互动、翻页请求和严格延迟约束下容易失效。作者在京东首页信息流归纳了三个具体断点。第一，一次翻页会产生多个点击或成交，但传统 point-wise NTP 把相同历史分别配上不同正标签，迫使模型在同一前缀上拟合均匀混合分布，导致梯度方差增大、单物品概率被稀释。第二，一个物品用 3 个语义 ID 表示时，长行为序列的 item token 部分会膨胀到原来的 3 倍，prefill 延迟成为线上瓶颈。第三，真实点击与成交稀疏，直接用稠密奖励模型做 RL 又会诱导模型生成形式合法但语义无关的 SID 组合，出现 reward hacking。这些问题在摘要中只是三个名词，正文则用 5.6 亿条用户互动序列和一个月线上实验证明，训练目标、推理表示与业务奖励必须联合设计。</p>\n<h2>2. 方法详解</h2>\n<p>物品端先用 Qwen2.5-VL 联合编码图像外观和文本描述，再用领域内协同样本微调 embedding，使连续表征不只重建内容，还包含点击与购买相似性。随后用 residual-quantization K-means 逐级聚类残差，把每个物品映射成分层 SID 三元组。主干选用 decoder-only Qwen2.5，实验覆盖 1.5B、3B 和 7B 三种规模。</p>\n<p>SFT 阶段的核心是 Page-wise NTP（PW-NTP）。给定页面到达前的用户历史，目标不再是单个物品，而是当页交互物品列表，并按成交、点击、曝光等交互强度组织成序列。损失仍是对完整响应序列的标准自回归负对数似然，但每次前向同时获得多个正样本信号，消除相同输入对应多个独立标签的基数错配。服务时却不输出整页，而是保留产线的 point-wise beam search，每个 query 生成 beam width 个物品；这种训练—推理非对称是有意的，训练获得稠密梯度，推理与已有候选管线兼容。</p>\n<p>Token Merger 只在 prefill 侧压缩。它拼接同一物品的 3 个 SID embedding，通过一层线性投影变成单个潜向量；<code>&lt;sep&gt;</code> 等结构 token 保持不变。因为解码端仍按原始 SID 粒度生成，这是一种非对称压缩：历史读取成本减半，生成空间和训练目标不被粗化。</p>\n<p>RL 阶段的 GRPO-SR 与线上 beam search 对齐，每个 rollout 只生成一个物品序列，在同组多个候选之间学相对优势。SIM 类奖励模型输出稠密偏好分，相关性 gate 把语义无关结果压到小常数；若候选命中真实成交或点击集，其奖励被校准为当组最大值，避免奖励模型低估真实正反馈。最终目标一部分是 group-relative policy loss，另一部分是正轨迹的 NLL 正则。作者特意不用普通 KL 拘束：NLL 直接把策略锚定在真实用户行为上，更能抑制奖励过度优化。数据是京东大型推荐平台一个月的约 5.6 亿条用户互动序列，最后一天作测试，其余训练。三个模型均在 8 张 NVIDIA H100 上分布式训练，优化器为 AdamW，前 1% 步数线性 warm-up，之后 cosine decay；论文未披露 batch size、总步数和精确学习率。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，PW-NTP 把生产翻页机制本身变成监督单元。它改进的不是更大的 backbone，而是标签结构：一次前向学整页正例，因此比 LC-Rec 的 point-wise NTP 收敛更快，并将无效 SID 幻觉率从 7.80% 降到 4.96%，相对降幅超过 36%。</p>\n<p>第二，非对称 Token Merger 把“长历史贵”和“细粒度生成有用”拆开处理。去掉 Merger 后 HR@10 只从 0.4456 变为 0.4467、NDCG@10 从 0.2635 变为 0.2653，质量差异极小，而输入 token 长度约减半，说明压缩主要去除了冗余而非有用信息。</p>\n<p>第三，GRPO-SR 把点击/成交真值、稠密偏好模型与语义合法性 gate 组成混合奖励，再用 NLL 约束守住行为分布。完整 GRPO-SR 相对 SFT 在 Reward@1 上提升 18.01%，同时将 HaR 从 4.96% 降至 2.68%；普通 GRPO 反而将 HaR 推高到 6.03%，说明工业 RL 不能只看奖励均值。</p>\n<p>第四，论文给出了容量选择的反直觉结论。3B 模型有 36 层、2048 隐层宽度，7B 只有 28 层、3584 宽度；从 1.5B 到 3B 的收益明显，但 3B 到 7B 参数增加约 2.3 倍后，NDCG@10 仅从 0.2635 到 0.2649。对推荐互动建模，深度可能比宽度更有容量密度，不应盲目追求更大参数。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线评测使用 HR@K、NDCG@K 和 HaR（生成无效 SID 的比例）。下表摘录最能说明问题的结果：</p>\n<table><thead><tr><th>模型</th><th>HR@1</th><th>HR@10</th><th>NDCG@10</th><th>HR@50</th><th>HaR</th></tr></thead><tbody><tr><td>TIGER</td><td>0.0518</td><td>0.1660</td><td>0.0803</td><td>0.3556</td><td>15.46%</td></tr><tr><td>LC-Rec</td><td>0.0947</td><td>0.3669</td><td>0.2146</td><td>0.6226</td><td>7.80%</td></tr><tr><td>GenRec 3B</td><td>0.1189</td><td>0.4456</td><td>0.2635</td><td>0.7192</td><td>4.96%</td></tr><tr><td>GenRec 3B + GRPO-SR</td><td>—</td><td>—</td><td>—</td><td>0.7438</td><td>2.68%</td></tr></tbody></table>\n<p>GenRec 相对 LC-Rec 的 NDCG@10 提升约 22.8%，HR@10 提升约 21.5%；同为 Qwen2.5 3B 的对照使收益更能归因于 PW-NTP 和框架设计，而非单纯增参。规模实验中，1.5B/3B/7B 的 HR@10 分别为 0.4103/0.4456/0.4483，NDCG@10 为 0.2484/0.2635/0.2649；3B 是明显的效率拐点。RL 消融更关键：SFT、GRPO、GRPO-SR 的 HR@50 为 0.7192、0.7248、0.7438，HaR 为 4.96%、6.03%、2.68%。去掉相关性 gate 后，GRPO-SR 的 HR@50 降至 0.7016，表明奖励模型会被利用，看似更高的局部奖励不等于更好的召回。</p>\n<p>线上 A/B 在京东首页 Feed 持续一个月，SFT 和 RL 版本各承接 10% 流量。基础 SFT 使曝光率提高 48.7%、点击数提高 8.5%、成交数提高 7.3%；加入 GRPO-SR 后三项变为 57.3%、9.5%、8.7%。对长尾物品，曝光、点击、成交分别提升 10%、16%、13%，说明语义 ID 与偏好对齐不只改善热门物品。结果也有一个值得警惕的模式：曝光增幅远大于点击和成交，上线时应同时监控曝光扩张是否稀释单次效率。论文表示完整 GRPO-SR 版本已全量生产部署。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有独立 Limitations 章节。作者在结论中明确把未来方向放在框架的 reasoning 能力，意味着当前 GenRec 仍是偏好对齐的物品生成器，并未展示可审计的多步理由。正文可确认的边界还包括：只在京东一个大型平台验证，数据不公开；未披露奖励模型精确结构、gate 阈值、beam width、batch size、学习率、训练步数、线上延迟与算力成本，外部团队无法完整复现。论文也没有报告多样性、公平性、用户留存或长期满意度，而且大曝光增幅可能改变整体供给分布。作者未明说的限制是，以交互强度安排页内目标顺序可能把业务价值偏好写入序列位置，在社区内容、新闻或知识推荐中需重新校准。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索与推荐，最值得先实验的不是直接上 7B，而是三个可拆分的设计。第一，把一页搜索结果或 Feed 中的点击、长停留、收藏、评论组成 page-wise 目标，并在线下对比 point-wise 训练的 NDCG、无效 ID 率和收敛速度。第二，若帖子用多级语义 ID 编码，可仅在历史 prefill 合并 ID embedding，保留解码粒度；这比全链路减少 SID 层级的可逆性更好。第三，RL 奖励必须有硬的相关性/合法性 gate 与行为 NLL 锚点，否则应同时上升的不是 CTR，而是幻觉率。</p>\n<p>实施路线可分四阶段：先在现有候选集上训练 1.5B 或 3B PW-NTP 对照；再加 Token Merger 测量 prefill token 数、P95/P99 延迟与 HR 损失；第三阶段只做离线 GRPO-SR，绘制 reward—HR—HaR 三维曲线；最后以小流量分别验证 SFT 和 RL，不要一次合并实验。容量上应优先 3B：论文中 7B 比 3B 的 NDCG@10 只多 0.0014，但参数约 2.3 倍。监控除点击和成交外，还要包含 SID 无效率、长尾曝光集中度、重复物品率、新内容冷启动、用户负反馈和单请求成本。这篇论文最具价值的信息是：生成式推荐的工业上限不只由模型规模决定，更由页级标签结构、输入压缩位置和奖励防黑客机制共同决定。</p>",
+      "chars": 3419,
+      "minutes": 9
+     },
+     "weekly_rank": 2
+    },
+    {
+     "id": "acl:2026.findings-acl.2134",
+     "title": "Internalizing Multi-Agent Reasoning for Accurate and Efficient LLM-based Recommendation",
+     "url": "https://aclanthology.org/2026.findings-acl.2134/",
+     "source": "web_search",
+     "company": [
+      "Tencent"
+     ],
+     "published": "2026-07-01",
+     "authors": "Yang Wu, Haoze Wang, Qian Li, Jun Zhang, Huan Yu, Jie Jiang",
+     "total_score": 4.7,
+     "adjusted_score": 4.9,
+     "preference_bonus": 0.2,
+     "rank_score": 4.9,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 5,
+      "practicality": 5,
+      "evidence_quality": 4,
+      "timeliness": 3
+     },
+     "summary": "腾讯提出 STAR，把多智能体教师的规划、工具调用、自反思轨迹以及协同信号翻译能力，蒸馏进单个实时推荐模型。训练先由教师合成带行为证据的复杂轨迹，再进行监督微调与强化学习；实验中 STAR 比教师高 8.7%–39.5%，同时消除迭代式多智能体推理带来的在线时延。",
+     "key_insight": "工业系统不必在每次请求中运行昂贵的多智能体链路，可以离线让强教师探索并把轨迹内化到轻量学生。对社区搜推，可把用户点击序列先翻译成可读兴趣证据，再蒸馏规划与反思逻辑；线上只保留单模型推理，在维持延迟预算的同时获得更强的意图解释和候选选择能力。",
+     "best_date": "2026-07-21",
+     "appearances": [
+      {
+       "date": "2026-07-21",
+       "rank": 2,
+       "id": "acl:2026.findings-acl.2134",
+       "total_score": 4.7,
+       "adjusted_score": 4.9
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2602.09829",
+      "slug": "2602.09829",
+      "content_html": "<h2>深度解读：Internalizing Multi-Agent Reasoning for Accurate and Efficient LLM-based Recommendation</h2>\n<h3>1. 问题与动机</h3>\n<p>LLM 在推荐系统中的应用面临一个核心矛盾：语义推理能力强但缺乏协同过滤信号。现有方法要么将协同信号压缩为不可解释的向量（如 ID embedding），丧失了 LLM 的推理优势；要么使用多智能体系统进行多轮推理，但推理延迟高达数百秒，无法满足在线推荐的实时性要求。例如，基于多智能体的 MARS 系统在 Amazon 数据集上需要 461 秒完成一次推理。这种推理质量与推理效率的矛盾是 LLM 推荐系统落地的关键障碍。本文的动机是：能否将复杂的多智能体推理能力「内化」到单一高效模型中，同时保持甚至超越多智能体系统的推理质量？</p>\n<h3>2. 方法详解</h3>\n<p><strong>多智能体教师系统 MARS：</strong> 采用 Plan-Execute-Reflect 架构。规划阶段将用户意图分解为可执行子任务；执行阶段由专门的 Agent（用户画像分析、历史兴趣分析、近期兴趣分析、兴趣分歧分析）并行执行；反思阶段整合各 Agent 输出进行自我修正。</p>\n<p><strong>协同信号翻译机制（CST）：</strong> 这是本文最关键的创新。CST 在用户-物品二部图上执行图遍历：Item-CF 工具通过 Item→User→Item 路径发现共现物品，User-CF 工具通过 User→Item→User 路径聚合相似用户偏好。关键设计是将遍历结果转化为自然语言摘要并离线预计算，使在线推理时可即时调用。</p>\n<p><strong>轨迹驱动内化管线：</strong> 分两阶段训练学生模型（Qwen3-8B）。阶段一 SFT：从 MARS 教师（DeepSeek-V3）生成推理轨迹，仅保留成功案例进行监督微调，序列化格式保留工具调用 token 以教会模型何时及如何访问协同信号。阶段二 GRPO：使用复合奖励函数进行策略优化，包括格式一致性奖励（±1）和分层结果奖励（排名第1得1分，前3得2/3分，前5得1/3分）。</p>\n<p><strong>训练设置：</strong> 教师 DeepSeek-V3 在 16 张 H20 GPU 上运行；学生 SFT 阶段 8 张 GPU 训练 3 个 epoch，GRPO 阶段 16 张 GPU 训练 8 组样本。推理使用 BF16 精度，temperature=0.7。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：协同信号的语言化翻译。</strong> CST 机制将传统推荐中不可解释的协同过滤信号（共现矩阵、用户相似度）转化为 LLM 可理解的自然语言证据。这不仅提升了推理质量，还使推荐过程具备了可解释性。相比直接将 ID embedding 注入 LLM 的方法（如 TALLRec、P5），CST 保持了 LLM 的原生推理能力。</p>\n<p><strong>贡献二：学生超越教师的蒸馏方法。</strong> 通过基于结果的轨迹过滤（仅保留成功案例）和统一策略训练（消除多智能体间的错误传播），STAR 模型在多数场景下性能超越教师系统 8.7%–39.5%。这证明了多智能体系统中的冗余和错误传播反而限制了推理质量。</p>\n<p><strong>贡献三：推理效率的量级提升。</strong> STAR 将推理延迟从 MARS 的 461 秒降至 89 秒（约 5 倍加速），且学生模型仅需单张 H20 GPU 即可运行。</p>\n<p><strong>贡献四：从 1.7B 到 32B 的一致性缩放行为。</strong> 实验验证了 STAR 框架在不同模型规模上的单调性能提升（1.7B: 70.1% → 32B: 84.5%），表明该方法具有良好的 scaling 特性。</p>\n<h3>4. 实验结果分析</h3>\n<p>实验在 Amazon、Goodreads、Yelp 三个数据集上进行，覆盖经典推荐、冷启动（用户/物品）和兴趣漂移（长期/短期）五种场景。</p>\n<table><thead><tr><th>模型</th><th>Amazon经典</th><th>Goodreads冷启动用户</th><th>Yelp兴趣漂移(长期)</th></tr></thead><tbody><tr><td>RecHacker</td><td>51.5</td><td>49.3</td><td>47.6</td></tr><tr><td>MARS(教师)</td><td>68.4</td><td>66.3</td><td>74.1</td></tr><tr><td><strong>STAR(学生)</strong></td><td><strong>79.0</strong></td><td><strong>76.3</strong></td><td><strong>87.3</strong></td></tr></tbody></table>\n<p>消融实验揭示了各组件的重要性：移除 Reflector（自我修正）导致最大性能下降（6.5 个点），表明自我修正对推理质量至关重要；移除 Tool（协同信号工具）导致第二大下降（5.6 个点），验证了 CST 机制的有效性。</p>\n<p>Best-of-k 缩放分析显示，增加推理时采样数（k=1→16）带来单调性能提升，这意味着可以通过增加推理计算来进一步提升推荐质量。</p>\n<p>值得注意的是，学生模型在所有场景下均超越教师，这一反直觉结果归因于：(1) 基于结果的过滤去除了教师的失败案例噪声；(2) 统一模型消除了多智能体系统中的级联错误传播。</p>\n<h3>5. 局限与未来方向</h3>\n<p><strong>作者明确指出的局限：</strong> (1) 当前 89 秒的推理延迟仍无法满足亚秒级在线推荐需求，需要进一步的推理加速（如量化、推测解码）；(2) 离线语言化摘要需要为所有用户和物品预计算，在十亿级规模下存在存储开销；(3) 实验评估基于 20 个候选物品的集合，全库排序效果未验证。</p>\n<p><strong>未涉及但值得关注的局限：</strong> 实验仅在电商、图书、本地服务三个领域验证，在短视频推荐、新闻推荐等高频交互场景的效果有待检验。此外，CST 机制依赖预构建的用户-物品二部图，在图稀疏或用户交互极少的场景下效果可能受限。</p>\n<h3>6. 工业实践意义</h3>\n<p><strong>可借鉴的设计思路：</strong> CST 机制将隐式行为信号翻译为自然语言的方法，可直接应用于搜索排序场景——将用户点击历史、停留时长等行为信号转化为 LLM 可理解的文本描述，作为 LLM 排序模型的输入特征。这比直接拼接 ID embedding 更符合 LLM 的原生能力。</p>\n<p><strong>蒸馏落地路径：</strong> STAR 的两阶段蒸馏方案（SFT + GRPO）为从大模型蒸馏到可部署的小模型提供了成熟的训练范式。对于搜索场景，可以先用大模型（如 DeepSeek-V3）做离线打标和推理链生成，再蒸馏到 8B 级别模型进行在线服务。</p>\n<p><strong>部署注意事项：</strong> 89 秒的推理延迟意味着该方法目前更适合作为离线重排序或异步推荐的方案，而非实时在线推荐。建议的落地路径是：离线使用 STAR 生成高质量排序列表或推荐理由，在线通过缓存或近实时更新提供服务。单张 H20 GPU 的学生模型资源需求相对可控。</p>",
+      "chars": 2366,
+      "minutes": 6
+     },
+     "weekly_rank": 3
+    },
+    {
+     "id": "web:meta-silvertorch-2026-05-26",
+     "title": "SilverTorch: Index as Model — A New Retrieval Paradigm for Recommendation Systems",
+     "url": "https://engineering.fb.com/2026/05/26/ml-applications/silvertorch-index-as-model-new-retrieval-paradigm-recommendation-systems/",
+     "source": "web_search",
+     "company": [
+      "Meta"
+     ],
+     "published": "2026-05-26",
+     "authors": "Lei Chen, Yiyi Pan, Ivy Sun, Sha Meng, Cornelia Carapcea, Shilin Ding, Ram Ramanathan, Nipun Mathur, Hong Yan, Lars Back...",
+     "total_score": 4.7,
+     "adjusted_score": 4.9,
+     "preference_bonus": 0.2,
+     "rank_score": 4.9,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 5,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 2
+     },
+     "summary": "Meta 将推荐检索中的索引、过滤、重排和多任务打分统一为一个 PyTorch 模型，把索引本身变成模型张量，并在不足 100 毫秒内完成全链路。面向 8000 万物品的评测中，SilverTorch 吞吐提升 23.7 倍，估算算力成本效率提升 20.9 倍。",
+     "key_insight": "“索引即模型”消除了微服务边界对候选规模和模型复杂度的限制，也为把 LLM 的意图理解与内容语义直接嵌入召回层提供接口。UGC 搜推团队可先把资格过滤、相似检索与轻量重排模块化为同一训练图，再用统一离线指标验证延迟与成本收益。",
+     "best_date": "2026-07-24",
+     "appearances": [
+      {
+       "date": "2026-07-24",
+       "rank": 1,
+       "id": "web:meta-silvertorch-2026-05-26",
+       "total_score": 4.7,
+       "adjusted_score": 4.9
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "web:meta-silvertorch-2026-05-26",
+      "slug": "2511.14881",
+      "content_html": "<h1>深度解读：SilverTorch 将推荐索引变成可组合模型</h1>\n<h2>1. 问题与动机</h2>\n<p>工业推荐召回通常把用户塔、ANN 索引、资格过滤和后续打分拆成多个服务：模型在 PyTorch/TensorFlow 中开发，向量索引由 Faiss、Milvus 或专有 CPU 服务维护，语言、地区、可见性等过滤再由倒排索引执行。论文指出这种分层并非只是工程风格差异，而会形成三个系统上限。其一，各组件拥有独立版本、调度、批处理和发布逻辑，端到端实验需要跨团队协调；其二，客户端必须扇出请求并搬运中间结果，无法联合优化搜索与过滤；其三，CPU 服务靠横向扩容支撑更大候选和复杂相似度，成本近似线性增长，难以承接多任务召回及深层交互。</p>\n<p>版本一致性是作者给出的直接生产证据。服务化方案中，用户塔几分钟即可发布，但数亿物品的 KNN 索引构建超过 4 小时；2022 年一次错误版本切换曾让生产性能指标下降 30%。与此同时，Faiss-GPU 的推荐用法受 Top-K/Probe 规模限制，而资格过滤仍主要停留在 CPU。推荐模型正从简单点积走向 HSTU 长序列、Mixture of Logits 和多任务价值建模，传统索引服务无法随训练图一起演化。SilverTorch 因而提出 Index as Model：把 ANN、过滤、缓存、重排和价值聚合全部定义为模型层，发布成一个可由纯 C++ Predictor 执行的快照。</p>\n<h2>2. 方法详解</h2>\n<p>SilverTorch 的发布链路先加载训练完成的用户塔和物品塔，在 GPU 上计算物品向量，并用 KMeans++ 构建 IVF 聚类。ANN 向量被全局 min/max 缩放到 Int8 的 [-128,127] 区间；用户塔、OverArch 和 Value Model 采用 BFloat16。资格特征不再写入倒排服务，而是编码为 GPU Bloom Index：每个物品用 M 位签名表示，k 个哈希函数把特征写入相应位；查询也生成签名，匹配等价于检查查询置 1 的位是否都在物品签名中为 1。实现把矩阵转置后只访问查询为 1 的行，并用一条 64 位 AND 指令同时处理 64 个物品，避免逐物品不规则访存。</p>\n<p>ANN 层采用 IVF，但把索引选择、Embedding Gather、点积和 Top-K 融成 Int8 Kernel。标准实现会先物化巨大的临时向量张量，SilverTorch 则让 Warp 连续读取物品块，边读边做乘加，不生成中间 Gather 结果。Int8 将向量内存约减半，节省的显存用于让 OverArch 打分更多候选。作者报告在 64 probes、top-2048 时没有可测的 Recall 损失；系统实际支持 O(10,000) 的预筛候选，再由 OverArch 降到 O(1,000) 交给精排。</p>\n<p>关键的联合优化是 Probe-then-Filter。传统 Filter-then-Probe 先对全库过滤，但 ANN 最终只会访问少数被探测的聚类，其他过滤计算全部浪费。SilverTorch 先找出 IVF 的目标聚类，只对其中物品生成 Bloom 位掩码，然后在同一遍 Kernel 中完成过滤与相似度计算。由于 ANN 探测与资格过滤是合取条件，交换顺序不改变给定 probes 下的结果。论文给出的 8100 万物品、9000 个聚类、256 probes 案例只处理 230 万物品，约占 2.8%，过滤计算与临时显存均减少约 30 倍。</p>\n<p>扩展层包含两部分。OverArch 在 ANN 后读取预先缓存于 GPU 的物品向量，可使用 MLP、Self-Attention 或 Mixture of Logits 建模点积无法表达的用户—物品交互。多任务召回为点赞、分享、评论等目标生成任务专属用户向量，但共享物品索引；Value Model 再解析 JSON 风格业务公式，把各任务预测合成统一期望价值。多 GPU 时 ANN/Bloom 索引按物品分片，OverArch 和 Value Model 在各卡复制，局部结果汇总后统一打分；Embedding 表仍可放在 CPU 参数服务器。</p>\n<p>实验使用两个生产采样数据集，候选规模分别为 1000 万和 8000 万，向量维度 128，硬件为 A100 40GB；用户塔采用 HSTU，OverArch 使用 Mixture of Logits。系统回放 5000 个真实请求，在 P99 低于 200ms 的约束下逐步加压测最大 QPS。80M 配置用 2 张 GPU，10M 用 1 张；ANN 对照包括 Faiss-CPU IVF、Faiss-GPU IVF 与 HNSW，过滤对照为生产 CPU 倒排和 GPU Forward Index。ANN 微基准先预热 50 个 Batch，再测 100 个 Batch，Batch Size 为 16。论文不是训练算法工作，因此未报告优化器、训练 Batch 或训练步数；这不影响服务评测，但限制了端到端模型复现。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，SilverTorch 把索引从外部状态提升为模型参数。ANN Tensor、Bloom Tensor、用户塔、缓存和打分层随一个快照发布，既消除用户/物品版本漂移，也让统一编译、量化和容量估算成为可能。发布阶段利用 GPU 后，完整快照构建从数天缩短到约 1 小时。</p>\n<p>第二，论文首次把推荐资格过滤系统性地搬到 GPU，并利用推荐特征较少、查询结构可预知的性质设计 Bloom Index。它牺牲极低概率的假阳性来换取连续位运算；假阳性还会被后续排序剔除。第三，Int8 ANN 与 Bloom Filter 的联合顺序优化不是简单拼装两个 Kernel，而是根据 IVF 只访问部分聚类的性质推迟过滤，直接删除无效计算和 Scratch Memory。</p>\n<p>第四，节省的系统预算被明确返还给模型能力：OverArch 用非点积交互重排更多候选，Value Model 把多任务预测翻译成业务价值。E-Task 上，单纯 SilverTorch 在 Recall@100 为 0.20306；加入完整精度 OverArch 后为 0.24189，同时 Recall@20 从 CPU 基线 0.08239 升到 0.09181。系统创新因此不只追求更快，而是把吞吐余量转化为更复杂的召回建模。</p>\n<h2>4. 实验结果分析</h2>\n<p>80M 数据、生产 24 probes 设置下，SilverTorch 达到 1210 QPS；加入 OverArch/Value Model 后仍有 771 QPS。其成本表给出了可以直接复算的结果：</p>\n<table><thead><tr><th>方案</th><th>QPS</th><th>每小时估算 TCO</th><th>每千请求成本</th></tr></thead><tbody><tr><td>CPU 基线</td><td>51</td><td>$28.92</td><td>$0.1580</td></tr><tr><td>GPU 基线 Faiss2 + Forward4</td><td>186</td><td>$30.29</td><td>$0.0452</td></tr><tr><td>GPU 基线 Faiss2 + Forward6</td><td>340</td><td>$33.27</td><td>$0.0272</td></tr><tr><td>SilverTorch</td><td>1210</td><td>$33.27</td><td>$0.0077</td></tr><tr><td>SilverTorch + OverArch</td><td>771</td><td>$33.27</td><td>$0.0120</td></tr></tbody></table>\n<p>按每千请求计算，纯 SilverTorch 相比 CPU 基线约节省 95.1%，即成本效率约 20.5 倍；工程博客汇总为 20.9 倍。与最强列出的 GPU 基线相比，每千请求成本也下降约 71.7%。更重要的是，Pool 从 80M 降到 10M 时 SilverTorch QPS 继续上升到 3802，而服务化基线因每台服务器承载量接近，吞吐变化不明显，说明统一 GPU 路径对候选规模更敏感。</p>\n<p>联合索引消融显示，Probe-then-Filter 比先做全量 Bloom Filter 的 Filter-then-Probe 提高约 17%–25% QPS。80M 实例中模型显存大致由 5GB Bloom Index、5GB ANN Index、10GB FP16 Embedding Cache、12GB OverArch 与 Value Model 权重构成。该分解说明 Bloom/Int8 的意义不仅是局部加速，还决定复杂交互层是否装得进 40GB A100。</p>\n<p>质量结果呈现了速度与召回的可控交换。E-Task 的 CPU 基线在 Recall@100/500/1000 分别为 0.19179/0.42950/0.44127；SilverTorch + OverArch 为 0.24189/0.44758/0.45727，相对提升 25.04%、5.6%、2.4%，QPS 仍从 51 提至 771。Recall@20 达 0.09181，比基线高 28.2%。低位 Bloom 版本把签名从 1024 位降到 768 位后假阳性上升，却没有降低端到端召回，部分点还略升，说明过滤是训练外约束，微量放宽会让 OverArch 获得更多可能相关候选。</p>\n<p>Int8 ANN 在 2000 万条、128 维向量微基准中跨 Recall 0.35–0.92 均快于 Faiss-GPU；代价是无法到达 0.95 Recall。但 Faiss 为达到 0.95 需要 CPU 1024 probes 或 GPU 512 probes，延迟显著恶化。对推荐系统而言，作者选择以较低成本获取宽候选，再让 OverArch 修正点积误差。这是一个系统级结论：不要孤立追求 ANN 的极高 Recall，应优化 ANN、预排序和最终召回质量的总预算。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出，SilverTorch 当前聚焦 Embedding-based Retrieval，生产中仍存在规则召回频道；这些频道需要封装 CPU Key-Value Index 为模型层，或只复用 Bloom Filter 后再让 GPU OverArch 统一打分。频控、历史过滤等动态约束目前通常留在后续排序，并未全部进入统一快照。</p>\n<p>IVF 也带来已知边界。Probe-then-Filter 与 Filter-then-Probe 在固定 probes 下结果等价，但当过滤条件选择性极强时，被探测聚类可能没有足够合格物品，只能增加 probes；论文的语言、国家等过滤相对宽，不能代表稀有主题或严格安全策略。Bloom Index 还有假阳性，虽然下游可以清理，但在必须零误放的合规过滤中不能单独承担最终判定。</p>\n<p>物品新鲜度仍是未完成工作。作者提出独立 Fresh Index，与主索引同布局并在线合并候选，但把具体更新协议、压缩和一致性留作未来研究；简单预留内存并线性扫描新增项无法扩展。论文也没有公开线上 A/B、真实 P99 数值、模型训练成本或故障恢复时间，TCO 基于相近 AWS 实例估算而非完整财务账本。外部团队还需要评估 GPU 利用率波动、跨卡合并和 CPU 参数服务器是否成为新瓶颈。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队，最可操作的第一步不是重写全部服务，而是把现有请求画成可测量的数据流：用户塔发布、索引构建、资格过滤、网络扇出、候选合并、预排序分别记录 P50/P99、QPS、显存和每千请求成本。若索引构建远慢于模型发布，先解决统一快照和版本原子切换；SilverTorch 的 30% 版本事故说明这一收益可能先于 GPU 加速出现。</p>\n<p>第二步可从宽而稳定的过滤条件试点 Bloom GPU 化，例如语言、地区、内容类型和基础资格；安全下架、隐私、频控仍保留精确后验检查。ANN 应先支持大 Top-K 的 Int8 路径，用同一批生产请求绘制 Recall—Latency 曲线，再把节省的显存给轻量 OverArch。对社区 UGC，OverArch 可加入查询—帖子跨特征、作者关系、时效和会话上下文；Value Model 则把点击、长停留、收藏、评论和负反馈映射为业务价值，避免只优化单一 CTR。</p>\n<p>部署容量可以直接参考论文的资源账：80M、128 维实例在两张 A100 40GB 上运行，但模型权重、缓存、索引各占显存大头，不能只按向量库大小估卡数。上线前应以影子流量复现 5000 请求以上的混合过滤分布，保持固定 P99 预算逐步加压，并加入突发流量、索引更新和回滚演练。若目标规模很小，论文也建议切换 CPU PyTorch Runtime，而不是为了架构统一强行上 GPU。</p>\n<p>SilverTorch 对生成式搜推的核心启示是，复杂模型是否可上线取决于检索系统能否把基础算子压缩成一个可联合优化的执行图。它没有直接生成物品 ID，却通过更宽候选、非点积 OverArch 和多任务价值层，为 LLM 级意图与内容表征留下了在线预算。真正值得复制的不是某个 Kernel，而是把索引、过滤、模型质量、成本和版本一致性放进同一个优化问题。</p>",
+      "chars": 4829,
+      "minutes": 13
+     },
+     "weekly_rank": 4
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2607.18796",
+     "title": "TSGR: Taobao Search Generative Retrieval",
+     "url": "https://arxiv.org/abs/2607.18796",
+     "source": "arxiv",
+     "company": [
+      "Alibaba"
+     ],
+     "published": "Wed, 22 Jul 2026 00:00:00 -0400",
+     "authors": "Tianyu Zhan, Gui Ling, Tong Xiong, Kunhai Lin, Yang Wang, Kaixuan Zhang, Zhihong Chen, Yuliang Yan, Dan Ou, Shengyu Zhan...",
+     "total_score": 4.65,
+     "adjusted_score": 4.85,
+     "preference_bonus": 0.2,
+     "rank_score": 4.85,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 5
+     },
+     "summary": "针对工业电商生成式检索只优化语义匹配、忽略商品业务价值的问题，TSGR 用查询感知的并行语义 ID 将价值次序写入编码，再以联合训练的价值感知排序模块统一召回与预排。淘宝离线 HR@1000 提升 9.16%，线上 A/B 实验带来 IPV +0.43%、成交数 +1.12%、GMV +1.64%。",
+     "key_insight": "生成式召回要进入生产，语义 ID 不能只表达内容相似度，还应把查询条件下的价值顺序编码进去；同时让同一自回归模型承担召回和预排，可减少阶段间目标错位。对社区搜索可把内容质量、时效、互动价值等统计融入并行码本，再通过渐进训练依次对齐相关性、用户偏好与业务目标。",
+     "best_date": "2026-07-23",
+     "appearances": [
+      {
+       "date": "2026-07-23",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2607.18796",
+       "total_score": 4.65,
+       "adjusted_score": 4.85
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:oai:arXiv.org:2607.18796",
+      "slug": "2607.18796",
+      "content_html": "<h1>深度解读：TSGR: Taobao Search Generative Retrieval</h1>\n<h2>1. 问题与动机</h2>\n<p>论文指出工业生成式检索与真实商业目标存在结构性错位。现有方法通常用多模态语义向量构建全局固定的 Semantic ID，再按 token 概率做 beam search；这能优化语义相似，却不知道同一商品在不同 query 下的价值差异，也无法在动态生成候选前预取丰富的商品侧特征。两个商品可能同样相关，但点击、转化和 GMV 价值显著不同。若高价值商品没进入候选集，后续排序再强也无法挽回。</p>\n<p>TSGR 将问题拆成两层：在表示层让 SID 感知 query 与商业价值，在输出层让生成模型同时承担预排。作者不只验证离线 HR，还在淘宝搜索上用 IPV、成交数和 GMV 检验收益，这使工作区别于仅证明语义 ID 可行的学术方案。</p>\n<h2>2. 方法详解</h2>\n<p>TSGR 以 Qwen2.5-0.5B 为生成骨干，输出三级 SID。前两级是语义码本：先用 8100 多个类目的商品平均向量初始化第一级，再对“簇中心减类目中心”的残差做 RQ-KMeans。原始四级结构会增加解码成本和级联错误，作者将前两级合并，最终码本规模为 32768×8192×8192。</p>\n<p>第三级是 QP-SID 的“效率码本”。在每个语义簇内，默认路径按过去 30 天点击数排序，高价值商品获得更靠前的 token 索引。系统又从词项—商品点击统计中构建 query 条件排序：训练时从 query 抽取关键词，与商品簇的代表词求交；命中多个词时，选择与该簇共现点击数最高的词来决定第三级 token，否则回退全局默认顺序。每个商品保留 4 条平行的第三级路径，因此同一商品可随 query 意图使用不同 SID。</p>\n<p>VRM（Value-aware Ranking Module）复用生成骨干的 hidden states 形成用户表示，将候选 SID embedding 与商品侧信息通过 cross-attention 融合，分别预测 PV、CTR、CVR。线上用 PV×CTR 对 beam 候选重排，不再另起独立预排服务。生成损失是 pay/click/PV 多正样本的加权交叉熵，权重为 3/2/1；排序损失是三个任务的 BCE，总目标为 L_gen + λL_rank，λ=1。</p>\n<p>训练分 Pre-SFT 与 SFT。Pre-SFT 包含编码、个性化、检索、协同、推荐 5 类任务，先学习文本/行为到 SID 的映射；SFT 将同一 session 的 pay、click、PV 正例装入一个样本，用 label 间 attention mask 防止串扰。数据来自淘宝两周超过 2 亿次用户交互，次日作测试集。SFT 使用 AdamW（β1=0.9、β2=0.999）、cosine 学习率 1e-4、batch size 256、10 个 warmup step。GRPO 另用 10 万 query 训练 2 epoch、batch size 16，但收益太小，未上线。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，QP-SID 将价值感知前移到离散标识构建。与一商品一个全局 SID 不同，它利用较早 token 索引训练信号更充分的特性，把高价值且 query 相关的商品前置，HR@1000 相对 FORGE 提升 4.42%。这不是生成后的简单加权，而是改变模型学习的输出空间。</p>\n<p>第二，VRM 在不重复编码上下文的前提下，把生成骨干与商品侧特征联合训练，用一个模型完成召回和预排。它在 HR@1000 上增益 3.73%，高于独立预排的 3.30%，且线上可跳过传统预排阶段。</p>\n<p>第三，加权多正样本训练显式保留 pay &gt; click &gt; PV 的优先级，不把 session 互动拆成等价 pointwise 样本，使 HR@1000 从 0.7714 提至 0.7922。五任务 Pre-SFT 联合训练另带来 5.76% 收益，说明先补齐 SID 编码和检索子能力，再做个性化 SFT 更稳定。</p>\n<h2>4. 实验结果分析</h2>\n<table><thead><tr><th>方法</th><th>HR@20</th><th>HR@100</th><th>HR@500</th><th>HR@1000</th><th>HR@5000</th></tr></thead><tbody><tr><td>FORGE SID</td><td>0.4328</td><td>0.5863</td><td>0.7207</td><td>0.7735</td><td>0.8604</td></tr><tr><td>QP-SID</td><td>0.4635</td><td>0.6235</td><td>0.7669</td><td>0.8177</td><td>0.8961</td></tr><tr><td>QP-SID + Pre-SFT</td><td>0.4694</td><td>0.6340</td><td>0.7740</td><td>0.8222</td><td>0.8987</td></tr><tr><td>独立预排</td><td>0.4248</td><td>0.6264</td><td>0.8112</td><td>0.8552</td><td>0.8771</td></tr><tr><td>RL</td><td>0.4659</td><td>0.6420</td><td>0.7857</td><td>0.8277</td><td>0.9027</td></tr><tr><td>VRM（TSGR）</td><td>0.4586</td><td>0.6677</td><td>0.8250</td><td>0.8651</td><td>0.8953</td></tr></tbody></table>\n<p>QP-SID 将 HR@1000 从 0.7735 提到 0.8177，说明将价值写入 SID 比对旧 SID 候选事后重排更有效。VRM 的 HR@100/500/1000 最强，但 HR@5000 不如 RL，表明它更擅长将高价值正例前移，而不是无差别扩大长尾覆盖；这与线上只向排序传 top-1500 的目标一致。</p>\n<p>消融暴露了两个失败模式。若训练标签用 query 条件 SID、输入历史仍用默认 SID，输入输出不一致会明显拉低 HR@100。另一方案给样本附加多路径标签，最终 99.8% 输出坍缩到 Default 路径。最终设计的 cluster、Level-3、整体命中率为 78.71/72.83/57.32，高于多路径方案的 77.20/71.90/55.50。VRM 中移除 item embedding 降幅最大，证明离散 SID 会丢失商品细节；mean pooling 或 EOS 替代 cross-attention 主要伤害 HR@20、对 HR@1000 较小，可作为低时延降级方案。</p>\n<p>线上 A/B 覆盖淘宝搜索 1% 流量并持续 38 天。TSGR 返回 top-1500 后直接进入排序，IPV +0.43%、成交数 +1.12%、GMV +1.64%，均统计显著。服务运行在 NVIDIA H20，预算 80ms；三级 beam 为 [400,400,10000]，前两级用 prefix tree 约束，末级标准 beam search。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有独立 Limitations 章节，但明确报告了边界。GRPO 的基础增益仅 +0.02%，加入离线 DPO 与动态层级熵正则后累计约 +0.52%，因此未实际部署。query 条件路径依赖关键词和词—簇点击统计；评估序列中 61.42% 属于 No Hit，说明 query-aware 路由尚未覆盖全部请求。</p>\n<p>作者未充分讨论的限制包括：证据主要来自中文电商搜索，而 UGC、新闻或非商业搜索的“价值”通常是时效、质量、多样性、安全的多目标组合；平行 SID 的稳定性、更新成本和目标冲突仍需实验。论文也未报告全量码本内存、每日重建成本，以及与多通道召回的候选重复率。</p>\n<h2>6. 工业实践意义</h2>\n<p>搜索推荐团队可以分三步试验。先在既有语义 ID 簇内增加一条业务价值排序路径，比较“价值写入 ID”和“生成后重排”。再只对高频 query 构建少量条件路径，监控命中覆盖、路径坍缩和近邻保持率。最后用生成骨干 hidden state 接轻量价值头，先影子打分，再判断能否安全跳过部分预排。</p>\n<p>社区 UGC 搜索不应直接复制 PV×CTR。可将默认路径定义为长期内容质量，再按 query 意图构建时效、专业性、互动满意度等平行路径；VRM 则联合预测点击、长停留、二次搜索和负反馈，用约束多目标替代单一商业乘积。pay/click/PV 的 3/2/1 可替换为优质互动/点击/曝光，但应保留 label 间 mask。</p>\n<p>部署上，H20 80ms、三级大 beam 和 top-1500 输出表明它仍是高算力方案。小团队应先作为单一召回通道，复用 GPU batching 与前缀约束，以候选增益、端到端时延和预排节省的净收益作为扩容门槛。论文最重要的生产证据，是生成式召回不仅提高离线命中率，还能在移除一个工程阶段的同时提升成交与 GMV。</p>",
+      "chars": 3085,
+      "minutes": 8
+     },
+     "weekly_rank": 5
+    },
+    {
+     "id": "acl:2026.findings-acl.310",
+     "title": "Eliminating Out-of-Domain Recommendations in LLM-based Recommender Systems: A Unified View",
+     "url": "https://aclanthology.org/2026.findings-acl.310/",
+     "source": "web_search",
+     "company": [
+      "Microsoft"
+     ],
+     "published": "2026-07-01",
+     "authors": "Hao Liao, Jiwei Zhang, Jianxun Lian, Wensheng Lu, Mingqi Wu, Shuowangg, Yong Zhang, Yitian Huang, Mingyang Zhou, Rui Mao",
+     "total_score": 4.55,
+     "adjusted_score": 4.85,
+     "preference_bonus": 0.3,
+     "rank_score": 4.85,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 3
+     },
+     "summary": "微软 RecLM 在同一 LLM 与提示设置下统一比较三种落地范式：向量检索、受约束的标题生成和离散物品 token 生成。三种变体都把域外推荐 OOD@10 严格降到 0；其中 RecLM-cgen 与 RecLM-token 在公开基准达到整体 SOTA，并开放于 Microsoft RecAI 代码库。",
+     "key_insight": "生产级 LLM 推荐首先要把候选空间约束为真实库存，而不是只追求语言流畅度。社区搜推可以按延迟与更新频率选择三种接口：向量召回最稳、受约束文本生成便于解释、离散 token 生成利于端到端扩展；统一骨干和提示也让离线评测能公平比较准确率、幻觉率与成本。",
+     "best_date": "2026-07-21",
+     "appearances": [
+      {
+       "date": "2026-07-21",
+       "rank": 4,
+       "id": "acl:2026.findings-acl.310",
+       "total_score": 4.55,
+       "adjusted_score": 4.85
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 6
+    },
+    {
+     "id": "acl:2026.acl-industry.130",
+     "title": "Intent-Driven Semantic ID Generation for Grounded Conversational News Recommendation",
+     "url": "https://aclanthology.org/2026.acl-industry.130/",
+     "source": "web_search",
+     "company": [
+      "Tencent",
+      "Sun Yat-sen University"
+     ],
+     "published": "2026-07-01",
+     "authors": "Hongyang Su, Beibei Kong, Lei Cheng, Chengxiang Zhuo, Zang Li, Chenyun Yu",
+     "total_score": 4.55,
+     "adjusted_score": 4.85,
+     "preference_bonus": 0.3,
+     "rank_score": 4.85,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 5,
+      "practicality": 4,
+      "evidence_quality": 5,
+      "timeliness": 3
+     },
+     "summary": "腾讯针对新闻对话中隐式意图难以先检索的问题，提出 Generate-then-Match：7B LLM 先生成层级语义 ID 前缀，再与实时新闻池模糊匹配，并以双信号推理覆盖冷启动。在 15.2 万 SID 空间中实现 0% 幻觉、12.4% L1 命中，成本约为 GPT-4+混合 RAG 的 1/100，冷启动 L1 达 18.0%。",
+     "key_insight": "先生成可约束的语义目标、再映射到真实库存，能同时解决开放生成幻觉和检索 query 缺失。社区搜索可把模糊自然语言意图转换为帖子主题层级码，再在实时 UGC 池中做前缀匹配；用户画像与当前对话双通道尤其适合历史稀疏的新用户，并能保证最终结果始终来自可展示内容。",
+     "best_date": "2026-07-21",
+     "appearances": [
+      {
+       "date": "2026-07-21",
+       "rank": 3,
+       "id": "acl:2026.acl-industry.130",
+       "total_score": 4.55,
+       "adjusted_score": 4.85
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2602.22647",
+     "title": "Vectorizing the Trie: Efficient Constrained Decoding for LLM-based Generative Retrieval on Accelerators",
+     "url": "https://arxiv.org/abs/2602.22647",
+     "source": "arxiv",
+     "company": [
+      "Google"
+     ],
+     "published": "Wed, 22 Jul 2026 00:00:00 -0400",
+     "authors": "Zhengyang Su, Isay Katsman, Yueqi Wang, Ruining He, Lukasz Heldt, Raghunandan Keshavan, Shao-Chuan Wang, Xinyang Yi, Min...",
+     "total_score": 4.6,
+     "adjusted_score": 4.8,
+     "preference_bonus": 0.2,
+     "rank_score": 4.8,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 5,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 1
+     },
+     "summary": "STATIC 面向 LLM 生成式检索的受限解码，把不规则 Trie 展平为 CSR 稀疏转移矩阵，使前缀约束能在 TPU/GPU 上完全向量化执行。它已部署到服务数十亿用户的视频推荐平台，每步仅增加 0.033 毫秒、占推理时间 0.25%，相对 CPU Trie 加速 948 倍，并开源实现。",
+     "key_insight": "严格业务约束不必牺牲生成式检索吞吐：把树遍历改写成静态稀疏矩阵运算，可将内容新鲜度、类目或合规白名单直接注入解码空间。社区搜推若采用语义 ID，可复用这一模式把在线候选约束留在加速器侧执行，避免 CPU-GPU 往返，并以极低额外时延支持冷启动和动态业务规则。",
+     "best_date": "2026-07-23",
+     "appearances": [
+      {
+       "date": "2026-07-23",
+       "rank": 2,
+       "id": "arxiv:oai:arXiv.org:2602.22647",
+       "total_score": 4.6,
+       "adjusted_score": 4.8
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2605.23312",
+     "title": "Towards Generalizable and Efficient Large-Scale Generative Recommenders",
+     "url": "https://arxiv.org/abs/2605.23312",
+     "source": "web_search",
+     "company": [
+      "Netflix"
+     ],
+     "published": "2026-05-22",
+     "authors": "Qiuling Xu, Ko-Jen Hsiao, Moumita Bhattacharya",
+     "total_score": 4.45,
+     "adjusted_score": 4.75,
+     "preference_bonus": 0.3,
+     "rank_score": 4.75,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 2
+     },
+     "summary": "论文把生成式推荐骨干从 200 万参数扩展到 10 亿参数，并用带偏移项的 Scaling Law 判断不同下游任务是否接近收益上限。作者结合多 Token 预测、采样 Softmax、投影解码头及语义冷启动塔，在 100 万用户的一周生产影子实验中让 10 亿模型在全部任务上取得更高 MRR。",
+     "key_insight": "推荐模型扩容不能只看统一损失曲线，应分别估计每个任务的剩余容量，再把训练成本、在线缓存陈旧和新内容冷启动纳入同一决策。对社区搜索可按内容类型拟合独立 Scaling Law，优先扩容仍有 headroom 的任务，并用语义塔承接新帖冷启动。",
+     "best_date": "2026-07-24",
+     "appearances": [
+      {
+       "date": "2026-07-24",
+       "rank": 2,
+       "id": "arxiv:2605.23312",
+       "total_score": 4.45,
+       "adjusted_score": 4.75
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.23312",
+      "slug": "2605.23312",
+      "content_html": "<h2>Towards Generalizable and Efficient Large-Scale Generative Recommenders 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>论文来自 Netflix 的标题推荐（title recommendation）生产实践，核心问题是：把生成式推荐主干从 2M 扩到 1B 参数，预训练阶段的收益<strong>不会自动</strong>传导到下游应用。作者把&quot;生产迁移&quot;拆成多个互相牵制的因素：任务自身的提升空间（task headroom）、重复训练成本、serving 延迟、item 时效性。</p>\n<p>量化证据很硬：系统每个刷新周期要在 <strong>2 万亿（2 trillion）行为 token</strong> 上训练，频繁重训使效率成为硬约束；缓存式 serving 带来 staleness——训练标签里的 item 在 serving 时可能已被消费；新标题缺乏可靠的协同 embedding。最关键的观察是&quot;serving 延迟敏感性因任务而异&quot;：Task B 在 24 小时 serving 延迟下 MRR 掉 31%、48 小时掉 41%，而 Task A 几乎不受影响（≤4%），Task C 居中（48h 掉 18%）。这说明&quot;该不该堆模型&quot;不能一刀切，必须按任务诊断。</p>\n<h3>2. 方法详解</h3>\n<p><strong>主干架构</strong>：基于 HSTU（hierarchical sequential transducer）的 Transformer 生成式推荐器，把用户行为编码成 token 序列，每个 event 把 action、context、metadata 压进单个 token。参数 scaling 区间 2M→1B（不含 embedding 与 decoding 层），embedding 维度 4096。</p>\n<p><strong>四个效率配方</strong>是落地关键：</p>\n<ol>\n<li><strong>Sampled softmax</strong>：仅用 1% 均匀采样负样本，且<strong>不做 LogQ 校正</strong>（刻意保持训练 recipe 简单）。</li>\n<li><strong>Projected decoding head</strong>：把维度从 d 投到 d/8（4096→512），在 10^6 词表规模下输出层 FLOPs 降 <strong>35.5×</strong>，10^7 item 规模下约降 <strong>249×</strong>——这是让&quot;十亿模型反复重训&quot;在工程上可行的核心。</li>\n<li><strong>Semantic item towers</strong>：用知识图谱 embedding、LLM2Vec 语言表征、人工标注特征，给协同信号弱的 item 兜底。</li>\n<li><strong>Collaborative-embedding masking</strong>：训练时按&quot;线上冷启动率&quot;随机替换 item embedding，让模型学会在没有协同 ID 时也能打分。</li>\n</ol>\n<p><strong>训练流程</strong>用&quot;small-to-large 漏斗&quot;：先在小主干上验证改动，再上十亿参数，避免直接在 1B 上试错的高成本。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：offset scaling-law 拟合作为诊断工具。</strong> 不同于传统 log-linear 拟合 P=a·log(N)+b，作者对每个任务拟合带偏移的形式 <strong>P(N)=P₀−(N/N₀)^(−a)</strong>，其中 P₀ 是任务相关的饱和上限。在 Table 2 上 offset 形式全面胜出：Task A 的 RMSE 降 48.4%、Task B 降 61.8%、Task C 降 14.9%。诊断结论很直接——Task A P₀=0.311 已接近经验上限，Task C P₀≈1.075（基本被 1.0 截断）几乎饱和。这把&quot;还要不要继续堆容量&quot;变成可量化的决策，并区分&quot;下一步该加容量、还是改目标、还是改 item 表征&quot;。</p>\n<p><strong>贡献二：Multi-Token Prediction (MTP) 的 serving-horizon 依赖性。</strong> 论文揭示 MTP 不是无脑收益：在 48 小时缓存式 serving 下用优化窗口能涨 MRR，但在 &lt;1s p95 的在线路径上，窗口变大反而伤害顺序敏感的任务。</p>\n<p><strong>贡献三：语义塔 + OOV embedding 处理冷启动。</strong> 把语义证据与协同信号解耦，使新标题在没有协同 ID 时仍可打分。</p>\n<h3>4. 实验结果分析</h3>\n<p><strong>MTP 结果（Figure 5）</strong>：48h 缓存 serving + 优化窗口下，Task A +22.1%、Task B +27.8%、Task C +27.9% 相对 MRR；但在线 serving（&lt;1s p95）下，MTP 让 Task A +19.6%，却随窗口增大<strong>损害</strong> Task B/C——印证 MTP 的收益强依赖 serving 时序与是否顺序敏感。</p>\n<p><strong>Production-shadow 评测（Figure 7）</strong>：1M 用户 × 1 周影子流量，1B vs 2M 主干：Task A +22.5%、Task B +11.3%、Task C +7.4% MRR，冷启动标题（词表未见）<strong>+28.1%</strong>。两个对照很说明问题：冷启动收益最大，印证语义塔设计有效；Task C 收益最小，印证 scaling-law 预测的天花板。最终在多个生产 A/B 中取得正向结果。</p>\n<p><strong>消融/趋势</strong>：MRR 为主指标，作者称 Hit Rate、NDCG 趋势一致但未详列。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确指出：（1）分析只用三个粗粒度任务类别，回避了实现细节；（2）offset law 拟合要求指标有界，对无界目标适用性未知；（3）sampled softmax 省掉 LogQ 校正是为简化，可能引入偏差；（4）production-shadow 衡量的是下游集成质量，不是单面的因果增益；（5）冷启动 masking 概率&quot;对齐线上冷启动率&quot;，但具体数值未披露。</p>\n<h3>6. 工业实践意义</h3>\n<p>对要落地生成式推荐/搜索的团队，这篇是难得的生产真账：</p>\n<ul>\n<li><strong>别只看离线 loss</strong>：模型 scale 只是迁移问题的一个分量，必须和 task headroom、解码成本、serving-延迟对齐、item 泛化一起评估。用 offset scaling-law 拟合判断&quot;哪些任务已到顶、哪些还能扛容量&quot;，按任务分配算力。</li>\n<li><strong>解码层是大模型反复重训的成本瓶颈</strong>：projected head（4096→512，FLOPs 降 35.5×~249×）+ 1% sampled softmax 是让十亿模型可运维的关键，对算力受限团队尤有参考。</li>\n<li><strong>MTP 要按 serving horizon 选用</strong>：缓存/可乱序场景受益，顺序敏感的在线路径慎用。</li>\n<li><strong>冷启动靠语义塔兜底</strong>：UGC/新内容密集的社区场景，知识图谱+语言表征+OOV embedding 的组合能在协同信号缺失时维持打分质量（此处冷启动 +28.1% 是最大亮点）。</li>\n</ul>\n<ul>\n<li><strong>时效性是被低估的隐形成本</strong>：Task B 在 48h serving 延迟下掉 41% MRR，说明对时效敏感的任务，缩短训练-serving 链路（更频繁刷新、更短缓存窗口）的收益可能大于堆模型容量；应把&quot;serving 延迟敏感性&quot;做成上线前标准画像，避免在已饱和或时效主导的任务上浪费算力。</li>\n</ul>\n<p><strong>部署考量</strong>：十亿主干的可运维性来自两点——projected head 把输出层从 4096 维压到 512 维，使大词表（10^7 item）下解码 FLOPs 降约 249×；small-to-large 漏斗把昂贵的 1B 验证前置到小模型上筛掉无效改动。这套组合让&quot;在 2 万亿 token 上反复重训十亿模型&quot;从纸面变成可落地流程，是想复刻 HSTU/生成式推荐 scaling 的团队绕不开的工程账。内存与延迟方面，sampled softmax（1% 负样本、省去 LogQ 校正）进一步压低训练开销，但代价是采样偏差未被显式纠正，落地时需自行评估对长尾排序的影响。</p>",
+      "chars": 2866,
+      "minutes": 8
+     },
+     "weekly_rank": 9
+    },
+    {
+     "id": "web:arxiv:2601.19711",
+     "title": "Differentiable Semantic ID for Generative Recommendation",
+     "url": "https://arxiv.org/abs/2601.19711",
+     "source": "web_search",
+     "company": [
+      "Amazon",
+      "Telefónica",
+      "University of Glasgow",
+      "Shandong University",
+      "Leiden University"
+     ],
+     "published": "2026-07-20",
+     "authors": "Junchen Fu, Xuri Ge, Alexandros Karatzoglou, Ioannis Arapakis, Suzan Verberne, Joemon M. Jose, Zhaochun Ren",
+     "total_score": 4.4,
+     "adjusted_score": 4.7,
+     "preference_bonus": 0.3,
+     "rank_score": 4.7,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "DIGER 解决语义 ID 分词器只优化内容重建、无法接收推荐损失的问题，以 Gumbel 噪声和两种不确定性衰减实现端到端可微索引并抑制码本坍塌。在 3 个公开数据集上，B-Shop 的 NDCG@10 从两阶段基线 0.0331 提至 0.0376，I-Shop 从 0.0797 提至 0.0844。",
+     "key_insight": "关键不是继续扩大神经召回骨干，而是让索引空间直接服务排序目标：训练早期用随机探索覆盖更多编码，后期降低噪声贴近确定性推理。对短文本 UGC，可把帖子文本编码与下一次点击目标联合训练，减少“语义相近但兴趣不可区分”的 ID 冲突；论文已开源代码，适合离线小流量验证。",
+     "best_date": "2026-07-22",
+     "appearances": [
+      {
+       "date": "2026-07-22",
+       "rank": 2,
+       "id": "web:arxiv:2601.19711",
+       "total_score": 4.4,
+       "adjusted_score": 4.7
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
   "personalization": {
    "raw_count": 39,
    "unique_count": 39,
@@ -440,424 +858,6 @@
        "id": "arxiv:oai:arXiv.org:2607.19802",
        "total_score": 4.35,
        "adjusted_score": 4.5
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 10
-    }
-   ]
-  },
-  "generative": {
-   "raw_count": 28,
-   "unique_count": 28,
-   "days": [
-    "2026-07-20",
-    "2026-07-21",
-    "2026-07-22",
-    "2026-07-23",
-    "2026-07-24"
-   ],
-   "papers": [
-    {
-     "id": "dblp:journals/corr/abs-2602-02338",
-     "title": "Rethinking Generative Recommender Tokenizer: Recsys-Native Encoding and Semantic Quantization Beyond LLMs.",
-     "url": "https://doi.org/10.48550/arXiv.2602.02338",
-     "source": "conference_papers",
-     "company": [],
-     "published": "2026-01-01",
-     "authors": "Yu Liang, Zhongjin Zhang, Yuxuan Zhu, Kerui Zhang, Zhiluohan Guo, Wenhang Zhou, Zonqi Yang, Kangle Wu, Yabo Ni, Anxiang ...",
-     "total_score": 5.0,
-     "adjusted_score": 5.0,
-     "preference_bonus": 0.0,
-     "rank_score": 5.0,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 5,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 5
-     },
-     "summary": "论文针对生成式推荐中语义 ID 与协同目标错位的问题，提出 ReSID：用字段感知掩码自编码器学习推荐原生表征，再以全局对齐正交量化降低前缀条件不确定性。在 10 个 Amazon-2023 子集上，相对最佳 SID 基线的 Recall@5/10 提升 16.0%/13.8%，分词成本最高降低 122 倍。",
-     "key_insight": "生成式推荐的瓶颈不只是主干模型，而是物品 tokenizer 是否保留协同信息并适合自回归解码。对社区 UGC，可将帖子类别、作者、主题及交互字段直接纳入掩码预训练，再用全局一致的层级码替代纯文本 embedding 量化；这条路线兼顾短文本语义、协同信号与大规模候选解码效率。",
-     "best_date": "2026-07-21",
-     "appearances": [
-      {
-       "date": "2026-07-21",
-       "rank": 1,
-       "id": "dblp:journals/corr/abs-2602-02338",
-       "total_score": 5.0,
-       "adjusted_score": 5.0
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "dblp:journals/corr/abs-2602-02338",
-      "slug": "2602.02338",
-      "content_html": "<h2>1. 问题与动机</h2>\n<p>ReSID 聚焦生成式推荐里一个常被主干模型规模掩盖的问题：物品如何被编码成可生成的 Semantic ID（SID）。现有流程通常先用 Sentence-T5 或多模态大模型得到语义 embedding，再用 RQ-VAE、层级 K-Means 等通用量化器离散化，最后让 T5 类模型逐 token 生成 SID。作者指出这条“语义优先”流水线存在两处错位。第一，内容语义与协同关系不等价：零食、气球、餐具在文本空间里类别很远，却可能因为聚会场景高频共购；强行把协同损失叠加到大语义编码器上，又会形成相互竞争的几何约束。第二，通用量化器只关注重构误差或局部树结构，没有显式降低自回归解码面对的前缀条件不确定性；同一个第二层代码在不同父节点下可能表示完全不同的方向，生成器很难复用 token 语义。</p>\n<p>论文因此把目标从“让 SID 看起来有语义”改为“让 SID 保留推荐所需信息，并且按顺序可预测”。这也回应了此前评测中的混杂因素：SID 方法往往使用丰富侧信息，而 SASRec 等 item-ID 基线只用 ID，所谓生成式收益可能只是多看了特征。作者在所有基线中对齐侧信息后重新比较，并要求编码、量化、生成三个阶段分别服务同一个推荐目标。这个问题对超大候选库尤其重要，因为 SID 的价值正是用短代码和 beam search 替代巨型 embedding 表与全库相似度扫描。</p>\n<h2>2. 方法详解</h2>\n<p>ReSID 保留三阶段架构，但重新设计前两阶段。E-stage 的 Field-Aware Masked Auto-Encoding（FAMAE）接收用户历史与目标物品的结构化字段。每个位置将 item ID、店铺 ID、一级至三级类别等字段 embedding 求和，再送入双向 Transformer；目标物品采用两级随机掩码，先采样要遮蔽的字段数，再随机选择具体字段，并为每种字段使用独立的 mask token。模型通过 scaled cosine similarity 预测被遮蔽字段。其损失可以解释为提高隐藏表示与目标字段之间互信息下界：最小化各字段加权交叉熵，相当于最大化对下游预测有用的信息，而不要求依赖大型语言模型。</p>\n<p>FAMAE 输出并不直接使用混入用户历史的上下文向量，而是拼接目标物品各字段的已学习 embedding，形成用户无关、可稳定量化的物品表示。作者还给出两个轻量诊断指标：全字段遮蔽时预测目标物品，测试协同建模能力；只遮蔽 item ID 时预测物品，测试结构化语义和区分能力。两项指标随训练提高时，固定量化器和生成器下的 Recall@10 也同步提高，因此团队可以在不反复端到端训练的情况下筛选 E-stage checkpoint。</p>\n<p>Q-stage 的 Globally Aligned Orthogonal Quantization（GAOQ）先做平衡层级聚类，让每一层逐步缩小条件方差；关键改动是全局对齐索引。每个父簇的子簇质心先减去父质心，统一平移到原点，再与一组跨父节点共享、近似正交的参考方向计算余弦相似度，使用 Hungarian Matching 分配代码。这样，同层同编号 token 在不同前缀下尽量表示一致方向，既降低重构不确定性，也降低 <code>H(C_l | C_&lt;l)</code> 与索引的前缀歧义。平衡 K-Means 还约束各代码的边际熵，避免 code collapse。</p>\n<p>G-stage 对所有 SID 方法使用相同的 T5-style encoder-decoder：4 层编码器、4 层解码器，hidden size 128、FFN 512、4 个注意力头、每头 key/value 32、dropout 0.1。AdamW 学习率 0.005、weight decay 1e-5、cosine scheduler，batch 2048，最多 500 epoch；推理时每步 beam size 50。FAMAE 与顺序基线同样控制为 hidden 128、2 层 Transformer、4 头、FFN 512、dropout 0.1，AdamW 学习率 0.001、batch 2048、最多 500 epoch、early-stopping patience 3，并在大词表采样分类中取 128 个负例。</p>\n<p>数据来自 Amazon Reviews 2023 的 10 个子集，采用 5-core 过滤、最大历史长度 32 和 leave-one-out；规模从 Musical Instruments 的 57,359 用户、23,742 物品、490,522 次交互，到 Books 的 775,503 用户、485,218 物品、8,680,494 次交互。论文未给出明确 GPU 型号、卡数或总训练时长，这是复现成本评估中的缺口。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，FAMAE 把“语义—协同融合”从向大模型追加辅助损失，改成直接预测推荐系统已有的结构化字段。它以用户历史提供协同上下文，以字段级监督保留类别与属性身份；相比纯 Sentence-T5 只形成语义簇、BERT4Rec 只形成行为簇，FAMAE 在 t-SNE 中同时保持类别和行为社区结构。其作用不是制造更漂亮的 embedding，而是为后续有损量化提供推荐充分统计量。</p>\n<p>第二，GAOQ 把 SID token 本身的跨前缀一致性纳入量化。普通层级 K-Means 只保证父节点内部的局部编号，GAOQ 则通过共享正交方向和 Hungarian 匹配，让同一编号尽量复用含义。论文测得，GAOQ 第二层同码物品的平均余弦相似度是层级 K-Means 的 3–10 倍，说明索引歧义显著降低。</p>\n<p>第三，论文强调受控公平比较。所有生成式方法共享同一 T5 主干，传统顺序基线也增加相同结构化侧信息；结果显示 SASRec<em>、BERT4Rec</em> 常能追平或超过旧 SID 方法，揭示过去部分收益来自侧信息不对称。ReSID 在这种更严格设置下仍全面领先，才更能说明 tokenizer 设计有效。</p>\n<p>第四，ReSID 用非参数 GAOQ 替代昂贵训练型 tokenizer。大型数据集上 LETTER 量化需要 3,356–7,380 分钟，ReSID 仅需 27–96 分钟；在 Beauty &amp; Personal Care 上为 95.96 对 7,379.83 分钟，约 77 倍，论文报告最高达到 122 倍。这使频繁重建 SID、纳入新内容的工程路线更现实。</p>\n<h2>4. 实验结果分析</h2>\n<p>主实验覆盖 10 个 Amazon 子集，指标为 Recall@5/10 与 NDCG@5/10。下面是论文报告的宏平均相对提升：</p>\n<table><thead><tr><th>对比方法</th><th>R@5</th><th>R@10</th><th>NDCG@5</th><th>NDCG@10</th></tr></thead><tbody><tr><td>SASRec*</td><td>+13.05%</td><td>+3.75%</td><td>+29.24%</td><td>+18.38%</td></tr><tr><td>LETTER（最强 SID 基线）</td><td>+16.03%</td><td>+13.81%</td><td>+16.17%</td><td>+14.86%</td></tr><tr><td>ETEGRec</td><td>+47.07%</td><td>+40.30%</td><td>+50.94%</td><td>+45.86%</td></tr><tr><td>TIGER</td><td>+22.21%</td><td>+19.47%</td><td>+23.66%</td><td>+21.50%</td></tr></tbody></table>\n<p>ReSID 是论文中唯一在所有数据集和指标上都超过带侧信息 item-ID 基线的 SID 方法。相对 LETTER，Recall@5/10 分别提升 16.0%/13.8%，NDCG@5/10 提升 16.2%/14.9%。ETEGRec 虽然端到端联合训练 tokenizer 与生成器，反而明显落后；作者的解释是 SID 同时作为中间表示和训练目标，代码持续变化会使生成器输入与监督非平稳，阶段解耦更稳定。</p>\n<p>消融将 FAMAE 替换为 LLM、SASRec、BERT4Rec 表征（E1–E3），或将 GAOQ 替换成 RQ-VAE、层级 K-Means（Q1–Q2）。完整 ReSID 相对 E1 的 R@5/R@10 提升 5.40%/4.60%；相对 E2、E3 的 NDCG@10 分别提升 9.22% 和 9.61%，表明单纯语义或单纯协同表征都不足。量化侧相对 Q1 的 R@5/NDCG@5 提升 5.64%/4.88%，相对 Q2 提升 5.15%/4.72%；全局对齐的贡献并非只体现在重构，而是确实传递到下游排序。</p>\n<p>具体数据上，Musical Instruments 的 ReSID R@10 为 0.0645，高于 E1 的 0.0629、E2 的 0.0621 和 Q1 的 0.0609；Baby Products 的 R@10 为 0.0441，高于 E2/E3 的 0.0373。敏感性实验显示分支因子并非越大越好：Musical Instruments 在 <code>(b1,b2)=(32,40)</code> 时 R@10 为 6.4465，扩到 <code>(48,56)</code> 反而降至 5.9941，说明代码容量需要按数据密度调优。附录的 scaling 实验还发现低数据区间末端可能过拟合，不能把更大 SID 空间等同于必然收益。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在独立局限章节明确承认两点。其一，FAMAE 已有任务感知诊断指标，但 GAOQ 缺少同样原则化、可在下游训练前计算的质量诊断；当前主要依赖重构歧义、条件不确定性与最终推荐实验。其二，即使 ReSID 大幅降低了 SID 构建成本，SID 生成模型的收敛速度仍比 SASRec 等 item-ID 方法慢数十倍，训练主干而非 tokenizer 会成为新的瓶颈。</p>\n<p>论文没有充分讨论的边界还包括：实验全部基于 Amazon 离线公开数据，没有在线 A/B、动态新品或持续更新测试；结构化字段包含店铺和三级类别，字段质量较差或 UGC 元数据稀疏时效果可能下降；leave-one-out 与固定 beam 50 没有覆盖高 QPS 服务的 P95 延迟、内存和索引刷新成本。GAOQ 是离线层级量化，新物品加入后是否局部插入、怎样避免大规模重编码也未说明。FAMAE 假设结构化字段与历史足以作为预测统计量，对纯文本细粒度内容、跨域冷启动和多模态信号的边界仍需验证。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区搜索/推荐团队，最直接的启示是先审计 tokenizer，再扩主干。可以建立三组对照：纯文本 embedding+RQ-VAE、协同序列 embedding+量化、字段感知 FAMAE+全局对齐量化；所有组共享生成器和侧信息，避免把收益错误归因于 SID。UGC 字段可包含作者、话题、内容类型、语言、发布时间桶、质量等级与行为社区，但需控制泄漏，不能把未来统计写进训练目标。</p>\n<p>FAMAE 的两项诊断很适合工程门禁：全字段遮蔽测试“只看历史能否猜中目标”，只遮 item ID 测试“其他字段能否区分具体帖子”。只有两项同时提升的 checkpoint 才进入昂贵的量化和生成训练。GAOQ 则可通过跨父节点同码余弦相似度、代码利用率、前缀条件熵和每层冲突率监控；若同编号在不同主题下含义漂移，应优先修量化，而不是盲目加大解码模型。</p>\n<p>部署上可先把 SID 作为现有召回的旁路候选源。用 beam search 生成几十到几百个候选，与双塔、图召回合并后交给现有精排；观测候选覆盖、长尾率、nDCG、CTR、重复率和 P95。论文的量化速度优势支持按天或小时重建部分代码，但主模型收敛仍慢，因此实际系统应把 tokenizer 刷新与生成器重训解耦，并准备旧码到新码的版本映射。</p>\n<p>最需要避免的是三种误区：只用通用 LLM embedding 便认为获得了“语义推荐”；给传统基线更少侧信息后夸大生成收益；以及端到端让持续变化的代码与生成目标相互追逐。ReSID 的核心价值不是又一种更复杂的模型，而是把信息保留、代码可预测性和公平评测拆开验证。对资源有限的团队，先复用结构化推荐字段与非参数量化，比直接训练超大生成式推荐主干更可能在六个月内形成可控试点。</p>",
-      "chars": 4528,
-      "minutes": 12
-     },
-     "weekly_rank": 1
-    },
-    {
-     "id": "web:arxiv:2604.14878",
-     "title": "GenRec: A Preference-Oriented Generative Framework for Large-Scale Recommendation",
-     "url": "https://arxiv.org/abs/2604.14878",
-     "source": "web_search",
-     "company": [
-      "JD"
-     ],
-     "published": "2026-07-20",
-     "authors": "Yanyan Zou, Junbo Qi, Lunsong Huang, Yu Li, Kewei Xu, Jiabao Gao, Binglei Zhao, Xuanhua Yang, Sulong Xu, Shengjie Li",
-     "total_score": 4.75,
-     "adjusted_score": 5.0,
-     "preference_bonus": 0.25,
-     "rank_score": 5.0,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 5
-     },
-     "summary": "GenRec 面向京东 App 大规模推荐中的翻页输出不一致、长行为序列成本与偏好对齐难题，在单一解码器中引入页级下一词预测、非对称 Token Merger 和 GRPO-SR。Token Merger 将输入长度约压缩 2 倍；持续一个月的线上 A/B 实验中，点击数提升 9.5%，成交数提升 8.7%。",
-     "key_insight": "页级监督把一次请求内的多条正反馈共同建模，避免逐物品训练造成的一对多歧义；预填充侧压缩、解码侧保留完整语义 ID，则兼顾吞吐与可生成性。社区 UGC 场景可借鉴其“页级目标＋偏好奖励＋NLL 正则”组合，将点击、停留和互动信号统一进生成式召回。",
-     "best_date": "2026-07-22",
-     "appearances": [
-      {
-       "date": "2026-07-22",
-       "rank": 1,
-       "id": "web:arxiv:2604.14878",
-       "total_score": 4.75,
-       "adjusted_score": 5.0
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "web:arxiv:2604.14878",
-      "slug": "2604.14878",
-      "content_html": "<h1>深度解读：GenRec</h1>\n<h2>1. 问题与动机</h2>\n<p>GenRec 关心的不是生成式推荐在公开小数据上能否跑通，而是它为何在亿级互动、翻页请求和严格延迟约束下容易失效。作者在京东首页信息流归纳了三个具体断点。第一，一次翻页会产生多个点击或成交，但传统 point-wise NTP 把相同历史分别配上不同正标签，迫使模型在同一前缀上拟合均匀混合分布，导致梯度方差增大、单物品概率被稀释。第二，一个物品用 3 个语义 ID 表示时，长行为序列的 item token 部分会膨胀到原来的 3 倍，prefill 延迟成为线上瓶颈。第三，真实点击与成交稀疏，直接用稠密奖励模型做 RL 又会诱导模型生成形式合法但语义无关的 SID 组合，出现 reward hacking。这些问题在摘要中只是三个名词，正文则用 5.6 亿条用户互动序列和一个月线上实验证明，训练目标、推理表示与业务奖励必须联合设计。</p>\n<h2>2. 方法详解</h2>\n<p>物品端先用 Qwen2.5-VL 联合编码图像外观和文本描述，再用领域内协同样本微调 embedding，使连续表征不只重建内容，还包含点击与购买相似性。随后用 residual-quantization K-means 逐级聚类残差，把每个物品映射成分层 SID 三元组。主干选用 decoder-only Qwen2.5，实验覆盖 1.5B、3B 和 7B 三种规模。</p>\n<p>SFT 阶段的核心是 Page-wise NTP（PW-NTP）。给定页面到达前的用户历史，目标不再是单个物品，而是当页交互物品列表，并按成交、点击、曝光等交互强度组织成序列。损失仍是对完整响应序列的标准自回归负对数似然，但每次前向同时获得多个正样本信号，消除相同输入对应多个独立标签的基数错配。服务时却不输出整页，而是保留产线的 point-wise beam search，每个 query 生成 beam width 个物品；这种训练—推理非对称是有意的，训练获得稠密梯度，推理与已有候选管线兼容。</p>\n<p>Token Merger 只在 prefill 侧压缩。它拼接同一物品的 3 个 SID embedding，通过一层线性投影变成单个潜向量；<code>&lt;sep&gt;</code> 等结构 token 保持不变。因为解码端仍按原始 SID 粒度生成，这是一种非对称压缩：历史读取成本减半，生成空间和训练目标不被粗化。</p>\n<p>RL 阶段的 GRPO-SR 与线上 beam search 对齐，每个 rollout 只生成一个物品序列，在同组多个候选之间学相对优势。SIM 类奖励模型输出稠密偏好分，相关性 gate 把语义无关结果压到小常数；若候选命中真实成交或点击集，其奖励被校准为当组最大值，避免奖励模型低估真实正反馈。最终目标一部分是 group-relative policy loss，另一部分是正轨迹的 NLL 正则。作者特意不用普通 KL 拘束：NLL 直接把策略锚定在真实用户行为上，更能抑制奖励过度优化。数据是京东大型推荐平台一个月的约 5.6 亿条用户互动序列，最后一天作测试，其余训练。三个模型均在 8 张 NVIDIA H100 上分布式训练，优化器为 AdamW，前 1% 步数线性 warm-up，之后 cosine decay；论文未披露 batch size、总步数和精确学习率。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，PW-NTP 把生产翻页机制本身变成监督单元。它改进的不是更大的 backbone，而是标签结构：一次前向学整页正例，因此比 LC-Rec 的 point-wise NTP 收敛更快，并将无效 SID 幻觉率从 7.80% 降到 4.96%，相对降幅超过 36%。</p>\n<p>第二，非对称 Token Merger 把“长历史贵”和“细粒度生成有用”拆开处理。去掉 Merger 后 HR@10 只从 0.4456 变为 0.4467、NDCG@10 从 0.2635 变为 0.2653，质量差异极小，而输入 token 长度约减半，说明压缩主要去除了冗余而非有用信息。</p>\n<p>第三，GRPO-SR 把点击/成交真值、稠密偏好模型与语义合法性 gate 组成混合奖励，再用 NLL 约束守住行为分布。完整 GRPO-SR 相对 SFT 在 Reward@1 上提升 18.01%，同时将 HaR 从 4.96% 降至 2.68%；普通 GRPO 反而将 HaR 推高到 6.03%，说明工业 RL 不能只看奖励均值。</p>\n<p>第四，论文给出了容量选择的反直觉结论。3B 模型有 36 层、2048 隐层宽度，7B 只有 28 层、3584 宽度；从 1.5B 到 3B 的收益明显，但 3B 到 7B 参数增加约 2.3 倍后，NDCG@10 仅从 0.2635 到 0.2649。对推荐互动建模，深度可能比宽度更有容量密度，不应盲目追求更大参数。</p>\n<h2>4. 实验结果分析</h2>\n<p>离线评测使用 HR@K、NDCG@K 和 HaR（生成无效 SID 的比例）。下表摘录最能说明问题的结果：</p>\n<table><thead><tr><th>模型</th><th>HR@1</th><th>HR@10</th><th>NDCG@10</th><th>HR@50</th><th>HaR</th></tr></thead><tbody><tr><td>TIGER</td><td>0.0518</td><td>0.1660</td><td>0.0803</td><td>0.3556</td><td>15.46%</td></tr><tr><td>LC-Rec</td><td>0.0947</td><td>0.3669</td><td>0.2146</td><td>0.6226</td><td>7.80%</td></tr><tr><td>GenRec 3B</td><td>0.1189</td><td>0.4456</td><td>0.2635</td><td>0.7192</td><td>4.96%</td></tr><tr><td>GenRec 3B + GRPO-SR</td><td>—</td><td>—</td><td>—</td><td>0.7438</td><td>2.68%</td></tr></tbody></table>\n<p>GenRec 相对 LC-Rec 的 NDCG@10 提升约 22.8%，HR@10 提升约 21.5%；同为 Qwen2.5 3B 的对照使收益更能归因于 PW-NTP 和框架设计，而非单纯增参。规模实验中，1.5B/3B/7B 的 HR@10 分别为 0.4103/0.4456/0.4483，NDCG@10 为 0.2484/0.2635/0.2649；3B 是明显的效率拐点。RL 消融更关键：SFT、GRPO、GRPO-SR 的 HR@50 为 0.7192、0.7248、0.7438，HaR 为 4.96%、6.03%、2.68%。去掉相关性 gate 后，GRPO-SR 的 HR@50 降至 0.7016，表明奖励模型会被利用，看似更高的局部奖励不等于更好的召回。</p>\n<p>线上 A/B 在京东首页 Feed 持续一个月，SFT 和 RL 版本各承接 10% 流量。基础 SFT 使曝光率提高 48.7%、点击数提高 8.5%、成交数提高 7.3%；加入 GRPO-SR 后三项变为 57.3%、9.5%、8.7%。对长尾物品，曝光、点击、成交分别提升 10%、16%、13%，说明语义 ID 与偏好对齐不只改善热门物品。结果也有一个值得警惕的模式：曝光增幅远大于点击和成交，上线时应同时监控曝光扩张是否稀释单次效率。论文表示完整 GRPO-SR 版本已全量生产部署。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有独立 Limitations 章节。作者在结论中明确把未来方向放在框架的 reasoning 能力，意味着当前 GenRec 仍是偏好对齐的物品生成器，并未展示可审计的多步理由。正文可确认的边界还包括：只在京东一个大型平台验证，数据不公开；未披露奖励模型精确结构、gate 阈值、beam width、batch size、学习率、训练步数、线上延迟与算力成本，外部团队无法完整复现。论文也没有报告多样性、公平性、用户留存或长期满意度，而且大曝光增幅可能改变整体供给分布。作者未明说的限制是，以交互强度安排页内目标顺序可能把业务价值偏好写入序列位置，在社区内容、新闻或知识推荐中需重新校准。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索与推荐，最值得先实验的不是直接上 7B，而是三个可拆分的设计。第一，把一页搜索结果或 Feed 中的点击、长停留、收藏、评论组成 page-wise 目标，并在线下对比 point-wise 训练的 NDCG、无效 ID 率和收敛速度。第二，若帖子用多级语义 ID 编码，可仅在历史 prefill 合并 ID embedding，保留解码粒度；这比全链路减少 SID 层级的可逆性更好。第三，RL 奖励必须有硬的相关性/合法性 gate 与行为 NLL 锚点，否则应同时上升的不是 CTR，而是幻觉率。</p>\n<p>实施路线可分四阶段：先在现有候选集上训练 1.5B 或 3B PW-NTP 对照；再加 Token Merger 测量 prefill token 数、P95/P99 延迟与 HR 损失；第三阶段只做离线 GRPO-SR，绘制 reward—HR—HaR 三维曲线；最后以小流量分别验证 SFT 和 RL，不要一次合并实验。容量上应优先 3B：论文中 7B 比 3B 的 NDCG@10 只多 0.0014，但参数约 2.3 倍。监控除点击和成交外，还要包含 SID 无效率、长尾曝光集中度、重复物品率、新内容冷启动、用户负反馈和单请求成本。这篇论文最具价值的信息是：生成式推荐的工业上限不只由模型规模决定，更由页级标签结构、输入压缩位置和奖励防黑客机制共同决定。</p>",
-      "chars": 3419,
-      "minutes": 9
-     },
-     "weekly_rank": 2
-    },
-    {
-     "id": "acl:2026.findings-acl.2134",
-     "title": "Internalizing Multi-Agent Reasoning for Accurate and Efficient LLM-based Recommendation",
-     "url": "https://aclanthology.org/2026.findings-acl.2134/",
-     "source": "web_search",
-     "company": [
-      "Tencent"
-     ],
-     "published": "2026-07-01",
-     "authors": "Yang Wu, Haoze Wang, Qian Li, Jun Zhang, Huan Yu, Jie Jiang",
-     "total_score": 4.7,
-     "adjusted_score": 4.9,
-     "preference_bonus": 0.2,
-     "rank_score": 4.9,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 5,
-      "practicality": 5,
-      "evidence_quality": 4,
-      "timeliness": 3
-     },
-     "summary": "腾讯提出 STAR，把多智能体教师的规划、工具调用、自反思轨迹以及协同信号翻译能力，蒸馏进单个实时推荐模型。训练先由教师合成带行为证据的复杂轨迹，再进行监督微调与强化学习；实验中 STAR 比教师高 8.7%–39.5%，同时消除迭代式多智能体推理带来的在线时延。",
-     "key_insight": "工业系统不必在每次请求中运行昂贵的多智能体链路，可以离线让强教师探索并把轨迹内化到轻量学生。对社区搜推，可把用户点击序列先翻译成可读兴趣证据，再蒸馏规划与反思逻辑；线上只保留单模型推理，在维持延迟预算的同时获得更强的意图解释和候选选择能力。",
-     "best_date": "2026-07-21",
-     "appearances": [
-      {
-       "date": "2026-07-21",
-       "rank": 2,
-       "id": "acl:2026.findings-acl.2134",
-       "total_score": 4.7,
-       "adjusted_score": 4.9
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:2602.09829",
-      "slug": "2602.09829",
-      "content_html": "<h2>深度解读：Internalizing Multi-Agent Reasoning for Accurate and Efficient LLM-based Recommendation</h2>\n<h3>1. 问题与动机</h3>\n<p>LLM 在推荐系统中的应用面临一个核心矛盾：语义推理能力强但缺乏协同过滤信号。现有方法要么将协同信号压缩为不可解释的向量（如 ID embedding），丧失了 LLM 的推理优势；要么使用多智能体系统进行多轮推理，但推理延迟高达数百秒，无法满足在线推荐的实时性要求。例如，基于多智能体的 MARS 系统在 Amazon 数据集上需要 461 秒完成一次推理。这种推理质量与推理效率的矛盾是 LLM 推荐系统落地的关键障碍。本文的动机是：能否将复杂的多智能体推理能力「内化」到单一高效模型中，同时保持甚至超越多智能体系统的推理质量？</p>\n<h3>2. 方法详解</h3>\n<p><strong>多智能体教师系统 MARS：</strong> 采用 Plan-Execute-Reflect 架构。规划阶段将用户意图分解为可执行子任务；执行阶段由专门的 Agent（用户画像分析、历史兴趣分析、近期兴趣分析、兴趣分歧分析）并行执行；反思阶段整合各 Agent 输出进行自我修正。</p>\n<p><strong>协同信号翻译机制（CST）：</strong> 这是本文最关键的创新。CST 在用户-物品二部图上执行图遍历：Item-CF 工具通过 Item→User→Item 路径发现共现物品，User-CF 工具通过 User→Item→User 路径聚合相似用户偏好。关键设计是将遍历结果转化为自然语言摘要并离线预计算，使在线推理时可即时调用。</p>\n<p><strong>轨迹驱动内化管线：</strong> 分两阶段训练学生模型（Qwen3-8B）。阶段一 SFT：从 MARS 教师（DeepSeek-V3）生成推理轨迹，仅保留成功案例进行监督微调，序列化格式保留工具调用 token 以教会模型何时及如何访问协同信号。阶段二 GRPO：使用复合奖励函数进行策略优化，包括格式一致性奖励（±1）和分层结果奖励（排名第1得1分，前3得2/3分，前5得1/3分）。</p>\n<p><strong>训练设置：</strong> 教师 DeepSeek-V3 在 16 张 H20 GPU 上运行；学生 SFT 阶段 8 张 GPU 训练 3 个 epoch，GRPO 阶段 16 张 GPU 训练 8 组样本。推理使用 BF16 精度，temperature=0.7。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：协同信号的语言化翻译。</strong> CST 机制将传统推荐中不可解释的协同过滤信号（共现矩阵、用户相似度）转化为 LLM 可理解的自然语言证据。这不仅提升了推理质量，还使推荐过程具备了可解释性。相比直接将 ID embedding 注入 LLM 的方法（如 TALLRec、P5），CST 保持了 LLM 的原生推理能力。</p>\n<p><strong>贡献二：学生超越教师的蒸馏方法。</strong> 通过基于结果的轨迹过滤（仅保留成功案例）和统一策略训练（消除多智能体间的错误传播），STAR 模型在多数场景下性能超越教师系统 8.7%–39.5%。这证明了多智能体系统中的冗余和错误传播反而限制了推理质量。</p>\n<p><strong>贡献三：推理效率的量级提升。</strong> STAR 将推理延迟从 MARS 的 461 秒降至 89 秒（约 5 倍加速），且学生模型仅需单张 H20 GPU 即可运行。</p>\n<p><strong>贡献四：从 1.7B 到 32B 的一致性缩放行为。</strong> 实验验证了 STAR 框架在不同模型规模上的单调性能提升（1.7B: 70.1% → 32B: 84.5%），表明该方法具有良好的 scaling 特性。</p>\n<h3>4. 实验结果分析</h3>\n<p>实验在 Amazon、Goodreads、Yelp 三个数据集上进行，覆盖经典推荐、冷启动（用户/物品）和兴趣漂移（长期/短期）五种场景。</p>\n<table><thead><tr><th>模型</th><th>Amazon经典</th><th>Goodreads冷启动用户</th><th>Yelp兴趣漂移(长期)</th></tr></thead><tbody><tr><td>RecHacker</td><td>51.5</td><td>49.3</td><td>47.6</td></tr><tr><td>MARS(教师)</td><td>68.4</td><td>66.3</td><td>74.1</td></tr><tr><td><strong>STAR(学生)</strong></td><td><strong>79.0</strong></td><td><strong>76.3</strong></td><td><strong>87.3</strong></td></tr></tbody></table>\n<p>消融实验揭示了各组件的重要性：移除 Reflector（自我修正）导致最大性能下降（6.5 个点），表明自我修正对推理质量至关重要；移除 Tool（协同信号工具）导致第二大下降（5.6 个点），验证了 CST 机制的有效性。</p>\n<p>Best-of-k 缩放分析显示，增加推理时采样数（k=1→16）带来单调性能提升，这意味着可以通过增加推理计算来进一步提升推荐质量。</p>\n<p>值得注意的是，学生模型在所有场景下均超越教师，这一反直觉结果归因于：(1) 基于结果的过滤去除了教师的失败案例噪声；(2) 统一模型消除了多智能体系统中的级联错误传播。</p>\n<h3>5. 局限与未来方向</h3>\n<p><strong>作者明确指出的局限：</strong> (1) 当前 89 秒的推理延迟仍无法满足亚秒级在线推荐需求，需要进一步的推理加速（如量化、推测解码）；(2) 离线语言化摘要需要为所有用户和物品预计算，在十亿级规模下存在存储开销；(3) 实验评估基于 20 个候选物品的集合，全库排序效果未验证。</p>\n<p><strong>未涉及但值得关注的局限：</strong> 实验仅在电商、图书、本地服务三个领域验证，在短视频推荐、新闻推荐等高频交互场景的效果有待检验。此外，CST 机制依赖预构建的用户-物品二部图，在图稀疏或用户交互极少的场景下效果可能受限。</p>\n<h3>6. 工业实践意义</h3>\n<p><strong>可借鉴的设计思路：</strong> CST 机制将隐式行为信号翻译为自然语言的方法，可直接应用于搜索排序场景——将用户点击历史、停留时长等行为信号转化为 LLM 可理解的文本描述，作为 LLM 排序模型的输入特征。这比直接拼接 ID embedding 更符合 LLM 的原生能力。</p>\n<p><strong>蒸馏落地路径：</strong> STAR 的两阶段蒸馏方案（SFT + GRPO）为从大模型蒸馏到可部署的小模型提供了成熟的训练范式。对于搜索场景，可以先用大模型（如 DeepSeek-V3）做离线打标和推理链生成，再蒸馏到 8B 级别模型进行在线服务。</p>\n<p><strong>部署注意事项：</strong> 89 秒的推理延迟意味着该方法目前更适合作为离线重排序或异步推荐的方案，而非实时在线推荐。建议的落地路径是：离线使用 STAR 生成高质量排序列表或推荐理由，在线通过缓存或近实时更新提供服务。单张 H20 GPU 的学生模型资源需求相对可控。</p>",
-      "chars": 2366,
-      "minutes": 6
-     },
-     "weekly_rank": 3
-    },
-    {
-     "id": "web:meta-silvertorch-2026-05-26",
-     "title": "SilverTorch: Index as Model — A New Retrieval Paradigm for Recommendation Systems",
-     "url": "https://engineering.fb.com/2026/05/26/ml-applications/silvertorch-index-as-model-new-retrieval-paradigm-recommendation-systems/",
-     "source": "web_search",
-     "company": [
-      "Meta"
-     ],
-     "published": "2026-05-26",
-     "authors": "Lei Chen, Yiyi Pan, Ivy Sun, Sha Meng, Cornelia Carapcea, Shilin Ding, Ram Ramanathan, Nipun Mathur, Hong Yan, Lars Back...",
-     "total_score": 4.7,
-     "adjusted_score": 4.9,
-     "preference_bonus": 0.2,
-     "rank_score": 4.9,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 5,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 2
-     },
-     "summary": "Meta 将推荐检索中的索引、过滤、重排和多任务打分统一为一个 PyTorch 模型，把索引本身变成模型张量，并在不足 100 毫秒内完成全链路。面向 8000 万物品的评测中，SilverTorch 吞吐提升 23.7 倍，估算算力成本效率提升 20.9 倍。",
-     "key_insight": "“索引即模型”消除了微服务边界对候选规模和模型复杂度的限制，也为把 LLM 的意图理解与内容语义直接嵌入召回层提供接口。UGC 搜推团队可先把资格过滤、相似检索与轻量重排模块化为同一训练图，再用统一离线指标验证延迟与成本收益。",
-     "best_date": "2026-07-24",
-     "appearances": [
-      {
-       "date": "2026-07-24",
-       "rank": 1,
-       "id": "web:meta-silvertorch-2026-05-26",
-       "total_score": 4.7,
-       "adjusted_score": 4.9
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "web:meta-silvertorch-2026-05-26",
-      "slug": "2511.14881",
-      "content_html": "<h1>深度解读：SilverTorch 将推荐索引变成可组合模型</h1>\n<h2>1. 问题与动机</h2>\n<p>工业推荐召回通常把用户塔、ANN 索引、资格过滤和后续打分拆成多个服务：模型在 PyTorch/TensorFlow 中开发，向量索引由 Faiss、Milvus 或专有 CPU 服务维护，语言、地区、可见性等过滤再由倒排索引执行。论文指出这种分层并非只是工程风格差异，而会形成三个系统上限。其一，各组件拥有独立版本、调度、批处理和发布逻辑，端到端实验需要跨团队协调；其二，客户端必须扇出请求并搬运中间结果，无法联合优化搜索与过滤；其三，CPU 服务靠横向扩容支撑更大候选和复杂相似度，成本近似线性增长，难以承接多任务召回及深层交互。</p>\n<p>版本一致性是作者给出的直接生产证据。服务化方案中，用户塔几分钟即可发布，但数亿物品的 KNN 索引构建超过 4 小时；2022 年一次错误版本切换曾让生产性能指标下降 30%。与此同时，Faiss-GPU 的推荐用法受 Top-K/Probe 规模限制，而资格过滤仍主要停留在 CPU。推荐模型正从简单点积走向 HSTU 长序列、Mixture of Logits 和多任务价值建模，传统索引服务无法随训练图一起演化。SilverTorch 因而提出 Index as Model：把 ANN、过滤、缓存、重排和价值聚合全部定义为模型层，发布成一个可由纯 C++ Predictor 执行的快照。</p>\n<h2>2. 方法详解</h2>\n<p>SilverTorch 的发布链路先加载训练完成的用户塔和物品塔，在 GPU 上计算物品向量，并用 KMeans++ 构建 IVF 聚类。ANN 向量被全局 min/max 缩放到 Int8 的 [-128,127] 区间；用户塔、OverArch 和 Value Model 采用 BFloat16。资格特征不再写入倒排服务，而是编码为 GPU Bloom Index：每个物品用 M 位签名表示，k 个哈希函数把特征写入相应位；查询也生成签名，匹配等价于检查查询置 1 的位是否都在物品签名中为 1。实现把矩阵转置后只访问查询为 1 的行，并用一条 64 位 AND 指令同时处理 64 个物品，避免逐物品不规则访存。</p>\n<p>ANN 层采用 IVF，但把索引选择、Embedding Gather、点积和 Top-K 融成 Int8 Kernel。标准实现会先物化巨大的临时向量张量，SilverTorch 则让 Warp 连续读取物品块，边读边做乘加，不生成中间 Gather 结果。Int8 将向量内存约减半，节省的显存用于让 OverArch 打分更多候选。作者报告在 64 probes、top-2048 时没有可测的 Recall 损失；系统实际支持 O(10,000) 的预筛候选，再由 OverArch 降到 O(1,000) 交给精排。</p>\n<p>关键的联合优化是 Probe-then-Filter。传统 Filter-then-Probe 先对全库过滤，但 ANN 最终只会访问少数被探测的聚类，其他过滤计算全部浪费。SilverTorch 先找出 IVF 的目标聚类，只对其中物品生成 Bloom 位掩码，然后在同一遍 Kernel 中完成过滤与相似度计算。由于 ANN 探测与资格过滤是合取条件，交换顺序不改变给定 probes 下的结果。论文给出的 8100 万物品、9000 个聚类、256 probes 案例只处理 230 万物品，约占 2.8%，过滤计算与临时显存均减少约 30 倍。</p>\n<p>扩展层包含两部分。OverArch 在 ANN 后读取预先缓存于 GPU 的物品向量，可使用 MLP、Self-Attention 或 Mixture of Logits 建模点积无法表达的用户—物品交互。多任务召回为点赞、分享、评论等目标生成任务专属用户向量，但共享物品索引；Value Model 再解析 JSON 风格业务公式，把各任务预测合成统一期望价值。多 GPU 时 ANN/Bloom 索引按物品分片，OverArch 和 Value Model 在各卡复制，局部结果汇总后统一打分；Embedding 表仍可放在 CPU 参数服务器。</p>\n<p>实验使用两个生产采样数据集，候选规模分别为 1000 万和 8000 万，向量维度 128，硬件为 A100 40GB；用户塔采用 HSTU，OverArch 使用 Mixture of Logits。系统回放 5000 个真实请求，在 P99 低于 200ms 的约束下逐步加压测最大 QPS。80M 配置用 2 张 GPU，10M 用 1 张；ANN 对照包括 Faiss-CPU IVF、Faiss-GPU IVF 与 HNSW，过滤对照为生产 CPU 倒排和 GPU Forward Index。ANN 微基准先预热 50 个 Batch，再测 100 个 Batch，Batch Size 为 16。论文不是训练算法工作，因此未报告优化器、训练 Batch 或训练步数；这不影响服务评测，但限制了端到端模型复现。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，SilverTorch 把索引从外部状态提升为模型参数。ANN Tensor、Bloom Tensor、用户塔、缓存和打分层随一个快照发布，既消除用户/物品版本漂移，也让统一编译、量化和容量估算成为可能。发布阶段利用 GPU 后，完整快照构建从数天缩短到约 1 小时。</p>\n<p>第二，论文首次把推荐资格过滤系统性地搬到 GPU，并利用推荐特征较少、查询结构可预知的性质设计 Bloom Index。它牺牲极低概率的假阳性来换取连续位运算；假阳性还会被后续排序剔除。第三，Int8 ANN 与 Bloom Filter 的联合顺序优化不是简单拼装两个 Kernel，而是根据 IVF 只访问部分聚类的性质推迟过滤，直接删除无效计算和 Scratch Memory。</p>\n<p>第四，节省的系统预算被明确返还给模型能力：OverArch 用非点积交互重排更多候选，Value Model 把多任务预测翻译成业务价值。E-Task 上，单纯 SilverTorch 在 Recall@100 为 0.20306；加入完整精度 OverArch 后为 0.24189，同时 Recall@20 从 CPU 基线 0.08239 升到 0.09181。系统创新因此不只追求更快，而是把吞吐余量转化为更复杂的召回建模。</p>\n<h2>4. 实验结果分析</h2>\n<p>80M 数据、生产 24 probes 设置下，SilverTorch 达到 1210 QPS；加入 OverArch/Value Model 后仍有 771 QPS。其成本表给出了可以直接复算的结果：</p>\n<table><thead><tr><th>方案</th><th>QPS</th><th>每小时估算 TCO</th><th>每千请求成本</th></tr></thead><tbody><tr><td>CPU 基线</td><td>51</td><td>$28.92</td><td>$0.1580</td></tr><tr><td>GPU 基线 Faiss2 + Forward4</td><td>186</td><td>$30.29</td><td>$0.0452</td></tr><tr><td>GPU 基线 Faiss2 + Forward6</td><td>340</td><td>$33.27</td><td>$0.0272</td></tr><tr><td>SilverTorch</td><td>1210</td><td>$33.27</td><td>$0.0077</td></tr><tr><td>SilverTorch + OverArch</td><td>771</td><td>$33.27</td><td>$0.0120</td></tr></tbody></table>\n<p>按每千请求计算，纯 SilverTorch 相比 CPU 基线约节省 95.1%，即成本效率约 20.5 倍；工程博客汇总为 20.9 倍。与最强列出的 GPU 基线相比，每千请求成本也下降约 71.7%。更重要的是，Pool 从 80M 降到 10M 时 SilverTorch QPS 继续上升到 3802，而服务化基线因每台服务器承载量接近，吞吐变化不明显，说明统一 GPU 路径对候选规模更敏感。</p>\n<p>联合索引消融显示，Probe-then-Filter 比先做全量 Bloom Filter 的 Filter-then-Probe 提高约 17%–25% QPS。80M 实例中模型显存大致由 5GB Bloom Index、5GB ANN Index、10GB FP16 Embedding Cache、12GB OverArch 与 Value Model 权重构成。该分解说明 Bloom/Int8 的意义不仅是局部加速，还决定复杂交互层是否装得进 40GB A100。</p>\n<p>质量结果呈现了速度与召回的可控交换。E-Task 的 CPU 基线在 Recall@100/500/1000 分别为 0.19179/0.42950/0.44127；SilverTorch + OverArch 为 0.24189/0.44758/0.45727，相对提升 25.04%、5.6%、2.4%，QPS 仍从 51 提至 771。Recall@20 达 0.09181，比基线高 28.2%。低位 Bloom 版本把签名从 1024 位降到 768 位后假阳性上升，却没有降低端到端召回，部分点还略升，说明过滤是训练外约束，微量放宽会让 OverArch 获得更多可能相关候选。</p>\n<p>Int8 ANN 在 2000 万条、128 维向量微基准中跨 Recall 0.35–0.92 均快于 Faiss-GPU；代价是无法到达 0.95 Recall。但 Faiss 为达到 0.95 需要 CPU 1024 probes 或 GPU 512 probes，延迟显著恶化。对推荐系统而言，作者选择以较低成本获取宽候选，再让 OverArch 修正点积误差。这是一个系统级结论：不要孤立追求 ANN 的极高 Recall，应优化 ANN、预排序和最终召回质量的总预算。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出，SilverTorch 当前聚焦 Embedding-based Retrieval，生产中仍存在规则召回频道；这些频道需要封装 CPU Key-Value Index 为模型层，或只复用 Bloom Filter 后再让 GPU OverArch 统一打分。频控、历史过滤等动态约束目前通常留在后续排序，并未全部进入统一快照。</p>\n<p>IVF 也带来已知边界。Probe-then-Filter 与 Filter-then-Probe 在固定 probes 下结果等价，但当过滤条件选择性极强时，被探测聚类可能没有足够合格物品，只能增加 probes；论文的语言、国家等过滤相对宽，不能代表稀有主题或严格安全策略。Bloom Index 还有假阳性，虽然下游可以清理，但在必须零误放的合规过滤中不能单独承担最终判定。</p>\n<p>物品新鲜度仍是未完成工作。作者提出独立 Fresh Index，与主索引同布局并在线合并候选，但把具体更新协议、压缩和一致性留作未来研究；简单预留内存并线性扫描新增项无法扩展。论文也没有公开线上 A/B、真实 P99 数值、模型训练成本或故障恢复时间，TCO 基于相近 AWS 实例估算而非完整财务账本。外部团队还需要评估 GPU 利用率波动、跨卡合并和 CPU 参数服务器是否成为新瓶颈。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐团队，最可操作的第一步不是重写全部服务，而是把现有请求画成可测量的数据流：用户塔发布、索引构建、资格过滤、网络扇出、候选合并、预排序分别记录 P50/P99、QPS、显存和每千请求成本。若索引构建远慢于模型发布，先解决统一快照和版本原子切换；SilverTorch 的 30% 版本事故说明这一收益可能先于 GPU 加速出现。</p>\n<p>第二步可从宽而稳定的过滤条件试点 Bloom GPU 化，例如语言、地区、内容类型和基础资格；安全下架、隐私、频控仍保留精确后验检查。ANN 应先支持大 Top-K 的 Int8 路径，用同一批生产请求绘制 Recall—Latency 曲线，再把节省的显存给轻量 OverArch。对社区 UGC，OverArch 可加入查询—帖子跨特征、作者关系、时效和会话上下文；Value Model 则把点击、长停留、收藏、评论和负反馈映射为业务价值，避免只优化单一 CTR。</p>\n<p>部署容量可以直接参考论文的资源账：80M、128 维实例在两张 A100 40GB 上运行，但模型权重、缓存、索引各占显存大头，不能只按向量库大小估卡数。上线前应以影子流量复现 5000 请求以上的混合过滤分布，保持固定 P99 预算逐步加压，并加入突发流量、索引更新和回滚演练。若目标规模很小，论文也建议切换 CPU PyTorch Runtime，而不是为了架构统一强行上 GPU。</p>\n<p>SilverTorch 对生成式搜推的核心启示是，复杂模型是否可上线取决于检索系统能否把基础算子压缩成一个可联合优化的执行图。它没有直接生成物品 ID，却通过更宽候选、非点积 OverArch 和多任务价值层，为 LLM 级意图与内容表征留下了在线预算。真正值得复制的不是某个 Kernel，而是把索引、过滤、模型质量、成本和版本一致性放进同一个优化问题。</p>",
-      "chars": 4829,
-      "minutes": 13
-     },
-     "weekly_rank": 4
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2607.18796",
-     "title": "TSGR: Taobao Search Generative Retrieval",
-     "url": "https://arxiv.org/abs/2607.18796",
-     "source": "arxiv",
-     "company": [
-      "Alibaba"
-     ],
-     "published": "Wed, 22 Jul 2026 00:00:00 -0400",
-     "authors": "Tianyu Zhan, Gui Ling, Tong Xiong, Kunhai Lin, Yang Wang, Kaixuan Zhang, Zhihong Chen, Yuliang Yan, Dan Ou, Shengyu Zhan...",
-     "total_score": 4.65,
-     "adjusted_score": 4.85,
-     "preference_bonus": 0.2,
-     "rank_score": 4.85,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 5
-     },
-     "summary": "针对工业电商生成式检索只优化语义匹配、忽略商品业务价值的问题，TSGR 用查询感知的并行语义 ID 将价值次序写入编码，再以联合训练的价值感知排序模块统一召回与预排。淘宝离线 HR@1000 提升 9.16%，线上 A/B 实验带来 IPV +0.43%、成交数 +1.12%、GMV +1.64%。",
-     "key_insight": "生成式召回要进入生产，语义 ID 不能只表达内容相似度，还应把查询条件下的价值顺序编码进去；同时让同一自回归模型承担召回和预排，可减少阶段间目标错位。对社区搜索可把内容质量、时效、互动价值等统计融入并行码本，再通过渐进训练依次对齐相关性、用户偏好与业务目标。",
-     "best_date": "2026-07-23",
-     "appearances": [
-      {
-       "date": "2026-07-23",
-       "rank": 1,
-       "id": "arxiv:oai:arXiv.org:2607.18796",
-       "total_score": 4.65,
-       "adjusted_score": 4.85
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:oai:arXiv.org:2607.18796",
-      "slug": "2607.18796",
-      "content_html": "<h1>深度解读：TSGR: Taobao Search Generative Retrieval</h1>\n<h2>1. 问题与动机</h2>\n<p>论文指出工业生成式检索与真实商业目标存在结构性错位。现有方法通常用多模态语义向量构建全局固定的 Semantic ID，再按 token 概率做 beam search；这能优化语义相似，却不知道同一商品在不同 query 下的价值差异，也无法在动态生成候选前预取丰富的商品侧特征。两个商品可能同样相关，但点击、转化和 GMV 价值显著不同。若高价值商品没进入候选集，后续排序再强也无法挽回。</p>\n<p>TSGR 将问题拆成两层：在表示层让 SID 感知 query 与商业价值，在输出层让生成模型同时承担预排。作者不只验证离线 HR，还在淘宝搜索上用 IPV、成交数和 GMV 检验收益，这使工作区别于仅证明语义 ID 可行的学术方案。</p>\n<h2>2. 方法详解</h2>\n<p>TSGR 以 Qwen2.5-0.5B 为生成骨干，输出三级 SID。前两级是语义码本：先用 8100 多个类目的商品平均向量初始化第一级，再对“簇中心减类目中心”的残差做 RQ-KMeans。原始四级结构会增加解码成本和级联错误，作者将前两级合并，最终码本规模为 32768×8192×8192。</p>\n<p>第三级是 QP-SID 的“效率码本”。在每个语义簇内，默认路径按过去 30 天点击数排序，高价值商品获得更靠前的 token 索引。系统又从词项—商品点击统计中构建 query 条件排序：训练时从 query 抽取关键词，与商品簇的代表词求交；命中多个词时，选择与该簇共现点击数最高的词来决定第三级 token，否则回退全局默认顺序。每个商品保留 4 条平行的第三级路径，因此同一商品可随 query 意图使用不同 SID。</p>\n<p>VRM（Value-aware Ranking Module）复用生成骨干的 hidden states 形成用户表示，将候选 SID embedding 与商品侧信息通过 cross-attention 融合，分别预测 PV、CTR、CVR。线上用 PV×CTR 对 beam 候选重排，不再另起独立预排服务。生成损失是 pay/click/PV 多正样本的加权交叉熵，权重为 3/2/1；排序损失是三个任务的 BCE，总目标为 L_gen + λL_rank，λ=1。</p>\n<p>训练分 Pre-SFT 与 SFT。Pre-SFT 包含编码、个性化、检索、协同、推荐 5 类任务，先学习文本/行为到 SID 的映射；SFT 将同一 session 的 pay、click、PV 正例装入一个样本，用 label 间 attention mask 防止串扰。数据来自淘宝两周超过 2 亿次用户交互，次日作测试集。SFT 使用 AdamW（β1=0.9、β2=0.999）、cosine 学习率 1e-4、batch size 256、10 个 warmup step。GRPO 另用 10 万 query 训练 2 epoch、batch size 16，但收益太小，未上线。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，QP-SID 将价值感知前移到离散标识构建。与一商品一个全局 SID 不同，它利用较早 token 索引训练信号更充分的特性，把高价值且 query 相关的商品前置，HR@1000 相对 FORGE 提升 4.42%。这不是生成后的简单加权，而是改变模型学习的输出空间。</p>\n<p>第二，VRM 在不重复编码上下文的前提下，把生成骨干与商品侧特征联合训练，用一个模型完成召回和预排。它在 HR@1000 上增益 3.73%，高于独立预排的 3.30%，且线上可跳过传统预排阶段。</p>\n<p>第三，加权多正样本训练显式保留 pay &gt; click &gt; PV 的优先级，不把 session 互动拆成等价 pointwise 样本，使 HR@1000 从 0.7714 提至 0.7922。五任务 Pre-SFT 联合训练另带来 5.76% 收益，说明先补齐 SID 编码和检索子能力，再做个性化 SFT 更稳定。</p>\n<h2>4. 实验结果分析</h2>\n<table><thead><tr><th>方法</th><th>HR@20</th><th>HR@100</th><th>HR@500</th><th>HR@1000</th><th>HR@5000</th></tr></thead><tbody><tr><td>FORGE SID</td><td>0.4328</td><td>0.5863</td><td>0.7207</td><td>0.7735</td><td>0.8604</td></tr><tr><td>QP-SID</td><td>0.4635</td><td>0.6235</td><td>0.7669</td><td>0.8177</td><td>0.8961</td></tr><tr><td>QP-SID + Pre-SFT</td><td>0.4694</td><td>0.6340</td><td>0.7740</td><td>0.8222</td><td>0.8987</td></tr><tr><td>独立预排</td><td>0.4248</td><td>0.6264</td><td>0.8112</td><td>0.8552</td><td>0.8771</td></tr><tr><td>RL</td><td>0.4659</td><td>0.6420</td><td>0.7857</td><td>0.8277</td><td>0.9027</td></tr><tr><td>VRM（TSGR）</td><td>0.4586</td><td>0.6677</td><td>0.8250</td><td>0.8651</td><td>0.8953</td></tr></tbody></table>\n<p>QP-SID 将 HR@1000 从 0.7735 提到 0.8177，说明将价值写入 SID 比对旧 SID 候选事后重排更有效。VRM 的 HR@100/500/1000 最强，但 HR@5000 不如 RL，表明它更擅长将高价值正例前移，而不是无差别扩大长尾覆盖；这与线上只向排序传 top-1500 的目标一致。</p>\n<p>消融暴露了两个失败模式。若训练标签用 query 条件 SID、输入历史仍用默认 SID，输入输出不一致会明显拉低 HR@100。另一方案给样本附加多路径标签，最终 99.8% 输出坍缩到 Default 路径。最终设计的 cluster、Level-3、整体命中率为 78.71/72.83/57.32，高于多路径方案的 77.20/71.90/55.50。VRM 中移除 item embedding 降幅最大，证明离散 SID 会丢失商品细节；mean pooling 或 EOS 替代 cross-attention 主要伤害 HR@20、对 HR@1000 较小，可作为低时延降级方案。</p>\n<p>线上 A/B 覆盖淘宝搜索 1% 流量并持续 38 天。TSGR 返回 top-1500 后直接进入排序，IPV +0.43%、成交数 +1.12%、GMV +1.64%，均统计显著。服务运行在 NVIDIA H20，预算 80ms；三级 beam 为 [400,400,10000]，前两级用 prefix tree 约束，末级标准 beam search。</p>\n<h2>5. 局限与未来方向</h2>\n<p>论文没有独立 Limitations 章节，但明确报告了边界。GRPO 的基础增益仅 +0.02%，加入离线 DPO 与动态层级熵正则后累计约 +0.52%，因此未实际部署。query 条件路径依赖关键词和词—簇点击统计；评估序列中 61.42% 属于 No Hit，说明 query-aware 路由尚未覆盖全部请求。</p>\n<p>作者未充分讨论的限制包括：证据主要来自中文电商搜索，而 UGC、新闻或非商业搜索的“价值”通常是时效、质量、多样性、安全的多目标组合；平行 SID 的稳定性、更新成本和目标冲突仍需实验。论文也未报告全量码本内存、每日重建成本，以及与多通道召回的候选重复率。</p>\n<h2>6. 工业实践意义</h2>\n<p>搜索推荐团队可以分三步试验。先在既有语义 ID 簇内增加一条业务价值排序路径，比较“价值写入 ID”和“生成后重排”。再只对高频 query 构建少量条件路径，监控命中覆盖、路径坍缩和近邻保持率。最后用生成骨干 hidden state 接轻量价值头，先影子打分，再判断能否安全跳过部分预排。</p>\n<p>社区 UGC 搜索不应直接复制 PV×CTR。可将默认路径定义为长期内容质量，再按 query 意图构建时效、专业性、互动满意度等平行路径；VRM 则联合预测点击、长停留、二次搜索和负反馈，用约束多目标替代单一商业乘积。pay/click/PV 的 3/2/1 可替换为优质互动/点击/曝光，但应保留 label 间 mask。</p>\n<p>部署上，H20 80ms、三级大 beam 和 top-1500 输出表明它仍是高算力方案。小团队应先作为单一召回通道，复用 GPU batching 与前缀约束，以候选增益、端到端时延和预排节省的净收益作为扩容门槛。论文最重要的生产证据，是生成式召回不仅提高离线命中率，还能在移除一个工程阶段的同时提升成交与 GMV。</p>",
-      "chars": 3085,
-      "minutes": 8
-     },
-     "weekly_rank": 5
-    },
-    {
-     "id": "acl:2026.findings-acl.310",
-     "title": "Eliminating Out-of-Domain Recommendations in LLM-based Recommender Systems: A Unified View",
-     "url": "https://aclanthology.org/2026.findings-acl.310/",
-     "source": "web_search",
-     "company": [
-      "Microsoft"
-     ],
-     "published": "2026-07-01",
-     "authors": "Hao Liao, Jiwei Zhang, Jianxun Lian, Wensheng Lu, Mingqi Wu, Shuowangg, Yong Zhang, Yitian Huang, Mingyang Zhou, Rui Mao",
-     "total_score": 4.55,
-     "adjusted_score": 4.85,
-     "preference_bonus": 0.3,
-     "rank_score": 4.85,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 3
-     },
-     "summary": "微软 RecLM 在同一 LLM 与提示设置下统一比较三种落地范式：向量检索、受约束的标题生成和离散物品 token 生成。三种变体都把域外推荐 OOD@10 严格降到 0；其中 RecLM-cgen 与 RecLM-token 在公开基准达到整体 SOTA，并开放于 Microsoft RecAI 代码库。",
-     "key_insight": "生产级 LLM 推荐首先要把候选空间约束为真实库存，而不是只追求语言流畅度。社区搜推可以按延迟与更新频率选择三种接口：向量召回最稳、受约束文本生成便于解释、离散 token 生成利于端到端扩展；统一骨干和提示也让离线评测能公平比较准确率、幻觉率与成本。",
-     "best_date": "2026-07-21",
-     "appearances": [
-      {
-       "date": "2026-07-21",
-       "rank": 4,
-       "id": "acl:2026.findings-acl.310",
-       "total_score": 4.55,
-       "adjusted_score": 4.85
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 6
-    },
-    {
-     "id": "acl:2026.acl-industry.130",
-     "title": "Intent-Driven Semantic ID Generation for Grounded Conversational News Recommendation",
-     "url": "https://aclanthology.org/2026.acl-industry.130/",
-     "source": "web_search",
-     "company": [
-      "Tencent",
-      "Sun Yat-sen University"
-     ],
-     "published": "2026-07-01",
-     "authors": "Hongyang Su, Beibei Kong, Lei Cheng, Chengxiang Zhuo, Zang Li, Chenyun Yu",
-     "total_score": 4.55,
-     "adjusted_score": 4.85,
-     "preference_bonus": 0.3,
-     "rank_score": 4.85,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 5,
-      "practicality": 4,
-      "evidence_quality": 5,
-      "timeliness": 3
-     },
-     "summary": "腾讯针对新闻对话中隐式意图难以先检索的问题，提出 Generate-then-Match：7B LLM 先生成层级语义 ID 前缀，再与实时新闻池模糊匹配，并以双信号推理覆盖冷启动。在 15.2 万 SID 空间中实现 0% 幻觉、12.4% L1 命中，成本约为 GPT-4+混合 RAG 的 1/100，冷启动 L1 达 18.0%。",
-     "key_insight": "先生成可约束的语义目标、再映射到真实库存，能同时解决开放生成幻觉和检索 query 缺失。社区搜索可把模糊自然语言意图转换为帖子主题层级码，再在实时 UGC 池中做前缀匹配；用户画像与当前对话双通道尤其适合历史稀疏的新用户，并能保证最终结果始终来自可展示内容。",
-     "best_date": "2026-07-21",
-     "appearances": [
-      {
-       "date": "2026-07-21",
-       "rank": 3,
-       "id": "acl:2026.acl-industry.130",
-       "total_score": 4.55,
-       "adjusted_score": 4.85
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 7
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2602.22647",
-     "title": "Vectorizing the Trie: Efficient Constrained Decoding for LLM-based Generative Retrieval on Accelerators",
-     "url": "https://arxiv.org/abs/2602.22647",
-     "source": "arxiv",
-     "company": [
-      "Google"
-     ],
-     "published": "Wed, 22 Jul 2026 00:00:00 -0400",
-     "authors": "Zhengyang Su, Isay Katsman, Yueqi Wang, Ruining He, Lukasz Heldt, Raghunandan Keshavan, Shao-Chuan Wang, Xinyang Yi, Min...",
-     "total_score": 4.6,
-     "adjusted_score": 4.8,
-     "preference_bonus": 0.2,
-     "rank_score": 4.8,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 5,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 1
-     },
-     "summary": "STATIC 面向 LLM 生成式检索的受限解码，把不规则 Trie 展平为 CSR 稀疏转移矩阵，使前缀约束能在 TPU/GPU 上完全向量化执行。它已部署到服务数十亿用户的视频推荐平台，每步仅增加 0.033 毫秒、占推理时间 0.25%，相对 CPU Trie 加速 948 倍，并开源实现。",
-     "key_insight": "严格业务约束不必牺牲生成式检索吞吐：把树遍历改写成静态稀疏矩阵运算，可将内容新鲜度、类目或合规白名单直接注入解码空间。社区搜推若采用语义 ID，可复用这一模式把在线候选约束留在加速器侧执行，避免 CPU-GPU 往返，并以极低额外时延支持冷启动和动态业务规则。",
-     "best_date": "2026-07-23",
-     "appearances": [
-      {
-       "date": "2026-07-23",
-       "rank": 2,
-       "id": "arxiv:oai:arXiv.org:2602.22647",
-       "total_score": 4.6,
-       "adjusted_score": 4.8
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 8
-    },
-    {
-     "id": "arxiv:2605.23312",
-     "title": "Towards Generalizable and Efficient Large-Scale Generative Recommenders",
-     "url": "https://arxiv.org/abs/2605.23312",
-     "source": "web_search",
-     "company": [
-      "Netflix"
-     ],
-     "published": "2026-05-22",
-     "authors": "Qiuling Xu, Ko-Jen Hsiao, Moumita Bhattacharya",
-     "total_score": 4.45,
-     "adjusted_score": 4.75,
-     "preference_bonus": 0.3,
-     "rank_score": 4.75,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 2
-     },
-     "summary": "论文把生成式推荐骨干从 200 万参数扩展到 10 亿参数，并用带偏移项的 Scaling Law 判断不同下游任务是否接近收益上限。作者结合多 Token 预测、采样 Softmax、投影解码头及语义冷启动塔，在 100 万用户的一周生产影子实验中让 10 亿模型在全部任务上取得更高 MRR。",
-     "key_insight": "推荐模型扩容不能只看统一损失曲线，应分别估计每个任务的剩余容量，再把训练成本、在线缓存陈旧和新内容冷启动纳入同一决策。对社区搜索可按内容类型拟合独立 Scaling Law，优先扩容仍有 headroom 的任务，并用语义塔承接新帖冷启动。",
-     "best_date": "2026-07-24",
-     "appearances": [
-      {
-       "date": "2026-07-24",
-       "rank": 2,
-       "id": "arxiv:2605.23312",
-       "total_score": 4.45,
-       "adjusted_score": 4.75
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:2605.23312",
-      "slug": "2605.23312",
-      "content_html": "<h2>Towards Generalizable and Efficient Large-Scale Generative Recommenders 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>论文来自 Netflix 的标题推荐（title recommendation）生产实践，核心问题是：把生成式推荐主干从 2M 扩到 1B 参数，预训练阶段的收益<strong>不会自动</strong>传导到下游应用。作者把&quot;生产迁移&quot;拆成多个互相牵制的因素：任务自身的提升空间（task headroom）、重复训练成本、serving 延迟、item 时效性。</p>\n<p>量化证据很硬：系统每个刷新周期要在 <strong>2 万亿（2 trillion）行为 token</strong> 上训练，频繁重训使效率成为硬约束；缓存式 serving 带来 staleness——训练标签里的 item 在 serving 时可能已被消费；新标题缺乏可靠的协同 embedding。最关键的观察是&quot;serving 延迟敏感性因任务而异&quot;：Task B 在 24 小时 serving 延迟下 MRR 掉 31%、48 小时掉 41%，而 Task A 几乎不受影响（≤4%），Task C 居中（48h 掉 18%）。这说明&quot;该不该堆模型&quot;不能一刀切，必须按任务诊断。</p>\n<h3>2. 方法详解</h3>\n<p><strong>主干架构</strong>：基于 HSTU（hierarchical sequential transducer）的 Transformer 生成式推荐器，把用户行为编码成 token 序列，每个 event 把 action、context、metadata 压进单个 token。参数 scaling 区间 2M→1B（不含 embedding 与 decoding 层），embedding 维度 4096。</p>\n<p><strong>四个效率配方</strong>是落地关键：</p>\n<ol>\n<li><strong>Sampled softmax</strong>：仅用 1% 均匀采样负样本，且<strong>不做 LogQ 校正</strong>（刻意保持训练 recipe 简单）。</li>\n<li><strong>Projected decoding head</strong>：把维度从 d 投到 d/8（4096→512），在 10^6 词表规模下输出层 FLOPs 降 <strong>35.5×</strong>，10^7 item 规模下约降 <strong>249×</strong>——这是让&quot;十亿模型反复重训&quot;在工程上可行的核心。</li>\n<li><strong>Semantic item towers</strong>：用知识图谱 embedding、LLM2Vec 语言表征、人工标注特征，给协同信号弱的 item 兜底。</li>\n<li><strong>Collaborative-embedding masking</strong>：训练时按&quot;线上冷启动率&quot;随机替换 item embedding，让模型学会在没有协同 ID 时也能打分。</li>\n</ol>\n<p><strong>训练流程</strong>用&quot;small-to-large 漏斗&quot;：先在小主干上验证改动，再上十亿参数，避免直接在 1B 上试错的高成本。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：offset scaling-law 拟合作为诊断工具。</strong> 不同于传统 log-linear 拟合 P=a·log(N)+b，作者对每个任务拟合带偏移的形式 <strong>P(N)=P₀−(N/N₀)^(−a)</strong>，其中 P₀ 是任务相关的饱和上限。在 Table 2 上 offset 形式全面胜出：Task A 的 RMSE 降 48.4%、Task B 降 61.8%、Task C 降 14.9%。诊断结论很直接——Task A P₀=0.311 已接近经验上限，Task C P₀≈1.075（基本被 1.0 截断）几乎饱和。这把&quot;还要不要继续堆容量&quot;变成可量化的决策，并区分&quot;下一步该加容量、还是改目标、还是改 item 表征&quot;。</p>\n<p><strong>贡献二：Multi-Token Prediction (MTP) 的 serving-horizon 依赖性。</strong> 论文揭示 MTP 不是无脑收益：在 48 小时缓存式 serving 下用优化窗口能涨 MRR，但在 &lt;1s p95 的在线路径上，窗口变大反而伤害顺序敏感的任务。</p>\n<p><strong>贡献三：语义塔 + OOV embedding 处理冷启动。</strong> 把语义证据与协同信号解耦，使新标题在没有协同 ID 时仍可打分。</p>\n<h3>4. 实验结果分析</h3>\n<p><strong>MTP 结果（Figure 5）</strong>：48h 缓存 serving + 优化窗口下，Task A +22.1%、Task B +27.8%、Task C +27.9% 相对 MRR；但在线 serving（&lt;1s p95）下，MTP 让 Task A +19.6%，却随窗口增大<strong>损害</strong> Task B/C——印证 MTP 的收益强依赖 serving 时序与是否顺序敏感。</p>\n<p><strong>Production-shadow 评测（Figure 7）</strong>：1M 用户 × 1 周影子流量，1B vs 2M 主干：Task A +22.5%、Task B +11.3%、Task C +7.4% MRR，冷启动标题（词表未见）<strong>+28.1%</strong>。两个对照很说明问题：冷启动收益最大，印证语义塔设计有效；Task C 收益最小，印证 scaling-law 预测的天花板。最终在多个生产 A/B 中取得正向结果。</p>\n<p><strong>消融/趋势</strong>：MRR 为主指标，作者称 Hit Rate、NDCG 趋势一致但未详列。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者明确指出：（1）分析只用三个粗粒度任务类别，回避了实现细节；（2）offset law 拟合要求指标有界，对无界目标适用性未知；（3）sampled softmax 省掉 LogQ 校正是为简化，可能引入偏差；（4）production-shadow 衡量的是下游集成质量，不是单面的因果增益；（5）冷启动 masking 概率&quot;对齐线上冷启动率&quot;，但具体数值未披露。</p>\n<h3>6. 工业实践意义</h3>\n<p>对要落地生成式推荐/搜索的团队，这篇是难得的生产真账：</p>\n<ul>\n<li><strong>别只看离线 loss</strong>：模型 scale 只是迁移问题的一个分量，必须和 task headroom、解码成本、serving-延迟对齐、item 泛化一起评估。用 offset scaling-law 拟合判断&quot;哪些任务已到顶、哪些还能扛容量&quot;，按任务分配算力。</li>\n<li><strong>解码层是大模型反复重训的成本瓶颈</strong>：projected head（4096→512，FLOPs 降 35.5×~249×）+ 1% sampled softmax 是让十亿模型可运维的关键，对算力受限团队尤有参考。</li>\n<li><strong>MTP 要按 serving horizon 选用</strong>：缓存/可乱序场景受益，顺序敏感的在线路径慎用。</li>\n<li><strong>冷启动靠语义塔兜底</strong>：UGC/新内容密集的社区场景，知识图谱+语言表征+OOV embedding 的组合能在协同信号缺失时维持打分质量（此处冷启动 +28.1% 是最大亮点）。</li>\n</ul>\n<ul>\n<li><strong>时效性是被低估的隐形成本</strong>：Task B 在 48h serving 延迟下掉 41% MRR，说明对时效敏感的任务，缩短训练-serving 链路（更频繁刷新、更短缓存窗口）的收益可能大于堆模型容量；应把&quot;serving 延迟敏感性&quot;做成上线前标准画像，避免在已饱和或时效主导的任务上浪费算力。</li>\n</ul>\n<p><strong>部署考量</strong>：十亿主干的可运维性来自两点——projected head 把输出层从 4096 维压到 512 维，使大词表（10^7 item）下解码 FLOPs 降约 249×；small-to-large 漏斗把昂贵的 1B 验证前置到小模型上筛掉无效改动。这套组合让&quot;在 2 万亿 token 上反复重训十亿模型&quot;从纸面变成可落地流程，是想复刻 HSTU/生成式推荐 scaling 的团队绕不开的工程账。内存与延迟方面，sampled softmax（1% 负样本、省去 LogQ 校正）进一步压低训练开销，但代价是采样偏差未被显式纠正，落地时需自行评估对长尾排序的影响。</p>",
-      "chars": 2866,
-      "minutes": 8
-     },
-     "weekly_rank": 9
-    },
-    {
-     "id": "web:arxiv:2601.19711",
-     "title": "Differentiable Semantic ID for Generative Recommendation",
-     "url": "https://arxiv.org/abs/2601.19711",
-     "source": "web_search",
-     "company": [
-      "Amazon",
-      "Telefónica",
-      "University of Glasgow",
-      "Shandong University",
-      "Leiden University"
-     ],
-     "published": "2026-07-20",
-     "authors": "Junchen Fu, Xuri Ge, Alexandros Karatzoglou, Ioannis Arapakis, Suzan Verberne, Joemon M. Jose, Zhaochun Ren",
-     "total_score": 4.4,
-     "adjusted_score": 4.7,
-     "preference_bonus": 0.3,
-     "rank_score": 4.7,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "DIGER 解决语义 ID 分词器只优化内容重建、无法接收推荐损失的问题，以 Gumbel 噪声和两种不确定性衰减实现端到端可微索引并抑制码本坍塌。在 3 个公开数据集上，B-Shop 的 NDCG@10 从两阶段基线 0.0331 提至 0.0376，I-Shop 从 0.0797 提至 0.0844。",
-     "key_insight": "关键不是继续扩大神经召回骨干，而是让索引空间直接服务排序目标：训练早期用随机探索覆盖更多编码，后期降低噪声贴近确定性推理。对短文本 UGC，可把帖子文本编码与下一次点击目标联合训练，减少“语义相近但兴趣不可区分”的 ID 冲突；论文已开源代码，适合离线小流量验证。",
-     "best_date": "2026-07-22",
-     "appearances": [
-      {
-       "date": "2026-07-22",
-       "rank": 2,
-       "id": "web:arxiv:2601.19711",
-       "total_score": 4.4,
-       "adjusted_score": 4.7
       }
      ],
      "deep_reading": null,

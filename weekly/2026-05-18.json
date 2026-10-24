@@ -13,6 +13,386 @@
  "top_n": 10,
  "rule": "adjusted_score desc, total_score desc; dedupe by arXiv id / URL / id / title",
  "tracks": {
+  "generative": {
+   "raw_count": 29,
+   "unique_count": 29,
+   "days": [
+    "2026-05-18",
+    "2026-05-19",
+    "2026-05-20",
+    "2026-05-21",
+    "2026-05-22"
+   ],
+   "papers": [
+    {
+     "id": "arxiv:2605.14434",
+     "title": "Efficient Generative Retrieval for E-commerce Search with Semantic Cluster IDs and Expert-Guided RL",
+     "url": "https://arxiv.org/abs/2605.14434",
+     "source": "web_search",
+     "company": [],
+     "published": "2026-05-14",
+     "authors": "Jianbo Zhu, Xing Fang, Jing Wang, Mingmin Jin, Bokang Wang, Guangxin Song, Zhenyu Xie, Junjie Bai",
+     "total_score": 4.9,
+     "adjusted_score": 4.9,
+     "preference_bonus": 0.25,
+     "rank_score": 4.9,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 5,
+      "evidence_quality": 5,
+      "timeliness": 4
+     },
+     "summary": "针对生成式检索在大规模电商搜索中难以落地的问题，论文把它定位为召回阶段的增量通道，不替换原有多级检索。CQ-SID 结合类目感知与 query-item 对比学习，叠加 Residual Quantized VAE，压缩 beam search 复杂度；EG-GRPO 用稀疏奖励让生成式检索对齐下游排序目标。离线语义点击 hitrate 相对提升最高 26.76%、个性化点击 hitrate 提升 11.11%，beam size 减半；线上 A/B GMV +1.15%、UCTCVR +0.40%；生产环境中生成式召回通道贡献 50.25% 曝光、58.96% 点击、72.63% 成交。",
+     "key_insight": "生成式检索落地的关键不是整链路替换，而是作为召回增量通道并用 RL 对齐下游排序：CQ-SID 的类目感知聚类 ID + RQ-VAE 把 beam 规模砍半解决延迟瓶颈，EG-GRPO 用专家引导的稀疏奖励把生成目标与排序 nDCG/CTR 对齐。对社区 UGC 短文本搜索可直接借鉴：在现有倒排/向量召回外挂一路生成式语义召回，用 query-item 对比学习注入相关性信号，72.63% 成交占比说明语义召回能显著补充长尾覆盖。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 1,
+       "id": "arxiv:2605.14434",
+       "total_score": 4.9,
+       "adjusted_score": 4.9
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2605.14434",
+      "slug": "2605.14434",
+      "content_html": "<h2>1. 问题与动机</h2>\n<p>论文针对生成式检索在大规模电商搜索中难以直接落地的三个障碍展开。其一，端到端从数亿量级商品库中生成，存在覆盖率、延迟与马太效应（Matthew effect）问题；其二，one-item-one-ID 的 Semantic ID 映射需要海量训练数据和很大的 beam size，与线上延迟约束冲突；其三，仅用点击信号训练的召回模型与下游排序目标不对齐，召回出的候选不一定是下游愿意曝光的高质量候选。基于此，作者明确把生成式检索定位为召回阶段的增量通道（recall-stage supplement），而不是整链路替换，从而把问题约束在&quot;可控延迟下补充长尾语义召回&quot;这一可部署的范围内。这一动机来自真实生产约束：论文最终在天猫 App（TmallApp）上以 200 QPS / 8 GPU、~40ms 端到端延迟、99.9% 可用性部署，说明问题设定是从工程可行性反推的。</p>\n<h2>2. 方法详解</h2>\n<p>方法由 CQ-SID（语义聚类 ID 构造）+ 渐进式 Query-to-SID 训练 + EG-GRPO（排序对齐 RL）三段组成。</p>\n<p>CQ-SID 把 Semantic ID 当作聚类标识而非物品唯一 ID，遵循三原则：语义聚合（相似物品映射到同一 SID）、簇间可区分、层次结构（共享前缀便于 beam search 剪枝）。骨干是三层 RQ-VAE，码本规模 K1×K2×K3 = 2048×1024×1024。第一层用类目引导残差量化（Category-Guided Residual Quantization）：第一层码本被约束到 1711 个有效类目 ID，已知物品直接用类目 ID 索引第一层码本，其余走最近邻量化；码本用 EMA 更新（衰减因子 λ∈(0,1)）并配 codebook restart 防坍缩。第二个组件是 query-item 对比学习，对高置信 query-item 对施加双向 InfoNCE 损失（cosine 相似度、温度 τ），无关联 query 的物品做 mask。联合目标 L = L_recon + β·L_commit + γ·L_InfoNCE，超参 β=1.0、γ=0.001、τ=0.1、对比 batch=128。SID 后处理（Algorithm 1）用 T_max=50、G_max=100：簇大小超过 T_max 时随机切成 G 组并拼接组后缀，缓解大簇内不可区分。</p>\n<p>渐进式训练用 Qwen2.5-0.5B，分四阶段：Stage1 Item-to-SID（物品标题，batch 128，LR 1e-4，2k steps）；Stage2 Query-to-SID（query + N=3 采样 SID，90.3M 样本，batch 256，LR 4e-5，2.5k steps）；Stage3 个性化 UQ2SID（用户特征 + query + 近期点击，73.7M 样本，batch 64，LR 4e-5，5k steps）；Stage4 排序对齐用 EG-GRPO（rollout batch 512，group size 8）。CQ-SID 训练数据共 37.5M（21.1M 含 query-item 对，16.4M 仅物品）。</p>\n<p>EG-GRPO 的奖励分层（Eq.8）：购买 1.0、点击 1.0、曝光 0.5、合法 SID 0.1、其余 0.0；优势用 GRPO 标准的组内归一化 A(oi)=[R(oi)-mean]/[std+ε]。关键创新是专家注入（Algorithm 2）：从 P_clk∪P_exp 采样 K 个 ground-truth SID 作为伪生成输出注入组内，扩展组 G=G_sampled∪G_expert 共同参与奖励与梯度，在稀疏奖励下提供稳定高质量信号，避免标准 GRPO 的 mode concentration（过度集中到高置信 SID 而坍缩探索）。超参 K=2 或 4、group size 8、KL 权重 1.0、LR 1e-6、1k steps。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，CQ-SID 用语义聚类 ID 替代 one-item-one-ID，配合类目引导量化与 query-item 对比学习，把 beam search 复杂度显著降低——这是它能在 ~40ms 延迟内服务的根因，机制在于层次前缀让 beam search 可早剪枝，且聚类降低了需要区分的目标空间。第二，四阶段渐进式 SFT 把 query→SID 映射从物品语义对齐逐步细化到个性化，解决了直接训练个性化生成数据需求过大的问题。第三，EG-GRPO 通过注入 ground-truth 样本稳定稀疏奖励优化，并用分层奖励同时平衡点击与曝光两个目标；相比标准 GRPO（K=0）在 clk@10/pvr@10 上反而下降，EG-GRPO 在 clk/exp/pvr 全指标一致正向。第四，完整的线上 A/B 与生产占比数据，验证了该范式作为召回增量通道的真实业务价值。</p>\n<h2>4. 实验结果分析</h2>\n<p>语义召回（同 beam，Table 1）：CQ-SID 在 beam@1 达 0.0758，相对 RQ-VAE 0.0598 提升 26.76%，beam@10/@100 分别 +22.57%/+18.89%；消融显示去掉类目（w/o Cate）提升降到 +13.71%，去掉 query-item（w/o QI）在 beam@1 甚至 -0.33%，说明 query-item 对比对低 beam 预算最关键。效率（Table 2）：CQ-SID 在 beam@30 取得 0.4422，超过 RQ-VAE 在 beam@65 的 0.4275，等价 beam 数减少约 53.85%。个性化召回（Table 3）：同 beam 下 beam@1 0.1510（+11.11%）、beam@100 0.7431（+7.51%）；top-1K 截断下 CQ-SID 在 beam@160 达 0.7984，优于 RQ-VAE beam@195 的 0.7607（beam 数 -17.95%）。EG-GRPO 对齐效果（Table 4）：标准 GRPO（K=0）出现 mode concentration——clk@1 升但 clk@10、pvr@10 降；EG-GRPO（K=2/4）在 clk@1/clk@10/exp@1/exp@10/pvr@10 全部正向。线上：天猫 App 两周 A/B，GMV +1.15%、UCTCVR +0.40%；生产中该通道贡献 50.25% 曝光、58.96% 点击、72.63% 成交，成交占比远高于曝光占比，说明语义召回带来的候选转化质量高。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出 EG-GRPO 增益幅度有限，原因是 SFT 已把模型带到接近局部最优，RL 提升空间被压缩；且 hitrate 是二值指标，一旦目标 SID 已在 beam 内便无法进一步体现增益，低估了 RL 的实际作用。作者也强调点击与曝光之间的权衡是&quot;真实而尖锐&quot;的，EG-GRPO 是在 Pareto 前沿上导航而非单目标最大化，这意味着收益依赖业务对两目标的相对偏好。此外方法显式限定为多级漏斗中的召回增量通道，top-1K 截断把数亿库压到 21M，未覆盖端到端排序-生成统一；聚类 ID 的随机分组后缀对极大簇仍是近似手段，簇内可区分性是潜在天花板。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 短文本搜索，最直接的借鉴是把生成式语义召回作为现有倒排/向量召回旁挂的一路增量通道，而非替换主链路——72.63% 成交占比说明它能补足长尾语义覆盖且转化质量高。具体可落地的设计：用类目（或社区话题/标签体系）引导第一层码本，使 SID 天然带业务先验并支持 beam 早剪枝；用高置信 query-item 点击对做双向 InfoNCE，把相关性信号注入 tokenizer；用聚类 ID 而非物品唯一 ID 控制 beam 规模，是 ~40ms / 200QPS / 8GPU 可服务的关键。EG-GRPO 的专家注入对稀疏奖励场景（社区搜索点击/互动稀疏）尤其有用，可缓解 GRPO 的 mode concentration；奖励分层（互动&gt;点击&gt;曝光&gt;合法）可直接映射到社区的点赞/收藏/点击/曝光分层。部署要点：动态 beam [20,50,100]、层次 SID 剪枝、top-1K 截断控制候选规模，是延迟可控的工程前提。</p>",
+      "chars": 3194,
+      "minutes": 8
+     },
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2605.18792",
+     "title": "Trust or Abstain? A Self-Aware RAG Approach",
+     "url": "https://arxiv.org/abs/2605.18792",
+     "source": "arxiv",
+     "company": [
+      "Rutgers"
+     ],
+     "published": "2026-05-20",
+     "authors": "Xi Zhu, Ziqi Wang, Kai Mei, Wujiang Xu, Minghao Guo, Bangji Yang, Jiajun Fan, Dimitris N. Metaxas",
+     "total_score": 4.0,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 4.0,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "RAG 在外部证据 (CK) 与模型参数知识 (PK) 冲突或两者都不可靠时容易产生错误。作者基于五个冲突 QA 数据集，针对每个 LLM backbone 构造了约 69K 条 query-context 实例的 ground-truth-aligned 冲突基准，量化测得 PK-only 与 CK-conditioned 两条答案路径的可靠性。在此基础上提出 SABER：一个无需微调 LLM 的 Self-Aware Belief Estimator，将 self-prior 与 PK/CK 两侧条件概率组合后再决定是回答 (Trust) 还是拒答 (Abstain)，在 5 个数据集上拒答-准确率 Pareto 优于纯一致性投票与置信度阈值方法。",
+     "key_insight": "面向社区 UGC 搜索的 RAG/问答场景，召回到的帖子、评论本身就经常存在事实冲突或低质，单纯靠语义相似度排序生成回答容易自信地胡说。SABER 给出可落地的范式：对同一 query 同时构造 \"只用参数知识\" 和 \"以检索证据为条件\" 两条生成路径，再用自洽性 + 证据条件似然估计置信度，从而把 \"拒答\" 做成一等公民。该思路无需训练，适合先验证业务收益再扩展到精排或答案改写。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2605.18792",
+       "total_score": 4.0,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:oai:arXiv.org:2605.18792",
+      "slug": "2605.18792",
+      "content_html": "<h1>Trust or Abstain? A Self-Aware RAG Approach — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>RAG 已成为缓解 LLM 幻觉的主流范式，但作者指出已有方法在面对 <strong>知识冲突</strong> 时只做了 &quot;二选一&quot; 的路由：要么相信模型的参数知识 (Parametric Knowledge, PK)，要么相信检索到的上下文知识 (Contextual Knowledge, CK)，几乎没有方法显式地问 &quot;这两条路径都不可靠时该怎么办&quot;。作者用 &quot;考试 + 教科书&quot; 的类比刻画该 gap：一个学生既有记忆 (PK) 又有可能错误的参考书 (CK)，理性策略是 &quot;两者都不可靠时拒答&quot;，而当前 RAG 系统经常被迫给出 confident hallucination（参数知识被高估、忽视纠正性证据）或 context over-reliance（被错误检索片段误导，丢弃正确内部知识）。</p>\n<p>为量化这个问题，作者基于 5 个冲突 QA 数据集 (ConFiQA QA/MR/MC、ConflictQA-PopQA、ConflictBank、TriviaQA、Natural Questions) 在 4 个 backbone (Qwen-2.5-3B/7B-Instruct、Llama-3.2-3B、Llama-3.1-8B) 上构造了约 68,872 / backbone 的 PK 路径 vs. CK 路径 ground-truth-aligned 实例，发现在 ConflictBank 上当前最好的 inference-time 路由 TPC 的 Macro Faithfulness Score 仅 64.3%，远低于本文 SABER 的 92.5%——也就是说在两条路径冲突时，主流方法有近 1/3 的样本选错了知识源。</p>\n<h2>2. 方法详解</h2>\n<p>SABER 的核心是把 &quot;Trust or Abstain&quot; 建模为四象限决策：用 self-prior 表征模型对问题本身的把握，用 PK-条件 / CK-条件表征对每条答案路径的事后可靠度，再用两个轻量分类器输出 PK / CK 的可靠概率，最后落到四象限规则。</p>\n<p><strong>(a) Self-Prior 表征</strong>：只输入 query，不带任何检索内容，做一次前向，把第 ℓₚ 层 hidden state 抽出来作为 &quot;考前直觉&quot;，反映模型对问题本身是否有把握。</p>\n<p><strong>(b) PK-条件推理表征</strong>：让模型按 &quot;假设我的参数知识正确&quot; 生成 K = 3 条 chain-of-thought rollout（temperature = 0.9 采样保证多样性），对每条 rollout 再做一次 self-evaluation 前向，把第 ℓc 层 hidden state 抽出，对 3 条 trace 做 mean pooling 得到 PK 侧 robust 表征。</p>\n<p><strong>(c) CK-条件推理表征</strong>：同样的 K=3 rollout，但前缀里强制 &quot;假设检索文档可靠并包含必要事实&quot;，按同样方式抽 hidden state 并 mean pool。</p>\n<p><strong>(d) 信念分类器</strong>：把 self-prior 分别与 PK 侧、CK 侧条件表征拼接，喂给两个独立的小型 MLP (256→128，ReLU + dropout 0.2)，输出 p̂_pk 与 p̂_ck。训练只用 BCE 在 PK / CK 是否能给出正确答案的标签上，AdamW lr = 1e-3，weight decay 1e-4，batch 256，最多 50 epoch 在验证集 AUROC 上 early-stop，patience 8。注意 backbone 全程冻结，只训 MLP，所以单条样本的全部训练成本只是抽几次 hidden state 加 256-128 MLP。</p>\n<p><strong>(e) 四象限决策</strong>：阈值 τ = 0.5，把 (p̂_pk &gt; τ, p̂_ck &gt; τ) 划成 4 个 cell。两侧都可靠取置信度更高的；只一侧可靠就走那侧；都不可靠则 abstain (在部署模式下也可以走 fallback)。τ 可以离线扫 [0.05, 0.95] 调风险-覆盖，无需重训。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：知识冲突基准化</strong>。作者第一次把 &quot;PK-only vs. CK-conditioned&quot; 两条答案路径在 5 个冲突 QA 数据集上系统对齐，对每个 backbone 生成 ~69K 条标注实例，按 80/10/10 切分 (55,097 / 6,889 / 6,886)。这套基准本身就是后续做 self-aware RAG 工作的基础设施，比此前 ConFiQA 等单点评测覆盖更广。</p>\n<p><strong>贡献 2：Self-Prior + 条件 hidden state 的解耦表征</strong>。不同于 Implicit-SCR 等只读单一隐状态的方法，SABER 显式建模 &quot;对问题本身的先验&quot; 与 &quot;走某条路径后的事后可靠度&quot; 两类信号。消融显示只用 prior 会比完整 SABER 在 Acc 上低 3-5%，只用条件信号也有 +2.8% Acc / +13.4% MFS 的提升，验证了 &quot;条件化 hidden state 比 prior 携带更多可靠性信息&quot; 的判断。</p>\n<p><strong>贡献 3：多 trace mean pooling 的鲁棒性</strong>。K = 3 比 K = 1 在 Qwen-2.5-3B 上拿到 +3.2% MFS，对小模型增益最大；并且层扫描显示 mid-to-late layer 40%-70% 处都属于高准 plateau，超过 33% 网格点能进入 90 分位，方法对层选择不敏感。</p>\n<p><strong>贡献 4：无需 fine-tune 即可比肩 DPO</strong>。在 Llama-3.2-3B / Qwen-2.5-3B 上 SABER 与 CR-DPO 持平甚至领先，证明冻结 backbone + 轻量分类器可以替代代价更高的 RLHF / DPO 训练。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>端到端准确率与忠实度 (Table 1-2)</strong>：</p>\n<ul>\n<li>Llama-3.1-8B / ConflictBank：SABER Acc 80.2% vs. TPC 69.6%（+10.6 pp），MFS 92.5% vs. 64.3%（+28.2 pp）。</li>\n<li>Llama-3.1-8B / ConflictQA：MFS 91.0% vs. 63.7%（+27.3 pp）。</li>\n<li>跨所有 20 个 backbone × dataset 平均：+3.4 pp Acc、+15.4 pp MFS over best inference-time 方法。</li>\n</ul>\n<p><strong>选择性预测 / 拒答 (Table 3)</strong>：在默认 τ=0.5 下，</p>\n<table><thead><tr><th>Backbone</th><th>SABER Score</th><th>最强基线 (Implicit-SCR)</th><th>Δ Score</th><th>SABER F1</th></tr></thead><tbody><tr><td>Llama-3.1-8B</td><td>43.9%</td><td>25.4%</td><td>+18.5</td><td>72.5%</td></tr><tr><td>Qwen-2.5-7B</td><td>43.4%</td><td>18.8%</td><td>+24.6</td><td>78.0%</td></tr><tr><td>Llama-3.2-3B</td><td>38.5%</td><td>11.4%</td><td>+27.1</td><td>76.8%</td></tr><tr><td>Qwen-2.5-3B</td><td>39.6%</td><td>7.6%</td><td>+32.0</td><td>76.6%</td></tr></tbody></table>\n<p>风险-覆盖曲线 (Figure 3) 在 4 个 backbone 上都 Pareto 支配 prompt-based baseline，在与 Implicit-SCR 同覆盖率下 risk-on-answered 相对降低 19%-53%。</p>\n<p><strong>消融 (Figure 4)</strong> 验证：(1) prior-only ≈ 4 pp Acc 落后完整方法；(2) 单侧条件表征已能带来 ~13 pp MFS；(3) K=3 vs. K=1 对 3B 小模型的增益显著 (+3.2 pp MFS)，对 7-8B 中型模型增益逐步收窄，可作为推理预算与精度的 trade-off 设计依据。</p>\n<p><strong>层敏感性 (Figure 5)</strong> 显示选层是平台型问题：在中层至深层都能拿到接近最优，工程上不必对每个 backbone 单独网格调参。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在 Appendix G 自述三点局限：(1) backbone 局限于 Llama-3.x / Qwen-2.5，未在 mixture-of-experts、reasoning-distilled 模型 (DeepSeek-R1、QwQ) 上验证；(2) 检索侧只用 top-1 passage，多 passage 聚合与不同检索质量 (recall@k) 的影响未研究；(3) 冲突基准是 &quot;静态构造&quot; 的，真实 RAG 中的分布漂移 (时间敏感事实、对抗性投毒) 没有覆盖。</p>\n<p>笔者补一条更隐性的：SABER 拒答标签 y_pk / y_ck 来自 &quot;模型回答与 gold 一致&quot;，对开放式生成（摘要、解释）天然不适用，泛化到开放生成需重设计标签。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索这种 &quot;召回内容质量高度参差&quot; 的场景，SABER 给出非常贴近上线的范式：</p>\n<p><strong>(1) 落地步骤</strong>。给现有 RAG 系统加 SABER 几乎不动 backbone：a. 选好层 ℓₚ / ℓc（中层 40-70% 即可，无需精调）；b. 离线在站内冲突 QA / 站内问答日志上构造 ~50K-100K PK / CK 标注样本；c. 训两个 MLP，单 GPU 跑数小时；d. 上线时只需 K=3 rollout + 2 次条件 self-evaluation 前向。</p>\n<p><strong>(2) 业务收益</strong>。最直接的是把 &quot;自信胡说&quot; 转化成 &quot;安全拒答&quot;，对应到产品就是 &quot;展示原帖让用户自己判断&quot; 的兜底逻辑，能显著降低 LLM 摘要在 UGC 噪声上的 risk-on-answered。Pareto 提升 19%-53% 的 risk 降幅意味着同样 coverage 下假阳显著减少。</p>\n<p><strong>(3) 部署成本</strong>。多 trace 在 7B 模型上单 query 需 ~6-8 次前向，是裸 RAG 的 2-3×，可以用 SGLang/vLLM 的 prefix sharing + speculative decoding (本日 Top-2 Graft 论文) 摊薄；阈值 τ 完全离线可调，所有 backbone 上 τ ∈ [0.40, 0.55] 范围内 MFS 波动 &lt; 0.9%，业务方调 coverage 时不必担心翻车。</p>\n<p><strong>(4) 风险与配套</strong>。需要为 abstain 设计 fallback UX（例如：&quot;我们暂时没有把握给出答案，请查看以下相关帖子&quot;），否则拒答率 &gt; 20% 时用户体验下降明显；同时 self-prior 容易被 prompt 注入污染，K=3 rollout 内若出现 prompt injection 鼓励 &quot;高自信&quot;，建议把 self-prior 抽取限制在系统 prompt 之上的固定查询模板。</p>",
+      "chars": 3900,
+      "minutes": 10
+     },
+     "weekly_rank": 2
+    },
+    {
+     "id": "arxiv:2605.17267",
+     "title": "RAGR: Review-Augmented Generative Recommendation",
+     "url": "https://arxiv.org/abs/2605.17267",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "RAGR authors (arXiv:2605.17267)",
+     "total_score": 3.95,
+     "adjusted_score": 3.95,
+     "preference_bonus": 0.2,
+     "rank_score": 3.95,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "论文指出当前生成式推荐 (GR) 虽然引入了 semantic ID、自回归解码、统一 token 空间等新机制，但仍沿用「只建模 item 序列」的假设，无法捕捉用户为什么选择某个 item 的评价性因素。RAGR 提出 Review-Augmented User Sequence Modeling：把用户撰写的 review 反馈直接编入生成式用户序列，与 item token 交错排列，而不是作为辅助 side information。review 文本暴露的潜在评价维度被纳入自回归生成目标，使 GR 在序列推荐任务上同时建模「选了什么」与「为何选」。",
+     "key_insight": "评论/点评本身就是社区平台的核心 UGC 短文本，RAGR 把这类评价文本当作生成序列的一等公民而非附属特征，这一思路可直接迁移到「用户历史评论+互动」联合建模的社区推荐与搜索排序场景。对实践的启示是：在 semantic ID 体系里为 UGC 文本设计独立 token 通道并与行为 token 交错，比把文本压成静态 embedding 更能保留评价语义，值得在短文本召回/重排中验证 review token 注入对 nDCG 的增益。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 1,
+       "id": "arxiv:2605.17267",
+       "total_score": 3.95,
+       "adjusted_score": 3.95
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 3
+    },
+    {
+     "id": "arxiv:2605.18271",
+     "title": "From Volume to Value: Preference-Aligned Memory Construction for On-Device RAG (EPIC)",
+     "url": "https://arxiv.org/abs/2605.18271",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "EPIC authors (arXiv:2605.18271)",
+     "total_score": 3.9,
+     "adjusted_score": 3.9,
+     "preference_bonus": 0.1,
+     "rank_score": 3.9,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "面向端侧个人 AI agent 的 RAG，论文认为内存预算受限时真正的瓶颈是「该存什么」才能让检索与用户对齐。EPIC (Efficient Preference-aligned Index Construction) 把用户偏好作为紧凑且稳定的个人上下文形式，贯穿整条 RAG 管线：从原始数据中选择性保留与偏好相关的信息，并把检索引导向偏好对齐的上下文。在覆盖对话、辩论、解释、推荐四类任务的 4 个 benchmark 上，EPIC 把索引内存压缩 2,404 倍，同时提升偏好遵循能力。",
+     "key_insight": "「以用户偏好为索引压缩的核心信号」对社区搜索的个性化召回有借鉴价值：与其全量存储用户行为再检索，不如先抽取稳定偏好画像作为索引锚点。2,404 倍的内存压缩说明偏好导向的索引裁剪在不显著损失偏好遵循的前提下极其激进，可用于端侧/低成本个性化重排，以及对长期用户兴趣做稳定建模而非依赖近期行为噪声。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 2,
+       "id": "arxiv:2605.18271",
+       "total_score": 3.9,
+       "adjusted_score": 3.9
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 4
+    },
+    {
+     "id": "hf:2605.20104",
+     "title": "Draft Less, Retrieve More: Hybrid Tree Construction for Speculative Decoding",
+     "url": "https://huggingface.co/papers/2605.20104",
+     "source": "huggingface",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Yuhao Shen, Tianyu Liu, Xinyi Hu, Quan Kong, Baolin Zhang",
+     "total_score": 3.9,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 3.9,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 4
+     },
+     "summary": "投机解码 (Speculative Decoding) 通过 draft-then-verify 加速 LLM 推理，但密集 draft tree 的 VRAM 带宽和算力开销吃掉了端到端 speedup；动态剪枝又会丢候选导致接受率下降。作者提出 Graft：把剪枝和检索耦合成互补操作，先 prune 释放预算，再用 retrieval 从 n-gram/缓存中补回被剪掉的高质量候选，形成 prune-then-retrieve 的 hybrid tree。实验显示在保持/超过 dense tree 接受长度的同时显著降低 draft 阶段算力，端到端 throughput 优于 EAGLE 等基线。",
+     "key_insight": "搜推线上 LLM 部署（搜索摘要、对话推荐）最痛的是 P95 时延，而投机解码已成为主流加速手段。Graft 的关键观察是 draft tree 不必都来自参数模型，可以引入轻量级 retrieval-based draft 来弥补剪枝后的覆盖损失，这与搜索系统已有的 query log/n-gram 资产天然契合。对于 UGC 搜索，可以把站内热门 query 的延续、热门评论模板做成 draft 检索源，几乎零额外训练成本就能拿到接受率收益。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 2,
+       "id": "hf:2605.20104",
+       "total_score": 3.9,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:oai:arXiv.org:2509.00303",
+     "title": "Access Paths for Efficient Ordering with Large Language Models",
+     "url": "https://arxiv.org/abs/2509.00303",
+     "source": "arxiv",
+     "company": [
+      "Snowflake",
+      "UChicago",
+      "UCLA",
+      "UCSB"
+     ],
+     "published": "2026-05-21",
+     "authors": "Fuheng Zhao, Jiayue Chen, Yiming Pan, et al.",
+     "total_score": 3.65,
+     "adjusted_score": 3.85,
+     "preference_bonus": 0.2,
+     "rank_score": 3.85,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 3,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 3
+     },
+     "summary": "把“用 LLM 按语义排序”抽象为 LLM ORDER BY 算子，系统研究其物理实现：逐项打分（O(N) 次调用）、成对比较、批量外部归并三类。提出语义感知的外部归并排序与带多数投票的快排，并用动态优化器（启发式规则 + LLM-as-Judge + Borda 计数）按数据集自动选最优算法。在 TREC DL20 上外部归并取得 0.719 nDCG@10、自一致优化器 0.724；SembenchMovie 上从逐项打分 0.862 提升到归并排序 0.921、LLM-as-Judge 达 0.924 且成本降 26%；NBA 身高排序成本较冒泡排序降 6×。注：本期为 v3 扩展版（原始版本 2025-09）。",
+     "key_insight": "论文证明“没有一种 LLM 排序算法在所有任务上最优”——事实型查询用逐项打分、推理型查询用成对比较，需按数据特征动态选路。对搜索排序的启示：用 LLM 做相关性重排时，与其无脑成对比较，不如引入归并/快排式的分治结构把调用次数从 O(N²) 降到 O(N log N)，并用成本模型预估开销（DL20 成本预估误差仅 ±0.02 美元）。LLM-as-Judge 自动选路的思路可直接迁移到重排链路的算法选择。",
+     "best_date": "2026-05-22",
+     "appearances": [
+      {
+       "date": "2026-05-22",
+       "rank": 1,
+       "id": "arxiv:oai:arXiv.org:2509.00303",
+       "total_score": 3.65,
+       "adjusted_score": 3.85
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 6
+    },
+    {
+     "id": "s2:cf35c3e9664bb563adae98a3f11c5c00556d00b4",
+     "title": "LLM-based Conversational Recommendation Agents with Collaborative Verbalized Experience",
+     "url": "https://www.semanticscholar.org/paper/cf35c3e9664bb563adae98a3f11c5c00556d00b4",
+     "source": "semantic_scholar",
+     "company": [
+      "Netflix",
+      "UVA",
+      "Cornell"
+     ],
+     "published": "",
+     "authors": "Yaochen Zhu, Harald Steck, Dawen Liang, Yinhan He, Nathan Kallus",
+     "total_score": 3.75,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 3.75,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "现有 LLM-based 会话推荐 (CRS) 要么 retrieve few-shot 示例，要么抽全局规则，难以利用 implicit、偏好导向的历史经验。作者提出 CRAVE：先让 CRS agent 在历史 query 上跑 rollout，再基于用户反馈反思 agent 行为，构造 \"verbalized experience bank\"；再训一个 collaborative retriever，用 content-parameterized multinomial likelihood 在 query-item 对上微调，将经验向量与协同信号绑定。最后用 debater-critic agent (DCA) 在生成阶段对候选回复做对抗式自审，多个数据集上 Recall@K、Coverage 优于 LLM4CRS 与检索增强基线。",
+     "key_insight": "面向社区内容的对话式发现/搜索场景，CRAVE 给出一条 \"经验沉淀-协同检索-辩论审校\" 的完整链路。可借鉴的工程设计：(1) 把 agent 历史轨迹 + 用户点击/停留反馈做成 verbalized experience，本质上是把行为日志翻译成 LLM 可读的偏好规则；(2) 协同检索器用 multinomial likelihood 同时学语义相似度和协同信号，避免冷启动；(3) DCA 双 agent 自审等价于把 ranker 的 listwise pairwise 思路搬到生成阶段。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 3,
+       "id": "s2:cf35c3e9664bb563adae98a3f11c5c00556d00b4",
+       "total_score": 3.75,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "blog:amazon-surefire-scaling-law-2026",
+     "title": "Making LLMs faster without sacrificing accuracy (Surefire architectural scaling law)",
+     "url": "https://www.amazon.science/blog/making-llms-faster-without-sacrificing-accuracy",
+     "source": "blog_rss",
+     "company": [
+      "Amazon"
+     ],
+     "published": "2026-05-15",
+     "authors": "Amazon AWS AI Labs (ICLR 2026)",
+     "total_score": 3.7,
+     "adjusted_score": 3.7,
+     "preference_bonus": 0.3,
+     "rank_score": 3.7,
+     "scores": {
+      "business_relevance": 2,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "AWS AI Labs 在 Chinchilla scaling law 基础上引入三个架构因子（hidden size d_model、MLP-to-attention 比例、GQA），把架构选择直接纳入 loss 预测。发现 LLaMA-3.2 风格模型最优 MLP/attention 比约为 1.0，远低于现有开源权重（LLaMA-3.2-1B 为 4.8），即现有模型在 MLP 层过度分配参数。据此训练的 Surefire-1B 在 H200+SGLang 上吞吐提升 47% 且精度不降，Surefire-3B 提升 12–17%，结论在 A100/H200 与 vLLM/SGLang 上一致。ICLR 2026。",
+     "key_insight": "scaling law 不只决定参数量，架构比例本身可纳入 loss 预测来指导设计：MLP/attention 比从 4.8 降到 1.0 即换来 47% 吞吐。对搜索/推荐的实践启示：若用 LLM 做 query 理解、生成式召回或重排，backbone 的 MLP 膨胀系数与 GQA 配置直接决定线上延迟和单卡吞吐成本，按该 scaling law 重选架构比单纯堆参数更划算。",
+     "best_date": "2026-05-18",
+     "appearances": [
+      {
+       "date": "2026-05-18",
+       "rank": 2,
+       "id": "blog:amazon-surefire-scaling-law-2026",
+       "total_score": 3.7,
+       "adjusted_score": 3.7
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2605.16428",
+     "title": "The Impact of AI Search on the Online Content Ecosystem: Evidence from Google and Reddit",
+     "url": "https://arxiv.org/abs/2605.16428",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-05-19",
+     "authors": "AI Search Ecosystem authors (arXiv:2605.16428)",
+     "total_score": 3.7,
+     "adjusted_score": 3.7,
+     "preference_bonus": 0.05,
+     "rank_score": 3.7,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 2,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "研究生成式 AI 搜索（Google AI Overviews）对 UGC 社区平台（Reddit）的影响。识别策略利用 Google 内容审核政策的差异：SFW 社区会被 AI Overviews 引用，NSFW 社区虽被自然搜索索引但被禁止出现在 AI 摘要中，从而构成准实验。采用双重差分 (difference-in-differences) 设计发现：AI Overviews 使 SFW 社区参与度上升——日评论数相对 NSFW 社区提升 12.0%、评论用户数提升 12.3%，即生成式摘要并未单纯「截流」，反而为被引用社区带来回流。",
+     "key_insight": "这是少见的、用因果识别量化「生成式搜索 vs UGC 社区流量」关系的实证，与社区搜索业务高度相关。结论提示：被生成式答案引用的优质 UGC 社区会获得参与度增益（+12%），因此社区平台的策略不应是抵制 AI 摘要，而是优化内容被检索/被引用的可发现性（类似 Answer Engine Optimization）。对内部搜索而言，生成式摘要+可点击溯源链接的组合可能同时提升满意度与社区互动，值得做线上对照实验。",
+     "best_date": "2026-05-20",
+     "appearances": [
+      {
+       "date": "2026-05-20",
+       "rank": 3,
+       "id": "arxiv:2605.16428",
+       "total_score": 3.7,
+       "adjusted_score": 3.7
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "hf:2605.20035",
+     "title": "Stage-adaptive Token Selection for Efficient Omni-modal LLMs",
+     "url": "https://huggingface.co/papers/2605.20035",
+     "source": "huggingface",
+     "company": [],
+     "published": "2026-05-18",
+     "authors": "Zijie Xin, Jie Yang, Ruixiang Zhao, Tianyi Wang, Fengyun Rao",
+     "total_score": 3.7,
+     "adjusted_score": null,
+     "preference_bonus": null,
+     "rank_score": 3.7,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "Omni-modal LLM (om-LLM) 把视频和音频编码成时间对齐的非文本 token，在 LLM 前向中处理这些密集 token 计算开销巨大。作者先做 layer-wise token dependency 分析，发现视觉/音频依赖呈 block-wise 模式且随深度衰减——晚期层很多非文本 token 在跨模态融合后变得冗余。基于此提出 SEATS：免训练、按 stage 自适应剪 token，前段保留较多多模态 token，深层激进剪枝；在多个 om-LLM benchmark 上以 30%-50% token 预算保留 ≥97% 任务精度，吞吐 1.6-2.1×。",
+     "key_insight": "短视频/图文社区的多模态搜索如果上 om-LLM，最大瓶颈就是非文本 token 数量。SEATS 揭示一条免训练优化路径：跨模态依赖是分块且随深度衰减的，剪枝策略必须分阶段而非全局固定比例。可在自己业务上先做同样的 layer-wise dependency 探针实验，验证 \"早保留-晚剪枝\" 假设是否仍成立，再决定按层动态调整 token budget 的具体曲线。",
+     "best_date": "2026-05-21",
+     "appearances": [
+      {
+       "date": "2026-05-21",
+       "rank": 4,
+       "id": "hf:2605.20035",
+       "total_score": 3.7,
+       "adjusted_score": null
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
   "personalization": {
    "raw_count": 34,
    "unique_count": 34,
@@ -400,386 +780,6 @@
        "id": "arxiv:2605.21066",
        "total_score": 3.9,
        "adjusted_score": 3.9
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 10
-    }
-   ]
-  },
-  "generative": {
-   "raw_count": 29,
-   "unique_count": 29,
-   "days": [
-    "2026-05-18",
-    "2026-05-19",
-    "2026-05-20",
-    "2026-05-21",
-    "2026-05-22"
-   ],
-   "papers": [
-    {
-     "id": "arxiv:2605.14434",
-     "title": "Efficient Generative Retrieval for E-commerce Search with Semantic Cluster IDs and Expert-Guided RL",
-     "url": "https://arxiv.org/abs/2605.14434",
-     "source": "web_search",
-     "company": [],
-     "published": "2026-05-14",
-     "authors": "Jianbo Zhu, Xing Fang, Jing Wang, Mingmin Jin, Bokang Wang, Guangxin Song, Zhenyu Xie, Junjie Bai",
-     "total_score": 4.9,
-     "adjusted_score": 4.9,
-     "preference_bonus": 0.25,
-     "rank_score": 4.9,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 5,
-      "evidence_quality": 5,
-      "timeliness": 4
-     },
-     "summary": "针对生成式检索在大规模电商搜索中难以落地的问题，论文把它定位为召回阶段的增量通道，不替换原有多级检索。CQ-SID 结合类目感知与 query-item 对比学习，叠加 Residual Quantized VAE，压缩 beam search 复杂度；EG-GRPO 用稀疏奖励让生成式检索对齐下游排序目标。离线语义点击 hitrate 相对提升最高 26.76%、个性化点击 hitrate 提升 11.11%，beam size 减半；线上 A/B GMV +1.15%、UCTCVR +0.40%；生产环境中生成式召回通道贡献 50.25% 曝光、58.96% 点击、72.63% 成交。",
-     "key_insight": "生成式检索落地的关键不是整链路替换，而是作为召回增量通道并用 RL 对齐下游排序：CQ-SID 的类目感知聚类 ID + RQ-VAE 把 beam 规模砍半解决延迟瓶颈，EG-GRPO 用专家引导的稀疏奖励把生成目标与排序 nDCG/CTR 对齐。对社区 UGC 短文本搜索可直接借鉴：在现有倒排/向量召回外挂一路生成式语义召回，用 query-item 对比学习注入相关性信号，72.63% 成交占比说明语义召回能显著补充长尾覆盖。",
-     "best_date": "2026-05-18",
-     "appearances": [
-      {
-       "date": "2026-05-18",
-       "rank": 1,
-       "id": "arxiv:2605.14434",
-       "total_score": 4.9,
-       "adjusted_score": 4.9
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:2605.14434",
-      "slug": "2605.14434",
-      "content_html": "<h2>1. 问题与动机</h2>\n<p>论文针对生成式检索在大规模电商搜索中难以直接落地的三个障碍展开。其一，端到端从数亿量级商品库中生成，存在覆盖率、延迟与马太效应（Matthew effect）问题；其二，one-item-one-ID 的 Semantic ID 映射需要海量训练数据和很大的 beam size，与线上延迟约束冲突；其三，仅用点击信号训练的召回模型与下游排序目标不对齐，召回出的候选不一定是下游愿意曝光的高质量候选。基于此，作者明确把生成式检索定位为召回阶段的增量通道（recall-stage supplement），而不是整链路替换，从而把问题约束在&quot;可控延迟下补充长尾语义召回&quot;这一可部署的范围内。这一动机来自真实生产约束：论文最终在天猫 App（TmallApp）上以 200 QPS / 8 GPU、~40ms 端到端延迟、99.9% 可用性部署，说明问题设定是从工程可行性反推的。</p>\n<h2>2. 方法详解</h2>\n<p>方法由 CQ-SID（语义聚类 ID 构造）+ 渐进式 Query-to-SID 训练 + EG-GRPO（排序对齐 RL）三段组成。</p>\n<p>CQ-SID 把 Semantic ID 当作聚类标识而非物品唯一 ID，遵循三原则：语义聚合（相似物品映射到同一 SID）、簇间可区分、层次结构（共享前缀便于 beam search 剪枝）。骨干是三层 RQ-VAE，码本规模 K1×K2×K3 = 2048×1024×1024。第一层用类目引导残差量化（Category-Guided Residual Quantization）：第一层码本被约束到 1711 个有效类目 ID，已知物品直接用类目 ID 索引第一层码本，其余走最近邻量化；码本用 EMA 更新（衰减因子 λ∈(0,1)）并配 codebook restart 防坍缩。第二个组件是 query-item 对比学习，对高置信 query-item 对施加双向 InfoNCE 损失（cosine 相似度、温度 τ），无关联 query 的物品做 mask。联合目标 L = L_recon + β·L_commit + γ·L_InfoNCE，超参 β=1.0、γ=0.001、τ=0.1、对比 batch=128。SID 后处理（Algorithm 1）用 T_max=50、G_max=100：簇大小超过 T_max 时随机切成 G 组并拼接组后缀，缓解大簇内不可区分。</p>\n<p>渐进式训练用 Qwen2.5-0.5B，分四阶段：Stage1 Item-to-SID（物品标题，batch 128，LR 1e-4，2k steps）；Stage2 Query-to-SID（query + N=3 采样 SID，90.3M 样本，batch 256，LR 4e-5，2.5k steps）；Stage3 个性化 UQ2SID（用户特征 + query + 近期点击，73.7M 样本，batch 64，LR 4e-5，5k steps）；Stage4 排序对齐用 EG-GRPO（rollout batch 512，group size 8）。CQ-SID 训练数据共 37.5M（21.1M 含 query-item 对，16.4M 仅物品）。</p>\n<p>EG-GRPO 的奖励分层（Eq.8）：购买 1.0、点击 1.0、曝光 0.5、合法 SID 0.1、其余 0.0；优势用 GRPO 标准的组内归一化 A(oi)=[R(oi)-mean]/[std+ε]。关键创新是专家注入（Algorithm 2）：从 P_clk∪P_exp 采样 K 个 ground-truth SID 作为伪生成输出注入组内，扩展组 G=G_sampled∪G_expert 共同参与奖励与梯度，在稀疏奖励下提供稳定高质量信号，避免标准 GRPO 的 mode concentration（过度集中到高置信 SID 而坍缩探索）。超参 K=2 或 4、group size 8、KL 权重 1.0、LR 1e-6、1k steps。</p>\n<h2>3. 核心技术贡献</h2>\n<p>第一，CQ-SID 用语义聚类 ID 替代 one-item-one-ID，配合类目引导量化与 query-item 对比学习，把 beam search 复杂度显著降低——这是它能在 ~40ms 延迟内服务的根因，机制在于层次前缀让 beam search 可早剪枝，且聚类降低了需要区分的目标空间。第二，四阶段渐进式 SFT 把 query→SID 映射从物品语义对齐逐步细化到个性化，解决了直接训练个性化生成数据需求过大的问题。第三，EG-GRPO 通过注入 ground-truth 样本稳定稀疏奖励优化，并用分层奖励同时平衡点击与曝光两个目标；相比标准 GRPO（K=0）在 clk@10/pvr@10 上反而下降，EG-GRPO 在 clk/exp/pvr 全指标一致正向。第四，完整的线上 A/B 与生产占比数据，验证了该范式作为召回增量通道的真实业务价值。</p>\n<h2>4. 实验结果分析</h2>\n<p>语义召回（同 beam，Table 1）：CQ-SID 在 beam@1 达 0.0758，相对 RQ-VAE 0.0598 提升 26.76%，beam@10/@100 分别 +22.57%/+18.89%；消融显示去掉类目（w/o Cate）提升降到 +13.71%，去掉 query-item（w/o QI）在 beam@1 甚至 -0.33%，说明 query-item 对比对低 beam 预算最关键。效率（Table 2）：CQ-SID 在 beam@30 取得 0.4422，超过 RQ-VAE 在 beam@65 的 0.4275，等价 beam 数减少约 53.85%。个性化召回（Table 3）：同 beam 下 beam@1 0.1510（+11.11%）、beam@100 0.7431（+7.51%）；top-1K 截断下 CQ-SID 在 beam@160 达 0.7984，优于 RQ-VAE beam@195 的 0.7607（beam 数 -17.95%）。EG-GRPO 对齐效果（Table 4）：标准 GRPO（K=0）出现 mode concentration——clk@1 升但 clk@10、pvr@10 降；EG-GRPO（K=2/4）在 clk@1/clk@10/exp@1/exp@10/pvr@10 全部正向。线上：天猫 App 两周 A/B，GMV +1.15%、UCTCVR +0.40%；生产中该通道贡献 50.25% 曝光、58.96% 点击、72.63% 成交，成交占比远高于曝光占比，说明语义召回带来的候选转化质量高。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者明确指出 EG-GRPO 增益幅度有限，原因是 SFT 已把模型带到接近局部最优，RL 提升空间被压缩；且 hitrate 是二值指标，一旦目标 SID 已在 beam 内便无法进一步体现增益，低估了 RL 的实际作用。作者也强调点击与曝光之间的权衡是&quot;真实而尖锐&quot;的，EG-GRPO 是在 Pareto 前沿上导航而非单目标最大化，这意味着收益依赖业务对两目标的相对偏好。此外方法显式限定为多级漏斗中的召回增量通道，top-1K 截断把数亿库压到 21M，未覆盖端到端排序-生成统一；聚类 ID 的随机分组后缀对极大簇仍是近似手段，簇内可区分性是潜在天花板。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 短文本搜索，最直接的借鉴是把生成式语义召回作为现有倒排/向量召回旁挂的一路增量通道，而非替换主链路——72.63% 成交占比说明它能补足长尾语义覆盖且转化质量高。具体可落地的设计：用类目（或社区话题/标签体系）引导第一层码本，使 SID 天然带业务先验并支持 beam 早剪枝；用高置信 query-item 点击对做双向 InfoNCE，把相关性信号注入 tokenizer；用聚类 ID 而非物品唯一 ID 控制 beam 规模，是 ~40ms / 200QPS / 8GPU 可服务的关键。EG-GRPO 的专家注入对稀疏奖励场景（社区搜索点击/互动稀疏）尤其有用，可缓解 GRPO 的 mode concentration；奖励分层（互动&gt;点击&gt;曝光&gt;合法）可直接映射到社区的点赞/收藏/点击/曝光分层。部署要点：动态 beam [20,50,100]、层次 SID 剪枝、top-1K 截断控制候选规模，是延迟可控的工程前提。</p>",
-      "chars": 3194,
-      "minutes": 8
-     },
-     "weekly_rank": 1
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2605.18792",
-     "title": "Trust or Abstain? A Self-Aware RAG Approach",
-     "url": "https://arxiv.org/abs/2605.18792",
-     "source": "arxiv",
-     "company": [
-      "Rutgers"
-     ],
-     "published": "2026-05-20",
-     "authors": "Xi Zhu, Ziqi Wang, Kai Mei, Wujiang Xu, Minghao Guo, Bangji Yang, Jiajun Fan, Dimitris N. Metaxas",
-     "total_score": 4.0,
-     "adjusted_score": null,
-     "preference_bonus": null,
-     "rank_score": 4.0,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "RAG 在外部证据 (CK) 与模型参数知识 (PK) 冲突或两者都不可靠时容易产生错误。作者基于五个冲突 QA 数据集，针对每个 LLM backbone 构造了约 69K 条 query-context 实例的 ground-truth-aligned 冲突基准，量化测得 PK-only 与 CK-conditioned 两条答案路径的可靠性。在此基础上提出 SABER：一个无需微调 LLM 的 Self-Aware Belief Estimator，将 self-prior 与 PK/CK 两侧条件概率组合后再决定是回答 (Trust) 还是拒答 (Abstain)，在 5 个数据集上拒答-准确率 Pareto 优于纯一致性投票与置信度阈值方法。",
-     "key_insight": "面向社区 UGC 搜索的 RAG/问答场景，召回到的帖子、评论本身就经常存在事实冲突或低质，单纯靠语义相似度排序生成回答容易自信地胡说。SABER 给出可落地的范式：对同一 query 同时构造 \"只用参数知识\" 和 \"以检索证据为条件\" 两条生成路径，再用自洽性 + 证据条件似然估计置信度，从而把 \"拒答\" 做成一等公民。该思路无需训练，适合先验证业务收益再扩展到精排或答案改写。",
-     "best_date": "2026-05-21",
-     "appearances": [
-      {
-       "date": "2026-05-21",
-       "rank": 1,
-       "id": "arxiv:oai:arXiv.org:2605.18792",
-       "total_score": 4.0,
-       "adjusted_score": null
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:oai:arXiv.org:2605.18792",
-      "slug": "2605.18792",
-      "content_html": "<h1>Trust or Abstain? A Self-Aware RAG Approach — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>RAG 已成为缓解 LLM 幻觉的主流范式，但作者指出已有方法在面对 <strong>知识冲突</strong> 时只做了 &quot;二选一&quot; 的路由：要么相信模型的参数知识 (Parametric Knowledge, PK)，要么相信检索到的上下文知识 (Contextual Knowledge, CK)，几乎没有方法显式地问 &quot;这两条路径都不可靠时该怎么办&quot;。作者用 &quot;考试 + 教科书&quot; 的类比刻画该 gap：一个学生既有记忆 (PK) 又有可能错误的参考书 (CK)，理性策略是 &quot;两者都不可靠时拒答&quot;，而当前 RAG 系统经常被迫给出 confident hallucination（参数知识被高估、忽视纠正性证据）或 context over-reliance（被错误检索片段误导，丢弃正确内部知识）。</p>\n<p>为量化这个问题，作者基于 5 个冲突 QA 数据集 (ConFiQA QA/MR/MC、ConflictQA-PopQA、ConflictBank、TriviaQA、Natural Questions) 在 4 个 backbone (Qwen-2.5-3B/7B-Instruct、Llama-3.2-3B、Llama-3.1-8B) 上构造了约 68,872 / backbone 的 PK 路径 vs. CK 路径 ground-truth-aligned 实例，发现在 ConflictBank 上当前最好的 inference-time 路由 TPC 的 Macro Faithfulness Score 仅 64.3%，远低于本文 SABER 的 92.5%——也就是说在两条路径冲突时，主流方法有近 1/3 的样本选错了知识源。</p>\n<h2>2. 方法详解</h2>\n<p>SABER 的核心是把 &quot;Trust or Abstain&quot; 建模为四象限决策：用 self-prior 表征模型对问题本身的把握，用 PK-条件 / CK-条件表征对每条答案路径的事后可靠度，再用两个轻量分类器输出 PK / CK 的可靠概率，最后落到四象限规则。</p>\n<p><strong>(a) Self-Prior 表征</strong>：只输入 query，不带任何检索内容，做一次前向，把第 ℓₚ 层 hidden state 抽出来作为 &quot;考前直觉&quot;，反映模型对问题本身是否有把握。</p>\n<p><strong>(b) PK-条件推理表征</strong>：让模型按 &quot;假设我的参数知识正确&quot; 生成 K = 3 条 chain-of-thought rollout（temperature = 0.9 采样保证多样性），对每条 rollout 再做一次 self-evaluation 前向，把第 ℓc 层 hidden state 抽出，对 3 条 trace 做 mean pooling 得到 PK 侧 robust 表征。</p>\n<p><strong>(c) CK-条件推理表征</strong>：同样的 K=3 rollout，但前缀里强制 &quot;假设检索文档可靠并包含必要事实&quot;，按同样方式抽 hidden state 并 mean pool。</p>\n<p><strong>(d) 信念分类器</strong>：把 self-prior 分别与 PK 侧、CK 侧条件表征拼接，喂给两个独立的小型 MLP (256→128，ReLU + dropout 0.2)，输出 p̂_pk 与 p̂_ck。训练只用 BCE 在 PK / CK 是否能给出正确答案的标签上，AdamW lr = 1e-3，weight decay 1e-4，batch 256，最多 50 epoch 在验证集 AUROC 上 early-stop，patience 8。注意 backbone 全程冻结，只训 MLP，所以单条样本的全部训练成本只是抽几次 hidden state 加 256-128 MLP。</p>\n<p><strong>(e) 四象限决策</strong>：阈值 τ = 0.5，把 (p̂_pk &gt; τ, p̂_ck &gt; τ) 划成 4 个 cell。两侧都可靠取置信度更高的；只一侧可靠就走那侧；都不可靠则 abstain (在部署模式下也可以走 fallback)。τ 可以离线扫 [0.05, 0.95] 调风险-覆盖，无需重训。</p>\n<h2>3. 核心技术贡献</h2>\n<p><strong>贡献 1：知识冲突基准化</strong>。作者第一次把 &quot;PK-only vs. CK-conditioned&quot; 两条答案路径在 5 个冲突 QA 数据集上系统对齐，对每个 backbone 生成 ~69K 条标注实例，按 80/10/10 切分 (55,097 / 6,889 / 6,886)。这套基准本身就是后续做 self-aware RAG 工作的基础设施，比此前 ConFiQA 等单点评测覆盖更广。</p>\n<p><strong>贡献 2：Self-Prior + 条件 hidden state 的解耦表征</strong>。不同于 Implicit-SCR 等只读单一隐状态的方法，SABER 显式建模 &quot;对问题本身的先验&quot; 与 &quot;走某条路径后的事后可靠度&quot; 两类信号。消融显示只用 prior 会比完整 SABER 在 Acc 上低 3-5%，只用条件信号也有 +2.8% Acc / +13.4% MFS 的提升，验证了 &quot;条件化 hidden state 比 prior 携带更多可靠性信息&quot; 的判断。</p>\n<p><strong>贡献 3：多 trace mean pooling 的鲁棒性</strong>。K = 3 比 K = 1 在 Qwen-2.5-3B 上拿到 +3.2% MFS，对小模型增益最大；并且层扫描显示 mid-to-late layer 40%-70% 处都属于高准 plateau，超过 33% 网格点能进入 90 分位，方法对层选择不敏感。</p>\n<p><strong>贡献 4：无需 fine-tune 即可比肩 DPO</strong>。在 Llama-3.2-3B / Qwen-2.5-3B 上 SABER 与 CR-DPO 持平甚至领先，证明冻结 backbone + 轻量分类器可以替代代价更高的 RLHF / DPO 训练。</p>\n<h2>4. 实验结果分析</h2>\n<p><strong>端到端准确率与忠实度 (Table 1-2)</strong>：</p>\n<ul>\n<li>Llama-3.1-8B / ConflictBank：SABER Acc 80.2% vs. TPC 69.6%（+10.6 pp），MFS 92.5% vs. 64.3%（+28.2 pp）。</li>\n<li>Llama-3.1-8B / ConflictQA：MFS 91.0% vs. 63.7%（+27.3 pp）。</li>\n<li>跨所有 20 个 backbone × dataset 平均：+3.4 pp Acc、+15.4 pp MFS over best inference-time 方法。</li>\n</ul>\n<p><strong>选择性预测 / 拒答 (Table 3)</strong>：在默认 τ=0.5 下，</p>\n<table><thead><tr><th>Backbone</th><th>SABER Score</th><th>最强基线 (Implicit-SCR)</th><th>Δ Score</th><th>SABER F1</th></tr></thead><tbody><tr><td>Llama-3.1-8B</td><td>43.9%</td><td>25.4%</td><td>+18.5</td><td>72.5%</td></tr><tr><td>Qwen-2.5-7B</td><td>43.4%</td><td>18.8%</td><td>+24.6</td><td>78.0%</td></tr><tr><td>Llama-3.2-3B</td><td>38.5%</td><td>11.4%</td><td>+27.1</td><td>76.8%</td></tr><tr><td>Qwen-2.5-3B</td><td>39.6%</td><td>7.6%</td><td>+32.0</td><td>76.6%</td></tr></tbody></table>\n<p>风险-覆盖曲线 (Figure 3) 在 4 个 backbone 上都 Pareto 支配 prompt-based baseline，在与 Implicit-SCR 同覆盖率下 risk-on-answered 相对降低 19%-53%。</p>\n<p><strong>消融 (Figure 4)</strong> 验证：(1) prior-only ≈ 4 pp Acc 落后完整方法；(2) 单侧条件表征已能带来 ~13 pp MFS；(3) K=3 vs. K=1 对 3B 小模型的增益显著 (+3.2 pp MFS)，对 7-8B 中型模型增益逐步收窄，可作为推理预算与精度的 trade-off 设计依据。</p>\n<p><strong>层敏感性 (Figure 5)</strong> 显示选层是平台型问题：在中层至深层都能拿到接近最优，工程上不必对每个 backbone 单独网格调参。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者在 Appendix G 自述三点局限：(1) backbone 局限于 Llama-3.x / Qwen-2.5，未在 mixture-of-experts、reasoning-distilled 模型 (DeepSeek-R1、QwQ) 上验证；(2) 检索侧只用 top-1 passage，多 passage 聚合与不同检索质量 (recall@k) 的影响未研究；(3) 冲突基准是 &quot;静态构造&quot; 的，真实 RAG 中的分布漂移 (时间敏感事实、对抗性投毒) 没有覆盖。</p>\n<p>笔者补一条更隐性的：SABER 拒答标签 y_pk / y_ck 来自 &quot;模型回答与 gold 一致&quot;，对开放式生成（摘要、解释）天然不适用，泛化到开放生成需重设计标签。</p>\n<h2>6. 工业实践意义</h2>\n<p>对社区 UGC 搜索这种 &quot;召回内容质量高度参差&quot; 的场景，SABER 给出非常贴近上线的范式：</p>\n<p><strong>(1) 落地步骤</strong>。给现有 RAG 系统加 SABER 几乎不动 backbone：a. 选好层 ℓₚ / ℓc（中层 40-70% 即可，无需精调）；b. 离线在站内冲突 QA / 站内问答日志上构造 ~50K-100K PK / CK 标注样本；c. 训两个 MLP，单 GPU 跑数小时；d. 上线时只需 K=3 rollout + 2 次条件 self-evaluation 前向。</p>\n<p><strong>(2) 业务收益</strong>。最直接的是把 &quot;自信胡说&quot; 转化成 &quot;安全拒答&quot;，对应到产品就是 &quot;展示原帖让用户自己判断&quot; 的兜底逻辑，能显著降低 LLM 摘要在 UGC 噪声上的 risk-on-answered。Pareto 提升 19%-53% 的 risk 降幅意味着同样 coverage 下假阳显著减少。</p>\n<p><strong>(3) 部署成本</strong>。多 trace 在 7B 模型上单 query 需 ~6-8 次前向，是裸 RAG 的 2-3×，可以用 SGLang/vLLM 的 prefix sharing + speculative decoding (本日 Top-2 Graft 论文) 摊薄；阈值 τ 完全离线可调，所有 backbone 上 τ ∈ [0.40, 0.55] 范围内 MFS 波动 &lt; 0.9%，业务方调 coverage 时不必担心翻车。</p>\n<p><strong>(4) 风险与配套</strong>。需要为 abstain 设计 fallback UX（例如：&quot;我们暂时没有把握给出答案，请查看以下相关帖子&quot;），否则拒答率 &gt; 20% 时用户体验下降明显；同时 self-prior 容易被 prompt 注入污染，K=3 rollout 内若出现 prompt injection 鼓励 &quot;高自信&quot;，建议把 self-prior 抽取限制在系统 prompt 之上的固定查询模板。</p>",
-      "chars": 3900,
-      "minutes": 10
-     },
-     "weekly_rank": 2
-    },
-    {
-     "id": "arxiv:2605.17267",
-     "title": "RAGR: Review-Augmented Generative Recommendation",
-     "url": "https://arxiv.org/abs/2605.17267",
-     "source": "arxiv",
-     "company": [],
-     "published": "2026-05-19",
-     "authors": "RAGR authors (arXiv:2605.17267)",
-     "total_score": 3.95,
-     "adjusted_score": 3.95,
-     "preference_bonus": 0.2,
-     "rank_score": 3.95,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 3,
-      "timeliness": 5
-     },
-     "summary": "论文指出当前生成式推荐 (GR) 虽然引入了 semantic ID、自回归解码、统一 token 空间等新机制，但仍沿用「只建模 item 序列」的假设，无法捕捉用户为什么选择某个 item 的评价性因素。RAGR 提出 Review-Augmented User Sequence Modeling：把用户撰写的 review 反馈直接编入生成式用户序列，与 item token 交错排列，而不是作为辅助 side information。review 文本暴露的潜在评价维度被纳入自回归生成目标，使 GR 在序列推荐任务上同时建模「选了什么」与「为何选」。",
-     "key_insight": "评论/点评本身就是社区平台的核心 UGC 短文本，RAGR 把这类评价文本当作生成序列的一等公民而非附属特征，这一思路可直接迁移到「用户历史评论+互动」联合建模的社区推荐与搜索排序场景。对实践的启示是：在 semantic ID 体系里为 UGC 文本设计独立 token 通道并与行为 token 交错，比把文本压成静态 embedding 更能保留评价语义，值得在短文本召回/重排中验证 review token 注入对 nDCG 的增益。",
-     "best_date": "2026-05-20",
-     "appearances": [
-      {
-       "date": "2026-05-20",
-       "rank": 1,
-       "id": "arxiv:2605.17267",
-       "total_score": 3.95,
-       "adjusted_score": 3.95
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 3
-    },
-    {
-     "id": "arxiv:2605.18271",
-     "title": "From Volume to Value: Preference-Aligned Memory Construction for On-Device RAG (EPIC)",
-     "url": "https://arxiv.org/abs/2605.18271",
-     "source": "arxiv",
-     "company": [],
-     "published": "2026-05-19",
-     "authors": "EPIC authors (arXiv:2605.18271)",
-     "total_score": 3.9,
-     "adjusted_score": 3.9,
-     "preference_bonus": 0.1,
-     "rank_score": 3.9,
-     "scores": {
-      "business_relevance": 3,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "面向端侧个人 AI agent 的 RAG，论文认为内存预算受限时真正的瓶颈是「该存什么」才能让检索与用户对齐。EPIC (Efficient Preference-aligned Index Construction) 把用户偏好作为紧凑且稳定的个人上下文形式，贯穿整条 RAG 管线：从原始数据中选择性保留与偏好相关的信息，并把检索引导向偏好对齐的上下文。在覆盖对话、辩论、解释、推荐四类任务的 4 个 benchmark 上，EPIC 把索引内存压缩 2,404 倍，同时提升偏好遵循能力。",
-     "key_insight": "「以用户偏好为索引压缩的核心信号」对社区搜索的个性化召回有借鉴价值：与其全量存储用户行为再检索，不如先抽取稳定偏好画像作为索引锚点。2,404 倍的内存压缩说明偏好导向的索引裁剪在不显著损失偏好遵循的前提下极其激进，可用于端侧/低成本个性化重排，以及对长期用户兴趣做稳定建模而非依赖近期行为噪声。",
-     "best_date": "2026-05-20",
-     "appearances": [
-      {
-       "date": "2026-05-20",
-       "rank": 2,
-       "id": "arxiv:2605.18271",
-       "total_score": 3.9,
-       "adjusted_score": 3.9
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 4
-    },
-    {
-     "id": "hf:2605.20104",
-     "title": "Draft Less, Retrieve More: Hybrid Tree Construction for Speculative Decoding",
-     "url": "https://huggingface.co/papers/2605.20104",
-     "source": "huggingface",
-     "company": [],
-     "published": "2026-05-18",
-     "authors": "Yuhao Shen, Tianyu Liu, Xinyi Hu, Quan Kong, Baolin Zhang",
-     "total_score": 3.9,
-     "adjusted_score": null,
-     "preference_bonus": null,
-     "rank_score": 3.9,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 3,
-      "timeliness": 4
-     },
-     "summary": "投机解码 (Speculative Decoding) 通过 draft-then-verify 加速 LLM 推理，但密集 draft tree 的 VRAM 带宽和算力开销吃掉了端到端 speedup；动态剪枝又会丢候选导致接受率下降。作者提出 Graft：把剪枝和检索耦合成互补操作，先 prune 释放预算，再用 retrieval 从 n-gram/缓存中补回被剪掉的高质量候选，形成 prune-then-retrieve 的 hybrid tree。实验显示在保持/超过 dense tree 接受长度的同时显著降低 draft 阶段算力，端到端 throughput 优于 EAGLE 等基线。",
-     "key_insight": "搜推线上 LLM 部署（搜索摘要、对话推荐）最痛的是 P95 时延，而投机解码已成为主流加速手段。Graft 的关键观察是 draft tree 不必都来自参数模型，可以引入轻量级 retrieval-based draft 来弥补剪枝后的覆盖损失，这与搜索系统已有的 query log/n-gram 资产天然契合。对于 UGC 搜索，可以把站内热门 query 的延续、热门评论模板做成 draft 检索源，几乎零额外训练成本就能拿到接受率收益。",
-     "best_date": "2026-05-21",
-     "appearances": [
-      {
-       "date": "2026-05-21",
-       "rank": 2,
-       "id": "hf:2605.20104",
-       "total_score": 3.9,
-       "adjusted_score": null
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 5
-    },
-    {
-     "id": "arxiv:oai:arXiv.org:2509.00303",
-     "title": "Access Paths for Efficient Ordering with Large Language Models",
-     "url": "https://arxiv.org/abs/2509.00303",
-     "source": "arxiv",
-     "company": [
-      "Snowflake",
-      "UChicago",
-      "UCLA",
-      "UCSB"
-     ],
-     "published": "2026-05-21",
-     "authors": "Fuheng Zhao, Jiayue Chen, Yiming Pan, et al.",
-     "total_score": 3.65,
-     "adjusted_score": 3.85,
-     "preference_bonus": 0.2,
-     "rank_score": 3.85,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 3,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 3
-     },
-     "summary": "把“用 LLM 按语义排序”抽象为 LLM ORDER BY 算子，系统研究其物理实现：逐项打分（O(N) 次调用）、成对比较、批量外部归并三类。提出语义感知的外部归并排序与带多数投票的快排，并用动态优化器（启发式规则 + LLM-as-Judge + Borda 计数）按数据集自动选最优算法。在 TREC DL20 上外部归并取得 0.719 nDCG@10、自一致优化器 0.724；SembenchMovie 上从逐项打分 0.862 提升到归并排序 0.921、LLM-as-Judge 达 0.924 且成本降 26%；NBA 身高排序成本较冒泡排序降 6×。注：本期为 v3 扩展版（原始版本 2025-09）。",
-     "key_insight": "论文证明“没有一种 LLM 排序算法在所有任务上最优”——事实型查询用逐项打分、推理型查询用成对比较，需按数据特征动态选路。对搜索排序的启示：用 LLM 做相关性重排时，与其无脑成对比较，不如引入归并/快排式的分治结构把调用次数从 O(N²) 降到 O(N log N)，并用成本模型预估开销（DL20 成本预估误差仅 ±0.02 美元）。LLM-as-Judge 自动选路的思路可直接迁移到重排链路的算法选择。",
-     "best_date": "2026-05-22",
-     "appearances": [
-      {
-       "date": "2026-05-22",
-       "rank": 1,
-       "id": "arxiv:oai:arXiv.org:2509.00303",
-       "total_score": 3.65,
-       "adjusted_score": 3.85
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 6
-    },
-    {
-     "id": "s2:cf35c3e9664bb563adae98a3f11c5c00556d00b4",
-     "title": "LLM-based Conversational Recommendation Agents with Collaborative Verbalized Experience",
-     "url": "https://www.semanticscholar.org/paper/cf35c3e9664bb563adae98a3f11c5c00556d00b4",
-     "source": "semantic_scholar",
-     "company": [
-      "Netflix",
-      "UVA",
-      "Cornell"
-     ],
-     "published": "",
-     "authors": "Yaochen Zhu, Harald Steck, Dawen Liang, Yinhan He, Nathan Kallus",
-     "total_score": 3.75,
-     "adjusted_score": null,
-     "preference_bonus": null,
-     "rank_score": 3.75,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "现有 LLM-based 会话推荐 (CRS) 要么 retrieve few-shot 示例，要么抽全局规则，难以利用 implicit、偏好导向的历史经验。作者提出 CRAVE：先让 CRS agent 在历史 query 上跑 rollout，再基于用户反馈反思 agent 行为，构造 \"verbalized experience bank\"；再训一个 collaborative retriever，用 content-parameterized multinomial likelihood 在 query-item 对上微调，将经验向量与协同信号绑定。最后用 debater-critic agent (DCA) 在生成阶段对候选回复做对抗式自审，多个数据集上 Recall@K、Coverage 优于 LLM4CRS 与检索增强基线。",
-     "key_insight": "面向社区内容的对话式发现/搜索场景，CRAVE 给出一条 \"经验沉淀-协同检索-辩论审校\" 的完整链路。可借鉴的工程设计：(1) 把 agent 历史轨迹 + 用户点击/停留反馈做成 verbalized experience，本质上是把行为日志翻译成 LLM 可读的偏好规则；(2) 协同检索器用 multinomial likelihood 同时学语义相似度和协同信号，避免冷启动；(3) DCA 双 agent 自审等价于把 ranker 的 listwise pairwise 思路搬到生成阶段。",
-     "best_date": "2026-05-21",
-     "appearances": [
-      {
-       "date": "2026-05-21",
-       "rank": 3,
-       "id": "s2:cf35c3e9664bb563adae98a3f11c5c00556d00b4",
-       "total_score": 3.75,
-       "adjusted_score": null
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 7
-    },
-    {
-     "id": "blog:amazon-surefire-scaling-law-2026",
-     "title": "Making LLMs faster without sacrificing accuracy (Surefire architectural scaling law)",
-     "url": "https://www.amazon.science/blog/making-llms-faster-without-sacrificing-accuracy",
-     "source": "blog_rss",
-     "company": [
-      "Amazon"
-     ],
-     "published": "2026-05-15",
-     "authors": "Amazon AWS AI Labs (ICLR 2026)",
-     "total_score": 3.7,
-     "adjusted_score": 3.7,
-     "preference_bonus": 0.3,
-     "rank_score": 3.7,
-     "scores": {
-      "business_relevance": 2,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "AWS AI Labs 在 Chinchilla scaling law 基础上引入三个架构因子（hidden size d_model、MLP-to-attention 比例、GQA），把架构选择直接纳入 loss 预测。发现 LLaMA-3.2 风格模型最优 MLP/attention 比约为 1.0，远低于现有开源权重（LLaMA-3.2-1B 为 4.8），即现有模型在 MLP 层过度分配参数。据此训练的 Surefire-1B 在 H200+SGLang 上吞吐提升 47% 且精度不降，Surefire-3B 提升 12–17%，结论在 A100/H200 与 vLLM/SGLang 上一致。ICLR 2026。",
-     "key_insight": "scaling law 不只决定参数量，架构比例本身可纳入 loss 预测来指导设计：MLP/attention 比从 4.8 降到 1.0 即换来 47% 吞吐。对搜索/推荐的实践启示：若用 LLM 做 query 理解、生成式召回或重排，backbone 的 MLP 膨胀系数与 GQA 配置直接决定线上延迟和单卡吞吐成本，按该 scaling law 重选架构比单纯堆参数更划算。",
-     "best_date": "2026-05-18",
-     "appearances": [
-      {
-       "date": "2026-05-18",
-       "rank": 2,
-       "id": "blog:amazon-surefire-scaling-law-2026",
-       "total_score": 3.7,
-       "adjusted_score": 3.7
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 8
-    },
-    {
-     "id": "arxiv:2605.16428",
-     "title": "The Impact of AI Search on the Online Content Ecosystem: Evidence from Google and Reddit",
-     "url": "https://arxiv.org/abs/2605.16428",
-     "source": "arxiv",
-     "company": [],
-     "published": "2026-05-19",
-     "authors": "AI Search Ecosystem authors (arXiv:2605.16428)",
-     "total_score": 3.7,
-     "adjusted_score": 3.7,
-     "preference_bonus": 0.05,
-     "rank_score": 3.7,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 2,
-      "practicality": 3,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "研究生成式 AI 搜索（Google AI Overviews）对 UGC 社区平台（Reddit）的影响。识别策略利用 Google 内容审核政策的差异：SFW 社区会被 AI Overviews 引用，NSFW 社区虽被自然搜索索引但被禁止出现在 AI 摘要中，从而构成准实验。采用双重差分 (difference-in-differences) 设计发现：AI Overviews 使 SFW 社区参与度上升——日评论数相对 NSFW 社区提升 12.0%、评论用户数提升 12.3%，即生成式摘要并未单纯「截流」，反而为被引用社区带来回流。",
-     "key_insight": "这是少见的、用因果识别量化「生成式搜索 vs UGC 社区流量」关系的实证，与社区搜索业务高度相关。结论提示：被生成式答案引用的优质 UGC 社区会获得参与度增益（+12%），因此社区平台的策略不应是抵制 AI 摘要，而是优化内容被检索/被引用的可发现性（类似 Answer Engine Optimization）。对内部搜索而言，生成式摘要+可点击溯源链接的组合可能同时提升满意度与社区互动，值得做线上对照实验。",
-     "best_date": "2026-05-20",
-     "appearances": [
-      {
-       "date": "2026-05-20",
-       "rank": 3,
-       "id": "arxiv:2605.16428",
-       "total_score": 3.7,
-       "adjusted_score": 3.7
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 9
-    },
-    {
-     "id": "hf:2605.20035",
-     "title": "Stage-adaptive Token Selection for Efficient Omni-modal LLMs",
-     "url": "https://huggingface.co/papers/2605.20035",
-     "source": "huggingface",
-     "company": [],
-     "published": "2026-05-18",
-     "authors": "Zijie Xin, Jie Yang, Ruixiang Zhao, Tianyi Wang, Fengyun Rao",
-     "total_score": 3.7,
-     "adjusted_score": null,
-     "preference_bonus": null,
-     "rank_score": 3.7,
-     "scores": {
-      "business_relevance": 3,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "Omni-modal LLM (om-LLM) 把视频和音频编码成时间对齐的非文本 token，在 LLM 前向中处理这些密集 token 计算开销巨大。作者先做 layer-wise token dependency 分析，发现视觉/音频依赖呈 block-wise 模式且随深度衰减——晚期层很多非文本 token 在跨模态融合后变得冗余。基于此提出 SEATS：免训练、按 stage 自适应剪 token，前段保留较多多模态 token，深层激进剪枝；在多个 om-LLM benchmark 上以 30%-50% token 预算保留 ≥97% 任务精度，吞吐 1.6-2.1×。",
-     "key_insight": "短视频/图文社区的多模态搜索如果上 om-LLM，最大瓶颈就是非文本 token 数量。SEATS 揭示一条免训练优化路径：跨模态依赖是分块且随深度衰减的，剪枝策略必须分阶段而非全局固定比例。可在自己业务上先做同样的 layer-wise dependency 探针实验，验证 \"早保留-晚剪枝\" 假设是否仍成立，再决定按层动态调整 token budget 的具体曲线。",
-     "best_date": "2026-05-21",
-     "appearances": [
-      {
-       "date": "2026-05-21",
-       "rank": 4,
-       "id": "hf:2605.20035",
-       "total_score": 3.7,
-       "adjusted_score": null
       }
      ],
      "deep_reading": null,

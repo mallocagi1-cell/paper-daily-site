@@ -4,7 +4,7 @@
   function TR(zh, en) { return IS_EN ? en : zh; }
   // Paper Daily static SPA — design direction C "Newsletter / magazine" (2026-10-10).
   // Display order everywhere (user preference); data.json "tracks" overrides at boot.
-  let TRACKS = ["personalization", "generative", "retrieval", "agentic", "infra"];
+  let TRACKS = ["generative", "personalization", "retrieval", "agentic", "infra"];
   let TRACK_LABELS = {
     personalization: "Personalization", generative: "Generative", retrieval: "Retrieval",
     agentic: "Agentic", infra: "Infra",

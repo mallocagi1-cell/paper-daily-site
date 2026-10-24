@@ -13,6 +13,409 @@
  "top_n": 10,
  "rule": "adjusted_score desc, total_score desc; dedupe by arXiv id / URL / id / title",
  "tracks": {
+  "generative": {
+   "raw_count": 20,
+   "unique_count": 20,
+   "days": [
+    "2026-06-22",
+    "2026-06-23",
+    "2026-06-24",
+    "2026-06-25",
+    "2026-06-26"
+   ],
+   "papers": [
+    {
+     "id": "arxiv:2606.25496",
+     "title": "Recommendation as Generation: Unifying Personalized Video Generation and Recommendation at Industrial Scale",
+     "url": "https://arxiv.org/abs/2606.25496",
+     "source": "arxiv",
+     "company": [
+      "Kuaishou",
+      "Beihang"
+     ],
+     "published": "2026-06-25",
+     "authors": "Yanhua Cheng, Bo Wang, Haotian Zhang, et al.",
+     "total_score": 4.1,
+     "adjusted_score": 4.3,
+     "preference_bonus": 0.2,
+     "rank_score": 4.3,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 5,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "快手与北航提出 Recommendation-as-Generation（RaG），把短视频推荐从“在固定池里检索”改为“按推断的用户兴趣实时生成个性化视频”。核心是解耦语义 ID（D-SIDs）：用 Qwen2.5-VL-7B 做指令引导的多模态表征，再用 RQ-KMeans 残差量化成 content 与 creative 两套离散 token；视频生成交给共享 Qwen2.5-32B 的三个角色 Agent，并用 GDPO 做跨域奖励学习。快手 4 亿日活广告场景上线 A/B，相对 DLRM 广告收入 +5.462%，码本碰撞率从 18.24% 降到 2.62%。",
+     "key_insight": "语义 ID 不必是单一码本：把内容语义与风格语义拆成两套 SID，碰撞率从 18.24% 降到 2.62%，兴趣建模与生成可控性同时受益，这一解耦量化思路对纯推荐的 SID 设计也可直接借鉴。SCRL 用 GDPO 把稀疏真实反馈设为主目标、把视频质量与兴趣对齐设为约束，给“多奖励尺度不一致”提供了可复用写法。代价是 VGA 为延迟瓶颈、目前只能 nearline 服务；资源有限的团队可先用 D-SIDs，暂不碰端到端视频生成。",
+     "best_date": "2026-06-26",
+     "appearances": [
+      {
+       "date": "2026-06-26",
+       "rank": 1,
+       "id": "arxiv:2606.25496",
+       "total_score": 4.1,
+       "adjusted_score": 4.3
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2606.25496",
+      "slug": "2606.25496",
+      "content_html": "<h2>Recommendation as Generation (RaG) 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>传统短视频推荐是“检索范式”：用户兴趣只能匹配到一个固定的、已生产好的视频池，无法表达细粒度、动态变化的偏好——想看“赛博朋克风格的猫”但池子里没有，就只能退而给近似项。RaG 把问题重述为“生成范式”：直接按推断出的用户兴趣实时生成个性化视频。动机有两点：(1) 固定视频供给是推荐的天花板，生成式可突破供给侧约束；(2) 生成式推荐（GR）已用语义 ID 把 item 表示为离散 token 序列，与视频生成模型天然共享“离散 token→内容”的接口，因此可以把“推荐”和“视频生成”统一在同一套 SID 上。论文同时点明现有 SOTA 视频生成模型虽视觉质量高，但高延迟、高算力成本使其难以直接放进大规模推荐系统——这正是 RaG 要化解的工程张力，也决定了它当前只能 nearline 服务。</p>\n<h3>2. 方法详解</h3>\n<p>RaG 的主链路是 “用户上下文 → 预测语义 ID → 生成个性化视频”，由四个部件组成。<br>(a) 解耦语义 ID（D-SIDs）。不同于把视频量化成单一码本，RaG 用指令引导的多模态表征学习（backbone 为 Qwen2.5-VL-7B-Instruct）把视频拆成两类因子：content（实体/主题/语义内容）与 creative（风格/节奏/氛围），再用 RQ-KMeans 残差量化成离散 token，每个模态每层码本 8192 项。解耦让“兴趣建模”和“可控生成”各取所需的语义维度。<br>(b) 生成式推荐模型（GRM）。一个 7 层 Transformer decoder（hidden 768、词表 8192），自回归预测目标视频的 D-SIDs——即“推荐”这一步在 SID 空间里完成。<br>(c) 视频生成 Agent（VGAs）。三个共享同一 Qwen2.5-32B backbone 的角色子 Agent：视觉规划 Agent 产出 clip 级分镜（场景片段 + 时间边界）、音频对齐 Agent 生成时间同步的语音与音乐、特效增强 Agent 加字幕/视觉特效/转场/CTA。它们被推断出的 SID 条件化，做分层规划与精修；通过 KV-cache 复用（append-only 状态）在顺序调用的 Agent 之间降低单请求延迟，并设两轮封顶的反思循环来精修跨模态一致性。<br>(d) 协同跨域奖励学习（SCRL）。三类奖励：视频质量（视觉质量、音画一致、特效-画面对齐）、兴趣对齐（指令级 + 表征级一致）、用户反馈（稀疏真实交互 + 稠密 ranking 模型预测）。它被建成约束优化：用户反馈为主目标，兴趣对齐与视频质量为约束；GDPO（Group-Decoupled Policy Optimization）对每个奖励做标准化与组内相对优势，解决多奖励尺度不一致。指令模型（IM）用 Qwen3-8B，由 Gemini2.5 Pro 蒸馏指令模板监督。</p>\n<h3>3. 核心技术贡献</h3>\n<p>1) 把“推荐即生成”落到工业级：用共享 SID 把 GR 与视频生成统一，GRM 在 SID 空间出“推荐”，VGA 据此生成视频，形成端到端可优化框架，而不是把推荐和生成当两个割裂系统拼接。<br>2) 解耦语义 ID（D-SIDs）：content/creative 双码本把表示空间结构化，相比单码本既降碰撞又提兴趣粒度——消融显示把标准 SID 换成 D-SIDs，广告收入相对 DLRM 从 +3.526% 提到 +4.460%。<br>3) 角色化 VGA + KV-cache 复用 + 有界反思：用一个 32B backbone 扮演三种角色，避免三套模型的部署成本，反思两轮即获得相对刚性 workflow 的稳定增益，是“Agent 化生成但控住延迟”的折中。<br>4) SCRL/GDPO：把“稀疏真实反馈做主目标、质量与对齐做约束”的约束优化与组解耦策略优化结合，缓解多奖励尺度不一致，这是把 RLHF 思路迁移到多模态生成式推荐的关键一招。</p>\n<h3>4. 实验结果分析</h3>\n<p>线上 A/B（快手广告平台，超 4 亿日活）：相对 DLRM 基线，GRM 基线 +3.526%、GRM+D-SIDs +4.460%、完整 RaG +5.462% 广告收入；完整 RaG 相对 GRM 基线再 +1.870%，说明增量主要来自 VGA + SCRL 而不仅是换 SID。<br>D-SIDs 质量（Table 2）：语义检索 R@1 0.896（相对 Qwen2.5-VL-7B 基线 0.769 提升 +16.5%）、R@5 0.985、R@10 0.994；压缩率 1.02（优于 QARM 的 1.14），碰撞率 2.62%（QARM 18.24%，降 15.6pp）——碰撞率大降是双码本结构化的直接收益，也是后续生成可控的基础。<br>VGA 对比 workflow 基线（Table 3）：自动评分 71.3（+14.3%）、自动胜率 70.1%（+41.4pp）、用户研究胜率 52.9%（+18.5pp）。<br>奖励消融（Table 4）：单独视觉奖励把自动胜率 29.3%→50.7%（+21.4pp），音频 24.0%→48.0%（+24.0pp），特效 22.7%→41.3%（+18.6pp），三者合并 37.3%→56.0%（+18.7pp）；兴趣对齐奖励把对齐分 0.707→0.828（+17.1%）。三类质量奖励互补、各自独立有效。<br>指令模型配置消融：从 8B/100K 样本的 0.7760 提升到 32B/1M 的 0.8212；最终选 8B + 1M 样本，在解码保真与部署成本间折中。反思循环（2 轮）优于刚性 workflow，体现分层端到端带来的自我纠错收益。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者在结论中明确的核心局限：RaG 目前是 nearline 服务而非实时，VGA 是主要延迟瓶颈。给出的未来方向：把指令模型并入 VGA 以缩短生成路径；用更强蒸馏与推理优化加速 VGA；最终走向真正的 on-the-fly 实时个性化生成。作者亦坦承基础设施约束：当前 SOTA 视频生成模型虽视觉质量强，但高延迟、高算力使其难以直接部署进大规模推荐系统。未明说但显然的局限：评测高度依赖快手广告内部数据与自动评分/人评（1000 实例、20 名标注者做 1000 对比较），跨平台与公开可复现性有限；广告收入增益与内容生态健康、用户长期体验之间的关系也未充分讨论。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐团队的可操作启示：</p>\n<ul>\n<li>最先可借鉴的是 D-SIDs 的“解耦量化”：把内容与风格（迁到搜索即 query 意图与表达风格）拆成双码本，碰撞率从 18.24% 降到 2.62%，对任何使用 SID 的生成式召回/排序都有价值，而且不依赖视频生成即可落地。</li>\n<li>SCRL/GDPO 的“主目标 + 约束”多奖励范式可迁到多目标排序/对齐：把核心业务指标设为主目标、把相关性/质量设为约束，再用组解耦标准化解决奖励尺度不一致，比简单加权更稳。</li>\n<li>VGA 的“单 backbone 多角色 + KV-cache 复用 + 有界反思”是控制 Agent 化生成延迟的实用工程模式，值得做生成式问答/卡片生成的团队参考。</li>\n<li>部署上要清醒：完整 RaG 因 VGA 延迟只能 nearline，需要数亿日活级别的算力支撑；中小团队应先取 D-SIDs 与奖励建模思路，端到端实时视频生成短期内并不现实。整体看，这是“生成式推荐从召回 token 走向直接生成内容”的一个工业级样本，但其 ROI 高度依赖平台规模与算力预算。</li>\n</ul>",
+      "chars": 2902,
+      "minutes": 8
+     },
+     "weekly_rank": 1
+    },
+    {
+     "id": "arxiv:2606.24667",
+     "title": "DREAM: Dense Retrieval Embeddings via Autoregressive Modeling",
+     "url": "https://arxiv.org/abs/2606.24667",
+     "source": "huggingface",
+     "company": [
+      "HKUST"
+     ],
+     "published": "2026-06-22",
+     "authors": "Yixuan Tang, Yi Yang",
+     "total_score": 4.15,
+     "adjusted_score": 4.25,
+     "preference_bonus": 0.1,
+     "rank_score": 4.25,
+     "scores": {
+      "business_relevance": 5,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "DREAM 针对稠密检索依赖人工标注正负样本对的痛点，提出用大模型自回归 next-token prediction 损失来监督检索器训练：将检索器算出的 query-文档相似度分数注入冻结 LLM 的部分注意力头，相似度决定 LLM 预测目标输出时对各候选文档的注意力权重，由此产生的预测损失通过注意力机制把梯度回传给检索器。在 BEIR 与 RTEB 两个检索基准、0.5B 到 3B 的多种 backbone 上，DREAM 一致超过现有基线。",
+     "key_insight": "把\"文档对生成目标的帮助程度\"当作相关性的隐式信号，摆脱了对比学习对标注 query-doc 对的依赖——这对标注稀缺的社区 UGC 短文本检索很有价值。注意力头注入这一设计让冻结 LLM 与独立 embedding 检索器解耦，无需端到端反传整个 LLM，训练成本可控；0.5B–3B 一致提升也说明该监督信号随规模稳定，可作为弱监督/无标注场景下训练领域检索器的新路径。",
+     "best_date": "2026-06-25",
+     "appearances": [
+      {
+       "date": "2026-06-25",
+       "rank": 1,
+       "id": "arxiv:2606.24667",
+       "total_score": 4.15,
+       "adjusted_score": 4.25
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2606.24667",
+      "slug": "2606.24667",
+      "content_html": "<h2>DREAM: Dense Retrieval Embeddings via Autoregressive Modeling — 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>稠密检索 embedding 模型是现代检索式 AI 系统的核心组件，但主流训练方式依赖对比学习(contrastive，如 InfoNCE)，需要构造正负样本对。论文把这点定位为训练瓶颈：正样本通常需要昂贵的相关性人工标注，而难负样本(hard negative)既难以可靠挖掘、又容易混入假负样本(false negative)，污染训练信号。作者提出一个不依赖标注对的替代监督——大模型的自回归 next-token prediction(NTP)。直觉很直接：如果一篇文档包含与 query 相关的信息，那么把这篇文档作为条件输入，应当让 LLM 更容易预测目标输出(target)。真正的难点在于，NTP 损失发生在 LLM 内部，而检索器是一个独立的 embedding 模型，两者的梯度如何打通。DREAM 要回答的就是&quot;如何让 LLM 的生成损失反过来训练一个独立检索器&quot;。</p>\n<h3>2. 方法详解</h3>\n<p>DREAM 的核心是把检索器算出的 query-文档相似度，注入一个冻结 LLM(judge，用 Llama-3.1-8B-Instruct)的选定注意力头，让相似度去调制 LLM 在生成 target 时对各候选文档的关注程度。具体流程：对一个 query 与多个候选文档，检索器给出相似度，经带可学习温度 τ 的 softmax 归一化为文档权重 p_ϕ(d_j|q)。在选定注意力头 h 上，先做文档内 token 级注意力归一化 α̂_h,j，再用文档权重做文档级调制 α^R_h = p_ϕ(d_j|q)·α̂_h,j，最后用门控混合 α&#x27;_h = (1−g)·α_h + g·α^R_h，其中 g=σ(γ)∈[0,1] 是可学习门控。LLM 在被改写的注意力下计算对 target 段落的 NTP 交叉熵 L_NTP = −Σ log p_θ(x_t | x_&lt;t; α&#x27;)；这个损失通过注意力机制把梯度回传给检索器，而 LLM 本身全程冻结，只训练检索器。注意力头的选择是方法成败的关键：作者沿用 Zhang et al.(2025a)的 query-focused retrieval-head 排序，取 Top 16 个头，依据是这些头在探针样本上度量 query token 流向候选文档的注意力(并减去 null-query 基线)、再用 NDCG@10 验证。训练设置：embedding backbone 用 Qwen2.5-0.5B、Llama-3.2-1B、Llama-3.2-3B；只在 q/k/v/o 投影上加 LoRA(rank 32、alpha 64)；数据为 Wikipedia(Tevatron)，每篇切 16 个 chunk，query 由 Qwen3-14B 生成；lr 1e-4、batch size 1、梯度累积 32、训练 1500 步、每样本 16 个候选。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) 提出 DREAM：通过把检索器分数注入冻结 LLM 的注意力头，使自回归 NTP 损失能够监督稠密检索器训练，给出了&quot;用生成损失监督检索&quot;的一条可落地通路。(2) 证明自回归建模可作为对比学习的替代，无需显式负样本挖掘，回避了难负样本挖掘与假负样本这两个对比学习长期痛点。(3) 揭示监督有效性高度依赖注意力头选择：用随机头几乎学不到东西(NDCG@10 仅约 0.06)，而用选定的 query-focused 头能达到 0.49–0.55；头数量消融发现 Top 16 最优、Top 1 信息不足、Top 32+ 反而下降。(4) 分析 embedding 几何：尽管是非对比训练，DREAM 反而取得更好的 uniformity(分布均匀性)，同时保持与对比方法相当的 alignment。</p>\n<h3>4. 实验结果分析</h3>\n<p>评测在 BEIR(9 个任务)与 RTEB(14 个任务)上以 NDCG@10 为指标。以 Llama-3.2-1B 为 backbone 的主表(Table 1)：BM25 0.4122/0.3176，InfoNCE 0.3268/0.3658，RePlug 0.2535/0.2855，Revela 0.4075/0.4499，DREAM 0.4888/0.5514(BEIR/RTEB)。DREAM 相对最强基线 Revela 在 BEIR 上 +0.0813、RTEB 上 +0.1015，且 0.5B 与 3B 规模呈现一致提升；同时它也超过了无监督 BM25——这对非对比、无标注训练的方法并不容易。消融部分信息量很大：注意力头选择(Fig.2)随机头 0.0637 对比选定头 0.4888，几乎是&quot;用对头&quot;与&quot;用错头&quot;的天壤之别；头数量(Fig.3)Top 16 最优；judge 冻结 vs 可更新(Fig.5)冻结全面更好，说明保持 LLM 预训练分布对监督信号质量更有利；候选数量(Fig.6)16 个候选优于 4 个，更多候选提供了更丰富的对比压力。扩展性(Table 2)上 DREAM-8B 达到 BEIR 0.5531、RTEB 0.6417。作者也诚实报告了边界：DREAM 尚未超过强监督的 Qwen3-Embedding-8B。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者未单列 limitations 章节，但从正文可归纳几点隐含约束：其一，注意力头是预先识别、固定不可学的(依赖 Zhang et al. 2025a 的 retrieval-head 排序)，迁移到新领域或新 LLM 时需要重新筛选；其二，judge LLM 冻结虽利于监督信号稳定，但也限制了对新领域的自适应；其三，与工业级强监督模型 Qwen3-Embedding-8B 仍有差距，说明纯 NTP 监督目前更适合作为无标注/弱监督场景的补充，而非完全替代大规模有监督对比训练。后续可探索注意力头的可学习选择、judge 与检索器的联合自适应，以及把 NTP 监督与少量对比监督结合。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐工程团队，DREAM 最大的价值是提供了一条&quot;无需人工标注 query-doc 对即可训练领域检索器&quot;的路径，特别契合社区 UGC 短文本检索这种标注稀缺、长尾 query 多的场景：只要有领域文档，就能用 Qwen3-14B 这类模型批量造 query，再用一个冻结的中等规模 LLM(8B)做 judge 提供监督信号。成本上，训练只更新检索器的 LoRA(rank 32)、LLM 全程冻结，显存与算力可控，0.5B–3B backbone 都能稳定吃到收益，适合资源有限的团队冷启动垂域 embedding。落地要点要记牢：注意力头选择是成败关键(随机头几乎为 0)，迁移到自家 LLM 必须先做 retrieval-head 探针筛选；候选数量、judge 冻结这些超参已被消融验证，可直接照搬作为起点。但要清醒认识到它当前还打不过 Qwen3-Embedding-8B 这类强监督商用模型，更现实的用法是：缺标注阶段用 DREAM 快速起一个可用的领域检索器，待积累点击/标注后再叠加对比微调。</p>",
+      "chars": 2765,
+      "minutes": 7
+     },
+     "weekly_rank": 2
+    },
+    {
+     "id": "arxiv:2606.15911",
+     "title": "Interactor: Agentic RL oriented Iterative Creation for Ad Description Generation in Sponsored Search",
+     "url": "https://arxiv.org/abs/2606.15911",
+     "source": "arxiv",
+     "company": [
+      "Baidu"
+     ],
+     "published": "2026-06-14",
+     "authors": "Penghui Wei, Jiayu Wu, Chao Ye, Zhi Guo, Shuanglong Li, Lin Liu",
+     "total_score": 3.9,
+     "adjusted_score": 4.1,
+     "preference_bonus": 0.2,
+     "rank_score": 4.1,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 3
+     },
+     "summary": "针对赞助搜索中长文本广告描述（比广告标题更长、可融入世界知识表达用户搜索意图）的生成问题，提出 Interactor 多轮迭代生成框架：LLM 策略作为 agent，与由两个 rubric 式生成式奖励模型（GenRM，分别评估知识容量 KC 与落地页一致性 LP）和 CTR 预估模型组成的环境交互，用 <retrieve> 检索百科知识、<create> 生成、<reward> 评估三类动作多轮精修，以 GSPO 做 agentic RL，基座 Qwen3-30B-A3B。在百度搜索广告千万级数据上信息量 0.715、忠实度 0.872，超过单轮 RL 的 0.693/0.726；线上 A/B 覆盖 14 万广告主，广告收入 +0.74%、人工优质率 +7pp，2026 年 5 月已上线主流量。",
+     "key_insight": "GenRM 不只给二元分，还返回\"哪句缺知识、哪句与落地页不符\"的细粒度推理反馈作为下一轮观测，这是效果关键——消融去掉 reasoning 后忠实度从 0.872 暴跌到 0.636。它把\"奖励即标量\"的 RLHF 升级成\"奖励带可执行修改建议\"的多轮自我修正，对社区搜索的 query 改写、答案/摘要生成有直接借鉴：用可验证 rubric 把开放生成的事实一致与信息量约束转成迭代信号。GenRM 用 Qwen3-8B 替换 30B 仅小幅掉点，奖励模型可适度小型化。",
+     "best_date": "2026-06-23",
+     "appearances": [
+      {
+       "date": "2026-06-23",
+       "rank": 1,
+       "id": "arxiv:2606.15911",
+       "total_score": 3.9,
+       "adjusted_score": 4.1
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2606.15911",
+      "slug": "2606.15911",
+      "content_html": "<h1>Interactor: Agentic RL oriented Iterative Creation for Ad Description Generation in Sponsored Search — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>赞助搜索的广告创意分标题与描述两部分，以往 ad text 生成工作几乎只优化标题（短、博点击），长文本描述长期被忽视。描述文本跨度更长，本可融入世界知识对齐用户搜索意图，并从落地页提炼细粒度卖点，是更有信息量的展示位。难点在于：这是开放式生成任务，没有 ground-truth 描述可监督学习；现有方法（CTOP 走偏好优化、DIVER 走 RLHF）只用标量奖励引导 LLM，对长文本的多重质量约束（事实一致、信息充分）给不出细粒度纠错，导致 rollout 质量低、探索效率差、生成结果有各种细微错误（错字、不实表述）。论文要解决的核心是：在无标注、且质量维度多的前提下，稳定生成既有知识含量、又严格忠实于落地页的长广告描述，同时兼顾用户点击。</p>\n<h2>2. 方法详解</h2>\n<p>Interactor 把描述生成建模为多轮迭代过程，LLM 策略 π_θ(y|x_user,x_ad) 作为 agent 与一个定制环境交互。每轮输出被结构化为两段：&lt;think&gt;&lt;/think&gt; 思考 + 一个 action。Action 有三类：&lt;retrieve&gt; 请求自建搜索引擎（索引海量百科网页，取 top-1 网页文档）注入世界知识；&lt;create&gt; 基于历史所有轮上下文生成描述；&lt;reward&gt; 请求奖励模型做细粒度评估。环境由三类奖励构成：两个 rubric 式生成式奖励模型（GenRM）分别评 knowledge capacity(KC) 与 landing page consistency(LP)——把业务 rubric 用 few-shot in-context learning 喂给黑盒前沿 LLM，输出&quot;所有 rubric 满足才为 1&quot;的二元信号 + 解释改进方向的细粒度 reasoning；再加一个用线上点击日志训练、每天增量更新（载入前一天 checkpoint）的 CTR 预估模型，给出预测 CTR∈(0,1)。第 t 轮奖励 r_t = Σ_{<em>∈{KC,LP,CTR}} w</em>·r*。一个 episode 是多轮 rollout τ=([x_task;x_user;x_ad], a1,o1,r1,…,aT,oT,rT)，最终描述取最后一轮 a_T 的 response 部分；观测 o_t 是 GenRM 的 reasoning 或检索到的知识，拼进下一轮上下文 c_{t+1} 指导精修。优化用 GSPO（group sequence policy optimization，critic-free，序列级 importance ratio 对齐奖励粒度）：每条 rollout 的 advantage A_norm 用最后一轮奖励 r_T 经组内 G 条 rollout + 训练步全局归一化得到；做策略梯度时只保留 action token，mask 掉环境观测与任务输入 token。基座为 Qwen3-30B-A3B，后训练框架 Slime，推理框架 SGLang。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 提出工业问题定义的转向：从&quot;CTR 驱动的标题生成&quot;转到&quot;信息量驱动的描述生成&quot;，并显式建模&quot;用世界知识满足搜索意图&quot;，指出这才是描述与标题的本质区别。(2) 把单轮标量奖励 RL 升级为多轮 agentic RL：GenRM 不仅判分，还产出&quot;哪句缺知识、哪句与落地页不符&quot;的可执行反馈，策略据此逐轮纠错。机制上，这把稀疏、开放的生成质量拆成可逐轮逼近的信号，缓解低质 rollout 带来的探索低效。(3) 混合奖励设计：把可验证 rubric（KC/LP 二元）与数据驱动的 CTR 预估结合，同时覆盖忠实、信息量、吸引力三类目标，并用 GSPO 在序列级稳定优化多目标。(4) 把外部检索动作接进生成回路：作者实测显式调用自建搜索引擎补知识，比只依赖基座参数化知识效果更好。</p>\n<h2>4. 实验结果分析</h2>\n<p>数据来自某中文头部搜索引擎的广告曝光日志，1M 用户-广告对训练、5k/10k 验证/测试，按曝光时间严格切分（测试时间晚于训练）。每条输入生成 10 个候选取 Average@10，评测五维：Basic(基本错误)、Info(信息量)、Faith(落地页忠实)、Attract(预测 CTR)、Diversity。主结果(Table 1)：标题类基线 CTOP 的 Info 仅 0.274、DIVER 0.359；其生产模型 SINGLE-TURN RL 已到 Info 0.693 / Faith 0.726 / Attract 12.3% / Div 0.715；Interactor 进一步到 Info 0.715 / Faith 0.872 / Attract 12.4% / Div 0.732，其中忠实度相对单轮 RL 提升约 0.146 是最大亮点。消融(Table 2)最关键：去掉 reasoning 只留二元信号，Faith 从 0.872 崩到 0.636，证明细粒度推理反馈才是多轮框架的决定性因素，而非单纯增加轮数；倒数第二轮 penultimate 为 Info 0.694 / Faith 0.798，说明末轮持续受益于迭代、而非在压制前轮；把 GenRM 从 Qwen3-30B 换成 Qwen3-8B，Faith 仅降到 0.861，对 GenRM 规模不敏感，但更强 GenRM 仍能再提升。案例分析(Table 3)显示，模型据 GenRM 反馈&quot;&#x27;免运费&#x27;卖点在广告信息中无对应&quot;，把 free shipping 改写成 door-to-door delivery，并注入&quot;关注键盘手感、品牌口碑&quot;等查询相关知识。线上 A/B 覆盖 14 万+广告主，广告收入 +0.74%、人工评测整体优质率 +7pp，2026 年 5 月起已服务主流量。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者自陈的约束：当前没有开源的 ad description 基准（现有开源基准只针对标题），实验只能在自有专有数据上完成，外部可比性弱；框架依赖一个需每日增量更新的 CTR 预估模型与定制 GenRM/rubric，迁移到新业务需重建整套环境。论文未单设&quot;局限&quot;小节，几处可补的隐性局限：多轮 rollout + 每轮调用 GenRM/检索，使训练与在线推理成本显著高于单轮（线上如何控延迟未详述）；KC/LP 的二元判定由黑盒前沿 LLM 经 few-shot 给出，rubric 设计与黑盒模型自身偏差会直接传导到策略；CTR 奖励取自系统自身日志，存在反馈回路与选择偏差风险。未来方向可在降本（候选数/轮数/GenRM 规模的自适应）、可验证奖励的覆盖维度扩展上推进。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者最可借鉴的是&quot;GenRM 反馈优于标量奖励&quot;这条经验：开放式文本生成（query 改写、UGC 答案/摘要、商品/帖子卖点生成）若只用一个标量 reward，很难同时压住事实一致与信息量；改成&quot;让奖励模型指出具体哪里错、再多轮修&quot;，能显著提升忠实度（本文 +0.146）。落地路径相对友好：基座是开源 Qwen3-30B-A3B，训练/推理用 Slime+SGLang 这类公开栈，GenRM 用 rubric+few-shot 构建、不需要额外标注。要权衡的是成本：多轮 + 每轮检索/评估，训练与在线推理开销远高于单轮，高 QPS 场景需对候选数、迭代轮数、GenRM 规模（可用 8B 顶 30B）做取舍。把外部搜索引擎接入生成回路以补知识、把 CTR 模型做成可日更的在线奖励——这两点对自建 LLM 搜索/推荐内容生成尤其值得直接照搬。</p>",
+      "chars": 2991,
+      "minutes": 8
+     },
+     "weekly_rank": 3
+    },
+    {
+     "id": "arxiv:2601.09496",
+     "title": "Unifying Search and Recommendation in LLMs via Gradient Multi-Subspace Tuning",
+     "url": "https://arxiv.org/abs/2601.09496",
+     "source": "arxiv",
+     "company": [
+      "Leiden University"
+     ],
+     "published": "2026-06-24",
+     "authors": "Jujia Zhao, Zihan Wang, Shuaiqun Pan, Suzan Verberne, Zhaochun Ren",
+     "total_score": 3.9,
+     "adjusted_score": 4.1,
+     "preference_bonus": 0.2,
+     "rank_score": 4.1,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 4,
+      "evidence_quality": 3,
+      "timeliness": 4
+     },
+     "summary": "论文面向搜索与推荐(S&R)统一建模，将两者排序都改写成 LLM 上的条件生成，但指出全参数微调成本高、PEFT 又面临两大问题：任务间梯度冲突，以及过拟合微调数据导致用户意图理解漂移、损害通用知识。作者提出 GEMS(Gradient Multi-Subspace Tuning)：用 Multi-Subspace Decomposition 把共享与任务特定的优化信号拆到互补的低秩子空间以减少梯度相互干扰，用 Null-Space Projection 把参数更新约束在与通用知识空间正交的子空间内以抑制意图漂移。在基准数据集上，GEMS 在搜索和推荐任务上均超过 SOTA 基线。",
+     "key_insight": "该工作把\"统一 S&R\"的难点精确定位到 PEFT 下的梯度冲突与灾难性遗忘两点，并各给一个低秩子空间手段——对同时承载搜索与推荐的社区平台有直接借鉴：用一套 LLM + 子空间 LoRA 服务两条链路，省去维护两套模型。Null-Space Projection 保护通用域知识的思路，也适用于在垂域语料上微调时避免削弱大模型原有的语义理解能力。",
+     "best_date": "2026-06-25",
+     "appearances": [
+      {
+       "date": "2026-06-25",
+       "rank": 2,
+       "id": "arxiv:2601.09496",
+       "total_score": 3.9,
+       "adjusted_score": 4.1
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 4
+    },
+    {
+     "id": "arxiv:2606.22803",
+     "title": "Towards Fast Domain Adaptation and Fine-Grained User Simulation for Evaluating Conversational Recommender Systems",
+     "url": "https://arxiv.org/abs/2606.22803",
+     "source": "arxiv",
+     "company": [
+      "Huawei",
+      "RUC"
+     ],
+     "published": "2026-06-23",
+     "authors": "Yuanzi Li, Quanyu Dai, Xueyang Feng, Zihang Tian, Junhao Wang, Xu Chen, Zhenhua Dong, Huifeng Guo",
+     "total_score": 3.85,
+     "adjusted_score": 4.0,
+     "preference_bonus": 0.15,
+     "rank_score": 4.0,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 3,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "论文针对对话式推荐系统(CRS)离线评估难题，指出现有基于 LLM 的用户模拟器存在三个局限：依赖固定 prompt 与预定义动作空间导致跨领域迁移差、难以复刻细粒度语言风格与动态偏好、评估有效性不足。作者提出 AdaptSim，通过自动 prompt 生成与开放动作机制降低人工成本、提升跨域灵活性，并用 “think-then-respond” 受控文本生成精细控制语言风格；评估侧设计了基于 BFS 的轮级 pairwise 对比框架。在 3 个领域、4 个 LLM 上的实验表明其能生成真实多轮对话，对 CRS 能力与鲁棒性给出可靠评估。",
+     "key_insight": "对社区搜索/对话式产品的启示在于：用户模拟器可作为离线评估与回归测试的低成本替身，关键是把“领域适配”与“风格可控生成”解耦——自动 prompt 生成应对新场景冷启动，think-then-respond 让模拟用户的提问风格贴近真实 UGC 语气。BFS 轮级 pairwise 对比比单轮打分更能暴露多轮交互中的策略缺陷，可借鉴用于评估搜索追问/改写链路。来自华为诺亚的工程化做法对自建 CRS 评测体系有直接参考价值。",
+     "best_date": "2026-06-24",
+     "appearances": [
+      {
+       "date": "2026-06-24",
+       "rank": 1,
+       "id": "arxiv:2606.22803",
+       "total_score": 3.85,
+       "adjusted_score": 4.0
+      }
+     ],
+     "deep_reading": {
+      "status": "completed",
+      "paper_id": "arxiv:2606.22803",
+      "slug": "2606.22803",
+      "content_html": "<h2>AdaptSim 深度解读：面向对话式推荐系统评估的快速领域适配与细粒度用户模拟</h2>\n<h3>1. 问题与动机</h3>\n<p>对话式推荐系统(CRS)通过多轮自然语言交互动态捕捉用户偏好，已在电商、视频、出行等场景落地，但其评估一直是难题：真实用户难以大规模参与，ground-truth 对话稀缺。近年用 LLM 构建&quot;用户模拟器&quot;成为主流替代，但论文指出现有方案有三个根本局限：(1) <strong>缺乏领域适配性</strong>——iEvaLM、CSHI、RecUserSim 等依赖人工设计的固定 prompt 模板和预定义、有限的动作空间，迁移到新领域需要领域专家重新设计，成本高、灵活性差；(2) <strong>用户建模粒度粗</strong>——只能在表层语义建模，无法复刻 formality/sentiment/conciseness/carelessness 等细粒度语言风格与动态偏好，RecUserSim 试图用后处理 refine 控制风格，却破坏上下文连贯、导致角色不一致；(3) <strong>评估有效性不足</strong>——现有&quot;对话级 pointwise 打分&quot;存在 Flattery Bias 和 Rough Scoring Bias，且强 backbone 生成的对话过于完美，掩盖了 CRS 对噪声、不完美输入的鲁棒性缺陷。论文用一个例子点明鲁棒性盲区：用户把 steak 误拼为 staek，CRS 就误解意图、推荐了无关的 &quot;Joe&#x27;s Snack Bar&quot;。这些问题在 LLM-based CRS 时代被放大——系统响应更开放、对话轨迹快速发散，评估必须同时考量模拟质量和细粒度交互能力。</p>\n<h3>2. 方法详解</h3>\n<p>AdaptSim(Adaptive domain + automatic prompt tuning User Simulator)用四个机制解决上述问题。</p>\n<p><strong>(1) 基于 Simulator-CRS 反馈的自动 prompt 优化(APO)</strong>：把 prompt 构造形式化为迭代优化(Algorithm 1)。先做领域适配初始化 Prompt₁ = LLM(MetaPrompt_init(D, Prompt₀))，D 是领域上下文、Prompt₀ 是跨域共享通用模板；再进入迭代精炼——用模拟器与 CRS 交互生成对话 batch B_t，用 meta-evaluation prompt 逐条检出行为/风格问题汇成问题集 E_t，再 Prompt_{t+1} = LLM(MetaPrompt_refine(E_t, Prompt_t))。收敛判据借鉴 ProTeGi 的成对偏好：引入 LLM-as-judge 做 B_{t+1} 与 B_t 的 pairwise 对比，仅当 win_rate &gt; loss_rate 才算改进，否则计入 patience，连续三轮无提升或达最大轮数即停。</p>\n<p><strong>(2) 开放式动作生成(OAG)</strong>：抛弃预定义动作集，受 Bayesian Brain Hypothesis 启发，把动作生成建模为概率推理 π(a|H,P) = LLM(Prompt_action(H,P))，在对话历史 H 与用户画像 P 条件下生成候选动作分布，取 a* = argmax π，从而在开放域生成 context-aware 动作，同时锚定当前对话上下文与画像。</p>\n<p><strong>(3) Thinking-Enhanced 风格生成(TSG)</strong>：借鉴 Metacognition Theory，在生成响应前插入显式 think 步骤——模型先自问&quot;我的回复风格是什么？是否符合设定语言风格？&quot;，再 R = LLM(Prompt_response(S, a*, H, P))，用&quot;think-then-respond&quot;提升多轮中风格的可控性与一致性，缓解长上下文导致的风格漂移。</p>\n<p><strong>(4) 基于 BFS 的轮级 pairwise 评估</strong>：为兼顾 context consistency 与细粒度反馈，用树状 BFS 模拟(Algorithm 2 评基础能力、Algorithm 3 评鲁棒性)。基础能力评估让 CRS₁、CRS₂ 从<strong>同一历史 h</strong> 同步生成 r₁、r₂ 做轮级 pairwise 对比，再由用户模拟器分别响应、把两条分支 h·r₁·a₁ 与 h·r₂·a₂ 入队广度扩展，直到 END 或达最大深度 R。鲁棒性评估则用 careless 用户 U_c(产噪声输入)与 normal 用户 U_n(产干净输入)做扰动对比，并用 clean-context preservation——噪声分支只用于评估不入队、只保留干净轨迹 h·a_n·r_n 继续，避免累积误差。训练/推理 temperature 设为 0 保证可复现，评估用 GPT-4o-as-a-judge。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：把用户模拟器 prompt 从人工设计变成数据驱动的自动优化。</strong> APO 用&quot;领域适配初始化 + 基于问题集的迭代精炼 + pairwise win-rate 收敛判据&quot;取代专家手工调 prompt，机制在于把模拟器与目标 CRS 的真实交互暴露出的失败模式(意图欠定、指令不一致)反馈回 prompt，使其无需 ground-truth 标签即可迭代——这是相对 iEvaLM/CSHI 固定模板的范式转变。</p>\n<p><strong>贡献二：开放式动作生成打破固定动作空间。</strong> 用概率推理 argmax π(a|H,P) 替代从预定义集合选动作，使模拟器能产生上下文相关、不可预期的开放行为，消融显示其在 adaptability、relevance、整体质量上对固定动作空间形成大面积 win。</p>\n<p><strong>贡献三：think-then-respond 实现细粒度风格可控。</strong> 显式元认知 thinking 步骤在生成前自检风格意图，尤其把最难模拟的 carelessness(LLM 天生倾向生成流畅文本)准确率显著抬升。</p>\n<p><strong>贡献四：BFS 轮级 pairwise 协议解决评估公平性。</strong> 同历史同步生成 + 树状广度扩展，既避免对话级 pairwise 因轨迹发散导致后期上下文不可比，又规避轮级孤立打分的 context-agnostic 和量化误差。</p>\n<h3>4. 实验结果分析</h3>\n<p>实验覆盖 Food/Beauty/Shop 三域、GPT-3.5-turbo/GPT-4o-mini/Qwen3-8B/DeepSeek-R1 四个 backbone，基线为 iEvaLM、CSHI、RecUserSim，沿用 RecUserSim 的六维(naturalness/adaptability/clarity/realism/relevance/role-play)框架。</p>\n<p><strong>RQ1.1 模拟质量</strong>：GPT-4o-mini backbone 下 AdaptSim 在六维上对三基线均取得更高 win 比例，唯一例外是 naturalness(取决于 backbone 本身语言能力)；即便换弱 backbone GPT-3.5-turbo 仍在多数维度领先。chit-chat 泛化对比 prompting 方法：overall win/tie/loss = 0.48/0.21/0.31，coherence 0.50/0.21/0.29，diversity 0.49/0.21/0.30，adaptability 0.53/0.19/0.28，clarity 0.53/0.26/0.21。LLM-as-judge 可靠性由三位推荐领域标注员人工校验，平均一致率 90.8%/75.3%/60.3%(均 &gt;60%)，中到高的标注员间一致性。</p>\n<p><strong>RQ1.2 风格可控性</strong>：四维风格(formality/sentiment/conciseness 用 P/R/F1，carelessness 用 accuracy)。DeepSeek-R1 在 formality/sentiment/conciseness 的 F1 超 95%。think-then-respond 对 carelessness 提升最显著：GPT-4o-mini 2.0→7.9、Qwen3-8B 14.3→33.1、DeepSeek-R1 56.6→75.6(论文称提升到&quot;notable 75.79%&quot;)。</p>\n<p><strong>RQ1.4 消融(Table 2)</strong>：去掉 APO/OAG/TSG 均掉点。APO 优化后的 prompt(OP)在 GPT-3.5-turbo 与 GPT-4o-mini 上稳定优于初始 prompt(IP)，并常追平甚至超过人工 prompt(HP)，如 OP vs IP(4o-mini) 在 clarity win 40.50/tie 32.50/loss 32.25。</p>\n<p><strong>RQ2 用于评估 CRS</strong>：用 AdaptSim 比较 BaseCRS 与 AgentCRS(action/language/rec 三维, Table 3)。结论一致：更强 backbone(GPT-4o-mini &gt; GPT-3.5-turbo)在三维 win-rate 更高；BaseCRS 在 action 和 recommendation 普遍优于 AgentCRS，但 AgentCRS 的 language quality 更优。换不同模拟器 backbone，排序高度稳定，Pearson 0.859–0.975、Spearman 0.895–1.000(均 p&lt;0.05)。鲁棒性(Fig 8)显示 typo/word-shuffle/word-drop 噪声输入一致拉低各架构 CRS 表现，证明鲁棒性无法靠更强生成器或更模块化 pipeline 简单解决。</p>\n<h3>5. 局限与未来方向</h3>\n<p>论文在 Limitations 中明确三点：(1) <strong>APO 的循环依赖</strong>——优化 prompt 的质量受限于 meta-evaluation LLM 检出细微失败(如意图欠定、指令不一致)的能力，backbone 弱时错误检测与精炼会同时退化，难以判断模拟差是 prompt 还是模型本身导致；(2) <strong>开放式动作生成的贪心选择</strong>——只取最可能动作会压制罕见但真实的行为(突兀话题切换、矛盾的偏好更新)，而这些恰恰是压测 CRS 鲁棒性所需，作者建议引入 diversity-aware 采样或显式 coverage 目标；(3) <strong>风格控制靠 prompt 驱动的 thinking 步骤、不改模型内部表示</strong>，超长对话中 thinking 步骤要与不断增长的上下文竞争、风格信号仍会漂移，更稳的方案可能是 fine-tuning 或 retrieval-augmented 风格锚定。一个作者未充分展开的隐忧是：评估本身依赖 GPT-4o-as-a-judge，judge 的偏置(尽管人工一致率 &gt;60%)会传导到 CRS 排序结论。</p>\n<h3>6. 工业实践意义</h3>\n<p>对社区搜索/对话式产品团队，AdaptSim 给出一套可复用的&quot;低成本离线评测替身&quot;方法论。<strong>可直接借鉴</strong>：(a) 把用户模拟器 prompt 的人工调参换成 APO 式自动迭代——用模拟器与线上 CRS/搜索追问链路交互暴露的失败 case 反推 prompt，配 pairwise win-rate 做收敛判据，省掉对稀缺标注的依赖；(b) think-then-respond 把&quot;风格自检&quot;显式化，对生成贴近真实 UGC 语气(口语化、含错别字的 careless 风格)尤其有效，可用于构造更真实的 query/追问回归集；(c) BFS 同历史同步生成的轮级 pairwise 协议，比单轮打分更能暴露多轮策略缺陷，可迁移到评估搜索改写、澄清式追问。<strong>应当尝试</strong>：用 careless 用户(typo/词序打乱/丢词)做鲁棒性压测——论文证明现有 CRS 对噪声输入普遍敏感，这对短文本 UGC 搜索(本身充斥口语和错拼)是高优先级的失效模式排查。<strong>需要警惕</strong>：评估全链路依赖 LLM-as-judge，需用人工抽检校准一致率(论文为 60–91%)；开放式动作的贪心选择会低估极端用户行为，做安全/鲁棒性评估时要额外注入长尾 case。部署上，temperature=0 保证可复现，但 BFS 树状评估会带来分支级 LLM 调用放大，需控制最大深度 R 与 batch 规模以平衡成本。</p>",
+      "chars": 4625,
+      "minutes": 12
+     },
+     "weekly_rank": 5
+    },
+    {
+     "id": "arxiv:2606.16821",
+     "title": "How Much Can We Trust LLM Search Agents? Measuring Endorsement Vulnerability to Web Content Manipulation",
+     "url": "https://arxiv.org/abs/2606.16821",
+     "source": "arxiv",
+     "company": [],
+     "published": "2026-06-15",
+     "authors": "Yimeng Chen, Zhe Ren, Firas Laakom, Yu Li, Dandan Guo, Jürgen Schmidhuber",
+     "total_score": 3.75,
+     "adjusted_score": 3.85,
+     "preference_bonus": 0.1,
+     "rank_score": 3.85,
+     "scores": {
+      "business_relevance": 4,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "LLM 搜索 agent 会把开放网页内容综合成给用户的推荐，攻击者发布的网页可能被转化为被“背书”的结论。作者提出 SearchGEO 评测框架，包含网页证据篡改流水线、五类攻击模式分类和多个输出级指标，在每个后端 308 个案例上评测 13 个 LLM。结果显示攻击成功率（ASR）从 Claude-Sonnet-4.6 的 0.0% 到 Gemini-3-Flash 的 31.4% 差异极大；同一部署脚手架在不同后端上可能放大或降低 ASR。论文主张把“对抗性搜索内容下的推荐可靠性”作为后端安全评测的一等维度。",
+     "key_insight": "对 UGC/社区搜索有直接警示：当平台用 LLM 把站内帖子、评论综合成答案时，用户发布的内容本身就是可被操纵的证据源。论文的 agent-skill 探针发现 Claude 过度拒绝、GPT 过度信任，说明 endorsement 安全性高度依赖后端而非提示工程。可借鉴其五类攻击模式与 ASR 指标，为生成式答案搭建对抗鲁棒性回归测试，并在模型选型时把 endorsement 漏洞纳入后端评估。",
+     "best_date": "2026-06-22",
+     "appearances": [
+      {
+       "date": "2026-06-22",
+       "rank": 1,
+       "id": "arxiv:2606.16821",
+       "total_score": 3.75,
+       "adjusted_score": 3.85
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 6
+    },
+    {
+     "id": "arxiv:2606.23291",
+     "title": "URecJPQ: Memory-efficient Multimodal Recommendation Models through RecJPQ in Large-Scale Scenarios",
+     "url": "https://arxiv.org/abs/2606.23291",
+     "source": "arxiv",
+     "company": [
+      "Glasgow",
+      "Bari"
+     ],
+     "published": "2026-06-23",
+     "authors": "Giuseppe Spillo, Zixuan Yi, Aleksandr Petrov, Cataldo Musto, Craig Macdonald, Iadh Ounis",
+     "total_score": 3.55,
+     "adjusted_score": 3.65,
+     "preference_bonus": 0.1,
+     "rank_score": 3.65,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 3,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 5
+     },
+     "summary": "论文聚焦工业级推荐中 ID embedding 的内存瓶颈，多模态特征会进一步放大显存压力。作者提出 URecJPQ，把 RecJPQ 的联合乘积量化(Joint Product Quantization)扩展到大规模多模态 top-k 推荐：每个 user/item 不再用一份完整独立 embedding，而是用一组共享子 embedding 的拼接来表示，从而大幅压缩可训练参数。在 movies/baby/sports 三个数据集上，checkpoint 体积下降 86–98%、可训练参数下降 98–99%，平均 recall 仅下降 8.5%、NDCG 下降 16%，在 baby 商品域部分指标甚至提升最高 85%。",
+     "key_insight": "量化式 ID 表示与生成式推荐的语义 ID(semantic ID / item tokenization)同源：都用共享码本把海量 item 压成离散子单元。对短文本 UGC 搜索的启示是，召回/排序侧的 item 表示可用乘积量化压到原参数量的 1–2%，显著降低在线显存与 checkpoint 存储，代价是 NDCG 有可控损失，需按业务容忍度调码本粒度。该思路也为后续把 item 表示对接生成式解码(在码本上做 beam search)预留了空间。",
+     "best_date": "2026-06-24",
+     "appearances": [
+      {
+       "date": "2026-06-24",
+       "rank": 2,
+       "id": "arxiv:2606.23291",
+       "total_score": 3.55,
+       "adjusted_score": 3.65
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 7
+    },
+    {
+     "id": "arxiv:2606.19218",
+     "title": "RECOM: A Validity Discrimination Tradeoff in Automatic Metrics for Open Ended Reddit Question Answering",
+     "url": "https://arxiv.org/abs/2606.19218",
+     "source": "arxiv",
+     "company": [
+      "Amazon"
+     ],
+     "published": "2026-06-17",
+     "authors": "Pushwitha Krishnappa, Amit Das, Vinija Jain, Aman Chadha, Tathagata Mukherjee",
+     "total_score": 3.45,
+     "adjusted_score": 3.6,
+     "preference_bonus": 0.15,
+     "rank_score": 3.6,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 3,
+      "practicality": 4,
+      "evidence_quality": 4,
+      "timeliness": 4
+     },
+     "summary": "自动指标被默认用于评测 LLM 生成文本，但同时承担两个任务：区分真实语义对齐与表面巧合（validity），以及区分系统好坏（discriminative power）。作者构建无污染评测集 RECOM，含 15,000 个 r/AskReddit 问题（2025 年 9 月，晚于所有被测模型训练截止）及其真实社区回复，对 5 个 7–10B 开源 LLM 打分。发现没有指标能同时做好两件事：余弦相似度能区分真实与随机回复（Cohen's d≈2）却无法排序模型（|d|<0.1）；BERTScore precision 看似能排序（|d|≤0.63），但控制回复长度后塌缩到 |d|=0.09。",
+     "key_insight": "直接关系到社区搜索如何评测生成式答案质量。论文指出 validity–discrimination tradeoff 是指标本身的性质而非模型差异，源于表示设计；三个独立 LLM 裁判同样复现了 validity 缺口。实践启示：评测 UGC 问答与生成式答案时，应在两个轴上分别报告指标并显式给出随机派生（random-derangement）基线地板，警惕用单一相似度指标做模型选型会失效。其无污染数据集构造思路（用训练截止之后的社区真实回复）也值得借鉴。",
+     "best_date": "2026-06-22",
+     "appearances": [
+      {
+       "date": "2026-06-22",
+       "rank": 2,
+       "id": "arxiv:2606.19218",
+       "total_score": 3.45,
+       "adjusted_score": 3.6
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 8
+    },
+    {
+     "id": "arxiv:2606.23643",
+     "title": "TailorMind: Towards Preference-Aligned Multimodal Content Generation",
+     "url": "https://arxiv.org/abs/2606.23643",
+     "source": "arxiv",
+     "company": [
+      "HKU",
+      "HIT"
+     ],
+     "published": "2026-06-23",
+     "authors": "Hengji Zhou, Ye Liu, Yufeng Liu, Si Wu, Lianghao Xia, Liqiang Nie",
+     "total_score": 3.45,
+     "adjusted_score": 3.55,
+     "preference_bonus": 0.1,
+     "rank_score": 3.55,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "论文研究“个性化多模态内容生成”——在没有现成 item 池或缺少匹配 UGC 时，直接为用户合成定制内容。作者提出 TailorMind，将协同偏好建模与可控多模态生成打通：用超图协同过滤补全稀疏用户历史，用 ranking-error 反馈与文本梯度下降优化文本画像；通过检索增强的风格控制把生成结果锚定到真实 UGC 风格，并用跨模态一致性反思抑制语义漂移。论文还构建了 TailorBench 基准，覆盖 3 个主流平台，从连贯性、新颖性、美学、幻觉等 5 个维度评估生成质量。",
+     "key_insight": "该工作把“推荐”从挑选已有内容延伸到按用户偏好生成内容，对 UGC 社区的内容冷启动/补全有想象空间：当长尾 query 无优质帖子可召回时，可用协同信号驱动生成候选。值得借鉴的是用 ranking-error 反馈做文本画像优化(把偏好误差转成可微的文本梯度)，以及用检索到的真实 UGC 作风格锚点来压制生成内容的幻觉。但生成内容的真实性与合规是落地前必须先解决的风险点。",
+     "best_date": "2026-06-24",
+     "appearances": [
+      {
+       "date": "2026-06-24",
+       "rank": 3,
+       "id": "arxiv:2606.23643",
+       "total_score": 3.45,
+       "adjusted_score": 3.55
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 9
+    },
+    {
+     "id": "arxiv:2606.23283",
+     "title": "Towards Root Memories: Benchmarking and Enhancing Implicit Logical Memory Retrieval for Personalized LLMs",
+     "url": "https://arxiv.org/abs/2606.23283",
+     "source": "arxiv",
+     "company": [
+      "USTC"
+     ],
+     "published": "2026-06-23",
+     "authors": "Hongxun Ding, Xiang Yu, Chengbing Wang, Jianfei Xiao, Keqin Bao, Wenjie Wang, Xiangnan He",
+     "total_score": 3.45,
+     "adjusted_score": 3.55,
+     "preference_bonus": 0.1,
+     "rank_score": 3.55,
+     "scores": {
+      "business_relevance": 3,
+      "technical_novelty": 4,
+      "practicality": 3,
+      "evidence_quality": 3,
+      "timeliness": 5
+     },
+     "summary": "论文指出个性化 LLM 的记忆系统普遍只靠语义相似度检索，容易漏掉与当前语义重叠低、但逻辑上关键的历史记忆，且现有基准无法评估这一问题。作者先构建 IMLogic——面向长对话隐式逻辑记忆检索的高质量基准；再提出 root memory，一种结构化、保留决策过程的表示，从长期用户历史中蒸馏出可复用的个性化逻辑。配套的 RootMem 是即插即用框架：先把原始历史蒸馏成 root memory，再用基于 LLM 的路由器激活逻辑相关记忆，与语义检索形成互补。实验显示其显著优于最强检索基线。",
+     "key_insight": "对个性化搜索/助手的启示是：用户长期意图常以“决策逻辑”而非“表层语义”形式存在，纯向量相似检索会系统性漏召这类记忆。RootMem 的两段式(蒸馏结构化记忆 + LLM 路由激活)可借鉴到用户画像与 query 个性化——把零散行为蒸馏成可复用的偏好规则，再在检索时按逻辑相关性而非仅语义相似度激活。IMLogic 这类基准也提示，评估个性化记忆要专门构造“语义低重叠但逻辑相关”的难样本。",
+     "best_date": "2026-06-24",
+     "appearances": [
+      {
+       "date": "2026-06-24",
+       "rank": 4,
+       "id": "arxiv:2606.23283",
+       "total_score": 3.45,
+       "adjusted_score": 3.55
+      }
+     ],
+     "deep_reading": null,
+     "weekly_rank": 10
+    }
+   ]
+  },
   "personalization": {
    "raw_count": 21,
    "unique_count": 21,
@@ -416,409 +819,6 @@
        "id": "arxiv:2606.19635",
        "total_score": 3.65,
        "adjusted_score": 3.9
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 10
-    }
-   ]
-  },
-  "generative": {
-   "raw_count": 20,
-   "unique_count": 20,
-   "days": [
-    "2026-06-22",
-    "2026-06-23",
-    "2026-06-24",
-    "2026-06-25",
-    "2026-06-26"
-   ],
-   "papers": [
-    {
-     "id": "arxiv:2606.25496",
-     "title": "Recommendation as Generation: Unifying Personalized Video Generation and Recommendation at Industrial Scale",
-     "url": "https://arxiv.org/abs/2606.25496",
-     "source": "arxiv",
-     "company": [
-      "Kuaishou",
-      "Beihang"
-     ],
-     "published": "2026-06-25",
-     "authors": "Yanhua Cheng, Bo Wang, Haotian Zhang, et al.",
-     "total_score": 4.1,
-     "adjusted_score": 4.3,
-     "preference_bonus": 0.2,
-     "rank_score": 4.3,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 5,
-      "practicality": 3,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "快手与北航提出 Recommendation-as-Generation（RaG），把短视频推荐从“在固定池里检索”改为“按推断的用户兴趣实时生成个性化视频”。核心是解耦语义 ID（D-SIDs）：用 Qwen2.5-VL-7B 做指令引导的多模态表征，再用 RQ-KMeans 残差量化成 content 与 creative 两套离散 token；视频生成交给共享 Qwen2.5-32B 的三个角色 Agent，并用 GDPO 做跨域奖励学习。快手 4 亿日活广告场景上线 A/B，相对 DLRM 广告收入 +5.462%，码本碰撞率从 18.24% 降到 2.62%。",
-     "key_insight": "语义 ID 不必是单一码本：把内容语义与风格语义拆成两套 SID，碰撞率从 18.24% 降到 2.62%，兴趣建模与生成可控性同时受益，这一解耦量化思路对纯推荐的 SID 设计也可直接借鉴。SCRL 用 GDPO 把稀疏真实反馈设为主目标、把视频质量与兴趣对齐设为约束，给“多奖励尺度不一致”提供了可复用写法。代价是 VGA 为延迟瓶颈、目前只能 nearline 服务；资源有限的团队可先用 D-SIDs，暂不碰端到端视频生成。",
-     "best_date": "2026-06-26",
-     "appearances": [
-      {
-       "date": "2026-06-26",
-       "rank": 1,
-       "id": "arxiv:2606.25496",
-       "total_score": 4.1,
-       "adjusted_score": 4.3
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:2606.25496",
-      "slug": "2606.25496",
-      "content_html": "<h2>Recommendation as Generation (RaG) 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>传统短视频推荐是“检索范式”：用户兴趣只能匹配到一个固定的、已生产好的视频池，无法表达细粒度、动态变化的偏好——想看“赛博朋克风格的猫”但池子里没有，就只能退而给近似项。RaG 把问题重述为“生成范式”：直接按推断出的用户兴趣实时生成个性化视频。动机有两点：(1) 固定视频供给是推荐的天花板，生成式可突破供给侧约束；(2) 生成式推荐（GR）已用语义 ID 把 item 表示为离散 token 序列，与视频生成模型天然共享“离散 token→内容”的接口，因此可以把“推荐”和“视频生成”统一在同一套 SID 上。论文同时点明现有 SOTA 视频生成模型虽视觉质量高，但高延迟、高算力成本使其难以直接放进大规模推荐系统——这正是 RaG 要化解的工程张力，也决定了它当前只能 nearline 服务。</p>\n<h3>2. 方法详解</h3>\n<p>RaG 的主链路是 “用户上下文 → 预测语义 ID → 生成个性化视频”，由四个部件组成。<br>(a) 解耦语义 ID（D-SIDs）。不同于把视频量化成单一码本，RaG 用指令引导的多模态表征学习（backbone 为 Qwen2.5-VL-7B-Instruct）把视频拆成两类因子：content（实体/主题/语义内容）与 creative（风格/节奏/氛围），再用 RQ-KMeans 残差量化成离散 token，每个模态每层码本 8192 项。解耦让“兴趣建模”和“可控生成”各取所需的语义维度。<br>(b) 生成式推荐模型（GRM）。一个 7 层 Transformer decoder（hidden 768、词表 8192），自回归预测目标视频的 D-SIDs——即“推荐”这一步在 SID 空间里完成。<br>(c) 视频生成 Agent（VGAs）。三个共享同一 Qwen2.5-32B backbone 的角色子 Agent：视觉规划 Agent 产出 clip 级分镜（场景片段 + 时间边界）、音频对齐 Agent 生成时间同步的语音与音乐、特效增强 Agent 加字幕/视觉特效/转场/CTA。它们被推断出的 SID 条件化，做分层规划与精修；通过 KV-cache 复用（append-only 状态）在顺序调用的 Agent 之间降低单请求延迟，并设两轮封顶的反思循环来精修跨模态一致性。<br>(d) 协同跨域奖励学习（SCRL）。三类奖励：视频质量（视觉质量、音画一致、特效-画面对齐）、兴趣对齐（指令级 + 表征级一致）、用户反馈（稀疏真实交互 + 稠密 ranking 模型预测）。它被建成约束优化：用户反馈为主目标，兴趣对齐与视频质量为约束；GDPO（Group-Decoupled Policy Optimization）对每个奖励做标准化与组内相对优势，解决多奖励尺度不一致。指令模型（IM）用 Qwen3-8B，由 Gemini2.5 Pro 蒸馏指令模板监督。</p>\n<h3>3. 核心技术贡献</h3>\n<p>1) 把“推荐即生成”落到工业级：用共享 SID 把 GR 与视频生成统一，GRM 在 SID 空间出“推荐”，VGA 据此生成视频，形成端到端可优化框架，而不是把推荐和生成当两个割裂系统拼接。<br>2) 解耦语义 ID（D-SIDs）：content/creative 双码本把表示空间结构化，相比单码本既降碰撞又提兴趣粒度——消融显示把标准 SID 换成 D-SIDs，广告收入相对 DLRM 从 +3.526% 提到 +4.460%。<br>3) 角色化 VGA + KV-cache 复用 + 有界反思：用一个 32B backbone 扮演三种角色，避免三套模型的部署成本，反思两轮即获得相对刚性 workflow 的稳定增益，是“Agent 化生成但控住延迟”的折中。<br>4) SCRL/GDPO：把“稀疏真实反馈做主目标、质量与对齐做约束”的约束优化与组解耦策略优化结合，缓解多奖励尺度不一致，这是把 RLHF 思路迁移到多模态生成式推荐的关键一招。</p>\n<h3>4. 实验结果分析</h3>\n<p>线上 A/B（快手广告平台，超 4 亿日活）：相对 DLRM 基线，GRM 基线 +3.526%、GRM+D-SIDs +4.460%、完整 RaG +5.462% 广告收入；完整 RaG 相对 GRM 基线再 +1.870%，说明增量主要来自 VGA + SCRL 而不仅是换 SID。<br>D-SIDs 质量（Table 2）：语义检索 R@1 0.896（相对 Qwen2.5-VL-7B 基线 0.769 提升 +16.5%）、R@5 0.985、R@10 0.994；压缩率 1.02（优于 QARM 的 1.14），碰撞率 2.62%（QARM 18.24%，降 15.6pp）——碰撞率大降是双码本结构化的直接收益，也是后续生成可控的基础。<br>VGA 对比 workflow 基线（Table 3）：自动评分 71.3（+14.3%）、自动胜率 70.1%（+41.4pp）、用户研究胜率 52.9%（+18.5pp）。<br>奖励消融（Table 4）：单独视觉奖励把自动胜率 29.3%→50.7%（+21.4pp），音频 24.0%→48.0%（+24.0pp），特效 22.7%→41.3%（+18.6pp），三者合并 37.3%→56.0%（+18.7pp）；兴趣对齐奖励把对齐分 0.707→0.828（+17.1%）。三类质量奖励互补、各自独立有效。<br>指令模型配置消融：从 8B/100K 样本的 0.7760 提升到 32B/1M 的 0.8212；最终选 8B + 1M 样本，在解码保真与部署成本间折中。反思循环（2 轮）优于刚性 workflow，体现分层端到端带来的自我纠错收益。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者在结论中明确的核心局限：RaG 目前是 nearline 服务而非实时，VGA 是主要延迟瓶颈。给出的未来方向：把指令模型并入 VGA 以缩短生成路径；用更强蒸馏与推理优化加速 VGA；最终走向真正的 on-the-fly 实时个性化生成。作者亦坦承基础设施约束：当前 SOTA 视频生成模型虽视觉质量强，但高延迟、高算力使其难以直接部署进大规模推荐系统。未明说但显然的局限：评测高度依赖快手广告内部数据与自动评分/人评（1000 实例、20 名标注者做 1000 对比较），跨平台与公开可复现性有限；广告收入增益与内容生态健康、用户长期体验之间的关系也未充分讨论。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐团队的可操作启示：</p>\n<ul>\n<li>最先可借鉴的是 D-SIDs 的“解耦量化”：把内容与风格（迁到搜索即 query 意图与表达风格）拆成双码本，碰撞率从 18.24% 降到 2.62%，对任何使用 SID 的生成式召回/排序都有价值，而且不依赖视频生成即可落地。</li>\n<li>SCRL/GDPO 的“主目标 + 约束”多奖励范式可迁到多目标排序/对齐：把核心业务指标设为主目标、把相关性/质量设为约束，再用组解耦标准化解决奖励尺度不一致，比简单加权更稳。</li>\n<li>VGA 的“单 backbone 多角色 + KV-cache 复用 + 有界反思”是控制 Agent 化生成延迟的实用工程模式，值得做生成式问答/卡片生成的团队参考。</li>\n<li>部署上要清醒：完整 RaG 因 VGA 延迟只能 nearline，需要数亿日活级别的算力支撑；中小团队应先取 D-SIDs 与奖励建模思路，端到端实时视频生成短期内并不现实。整体看，这是“生成式推荐从召回 token 走向直接生成内容”的一个工业级样本，但其 ROI 高度依赖平台规模与算力预算。</li>\n</ul>",
-      "chars": 2902,
-      "minutes": 8
-     },
-     "weekly_rank": 1
-    },
-    {
-     "id": "arxiv:2606.24667",
-     "title": "DREAM: Dense Retrieval Embeddings via Autoregressive Modeling",
-     "url": "https://arxiv.org/abs/2606.24667",
-     "source": "huggingface",
-     "company": [
-      "HKUST"
-     ],
-     "published": "2026-06-22",
-     "authors": "Yixuan Tang, Yi Yang",
-     "total_score": 4.15,
-     "adjusted_score": 4.25,
-     "preference_bonus": 0.1,
-     "rank_score": 4.25,
-     "scores": {
-      "business_relevance": 5,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "DREAM 针对稠密检索依赖人工标注正负样本对的痛点，提出用大模型自回归 next-token prediction 损失来监督检索器训练：将检索器算出的 query-文档相似度分数注入冻结 LLM 的部分注意力头，相似度决定 LLM 预测目标输出时对各候选文档的注意力权重，由此产生的预测损失通过注意力机制把梯度回传给检索器。在 BEIR 与 RTEB 两个检索基准、0.5B 到 3B 的多种 backbone 上，DREAM 一致超过现有基线。",
-     "key_insight": "把\"文档对生成目标的帮助程度\"当作相关性的隐式信号，摆脱了对比学习对标注 query-doc 对的依赖——这对标注稀缺的社区 UGC 短文本检索很有价值。注意力头注入这一设计让冻结 LLM 与独立 embedding 检索器解耦，无需端到端反传整个 LLM，训练成本可控；0.5B–3B 一致提升也说明该监督信号随规模稳定，可作为弱监督/无标注场景下训练领域检索器的新路径。",
-     "best_date": "2026-06-25",
-     "appearances": [
-      {
-       "date": "2026-06-25",
-       "rank": 1,
-       "id": "arxiv:2606.24667",
-       "total_score": 4.15,
-       "adjusted_score": 4.25
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:2606.24667",
-      "slug": "2606.24667",
-      "content_html": "<h2>DREAM: Dense Retrieval Embeddings via Autoregressive Modeling — 深度解读</h2>\n<h3>1. 问题与动机</h3>\n<p>稠密检索 embedding 模型是现代检索式 AI 系统的核心组件，但主流训练方式依赖对比学习(contrastive，如 InfoNCE)，需要构造正负样本对。论文把这点定位为训练瓶颈：正样本通常需要昂贵的相关性人工标注，而难负样本(hard negative)既难以可靠挖掘、又容易混入假负样本(false negative)，污染训练信号。作者提出一个不依赖标注对的替代监督——大模型的自回归 next-token prediction(NTP)。直觉很直接：如果一篇文档包含与 query 相关的信息，那么把这篇文档作为条件输入，应当让 LLM 更容易预测目标输出(target)。真正的难点在于，NTP 损失发生在 LLM 内部，而检索器是一个独立的 embedding 模型，两者的梯度如何打通。DREAM 要回答的就是&quot;如何让 LLM 的生成损失反过来训练一个独立检索器&quot;。</p>\n<h3>2. 方法详解</h3>\n<p>DREAM 的核心是把检索器算出的 query-文档相似度，注入一个冻结 LLM(judge，用 Llama-3.1-8B-Instruct)的选定注意力头，让相似度去调制 LLM 在生成 target 时对各候选文档的关注程度。具体流程：对一个 query 与多个候选文档，检索器给出相似度，经带可学习温度 τ 的 softmax 归一化为文档权重 p_ϕ(d_j|q)。在选定注意力头 h 上，先做文档内 token 级注意力归一化 α̂_h,j，再用文档权重做文档级调制 α^R_h = p_ϕ(d_j|q)·α̂_h,j，最后用门控混合 α&#x27;_h = (1−g)·α_h + g·α^R_h，其中 g=σ(γ)∈[0,1] 是可学习门控。LLM 在被改写的注意力下计算对 target 段落的 NTP 交叉熵 L_NTP = −Σ log p_θ(x_t | x_&lt;t; α&#x27;)；这个损失通过注意力机制把梯度回传给检索器，而 LLM 本身全程冻结，只训练检索器。注意力头的选择是方法成败的关键：作者沿用 Zhang et al.(2025a)的 query-focused retrieval-head 排序，取 Top 16 个头，依据是这些头在探针样本上度量 query token 流向候选文档的注意力(并减去 null-query 基线)、再用 NDCG@10 验证。训练设置：embedding backbone 用 Qwen2.5-0.5B、Llama-3.2-1B、Llama-3.2-3B；只在 q/k/v/o 投影上加 LoRA(rank 32、alpha 64)；数据为 Wikipedia(Tevatron)，每篇切 16 个 chunk，query 由 Qwen3-14B 生成；lr 1e-4、batch size 1、梯度累积 32、训练 1500 步、每样本 16 个候选。</p>\n<h3>3. 核心技术贡献</h3>\n<p>(1) 提出 DREAM：通过把检索器分数注入冻结 LLM 的注意力头，使自回归 NTP 损失能够监督稠密检索器训练，给出了&quot;用生成损失监督检索&quot;的一条可落地通路。(2) 证明自回归建模可作为对比学习的替代，无需显式负样本挖掘，回避了难负样本挖掘与假负样本这两个对比学习长期痛点。(3) 揭示监督有效性高度依赖注意力头选择：用随机头几乎学不到东西(NDCG@10 仅约 0.06)，而用选定的 query-focused 头能达到 0.49–0.55；头数量消融发现 Top 16 最优、Top 1 信息不足、Top 32+ 反而下降。(4) 分析 embedding 几何：尽管是非对比训练，DREAM 反而取得更好的 uniformity(分布均匀性)，同时保持与对比方法相当的 alignment。</p>\n<h3>4. 实验结果分析</h3>\n<p>评测在 BEIR(9 个任务)与 RTEB(14 个任务)上以 NDCG@10 为指标。以 Llama-3.2-1B 为 backbone 的主表(Table 1)：BM25 0.4122/0.3176，InfoNCE 0.3268/0.3658，RePlug 0.2535/0.2855，Revela 0.4075/0.4499，DREAM 0.4888/0.5514(BEIR/RTEB)。DREAM 相对最强基线 Revela 在 BEIR 上 +0.0813、RTEB 上 +0.1015，且 0.5B 与 3B 规模呈现一致提升；同时它也超过了无监督 BM25——这对非对比、无标注训练的方法并不容易。消融部分信息量很大：注意力头选择(Fig.2)随机头 0.0637 对比选定头 0.4888，几乎是&quot;用对头&quot;与&quot;用错头&quot;的天壤之别；头数量(Fig.3)Top 16 最优；judge 冻结 vs 可更新(Fig.5)冻结全面更好，说明保持 LLM 预训练分布对监督信号质量更有利；候选数量(Fig.6)16 个候选优于 4 个，更多候选提供了更丰富的对比压力。扩展性(Table 2)上 DREAM-8B 达到 BEIR 0.5531、RTEB 0.6417。作者也诚实报告了边界：DREAM 尚未超过强监督的 Qwen3-Embedding-8B。</p>\n<h3>5. 局限与未来方向</h3>\n<p>作者未单列 limitations 章节，但从正文可归纳几点隐含约束：其一，注意力头是预先识别、固定不可学的(依赖 Zhang et al. 2025a 的 retrieval-head 排序)，迁移到新领域或新 LLM 时需要重新筛选；其二，judge LLM 冻结虽利于监督信号稳定，但也限制了对新领域的自适应；其三，与工业级强监督模型 Qwen3-Embedding-8B 仍有差距，说明纯 NTP 监督目前更适合作为无标注/弱监督场景的补充，而非完全替代大规模有监督对比训练。后续可探索注意力头的可学习选择、judge 与检索器的联合自适应，以及把 NTP 监督与少量对比监督结合。</p>\n<h3>6. 工业实践意义</h3>\n<p>对搜索/推荐工程团队，DREAM 最大的价值是提供了一条&quot;无需人工标注 query-doc 对即可训练领域检索器&quot;的路径，特别契合社区 UGC 短文本检索这种标注稀缺、长尾 query 多的场景：只要有领域文档，就能用 Qwen3-14B 这类模型批量造 query，再用一个冻结的中等规模 LLM(8B)做 judge 提供监督信号。成本上，训练只更新检索器的 LoRA(rank 32)、LLM 全程冻结，显存与算力可控，0.5B–3B backbone 都能稳定吃到收益，适合资源有限的团队冷启动垂域 embedding。落地要点要记牢：注意力头选择是成败关键(随机头几乎为 0)，迁移到自家 LLM 必须先做 retrieval-head 探针筛选；候选数量、judge 冻结这些超参已被消融验证，可直接照搬作为起点。但要清醒认识到它当前还打不过 Qwen3-Embedding-8B 这类强监督商用模型，更现实的用法是：缺标注阶段用 DREAM 快速起一个可用的领域检索器，待积累点击/标注后再叠加对比微调。</p>",
-      "chars": 2765,
-      "minutes": 7
-     },
-     "weekly_rank": 2
-    },
-    {
-     "id": "arxiv:2606.15911",
-     "title": "Interactor: Agentic RL oriented Iterative Creation for Ad Description Generation in Sponsored Search",
-     "url": "https://arxiv.org/abs/2606.15911",
-     "source": "arxiv",
-     "company": [
-      "Baidu"
-     ],
-     "published": "2026-06-14",
-     "authors": "Penghui Wei, Jiayu Wu, Chao Ye, Zhi Guo, Shuanglong Li, Lin Liu",
-     "total_score": 3.9,
-     "adjusted_score": 4.1,
-     "preference_bonus": 0.2,
-     "rank_score": 4.1,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 3
-     },
-     "summary": "针对赞助搜索中长文本广告描述（比广告标题更长、可融入世界知识表达用户搜索意图）的生成问题，提出 Interactor 多轮迭代生成框架：LLM 策略作为 agent，与由两个 rubric 式生成式奖励模型（GenRM，分别评估知识容量 KC 与落地页一致性 LP）和 CTR 预估模型组成的环境交互，用 <retrieve> 检索百科知识、<create> 生成、<reward> 评估三类动作多轮精修，以 GSPO 做 agentic RL，基座 Qwen3-30B-A3B。在百度搜索广告千万级数据上信息量 0.715、忠实度 0.872，超过单轮 RL 的 0.693/0.726；线上 A/B 覆盖 14 万广告主，广告收入 +0.74%、人工优质率 +7pp，2026 年 5 月已上线主流量。",
-     "key_insight": "GenRM 不只给二元分，还返回\"哪句缺知识、哪句与落地页不符\"的细粒度推理反馈作为下一轮观测，这是效果关键——消融去掉 reasoning 后忠实度从 0.872 暴跌到 0.636。它把\"奖励即标量\"的 RLHF 升级成\"奖励带可执行修改建议\"的多轮自我修正，对社区搜索的 query 改写、答案/摘要生成有直接借鉴：用可验证 rubric 把开放生成的事实一致与信息量约束转成迭代信号。GenRM 用 Qwen3-8B 替换 30B 仅小幅掉点，奖励模型可适度小型化。",
-     "best_date": "2026-06-23",
-     "appearances": [
-      {
-       "date": "2026-06-23",
-       "rank": 1,
-       "id": "arxiv:2606.15911",
-       "total_score": 3.9,
-       "adjusted_score": 4.1
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:2606.15911",
-      "slug": "2606.15911",
-      "content_html": "<h1>Interactor: Agentic RL oriented Iterative Creation for Ad Description Generation in Sponsored Search — 深度解读</h1>\n<h2>1. 问题与动机</h2>\n<p>赞助搜索的广告创意分标题与描述两部分，以往 ad text 生成工作几乎只优化标题（短、博点击），长文本描述长期被忽视。描述文本跨度更长，本可融入世界知识对齐用户搜索意图，并从落地页提炼细粒度卖点，是更有信息量的展示位。难点在于：这是开放式生成任务，没有 ground-truth 描述可监督学习；现有方法（CTOP 走偏好优化、DIVER 走 RLHF）只用标量奖励引导 LLM，对长文本的多重质量约束（事实一致、信息充分）给不出细粒度纠错，导致 rollout 质量低、探索效率差、生成结果有各种细微错误（错字、不实表述）。论文要解决的核心是：在无标注、且质量维度多的前提下，稳定生成既有知识含量、又严格忠实于落地页的长广告描述，同时兼顾用户点击。</p>\n<h2>2. 方法详解</h2>\n<p>Interactor 把描述生成建模为多轮迭代过程，LLM 策略 π_θ(y|x_user,x_ad) 作为 agent 与一个定制环境交互。每轮输出被结构化为两段：&lt;think&gt;&lt;/think&gt; 思考 + 一个 action。Action 有三类：&lt;retrieve&gt; 请求自建搜索引擎（索引海量百科网页，取 top-1 网页文档）注入世界知识；&lt;create&gt; 基于历史所有轮上下文生成描述；&lt;reward&gt; 请求奖励模型做细粒度评估。环境由三类奖励构成：两个 rubric 式生成式奖励模型（GenRM）分别评 knowledge capacity(KC) 与 landing page consistency(LP)——把业务 rubric 用 few-shot in-context learning 喂给黑盒前沿 LLM，输出&quot;所有 rubric 满足才为 1&quot;的二元信号 + 解释改进方向的细粒度 reasoning；再加一个用线上点击日志训练、每天增量更新（载入前一天 checkpoint）的 CTR 预估模型，给出预测 CTR∈(0,1)。第 t 轮奖励 r_t = Σ_{<em>∈{KC,LP,CTR}} w</em>·r*。一个 episode 是多轮 rollout τ=([x_task;x_user;x_ad], a1,o1,r1,…,aT,oT,rT)，最终描述取最后一轮 a_T 的 response 部分；观测 o_t 是 GenRM 的 reasoning 或检索到的知识，拼进下一轮上下文 c_{t+1} 指导精修。优化用 GSPO（group sequence policy optimization，critic-free，序列级 importance ratio 对齐奖励粒度）：每条 rollout 的 advantage A_norm 用最后一轮奖励 r_T 经组内 G 条 rollout + 训练步全局归一化得到；做策略梯度时只保留 action token，mask 掉环境观测与任务输入 token。基座为 Qwen3-30B-A3B，后训练框架 Slime，推理框架 SGLang。</p>\n<h2>3. 核心技术贡献</h2>\n<p>(1) 提出工业问题定义的转向：从&quot;CTR 驱动的标题生成&quot;转到&quot;信息量驱动的描述生成&quot;，并显式建模&quot;用世界知识满足搜索意图&quot;，指出这才是描述与标题的本质区别。(2) 把单轮标量奖励 RL 升级为多轮 agentic RL：GenRM 不仅判分，还产出&quot;哪句缺知识、哪句与落地页不符&quot;的可执行反馈，策略据此逐轮纠错。机制上，这把稀疏、开放的生成质量拆成可逐轮逼近的信号，缓解低质 rollout 带来的探索低效。(3) 混合奖励设计：把可验证 rubric（KC/LP 二元）与数据驱动的 CTR 预估结合，同时覆盖忠实、信息量、吸引力三类目标，并用 GSPO 在序列级稳定优化多目标。(4) 把外部检索动作接进生成回路：作者实测显式调用自建搜索引擎补知识，比只依赖基座参数化知识效果更好。</p>\n<h2>4. 实验结果分析</h2>\n<p>数据来自某中文头部搜索引擎的广告曝光日志，1M 用户-广告对训练、5k/10k 验证/测试，按曝光时间严格切分（测试时间晚于训练）。每条输入生成 10 个候选取 Average@10，评测五维：Basic(基本错误)、Info(信息量)、Faith(落地页忠实)、Attract(预测 CTR)、Diversity。主结果(Table 1)：标题类基线 CTOP 的 Info 仅 0.274、DIVER 0.359；其生产模型 SINGLE-TURN RL 已到 Info 0.693 / Faith 0.726 / Attract 12.3% / Div 0.715；Interactor 进一步到 Info 0.715 / Faith 0.872 / Attract 12.4% / Div 0.732，其中忠实度相对单轮 RL 提升约 0.146 是最大亮点。消融(Table 2)最关键：去掉 reasoning 只留二元信号，Faith 从 0.872 崩到 0.636，证明细粒度推理反馈才是多轮框架的决定性因素，而非单纯增加轮数；倒数第二轮 penultimate 为 Info 0.694 / Faith 0.798，说明末轮持续受益于迭代、而非在压制前轮；把 GenRM 从 Qwen3-30B 换成 Qwen3-8B，Faith 仅降到 0.861，对 GenRM 规模不敏感，但更强 GenRM 仍能再提升。案例分析(Table 3)显示，模型据 GenRM 反馈&quot;&#x27;免运费&#x27;卖点在广告信息中无对应&quot;，把 free shipping 改写成 door-to-door delivery，并注入&quot;关注键盘手感、品牌口碑&quot;等查询相关知识。线上 A/B 覆盖 14 万+广告主，广告收入 +0.74%、人工评测整体优质率 +7pp，2026 年 5 月起已服务主流量。</p>\n<h2>5. 局限与未来方向</h2>\n<p>作者自陈的约束：当前没有开源的 ad description 基准（现有开源基准只针对标题），实验只能在自有专有数据上完成，外部可比性弱；框架依赖一个需每日增量更新的 CTR 预估模型与定制 GenRM/rubric，迁移到新业务需重建整套环境。论文未单设&quot;局限&quot;小节，几处可补的隐性局限：多轮 rollout + 每轮调用 GenRM/检索，使训练与在线推理成本显著高于单轮（线上如何控延迟未详述）；KC/LP 的二元判定由黑盒前沿 LLM 经 few-shot 给出，rubric 设计与黑盒模型自身偏差会直接传导到策略；CTR 奖励取自系统自身日志，存在反馈回路与选择偏差风险。未来方向可在降本（候选数/轮数/GenRM 规模的自适应）、可验证奖励的覆盖维度扩展上推进。</p>\n<h2>6. 工业实践意义</h2>\n<p>对搜索/推荐从业者最可借鉴的是&quot;GenRM 反馈优于标量奖励&quot;这条经验：开放式文本生成（query 改写、UGC 答案/摘要、商品/帖子卖点生成）若只用一个标量 reward，很难同时压住事实一致与信息量；改成&quot;让奖励模型指出具体哪里错、再多轮修&quot;，能显著提升忠实度（本文 +0.146）。落地路径相对友好：基座是开源 Qwen3-30B-A3B，训练/推理用 Slime+SGLang 这类公开栈，GenRM 用 rubric+few-shot 构建、不需要额外标注。要权衡的是成本：多轮 + 每轮检索/评估，训练与在线推理开销远高于单轮，高 QPS 场景需对候选数、迭代轮数、GenRM 规模（可用 8B 顶 30B）做取舍。把外部搜索引擎接入生成回路以补知识、把 CTR 模型做成可日更的在线奖励——这两点对自建 LLM 搜索/推荐内容生成尤其值得直接照搬。</p>",
-      "chars": 2991,
-      "minutes": 8
-     },
-     "weekly_rank": 3
-    },
-    {
-     "id": "arxiv:2601.09496",
-     "title": "Unifying Search and Recommendation in LLMs via Gradient Multi-Subspace Tuning",
-     "url": "https://arxiv.org/abs/2601.09496",
-     "source": "arxiv",
-     "company": [
-      "Leiden University"
-     ],
-     "published": "2026-06-24",
-     "authors": "Jujia Zhao, Zihan Wang, Shuaiqun Pan, Suzan Verberne, Zhaochun Ren",
-     "total_score": 3.9,
-     "adjusted_score": 4.1,
-     "preference_bonus": 0.2,
-     "rank_score": 4.1,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 4,
-      "evidence_quality": 3,
-      "timeliness": 4
-     },
-     "summary": "论文面向搜索与推荐(S&R)统一建模，将两者排序都改写成 LLM 上的条件生成，但指出全参数微调成本高、PEFT 又面临两大问题：任务间梯度冲突，以及过拟合微调数据导致用户意图理解漂移、损害通用知识。作者提出 GEMS(Gradient Multi-Subspace Tuning)：用 Multi-Subspace Decomposition 把共享与任务特定的优化信号拆到互补的低秩子空间以减少梯度相互干扰，用 Null-Space Projection 把参数更新约束在与通用知识空间正交的子空间内以抑制意图漂移。在基准数据集上，GEMS 在搜索和推荐任务上均超过 SOTA 基线。",
-     "key_insight": "该工作把\"统一 S&R\"的难点精确定位到 PEFT 下的梯度冲突与灾难性遗忘两点，并各给一个低秩子空间手段——对同时承载搜索与推荐的社区平台有直接借鉴：用一套 LLM + 子空间 LoRA 服务两条链路，省去维护两套模型。Null-Space Projection 保护通用域知识的思路，也适用于在垂域语料上微调时避免削弱大模型原有的语义理解能力。",
-     "best_date": "2026-06-25",
-     "appearances": [
-      {
-       "date": "2026-06-25",
-       "rank": 2,
-       "id": "arxiv:2601.09496",
-       "total_score": 3.9,
-       "adjusted_score": 4.1
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 4
-    },
-    {
-     "id": "arxiv:2606.22803",
-     "title": "Towards Fast Domain Adaptation and Fine-Grained User Simulation for Evaluating Conversational Recommender Systems",
-     "url": "https://arxiv.org/abs/2606.22803",
-     "source": "arxiv",
-     "company": [
-      "Huawei",
-      "RUC"
-     ],
-     "published": "2026-06-23",
-     "authors": "Yuanzi Li, Quanyu Dai, Xueyang Feng, Zihang Tian, Junhao Wang, Xu Chen, Zhenhua Dong, Huifeng Guo",
-     "total_score": 3.85,
-     "adjusted_score": 4.0,
-     "preference_bonus": 0.15,
-     "rank_score": 4.0,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 3,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "论文针对对话式推荐系统(CRS)离线评估难题，指出现有基于 LLM 的用户模拟器存在三个局限：依赖固定 prompt 与预定义动作空间导致跨领域迁移差、难以复刻细粒度语言风格与动态偏好、评估有效性不足。作者提出 AdaptSim，通过自动 prompt 生成与开放动作机制降低人工成本、提升跨域灵活性，并用 “think-then-respond” 受控文本生成精细控制语言风格；评估侧设计了基于 BFS 的轮级 pairwise 对比框架。在 3 个领域、4 个 LLM 上的实验表明其能生成真实多轮对话，对 CRS 能力与鲁棒性给出可靠评估。",
-     "key_insight": "对社区搜索/对话式产品的启示在于：用户模拟器可作为离线评估与回归测试的低成本替身，关键是把“领域适配”与“风格可控生成”解耦——自动 prompt 生成应对新场景冷启动，think-then-respond 让模拟用户的提问风格贴近真实 UGC 语气。BFS 轮级 pairwise 对比比单轮打分更能暴露多轮交互中的策略缺陷，可借鉴用于评估搜索追问/改写链路。来自华为诺亚的工程化做法对自建 CRS 评测体系有直接参考价值。",
-     "best_date": "2026-06-24",
-     "appearances": [
-      {
-       "date": "2026-06-24",
-       "rank": 1,
-       "id": "arxiv:2606.22803",
-       "total_score": 3.85,
-       "adjusted_score": 4.0
-      }
-     ],
-     "deep_reading": {
-      "status": "completed",
-      "paper_id": "arxiv:2606.22803",
-      "slug": "2606.22803",
-      "content_html": "<h2>AdaptSim 深度解读：面向对话式推荐系统评估的快速领域适配与细粒度用户模拟</h2>\n<h3>1. 问题与动机</h3>\n<p>对话式推荐系统(CRS)通过多轮自然语言交互动态捕捉用户偏好，已在电商、视频、出行等场景落地，但其评估一直是难题：真实用户难以大规模参与，ground-truth 对话稀缺。近年用 LLM 构建&quot;用户模拟器&quot;成为主流替代，但论文指出现有方案有三个根本局限：(1) <strong>缺乏领域适配性</strong>——iEvaLM、CSHI、RecUserSim 等依赖人工设计的固定 prompt 模板和预定义、有限的动作空间，迁移到新领域需要领域专家重新设计，成本高、灵活性差；(2) <strong>用户建模粒度粗</strong>——只能在表层语义建模，无法复刻 formality/sentiment/conciseness/carelessness 等细粒度语言风格与动态偏好，RecUserSim 试图用后处理 refine 控制风格，却破坏上下文连贯、导致角色不一致；(3) <strong>评估有效性不足</strong>——现有&quot;对话级 pointwise 打分&quot;存在 Flattery Bias 和 Rough Scoring Bias，且强 backbone 生成的对话过于完美，掩盖了 CRS 对噪声、不完美输入的鲁棒性缺陷。论文用一个例子点明鲁棒性盲区：用户把 steak 误拼为 staek，CRS 就误解意图、推荐了无关的 &quot;Joe&#x27;s Snack Bar&quot;。这些问题在 LLM-based CRS 时代被放大——系统响应更开放、对话轨迹快速发散，评估必须同时考量模拟质量和细粒度交互能力。</p>\n<h3>2. 方法详解</h3>\n<p>AdaptSim(Adaptive domain + automatic prompt tuning User Simulator)用四个机制解决上述问题。</p>\n<p><strong>(1) 基于 Simulator-CRS 反馈的自动 prompt 优化(APO)</strong>：把 prompt 构造形式化为迭代优化(Algorithm 1)。先做领域适配初始化 Prompt₁ = LLM(MetaPrompt_init(D, Prompt₀))，D 是领域上下文、Prompt₀ 是跨域共享通用模板；再进入迭代精炼——用模拟器与 CRS 交互生成对话 batch B_t，用 meta-evaluation prompt 逐条检出行为/风格问题汇成问题集 E_t，再 Prompt_{t+1} = LLM(MetaPrompt_refine(E_t, Prompt_t))。收敛判据借鉴 ProTeGi 的成对偏好：引入 LLM-as-judge 做 B_{t+1} 与 B_t 的 pairwise 对比，仅当 win_rate &gt; loss_rate 才算改进，否则计入 patience，连续三轮无提升或达最大轮数即停。</p>\n<p><strong>(2) 开放式动作生成(OAG)</strong>：抛弃预定义动作集，受 Bayesian Brain Hypothesis 启发，把动作生成建模为概率推理 π(a|H,P) = LLM(Prompt_action(H,P))，在对话历史 H 与用户画像 P 条件下生成候选动作分布，取 a* = argmax π，从而在开放域生成 context-aware 动作，同时锚定当前对话上下文与画像。</p>\n<p><strong>(3) Thinking-Enhanced 风格生成(TSG)</strong>：借鉴 Metacognition Theory，在生成响应前插入显式 think 步骤——模型先自问&quot;我的回复风格是什么？是否符合设定语言风格？&quot;，再 R = LLM(Prompt_response(S, a*, H, P))，用&quot;think-then-respond&quot;提升多轮中风格的可控性与一致性，缓解长上下文导致的风格漂移。</p>\n<p><strong>(4) 基于 BFS 的轮级 pairwise 评估</strong>：为兼顾 context consistency 与细粒度反馈，用树状 BFS 模拟(Algorithm 2 评基础能力、Algorithm 3 评鲁棒性)。基础能力评估让 CRS₁、CRS₂ 从<strong>同一历史 h</strong> 同步生成 r₁、r₂ 做轮级 pairwise 对比，再由用户模拟器分别响应、把两条分支 h·r₁·a₁ 与 h·r₂·a₂ 入队广度扩展，直到 END 或达最大深度 R。鲁棒性评估则用 careless 用户 U_c(产噪声输入)与 normal 用户 U_n(产干净输入)做扰动对比，并用 clean-context preservation——噪声分支只用于评估不入队、只保留干净轨迹 h·a_n·r_n 继续，避免累积误差。训练/推理 temperature 设为 0 保证可复现，评估用 GPT-4o-as-a-judge。</p>\n<h3>3. 核心技术贡献</h3>\n<p><strong>贡献一：把用户模拟器 prompt 从人工设计变成数据驱动的自动优化。</strong> APO 用&quot;领域适配初始化 + 基于问题集的迭代精炼 + pairwise win-rate 收敛判据&quot;取代专家手工调 prompt，机制在于把模拟器与目标 CRS 的真实交互暴露出的失败模式(意图欠定、指令不一致)反馈回 prompt，使其无需 ground-truth 标签即可迭代——这是相对 iEvaLM/CSHI 固定模板的范式转变。</p>\n<p><strong>贡献二：开放式动作生成打破固定动作空间。</strong> 用概率推理 argmax π(a|H,P) 替代从预定义集合选动作，使模拟器能产生上下文相关、不可预期的开放行为，消融显示其在 adaptability、relevance、整体质量上对固定动作空间形成大面积 win。</p>\n<p><strong>贡献三：think-then-respond 实现细粒度风格可控。</strong> 显式元认知 thinking 步骤在生成前自检风格意图，尤其把最难模拟的 carelessness(LLM 天生倾向生成流畅文本)准确率显著抬升。</p>\n<p><strong>贡献四：BFS 轮级 pairwise 协议解决评估公平性。</strong> 同历史同步生成 + 树状广度扩展，既避免对话级 pairwise 因轨迹发散导致后期上下文不可比，又规避轮级孤立打分的 context-agnostic 和量化误差。</p>\n<h3>4. 实验结果分析</h3>\n<p>实验覆盖 Food/Beauty/Shop 三域、GPT-3.5-turbo/GPT-4o-mini/Qwen3-8B/DeepSeek-R1 四个 backbone，基线为 iEvaLM、CSHI、RecUserSim，沿用 RecUserSim 的六维(naturalness/adaptability/clarity/realism/relevance/role-play)框架。</p>\n<p><strong>RQ1.1 模拟质量</strong>：GPT-4o-mini backbone 下 AdaptSim 在六维上对三基线均取得更高 win 比例，唯一例外是 naturalness(取决于 backbone 本身语言能力)；即便换弱 backbone GPT-3.5-turbo 仍在多数维度领先。chit-chat 泛化对比 prompting 方法：overall win/tie/loss = 0.48/0.21/0.31，coherence 0.50/0.21/0.29，diversity 0.49/0.21/0.30，adaptability 0.53/0.19/0.28，clarity 0.53/0.26/0.21。LLM-as-judge 可靠性由三位推荐领域标注员人工校验，平均一致率 90.8%/75.3%/60.3%(均 &gt;60%)，中到高的标注员间一致性。</p>\n<p><strong>RQ1.2 风格可控性</strong>：四维风格(formality/sentiment/conciseness 用 P/R/F1，carelessness 用 accuracy)。DeepSeek-R1 在 formality/sentiment/conciseness 的 F1 超 95%。think-then-respond 对 carelessness 提升最显著：GPT-4o-mini 2.0→7.9、Qwen3-8B 14.3→33.1、DeepSeek-R1 56.6→75.6(论文称提升到&quot;notable 75.79%&quot;)。</p>\n<p><strong>RQ1.4 消融(Table 2)</strong>：去掉 APO/OAG/TSG 均掉点。APO 优化后的 prompt(OP)在 GPT-3.5-turbo 与 GPT-4o-mini 上稳定优于初始 prompt(IP)，并常追平甚至超过人工 prompt(HP)，如 OP vs IP(4o-mini) 在 clarity win 40.50/tie 32.50/loss 32.25。</p>\n<p><strong>RQ2 用于评估 CRS</strong>：用 AdaptSim 比较 BaseCRS 与 AgentCRS(action/language/rec 三维, Table 3)。结论一致：更强 backbone(GPT-4o-mini &gt; GPT-3.5-turbo)在三维 win-rate 更高；BaseCRS 在 action 和 recommendation 普遍优于 AgentCRS，但 AgentCRS 的 language quality 更优。换不同模拟器 backbone，排序高度稳定，Pearson 0.859–0.975、Spearman 0.895–1.000(均 p&lt;0.05)。鲁棒性(Fig 8)显示 typo/word-shuffle/word-drop 噪声输入一致拉低各架构 CRS 表现，证明鲁棒性无法靠更强生成器或更模块化 pipeline 简单解决。</p>\n<h3>5. 局限与未来方向</h3>\n<p>论文在 Limitations 中明确三点：(1) <strong>APO 的循环依赖</strong>——优化 prompt 的质量受限于 meta-evaluation LLM 检出细微失败(如意图欠定、指令不一致)的能力，backbone 弱时错误检测与精炼会同时退化，难以判断模拟差是 prompt 还是模型本身导致；(2) <strong>开放式动作生成的贪心选择</strong>——只取最可能动作会压制罕见但真实的行为(突兀话题切换、矛盾的偏好更新)，而这些恰恰是压测 CRS 鲁棒性所需，作者建议引入 diversity-aware 采样或显式 coverage 目标；(3) <strong>风格控制靠 prompt 驱动的 thinking 步骤、不改模型内部表示</strong>，超长对话中 thinking 步骤要与不断增长的上下文竞争、风格信号仍会漂移，更稳的方案可能是 fine-tuning 或 retrieval-augmented 风格锚定。一个作者未充分展开的隐忧是：评估本身依赖 GPT-4o-as-a-judge，judge 的偏置(尽管人工一致率 &gt;60%)会传导到 CRS 排序结论。</p>\n<h3>6. 工业实践意义</h3>\n<p>对社区搜索/对话式产品团队，AdaptSim 给出一套可复用的&quot;低成本离线评测替身&quot;方法论。<strong>可直接借鉴</strong>：(a) 把用户模拟器 prompt 的人工调参换成 APO 式自动迭代——用模拟器与线上 CRS/搜索追问链路交互暴露的失败 case 反推 prompt，配 pairwise win-rate 做收敛判据，省掉对稀缺标注的依赖；(b) think-then-respond 把&quot;风格自检&quot;显式化，对生成贴近真实 UGC 语气(口语化、含错别字的 careless 风格)尤其有效，可用于构造更真实的 query/追问回归集；(c) BFS 同历史同步生成的轮级 pairwise 协议，比单轮打分更能暴露多轮策略缺陷，可迁移到评估搜索改写、澄清式追问。<strong>应当尝试</strong>：用 careless 用户(typo/词序打乱/丢词)做鲁棒性压测——论文证明现有 CRS 对噪声输入普遍敏感，这对短文本 UGC 搜索(本身充斥口语和错拼)是高优先级的失效模式排查。<strong>需要警惕</strong>：评估全链路依赖 LLM-as-judge，需用人工抽检校准一致率(论文为 60–91%)；开放式动作的贪心选择会低估极端用户行为，做安全/鲁棒性评估时要额外注入长尾 case。部署上，temperature=0 保证可复现，但 BFS 树状评估会带来分支级 LLM 调用放大，需控制最大深度 R 与 batch 规模以平衡成本。</p>",
-      "chars": 4625,
-      "minutes": 12
-     },
-     "weekly_rank": 5
-    },
-    {
-     "id": "arxiv:2606.16821",
-     "title": "How Much Can We Trust LLM Search Agents? Measuring Endorsement Vulnerability to Web Content Manipulation",
-     "url": "https://arxiv.org/abs/2606.16821",
-     "source": "arxiv",
-     "company": [],
-     "published": "2026-06-15",
-     "authors": "Yimeng Chen, Zhe Ren, Firas Laakom, Yu Li, Dandan Guo, Jürgen Schmidhuber",
-     "total_score": 3.75,
-     "adjusted_score": 3.85,
-     "preference_bonus": 0.1,
-     "rank_score": 3.85,
-     "scores": {
-      "business_relevance": 4,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "LLM 搜索 agent 会把开放网页内容综合成给用户的推荐，攻击者发布的网页可能被转化为被“背书”的结论。作者提出 SearchGEO 评测框架，包含网页证据篡改流水线、五类攻击模式分类和多个输出级指标，在每个后端 308 个案例上评测 13 个 LLM。结果显示攻击成功率（ASR）从 Claude-Sonnet-4.6 的 0.0% 到 Gemini-3-Flash 的 31.4% 差异极大；同一部署脚手架在不同后端上可能放大或降低 ASR。论文主张把“对抗性搜索内容下的推荐可靠性”作为后端安全评测的一等维度。",
-     "key_insight": "对 UGC/社区搜索有直接警示：当平台用 LLM 把站内帖子、评论综合成答案时，用户发布的内容本身就是可被操纵的证据源。论文的 agent-skill 探针发现 Claude 过度拒绝、GPT 过度信任，说明 endorsement 安全性高度依赖后端而非提示工程。可借鉴其五类攻击模式与 ASR 指标，为生成式答案搭建对抗鲁棒性回归测试，并在模型选型时把 endorsement 漏洞纳入后端评估。",
-     "best_date": "2026-06-22",
-     "appearances": [
-      {
-       "date": "2026-06-22",
-       "rank": 1,
-       "id": "arxiv:2606.16821",
-       "total_score": 3.75,
-       "adjusted_score": 3.85
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 6
-    },
-    {
-     "id": "arxiv:2606.23291",
-     "title": "URecJPQ: Memory-efficient Multimodal Recommendation Models through RecJPQ in Large-Scale Scenarios",
-     "url": "https://arxiv.org/abs/2606.23291",
-     "source": "arxiv",
-     "company": [
-      "Glasgow",
-      "Bari"
-     ],
-     "published": "2026-06-23",
-     "authors": "Giuseppe Spillo, Zixuan Yi, Aleksandr Petrov, Cataldo Musto, Craig Macdonald, Iadh Ounis",
-     "total_score": 3.55,
-     "adjusted_score": 3.65,
-     "preference_bonus": 0.1,
-     "rank_score": 3.65,
-     "scores": {
-      "business_relevance": 3,
-      "technical_novelty": 3,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 5
-     },
-     "summary": "论文聚焦工业级推荐中 ID embedding 的内存瓶颈，多模态特征会进一步放大显存压力。作者提出 URecJPQ，把 RecJPQ 的联合乘积量化(Joint Product Quantization)扩展到大规模多模态 top-k 推荐：每个 user/item 不再用一份完整独立 embedding，而是用一组共享子 embedding 的拼接来表示，从而大幅压缩可训练参数。在 movies/baby/sports 三个数据集上，checkpoint 体积下降 86–98%、可训练参数下降 98–99%，平均 recall 仅下降 8.5%、NDCG 下降 16%，在 baby 商品域部分指标甚至提升最高 85%。",
-     "key_insight": "量化式 ID 表示与生成式推荐的语义 ID(semantic ID / item tokenization)同源：都用共享码本把海量 item 压成离散子单元。对短文本 UGC 搜索的启示是，召回/排序侧的 item 表示可用乘积量化压到原参数量的 1–2%，显著降低在线显存与 checkpoint 存储，代价是 NDCG 有可控损失，需按业务容忍度调码本粒度。该思路也为后续把 item 表示对接生成式解码(在码本上做 beam search)预留了空间。",
-     "best_date": "2026-06-24",
-     "appearances": [
-      {
-       "date": "2026-06-24",
-       "rank": 2,
-       "id": "arxiv:2606.23291",
-       "total_score": 3.55,
-       "adjusted_score": 3.65
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 7
-    },
-    {
-     "id": "arxiv:2606.19218",
-     "title": "RECOM: A Validity Discrimination Tradeoff in Automatic Metrics for Open Ended Reddit Question Answering",
-     "url": "https://arxiv.org/abs/2606.19218",
-     "source": "arxiv",
-     "company": [
-      "Amazon"
-     ],
-     "published": "2026-06-17",
-     "authors": "Pushwitha Krishnappa, Amit Das, Vinija Jain, Aman Chadha, Tathagata Mukherjee",
-     "total_score": 3.45,
-     "adjusted_score": 3.6,
-     "preference_bonus": 0.15,
-     "rank_score": 3.6,
-     "scores": {
-      "business_relevance": 3,
-      "technical_novelty": 3,
-      "practicality": 4,
-      "evidence_quality": 4,
-      "timeliness": 4
-     },
-     "summary": "自动指标被默认用于评测 LLM 生成文本，但同时承担两个任务：区分真实语义对齐与表面巧合（validity），以及区分系统好坏（discriminative power）。作者构建无污染评测集 RECOM，含 15,000 个 r/AskReddit 问题（2025 年 9 月，晚于所有被测模型训练截止）及其真实社区回复，对 5 个 7–10B 开源 LLM 打分。发现没有指标能同时做好两件事：余弦相似度能区分真实与随机回复（Cohen's d≈2）却无法排序模型（|d|<0.1）；BERTScore precision 看似能排序（|d|≤0.63），但控制回复长度后塌缩到 |d|=0.09。",
-     "key_insight": "直接关系到社区搜索如何评测生成式答案质量。论文指出 validity–discrimination tradeoff 是指标本身的性质而非模型差异，源于表示设计；三个独立 LLM 裁判同样复现了 validity 缺口。实践启示：评测 UGC 问答与生成式答案时，应在两个轴上分别报告指标并显式给出随机派生（random-derangement）基线地板，警惕用单一相似度指标做模型选型会失效。其无污染数据集构造思路（用训练截止之后的社区真实回复）也值得借鉴。",
-     "best_date": "2026-06-22",
-     "appearances": [
-      {
-       "date": "2026-06-22",
-       "rank": 2,
-       "id": "arxiv:2606.19218",
-       "total_score": 3.45,
-       "adjusted_score": 3.6
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 8
-    },
-    {
-     "id": "arxiv:2606.23643",
-     "title": "TailorMind: Towards Preference-Aligned Multimodal Content Generation",
-     "url": "https://arxiv.org/abs/2606.23643",
-     "source": "arxiv",
-     "company": [
-      "HKU",
-      "HIT"
-     ],
-     "published": "2026-06-23",
-     "authors": "Hengji Zhou, Ye Liu, Yufeng Liu, Si Wu, Lianghao Xia, Liqiang Nie",
-     "total_score": 3.45,
-     "adjusted_score": 3.55,
-     "preference_bonus": 0.1,
-     "rank_score": 3.55,
-     "scores": {
-      "business_relevance": 3,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 3,
-      "timeliness": 5
-     },
-     "summary": "论文研究“个性化多模态内容生成”——在没有现成 item 池或缺少匹配 UGC 时，直接为用户合成定制内容。作者提出 TailorMind，将协同偏好建模与可控多模态生成打通：用超图协同过滤补全稀疏用户历史，用 ranking-error 反馈与文本梯度下降优化文本画像；通过检索增强的风格控制把生成结果锚定到真实 UGC 风格，并用跨模态一致性反思抑制语义漂移。论文还构建了 TailorBench 基准，覆盖 3 个主流平台，从连贯性、新颖性、美学、幻觉等 5 个维度评估生成质量。",
-     "key_insight": "该工作把“推荐”从挑选已有内容延伸到按用户偏好生成内容，对 UGC 社区的内容冷启动/补全有想象空间：当长尾 query 无优质帖子可召回时，可用协同信号驱动生成候选。值得借鉴的是用 ranking-error 反馈做文本画像优化(把偏好误差转成可微的文本梯度)，以及用检索到的真实 UGC 作风格锚点来压制生成内容的幻觉。但生成内容的真实性与合规是落地前必须先解决的风险点。",
-     "best_date": "2026-06-24",
-     "appearances": [
-      {
-       "date": "2026-06-24",
-       "rank": 3,
-       "id": "arxiv:2606.23643",
-       "total_score": 3.45,
-       "adjusted_score": 3.55
-      }
-     ],
-     "deep_reading": null,
-     "weekly_rank": 9
-    },
-    {
-     "id": "arxiv:2606.23283",
-     "title": "Towards Root Memories: Benchmarking and Enhancing Implicit Logical Memory Retrieval for Personalized LLMs",
-     "url": "https://arxiv.org/abs/2606.23283",
-     "source": "arxiv",
-     "company": [
-      "USTC"
-     ],
-     "published": "2026-06-23",
-     "authors": "Hongxun Ding, Xiang Yu, Chengbing Wang, Jianfei Xiao, Keqin Bao, Wenjie Wang, Xiangnan He",
-     "total_score": 3.45,
-     "adjusted_score": 3.55,
-     "preference_bonus": 0.1,
-     "rank_score": 3.55,
-     "scores": {
-      "business_relevance": 3,
-      "technical_novelty": 4,
-      "practicality": 3,
-      "evidence_quality": 3,
-      "timeliness": 5
-     },
-     "summary": "论文指出个性化 LLM 的记忆系统普遍只靠语义相似度检索，容易漏掉与当前语义重叠低、但逻辑上关键的历史记忆，且现有基准无法评估这一问题。作者先构建 IMLogic——面向长对话隐式逻辑记忆检索的高质量基准；再提出 root memory，一种结构化、保留决策过程的表示，从长期用户历史中蒸馏出可复用的个性化逻辑。配套的 RootMem 是即插即用框架：先把原始历史蒸馏成 root memory，再用基于 LLM 的路由器激活逻辑相关记忆，与语义检索形成互补。实验显示其显著优于最强检索基线。",
-     "key_insight": "对个性化搜索/助手的启示是：用户长期意图常以“决策逻辑”而非“表层语义”形式存在，纯向量相似检索会系统性漏召这类记忆。RootMem 的两段式(蒸馏结构化记忆 + LLM 路由激活)可借鉴到用户画像与 query 个性化——把零散行为蒸馏成可复用的偏好规则，再在检索时按逻辑相关性而非仅语义相似度激活。IMLogic 这类基准也提示，评估个性化记忆要专门构造“语义低重叠但逻辑相关”的难样本。",
-     "best_date": "2026-06-24",
-     "appearances": [
-      {
-       "date": "2026-06-24",
-       "rank": 4,
-       "id": "arxiv:2606.23283",
-       "total_score": 3.45,
-       "adjusted_score": 3.55
       }
      ],
      "deep_reading": null,
