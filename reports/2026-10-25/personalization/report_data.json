@@ -1,0 +1,428 @@
+{
+  "date": "2026-10-25",
+  "track": "personalization",
+  "scenario": "Premium 人脉检索把「看过谁」写进目标、轮播 bandit 只更新真实浏览深度、快手用多 agent 按人写广告脚本——今天个性化赛道的主线是：把曝光、深度与创意生产从「事后偏差修正」前移到目标与系统结构里。",
+  "scenario_status": "done",
+  "selection_only": true,
+  "stats": {
+    "papers_scored": 49,
+    "papers_selected": 10,
+    "score_min": 3.2,
+    "score_max": 4.0
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.30941",
+      "title": "PAIR: Preference-Aligned Intent Retrieval for Premium People Recommendation at LinkedIn",
+      "authors": "Zhongkai Shangguan, Yanbin Kang, Yihan Cao, Ruijie Jiang, Qiannan Yin, Chang Yue, Zijian Zhou, Girish Kathalagiri, Changshuai Wei, Zhengming Xing",
+      "abstract": "General-purpose embeddings trained on profile similarity often misrank candidates in professional networks, where relevance is inherently complementary rather than symmetric. For example, job seekers usually engage with recruiters rather than peers with similar credentials. Current user recommendation systems are often built on profile similarity or social signals such as shared connections, which are effective in friend-oriented social networks where users tend to connect with similar people or within existing social circles. However, this does not hold in professional platforms like LinkedIn, where interactions are often goal-driven and cross-role interactions, requiring matching based on complementary intents rather than similarity or social proximity. In this paper, we propose Preference-Aligned Intent Retrieval, a retrieval framework that is designed to model user intent preference instead of profile similarity. Our approach is inspired by the preference-learning perspective of Direct Preference Optimization, but instantiates preference learning as an exposure-conditioned multi-negative contrastive objective over embeddings. This formulation simplifies training and scales efficiently to large candidate sets without requiring an explicit reference model. Furthermore, we incorporate user interaction history by aggregating click histories with positional encoding to capture temporal order, which enables constant-cost updates of user representations over a fixed history window, allowing new interactions to be incorporated without re-encoding history. As a result, personalization can be updated efficiently using lightweight CPU operations without repeated LLM inference during serving. We evaluate PAIR on LinkedIn's Premium retrieval task. A 0.6B parameter model achieves a MAR@100 of 0.45.",
+      "url": "https://arxiv.org/abs/2610.30941",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-23",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 4.0,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.08,
+      "rank": 1,
+      "summary": "LinkedIn 发现：面向 Premium 会员的「人脉浏览推荐」里，通用会员向量 Holistic-171 的 MAR@100 只有 0.288，0.6B 开箱 LLM embedding 更低到 0.192——二者都没学过「看过谁」这条曝光条件。PAIR 把曝光当作偏好学习的条件，用同尺度 0.6B 模型把 MAR@100 拉到 0.450（相对 Holistic 提升 56%、相对开箱模型 2.3×）；线上 A/B 点击率 +7.5%、Premium 留存 +2.1%，服务延迟无明显回退。==人脉推荐的「看过」不是噪声而是偏好信号：把曝光条件写进目标，小模型也能超过大而泛的会员向量==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [
+        "LinkedIn"
+      ],
+      "company_logos": [
+        {
+          "name": "LinkedIn",
+          "logo": "logos/linkedin.png",
+          "hue": 223
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.30941",
+        "title": "PAIR: Preference-Aligned Intent Retrieval for Premium People Recommendation at LinkedIn",
+        "status": "completed",
+        "content": "LinkedIn Premium「人脉浏览推荐」里，生产会员向量 Holistic-171 的 MAR@100 只有 0.288，开箱 0.6B LLM embedding 更低到 0.192——二者都在学「档案像不像」，而 Premium 场景里高价值互动常常是互补的：找工作的工程师要点的是招聘方，不是另一个工程师。PAIR 把生产曝光日志里的点击写成曝光条件偏好：点过的优于同曝光未点的，再加随机负例；0.6B 模型做到 MAR@100=0.450（相对 Holistic +56%，相对开箱 2.3×）。线上替换检索向量后 CTR +7.5%、Premium 留存 +2.1%，页加载延迟 +0.1%。==任务专用的偏好监督比把通用会员向量做大更管用==。\n\n## 1. 问题：相似度召回对不上职业意图\n\nPremium 用户会话更密、目标更强，意图还会周级切换（找工作 ↔ 被动社交）。静态档案向量抓不住「这周要点谁」。生产召回若按档案相似聚类，会把求职者推给求职者。作者把检索重写成偏好排序：查询用户 $q$、正例 $d^{+}$、负例 $d^{-}$，目标是在生产曝光分布的支撑集内学相对序，而不是在任意负例上做相似拉开。\n\n![PAIR 三塔架构（论文 Figure 1）：档案塔编码静态身份，历史塔用位置注意力聚合最近点击的预计算向量，候选塔编码对方档案；两侧相加后做检索。](figs/2610.30941/fig_arch.png)\n\n## 2. 方法：曝光条件对比 + 三塔 + Matryoshka\n\n训练正例来自 Premium Browsemaps 曝光会话中的点击；每个会话按 1:3 构造负例池——同曝光未点击作 hard negative，再加随机成员。初始标准对比学习能抬准度，但仍偏向相似档案；改成曝光条件偏好对比后，才把空间扳向互补意图。服务侧不能每次点击都重跑 LLM：三塔里档案与候选离线算好，历史侧只对窗口 $K$ 内预计算向量做位置编码 + 注意力，更新代价 $O(Kd)$。Matryoshka 损失让同一模型在 200/256/512/1024 维前缀上都可用，按面延迟与存储截断，不必为每个面训一个模型。\n\n![论文首页设定（PDF）：Premium Browsemaps 产品与检索问题陈述——看为何「曝光条件」写进目标。](figs/2610.30941/fig_page1.png)\n\n## 3. 核心贡献：偏好微调是主增益，历史是加分\n\n离线主表把增益拆开：两塔 PAIR（无历史）MAR@100 已到 0.436；加上 P-ATT 历史到 0.450。相对 Holistic 的大头来自偏好微调，而不是把维数从 171 拉到 1024——256 维 PAIR 仍有 MAR@100=0.432，高于 171 维生产向量。历史聚合里 P-ATT 略优于 GeM / mean / max，但差距小于「做不做偏好微调」。\n\n## 4. 实验\n\n| 模型 | ACC | MAR@25 | MAR@100 |\n| --- | ---: | ---: | ---: |\n| Holistic-171 | 0.794 | 0.169 | 0.288 |\n| 开箱 0.6B | 0.771 | 0.100 | 0.192 |\n| PAIR 两塔 | 0.960 | 0.255 | 0.436 |\n| PAIR + P-ATT | 0.967 | 0.265 | 0.450 |\n\nMatryoshka：1024 维 MAR@100=0.450；512 维 0.444；200 维 0.421。线上 A/B：实验组 PAIR+P-ATT@1024，对照组 Holistic-171，下游排序器相同；CTR +7.5%*，Premium 留存 +2.1%*，页加载 +0.1%，覆盖 −0.2%。作者写明：离线 MAR 提升大，线上效应更小，因为排序器与产品层会吃掉一部分召回增益。\n\n\n示意走查：求职工程师本周点过三位招聘经理；历史塔把这 K 条预计算向量做位置注意力，与本人档案向量相加后去 ANN。候选侧若仍是「另一位工程师」，偏好微调后的空间会把它压到曝光未点负例一侧，招聘经理则抬升。服务路径不重跑 0.6B——只做向量加权。\n\n## 5. 局限\n\n偏好只在历史曝光集内观测，继承选择偏差；作者提到可用探索采样缓解，但正文主结果仍基于日志。意图窗口 $K$ 与温度等超参见附录，跨面迁移要重看截断维。A/B 只换检索向量，不声称端到端重做推荐。\n\n## 6. 实践意义\n\n一是职业/人脉类召回若正例是「互补角色」，先改训练信号再堆模型尺寸。二是要动态意图又不想在线跑 LLM，把历史做成预计算向量上的 $O(Kd)$ 聚合，并用 Matryoshka 一套模型伺候多个延迟预算。",
+        "content_html": "<p>LinkedIn Premium「人脉浏览推荐」里，生产会员向量 Holistic-171 的 MAR@100 只有 0.288，开箱 0.6B LLM embedding 更低到 0.192——二者都在学「档案像不像」，而 Premium 场景里高价值互动常常是互补的：找工作的工程师要点的是招聘方，不是另一个工程师。PAIR 把生产曝光日志里的点击写成曝光条件偏好：点过的优于同曝光未点的，再加随机负例；0.6B 模型做到 MAR@100=0.450（相对 Holistic +56%，相对开箱 2.3×）。线上替换检索向量后 CTR +7.5%、Premium 留存 +2.1%，页加载延迟 +0.1%。<strong class=\"hl\">任务专用的偏好监督比把通用会员向量做大更管用</strong>。</p>\n<h2>1. 问题：相似度召回对不上职业意图</h2>\n<p>Premium 用户会话更密、目标更强，意图还会周级切换（找工作 ↔ 被动社交）。静态档案向量抓不住「这周要点谁」。生产召回若按档案相似聚类，会把求职者推给求职者。作者把检索重写成偏好排序：查询用户 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.625em;vertical-align:-0.1944em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.03588em;\">q</span></span></span></span>、正例 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.7713em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">d</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.7713em;\"><span style=\"top:-3.063em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mtight\">+</span></span></span></span></span></span></span></span></span></span></span></span>、负例 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.7713em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">d</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.7713em;\"><span style=\"top:-3.063em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mtight\">−</span></span></span></span></span></span></span></span></span></span></span></span>，目标是在生产曝光分布的支撑集内学相对序，而不是在任意负例上做相似拉开。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-25/personalization/2610.30941/fig_arch.png\" alt=\"PAIR 三塔架构（论文 Figure 1）：档案塔编码静态身份，历史塔用位置注意力聚合最近点击的预计算向量，候选塔编码对方档案；两侧相加后做检索。\" loading=\"lazy\" decoding=\"async\"><figcaption>PAIR 三塔架构（论文 Figure 1）：档案塔编码静态身份，历史塔用位置注意力聚合最近点击的预计算向量，候选塔编码对方档案；两侧相加后做检索。</figcaption></figure>\n<h2>2. 方法：曝光条件对比 + 三塔 + Matryoshka</h2>\n<p>训练正例来自 Premium Browsemaps 曝光会话中的点击；每个会话按 1:3 构造负例池——同曝光未点击作 hard negative，再加随机成员。初始标准对比学习能抬准度，但仍偏向相似档案；改成曝光条件偏好对比后，才把空间扳向互补意图。服务侧不能每次点击都重跑 LLM：三塔里档案与候选离线算好，历史侧只对窗口 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.07153em;\">K</span></span></span></span> 内预计算向量做位置编码 + 注意力，更新代价 $O(Kd)$。Matryoshka 损失让同一模型在 200/256/512/1024 维前缀上都可用，按面延迟与存储截断，不必为每个面训一个模型。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-25/personalization/2610.30941/fig_page1.png\" alt=\"论文首页设定（PDF）：Premium Browsemaps 产品与检索问题陈述——看为何「曝光条件」写进目标。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文首页设定（PDF）：Premium Browsemaps 产品与检索问题陈述——看为何「曝光条件」写进目标。</figcaption></figure>\n<h2>3. 核心贡献：偏好微调是主增益，历史是加分</h2>\n<p>离线主表把增益拆开：两塔 PAIR（无历史）MAR@100 已到 0.436；加上 P-ATT 历史到 0.450。相对 Holistic 的大头来自偏好微调，而不是把维数从 171 拉到 1024——256 维 PAIR 仍有 MAR@100=0.432，高于 171 维生产向量。历史聚合里 P-ATT 略优于 GeM / mean / max，但差距小于「做不做偏好微调」。</p>\n<h2>4. 实验</h2>\n<table><thead><tr><th>模型</th><th>ACC</th><th>MAR@25</th><th>MAR@100</th></tr></thead><tbody><tr><td>Holistic-171</td><td>0.794</td><td>0.169</td><td>0.288</td></tr><tr><td>开箱 0.6B</td><td>0.771</td><td>0.100</td><td>0.192</td></tr><tr><td>PAIR 两塔</td><td>0.960</td><td>0.255</td><td>0.436</td></tr><tr><td>PAIR + P-ATT</td><td>0.967</td><td>0.265</td><td>0.450</td></tr></tbody></table>\n<p>Matryoshka：1024 维 MAR@100=0.450；512 维 0.444；200 维 0.421。线上 A/B：实验组 PAIR+P-ATT@1024，对照组 Holistic-171，下游排序器相同；CTR +7.5%<em>，Premium 留存 +2.1%</em>，页加载 +0.1%，覆盖 −0.2%。作者写明：离线 MAR 提升大，线上效应更小，因为排序器与产品层会吃掉一部分召回增益。</p>\n<p>示意走查：求职工程师本周点过三位招聘经理；历史塔把这 K 条预计算向量做位置注意力，与本人档案向量相加后去 ANN。候选侧若仍是「另一位工程师」，偏好微调后的空间会把它压到曝光未点负例一侧，招聘经理则抬升。服务路径不重跑 0.6B——只做向量加权。</p>\n<h2>5. 局限</h2>\n<p>偏好只在历史曝光集内观测，继承选择偏差；作者提到可用探索采样缓解，但正文主结果仍基于日志。意图窗口 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.07153em;\">K</span></span></span></span> 与温度等超参见附录，跨面迁移要重看截断维。A/B 只换检索向量，不声称端到端重做推荐。</p>\n<h2>6. 实践意义</h2>\n<p>一是职业/人脉类召回若正例是「互补角色」，先改训练信号再堆模型尺寸。二是要动态意图又不想在线跑 LLM，把历史做成预计算向量上的 $O(Kd)$ 聚合，并用 Matryoshka 一套模型伺候多个延迟预算。</p>",
+        "slug": "2610.30941",
+        "chars": 1666,
+        "minutes": 5
+      }
+    },
+    {
+      "id": "arxiv:2610.05220",
+      "title": "Ranking Bandits for Carousel Interfaces with Observable Browsing Depth",
+      "authors": "Takuma Yasuda, Atsuyoshi Nakamura, Dai Hai Nguyen",
+      "abstract": "Carousel interfaces allow a recommender system to directly observe how far a user has browsed. This signal distinguishes displayed but unclicked items from items that were never displayed, whereas conventional ranking-bandit models, including cascade and position-based models, generally treat examination as latent. We formulate a ranking-bandit problem in which a learner presents a list of $L$ items, observes the user's maximum browsing depth, and receives click feedback only for positions up to that depth. The objective is to maximize the expected number of clicks under an unknown item-attractiveness vector and a browsing-depth distribution. We propose three algorithms based on UCB, Thompson Sampling, and DMED, all of which update item statistics only from observed exposures. We derive an instance-dependent logarithmic upper bound for our UCB-based algorithm and an asymptotic upper bound for our DMED-based algorithm that coincides with the lower bound as its parameter $α\\downarrow 0$, establishing asymptotic optimality in this limit. Simulations in synthetic shallow- and deep-browsing environments, together with experiments parameterized from RecGaze interaction logs, show that OD-TS attains final mean regret similar to PBM-TS, while the proposed methods achieve lower final mean regret than PBM-UCB.",
+      "url": "https://arxiv.org/abs/2610.05220",
+      "source": "arxiv",
+      "published": "2026-10-20",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-21",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.0,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.08,
+      "rank": 2,
+      "summary": "轮播/信息流里用户会在某个深度停下，比该深度更靠后的位置既没点击也没曝光，经典位置偏差模型（PBM）却仍把它当「看见了但不点」。这篇提出可观测浏览深度下的 OD-UCB / OD-TS / OD-DMED：只对真正曝光过的位置更新统计量，并给出 OD-UCB 的实例相关对数上界。用合成浅/深浏览环境与 RecGaze 参数化实验，OD-TS 最终平均 regret 与 PBM-TS 相当，三类方法均低于 PBM-UCB。==能直接观测浏览深度时，就别再对「没看见」的坑位做负反馈==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [],
+      "company_logos": [],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.05220",
+        "title": "Ranking Bandits for Carousel Interfaces with Observable Browsing Depth",
+        "status": "completed",
+        "content": "轮播里用户会在某个深度停下，比该深度更靠后的坑位既没点击也没曝光；经典位置偏差模型（PBM）却仍把它们当成「看见了但不点」。这篇在可观测浏览深度 $V(t)$ 下提出 OD-UCB / OD-TS / OD-DMED-L：只对真正曝光过的位置更新统计量。OD-UCB 有实例相关对数 regret 上界；OD-DMED-L 的渐近上界与下界主项一致。在浅/深合成环境与 RecGaze 标定环境上，$T=500{,}000$ 时 OD-TS 最终平均 regret 与知情 $P_j$ 的 PBM-TS 相当（浅环境 1121.8 vs 1159.9），三类 OD 方法均低于 PBM-UCB。==能观测浏览深度时，就别再对没看见的坑位做负反馈==。\n\n## 1. 问题：没看见 ≠ 不喜欢\n\n每轮展示 $L$ 个位置的排列，用户观察到深度 $V(t)$ 后停下；点击只发生在已观察位置，且与物品吸引度 $\\theta_i$ 有关。PBM 用已知或估计的检查概率 $P_j$ 解释「位置越后越少点」，但把未观察位置也卷进似然。作者假设 $V(t)$ 可观测且与展示顺序独立，目标是最大化期望点击、最小化相对最优排列的 regret。\n\n![论文设定页：轮播界面与可观测浏览深度 $V(t)$（PDF）。看哪些位置进入曝光计数，哪些被排除。](figs/2610.05220/fig1.png)\n\n## 2. 方法：只更新观察到的曝光\n\n记物品 $i$ 截至 $t$ 的曝光次数 $n_i(t)$ 与点击次数 $s_i(t)$，二者都只在 $j\\le V(s)$ 的位置累计。OD-UCB 在观测均值上加宽度项，对物品排序取 top-$L$；OD-TS 对 Bernoulli 吸引度用 Beta 后验采样；OD-DMED-L 按 DMED 风格做渐近最优探索。与 PBM-UCB/TS 对比时，基线仍使用真实 $P_j$，但看不到当轮实现的深度——OD 方法用的信息是深度，不是位置偏置表。\n\n![方法与界（PDF）：OD-UCB 有限时间上界与 OD-DMED-L 渐近上界的位置。](figs/2610.05220/fig2.png)\n\n## 3. 核心贡献：深度观测换掉位置偏置表\n\n理论：OD-UCB 给出 gap-dependent 对数上界；相对 PBM-UCB，在 $\\alpha\\to 1/2$ 时主项少了 $P_L^{-2}$ 因子。OD-DMED-L 渐近上界与下界主项重合，说明该极限下最优。实践：不必先估 $P_j$，也避开 PBM-TS 对非共轭后验的拒绝采样。\n\n## 4. 实验\n\n设定 $K=50$，$L=5$，$T=5\\times 10^5$。三环境：synthetic shallow（$P$ 衰减快）、synthetic deep（$P$ 衰减慢）、RecGaze-driven（眼动+点击估计的 $P$ 与 CTR，3477 次交互、87 人）。种子间共享深度与点击随机变量。\n\n| 环境 | OD-TS | PBM-TS | OD-DMED-L | OD-UCB | PBM-UCB |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| shallow | 1121.8 | 1159.9 | 2137.2 | 6280.6 | 19568.2 |\n| deep | 1326.9 | 1356.8 | 4006.6 | 8761.5 | 12226.3 |\n| RecGaze | 856.1 | 876.9 | 1910.5 | （高于 TS） | 更高 |\n\nOD-TS 与 PBM-TS 置信区间重叠，但 OD-TS 不需要真实 $P_j$。长视野 $T=10^7$ 诊断显示 OD-DMED-L 的 $\\mathrm{Reg}(t)/\\log t$ 靠近理论系数。\n\n![结果页（PDF）：浅/深合成与 RecGaze 上的累积 regret 曲线。](figs/2610.05220/fig3.png)\n\n## 5. 局限\n\n作者写明：独立点击、深度与排列无关是建模假设；RecGaze 是日志标定仿真，不是线上部署，不能断言真实用户过程下的 regret。部分次优 CTR 估计接近，但 top-$L$ 集合仍唯一。\n\n## 6. 实践意义\n\n一是轮播/信息流若能打点真实浏览深度（曝光像素、眼动代理、滑停），bandit 更新应掩掉未曝光位。二是已有 PBM-TS 流水线可先 A/B 换 OD-TS：少依赖 $P_j$ 估计，有望保持相近 regret。",
+        "content_html": "<p>轮播里用户会在某个深度停下，比该深度更靠后的坑位既没点击也没曝光；经典位置偏差模型（PBM）却仍把它们当成「看见了但不点」。这篇在可观测浏览深度 $V(t)$ 下提出 OD-UCB / OD-TS / OD-DMED-L：只对真正曝光过的位置更新统计量。OD-UCB 有实例相关对数 regret 上界；OD-DMED-L 的渐近上界与下界主项一致。在浅/深合成环境与 RecGaze 标定环境上，<span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">T</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.8389em;vertical-align:-0.1944em;\"></span><span class=\"mord\">500</span><span class=\"mord\"><span class=\"mpunct\">,</span></span><span class=\"mord\">000</span></span></span></span> 时 OD-TS 最终平均 regret 与知情 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.9694em;vertical-align:-0.2861em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.05724em;\">j</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span></span></span></span> 的 PBM-TS 相当（浅环境 1121.8 vs 1159.9），三类 OD 方法均低于 PBM-UCB。<strong class=\"hl\">能观测浏览深度时，就别再对没看见的坑位做负反馈</strong>。</p>\n<h2>1. 问题：没看见 ≠ 不喜欢</h2>\n<p>每轮展示 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\">L</span></span></span></span> 个位置的排列，用户观察到深度 $V(t)$ 后停下；点击只发生在已观察位置，且与物品吸引度 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8444em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.02778em;\">θ</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">i</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span></span></span></span> 有关。PBM 用已知或估计的检查概率 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.9694em;vertical-align:-0.2861em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.05724em;\">j</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span></span></span></span> 解释「位置越后越少点」，但把未观察位置也卷进似然。作者假设 $V(t)$ 可观测且与展示顺序独立，目标是最大化期望点击、最小化相对最优排列的 regret。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-25/personalization/2610.05220/fig1.png\" alt=\"论文设定页：轮播界面与可观测浏览深度 $V(t)$（PDF）。看哪些位置进入曝光计数，哪些被排除。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文设定页：轮播界面与可观测浏览深度 $V(t)$（PDF）。看哪些位置进入曝光计数，哪些被排除。</figcaption></figure>\n<h2>2. 方法：只更新观察到的曝光</h2>\n<p>记物品 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6595em;\"></span><span class=\"mord mathnormal\">i</span></span></span></span> 截至 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6151em;\"></span><span class=\"mord mathnormal\">t</span></span></span></span> 的曝光次数 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">n</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">i</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mopen\">(</span><span class=\"mord mathnormal\">t</span><span class=\"mclose\">)</span></span></span></span> 与点击次数 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">s</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">i</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mopen\">(</span><span class=\"mord mathnormal\">t</span><span class=\"mclose\">)</span></span></span></span>，二者都只在 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.854em;vertical-align:-0.1944em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.05724em;\">j</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">≤</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.22222em;\">V</span><span class=\"mopen\">(</span><span class=\"mord mathnormal\">s</span><span class=\"mclose\">)</span></span></span></span> 的位置累计。OD-UCB 在观测均值上加宽度项，对物品排序取 top-<span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\">L</span></span></span></span>；OD-TS 对 Bernoulli 吸引度用 Beta 后验采样；OD-DMED-L 按 DMED 风格做渐近最优探索。与 PBM-UCB/TS 对比时，基线仍使用真实 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.9694em;vertical-align:-0.2861em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.05724em;\">j</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span></span></span></span>，但看不到当轮实现的深度——OD 方法用的信息是深度，不是位置偏置表。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-25/personalization/2610.05220/fig2.png\" alt=\"方法与界（PDF）：OD-UCB 有限时间上界与 OD-DMED-L 渐近上界的位置。\" loading=\"lazy\" decoding=\"async\"><figcaption>方法与界（PDF）：OD-UCB 有限时间上界与 OD-DMED-L 渐近上界的位置。</figcaption></figure>\n<h2>3. 核心贡献：深度观测换掉位置偏置表</h2>\n<p>理论：OD-UCB 给出 gap-dependent 对数上界；相对 PBM-UCB，在 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.4306em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.0037em;\">α</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">→</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord\">1/2</span></span></span></span> 时主项少了 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:1.1478em;vertical-align:-0.2935em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.8542em;\"><span style=\"top:-2.4065em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">L</span></span></span><span style=\"top:-3.1031em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mtight\">−</span><span class=\"mord mtight\">2</span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2935em;\"><span></span></span></span></span></span></span></span></span></span> 因子。OD-DMED-L 渐近上界与下界主项重合，说明该极限下最优。实践：不必先估 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.9694em;vertical-align:-0.2861em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.05724em;\">j</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span></span></span></span>，也避开 PBM-TS 对非共轭后验的拒绝采样。</p>\n<h2>4. 实验</h2>\n<p>设定 $K=50$，$L=5$，<span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">T</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.7278em;vertical-align:-0.0833em;\"></span><span class=\"mord\">5</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span><span class=\"mbin\">×</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.8141em;\"></span><span class=\"mord\">1</span><span class=\"mord\"><span class=\"mord\">0</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.8141em;\"><span style=\"top:-3.063em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\">5</span></span></span></span></span></span></span></span></span></span></span>。三环境：synthetic shallow（<span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span></span></span></span> 衰减快）、synthetic deep（<span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span></span></span></span> 衰减慢）、RecGaze-driven（眼动+点击估计的 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span></span></span></span> 与 CTR，3477 次交互、87 人）。种子间共享深度与点击随机变量。</p>\n<table><thead><tr><th>环境</th><th>OD-TS</th><th>PBM-TS</th><th>OD-DMED-L</th><th>OD-UCB</th><th>PBM-UCB</th></tr></thead><tbody><tr><td>shallow</td><td>1121.8</td><td>1159.9</td><td>2137.2</td><td>6280.6</td><td>19568.2</td></tr><tr><td>deep</td><td>1326.9</td><td>1356.8</td><td>4006.6</td><td>8761.5</td><td>12226.3</td></tr><tr><td>RecGaze</td><td>856.1</td><td>876.9</td><td>1910.5</td><td>（高于 TS）</td><td>更高</td></tr></tbody></table>\n<p>OD-TS 与 PBM-TS 置信区间重叠，但 OD-TS 不需要真实 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.9694em;vertical-align:-0.2861em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.05724em;\">j</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span></span></span></span>。长视野 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">T</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:0.8141em;\"></span><span class=\"mord\">1</span><span class=\"mord\"><span class=\"mord\">0</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.8141em;\"><span style=\"top:-3.063em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\">7</span></span></span></span></span></span></span></span></span></span></span> 诊断显示 OD-DMED-L 的 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord\"><span class=\"mord mathrm\" style=\"margin-right:0.01389em;\">Reg</span></span><span class=\"mopen\">(</span><span class=\"mord mathnormal\">t</span><span class=\"mclose\">)</span><span class=\"mord\">/</span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mop\">lo<span style=\"margin-right:0.01389em;\">g</span></span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mord mathnormal\">t</span></span></span></span> 靠近理论系数。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-25/personalization/2610.05220/fig3.png\" alt=\"结果页（PDF）：浅/深合成与 RecGaze 上的累积 regret 曲线。\" loading=\"lazy\" decoding=\"async\"><figcaption>结果页（PDF）：浅/深合成与 RecGaze 上的累积 regret 曲线。</figcaption></figure>\n<h2>5. 局限</h2>\n<p>作者写明：独立点击、深度与排列无关是建模假设；RecGaze 是日志标定仿真，不是线上部署，不能断言真实用户过程下的 regret。部分次优 CTR 估计接近，但 top-<span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.6833em;\"></span><span class=\"mord mathnormal\">L</span></span></span></span> 集合仍唯一。</p>\n<h2>6. 实践意义</h2>\n<p>一是轮播/信息流若能打点真实浏览深度（曝光像素、眼动代理、滑停），bandit 更新应掩掉未曝光位。二是已有 PBM-TS 流水线可先 A/B 换 OD-TS：少依赖 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.9694em;vertical-align:-0.2861em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3117em;\"><span style=\"top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.05724em;\">j</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span></span></span></span> 估计，有望保持相近 regret。</p>",
+        "slug": "2610.05220",
+        "chars": 1445,
+        "minutes": 4
+      }
+    },
+    {
+      "id": "arxiv:2610.30825",
+      "title": "Bezier-Guided Adaptive Flow for Cross-domain Sequential Recommendation",
+      "authors": "Ziang Lu, Yu Zhang, Xinzhe Jiang, Lei Sang, Yiwen Zhang",
+      "abstract": "Cross-domain sequential recommendation aims to alleviate data sparsity and cold-start problems by transferring useful preference knowledge across domains. However, users exhibit varying degrees of preference consistency across domains, while existing methods often rely on global alignment objectives or coarse-grained transfer strategies. Such approaches may introduce irrelevant information and provide limited flexibility in adapting semantic representations to individual user preferences. To address these challenges, we propose BGAFlow, a personalized framework that combines state-adaptive semantic evolution with user-specific transfer control. BGAFlow first establishes a shared semantic space through unified dual-domain pretraining with user profiles inferred by a large language model (LLM). Based on latent interest overlap, it then estimates a personalized horizon to determine the appropriate transfer extent for each user. To enable semantic adaptation, BGAFlow constructs a conditional Bezier curve as a geometric reference and learns a residual flow that progressively refines the trajectory based on intermediate preference states. The learned flow incorporates dynamic preference feedback to adjust transfer directions, while recommendation supervision and trajectory regularization encourage effective and smooth adaptation. Extensive experiments on real-world datasets demonstrate that BGAFlow consistently outperforms state-of-the-art baselines, validating the benefits of personalized transfer control and state-adaptive semantic evolution.",
+      "url": "https://arxiv.org/abs/2610.30825",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-23",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.75,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.75,
+      "rank": 3,
+      "summary": "跨域序列推荐常靠全局对齐把偏好搬过去，却忽略用户在不同域上的一致性差异，容易掺进无关语义。BGAFlow 先建共享语义空间，再按用户状态做自适应语义演化，并用用户级门控控制迁移强度，让迁移量随个人偏好一致性伸缩，而不是一刀切对齐。==跨域迁移的粒度应落在「这个用户在这两个域有多一致」，而不是全局一个对齐目标==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [],
+      "company_logos": []
+    },
+    {
+      "id": "doi:10.1007/s44163-026-02419-1",
+      "title": "Behavior lifetime modeling uses time sensitive behavioral signals to rank candidate items for purchase in E commerce recommendation",
+      "url": "https://link.springer.com/article/10.1007/s44163-026-02419-1",
+      "authors": [
+        "Yu Chen"
+      ],
+      "published": "2026-10-13",
+      "discovered_at": "2026-10-25",
+      "source": "web_search",
+      "company": [
+        "Jiangxi University of Software Professional Technology"
+      ],
+      "abstract": "Multi-behavior recommendation relies on heterogeneous user actions to infer purchase intent, but the purchase relevance of browsing, favoriting, and add-to-cart behaviors can change over time and become stale before prediction. To address this problem, we propose behavior lifetime modeling-based recommendation (BLMRec), a candidate-item purchase ranking framework that explicitly models the temporal validity of historical behaviors.\nBLMRec encodes each behavior according to its type and temporal distance from the prediction moment, and employs multi-window lifetime learning to estimate both short-term activation and long-term persistence. The resulting temporal validity and stagnation signals are used to suppress outdated auxiliary behaviors.\nBLMRec further performs candidate-conditioned matching between historical and candidate items through category, co-occurrence, co-purchase, and behavior-transition relations, followed by purchase-intent calibration for final ranking. Experiments on Taobao UserBehavior and RetailRocket, with 33.5 M and 1.35 M interactions after preprocessing, show that BLMRec improves Recall@20/NDCG@20 over the strongest baseline by 6.0%/7.3% and 6.9%/9.2%, respectively.\nFurther analyses indicate that the gains are associated with improved suppression of stale, weakly related, and high-auxiliary non-conversion signals.",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 3.65,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.08,
+      "adjusted_score": 3.73,
+      "rank": 4,
+      "summary": "多行为推荐里，浏览/收藏/加购对最终购买的相关性会随时间变「过期」。BLMRec 按行为类型与距预测时刻的时间距离编码每条行为，用多窗口寿命学习估计短期激活与长期留存，再把时效与停滞信号送入候选购买排序，避免把早已失效的行为当成强意图。==行为不是永久有效的标签——给每类行为建模「寿命」，排序才不会被过期信号带偏==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "Jiangxi University of Software Professional Technology",
+          "logo": null,
+          "hue": 280
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.25748",
+      "title": "MAPS: A Multi-Agent Personalized Script-Driven Video Advertising System Enhanced by Reinforcement Learning",
+      "authors": "Zhongyu Wang, Chen Zuo, Qingxuan Sun, Jiayang Qiao, Qiuhao Qian, Songyan Cui, Guocheng Chen",
+      "abstract": "With the rapid growth of online video consumption, video advertising has become a dominant component of digital advertising. Most personalized video advertising systems follow a retrieval-based paradigm, which matches ad content with user preferences in a feature space and recommends the most similar candidates. However, since the candidate creatives are pre-produced, this paradigm limits the granularity of personalization and leads to performance disparities across diverse user groups. To address this limitation, we propose a multi-agent personalized script-driven video advertising system (MAPS). We design four collaborative agents that form a closed-loop pipeline of user profile modeling, script generation, video synthesis, and feedback-driven iterative refinement. To train the Scripter Agent, we develop a reinforcement learning framework equipped with a multi-dimensional reward function, which steers the agent toward producing scripts that simultaneously align with user content preferences and target product information. Extensive offline experiments on representative datasets demonstrate that our approach achieves encouraging performance in generating and integrating personalized creatives. Online A/B experiments in a specific scenario in the Kuaishou advertising system show that MAPS improves CTR by 2.87%, CVR by 2.74%, and ARPU by 9.85% over the generative baseline.",
+      "url": "https://arxiv.org/abs/2610.25748",
+      "source": "arxiv",
+      "published": "2026-10-19",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-20",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "total_score": 3.85,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0.08,
+      "adjusted_score": 3.63,
+      "rank": 5,
+      "summary": "视频广告多半是「先产创意再检索匹配」，创意粒度粗、人群差异大。快手 MAPS 用四个协作 agent（画像→脚本→成片→闭环）按用户生成脚本驱动视频广告；相对检索式基线，CTR +2.87%、CVR +2.74%、ARPU +9.85%。==个性化粒度卡在「预制片」时，把创意生产放进多 agent 闭环，比在特征空间里再抠相似更直接==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [
+        "Kuaishou"
+      ],
+      "company_logos": [
+        {
+          "name": "Kuaishou",
+          "logo": "logos/kuaishou.png",
+          "hue": 21
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.30932",
+      "title": "UserArena: Benchmarking Interactive User Simulation for Long-Horizon Shopping Agents",
+      "authors": "Jujia Zhao, Jiakai Tang, Jing Yu, Wen Chen, Jian Wu, Han Zhu, Fei Sun, Suzan Verberne, Zhaochun Ren",
+      "abstract": "Agentic recommendation pursues shopper goals through sequences of context-dependent decisions. Developing and evaluating such policies requires faithful recommendation world models that capture both the interactive shopping environment and users' behavioral responses over long interactions. Existing resources rarely provide long-horizon, fine-grained real-user trajectories or support trajectory-level evaluation and offline validation against production A/B results. We introduce UserArena, a real-world e-commerce interactive benchmark containing 64,729 session trajectories from 11,010 users, spanning 566,102 items and 13 action types. UserArena pairs these trajectories with an interactive environment and supports offline validation against outcomes from a controlled production A/B test, enabling five-level evaluation from output validity and local decisions to sequential behavior, personalization, and outcomes. To improve simulator fidelity over these long-horizon interactions, we further propose On-Policy Trajectory Distillation (OPTD), which uses trajectory-level intent to provide dense teacher targets on student-generated rollouts. Experiments show that OPTD achieves the strongest overall fidelity among the evaluated simulators under UserArena's evaluation protocol and most closely reproduces the production policy effect in offline simulation.",
+      "url": "https://arxiv.org/abs/2610.30932",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-23",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.85,
+      "track_fit": "adjacent",
+      "track_penalty": 0.3,
+      "preference_bonus": 0,
+      "adjusted_score": 3.55,
+      "rank": 6,
+      "summary": "Agent 式购物推荐需要能撑长交互的世界模型，但现成资源少有细粒度真人轨迹，也难和线上 A/B 对齐。UserArena 放出 11,010 用户、64,729 会话轨迹（566,102 商品、13 类动作），配交互环境与轨迹级评估，支持离线策略对照生产 A/B。==没有长程真人轨迹与 A/B 锚点，agent 推荐的「世界模型」只能在玩具环境里自嗨==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [],
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.31506",
+      "title": "FairFRESH: A Neuro-Symbolic Framework for Fair and Explainable Household Food Recommendation",
+      "authors": "Kodur Sai Vinay Sathvik, Kakoli Bora, Tejaswini R. M",
+      "abstract": "Recommender systems typically serve one user at a time. However, in households, members share a finite pantry and follow different dietary rules, making independent recommendations prone to resource conflicts and dietary violations. We formulate household food recommendation as constrained fair division and present FairFRESH, a neuro-symbolic framework that learns per-member utilities, allocates foods under explicit welfare objectives, enforces dietary rules through a deterministic filter, and explains recommendations using Shapley and Banzhaf attributions. Theoretically, we show that no finite penalty guarantees compliance near a dietary-rule threshold, establish approximation guarantees for greedy allocation under utilitarian and smoothed Nash objectives in the stock-free model before filtering, and characterize the scale invariance of Nash welfare. We also use the minimax theorem to analyze rotating shared meals. On NHANES-derived data, the learned utility model achieves Recall@20 of 0.293, outperforming five learned recommenders (at most 0.244) but not a previous-day repetition heuristic (0.321). On held-out four-person households, Nash allocation reduces Gini disparity by 42% relative to conflict resolution while improving Recall@20 from 0.180 to 0.197. It comes within 2% of an upper bound on the smoothed Nash optimum, and rescaling one member's utilities changes at most 1.5% of assignments. All recommendations satisfy the encoded dietary rules, while attribution scores correlate with utility loss upon component removal (r = 0.76). In simulation, shared meals reduce pantry use by about one-third, and weekly rotation increases the worst-off member's utility by 38% over the best fixed meal.",
+      "url": "https://arxiv.org/abs/2610.31506",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-23",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 3.55,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.55,
+      "rank": 7,
+      "summary": "家庭共享冰箱、成员饮食规则不同，按人独立推荐会撞资源、破禁忌。FairFRESH 把家用食品推荐写成带约束的公平分配：学每人效用、按福利目标分配、用确定性过滤器强制饮食规则，再用 Shapley/Banzhaf 解释。学得效用 Recall@20=0.293；公平分配相对冲突消解把 Gini 差距降 42%，Recall@20 从 0.180 提到 0.197，距平滑 Nash 上界约 2%，且全部推荐满足规则。==家庭推荐的硬约束是共享库存与饮食规则——效用学习之后必须有可强制的过滤器==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [],
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.30999",
+      "title": "Truthful by Omission: Click Thinning for LLM-Native Advertising",
+      "authors": "Junhua Liu, Zhicheng Liang, Zejun Zhang, Langzhou He, Feng Qian",
+      "abstract": "Generative AI assistants are becoming an advertising medium, embedding sponsored content in their answers. This setting departs from classical position auctions in two ways: an ad's click-through rate depends on the passage that hosts it, and because users stop at their first click, earlier ads take clicks from later ones. This competition for clicks makes truthfulness delicate: a higher bid can reshape the allocation and put a competitor ahead of the bidder, reducing the bidder's clicks. Existing mechanisms either attain a constant fraction of the optimal welfare (advertisers' total click value) but are not known to be truthful, or are truthful but their welfare guarantee degrades as the number of passages grows. We achieve both even when the answer and its editorial order are fixed before bidding. Assuming each ad's click-through rate when reached is known and unaffected by omitting other ads, we give a computationally efficient mechanism that is truthful in expectation and attains at least half the optimal welfare under free reordering. Our key idea, click thinning, omits ads at random, showing earlier ads less often so that each ad's overall click probability no longer depends on the order of the ads. Welfare maximization then reduces to a tractable matching problem, and solving it exactly with VCG-style payments makes truthful bidding optimal in expectation. Characterizing the click probabilities that omission can achieve sharpens the approximation factor from $2$ to $2-(1-δ)^{K-1}$ when at most $K$ ads are shown and each click-through rate is at most $δ$. This factor is the best possible for any order-preserving rule, even one that ignores incentives and computation, so truthfulness and computational efficiency incur no additional worst-case loss.",
+      "url": "https://arxiv.org/abs/2610.30999",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-23",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "total_score": 3.45,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.45,
+      "rank": 8,
+      "summary": "生成式助手把广告嵌进回答：CTR 依赖宿主段落，且用户常点第一个就停，前面广告会抢走后面的点击，抬价可能反把对手推到自己前面。现有机制要么福利近似好但不保诚实，要么诚实但福利随广告数变差。本文针对这种「点击竞争」重新设计机制，把段落依赖与早停外部性写进分配与支付。==助手内广告不是位置拍卖的平移——段落决定 CTR、早停制造外部性，诚实性与福利要一起重做==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [],
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.29228",
+      "title": "From Scores to Safe Sets: Exact Safety--Constrained Decoding for Medication Recommendation",
+      "authors": "Animesh Agarwal, Meysam Ghaffari, Nina Fatehi, Anushka Swarup, Carlos Morato",
+      "abstract": "Recent generative medication recommendation systems ultimately produce sets of drugs, but drug--drug interaction (DDI) constraints depend on the set as a whole. A natural post-hoc approach is to first predict medications and then locally repair interacting pairs by removing one drug at a time. We ask whether this local repair step itself introduces avoidable error. Using fixed medication scores from FLAME's frozen classifier on MIMIC-III, we compare increasingly strong local repair strategies with an exact global decoder while holding the scores, output size, and DDI constraint fixed. The global decoder jointly selects the highest-scoring feasible medication set using mixed-integer linear programming. Across validation and test splits, global decoding consistently achieves higher Jaccard similarity than greedy repair, degree-aware repair, and degree-aware repair strengthened with exhaustive 1-swap local search. Its advantage is small under loose DDI constraints and becomes larger as the constraint tightens; on the test split it reaches +0.0064 Jaccard over the strongest local baseline at the strict DDI operating point. The finding also holds across a fine accuracy--DDI sweep at matched realized DDI exposure and under three score representations. At the strict setting, global decoding retains more true-positive medications while removing more false positives. These results show that medication recommendation is not only a representation-learning problem: even with a frozen clinical model, how its scores are converted into a constrained medication set can materially affect the final prediction.",
+      "url": "https://arxiv.org/abs/2610.29228",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-22",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.45,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.45,
+      "rank": 9,
+      "summary": "生成式用药推荐最终产出的是「药集合」，药-药相互作用（DDI）约束也作用在整集上；常见做法是先预测再局部删药修复。本文固定 FLAME 在 MIMIC-III 上的分数、输出规模与 DDI 约束，对比越来越强的局部修复与用混合整数规划做精确全局解码：局部修复本身会引入可避免误差，全局联合选可行最高分集合更稳。==集合级约束不要指望事后局部修补——分数固定时，全局可行解码能消掉局部修复带来的额外误差==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [],
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.30359",
+      "title": "FAIRGate: Agentic Runtime Policy Selection and Verified Repair for Fairer Recommendation Delivery",
+      "authors": "Navkar Jain, Enock Ayiku, Kenneth Fletcher",
+      "abstract": "Fairness-aware recommender systems often encode one fairness objective during training or apply a fixed re-ranking rule after scoring. In deployment, however, the appropriate fairness action can vary across requests because the candidate pool, item metadata, exposure debt, user preference history, and utility budget all change at runtime. We propose FAIRGate, a model-agnostic delivery controller that places an agentic policy-selection layer between a base ranker and the final top-K list. The agent does not define fairness objectives from scratch. It chooses from a predefined policy library covering long-tail exposure, item-group exposure balance, concentration control, calibration protection, and abstention. A deterministic executor then applies the selected policy through constrained repair, and a validator accepts the result only when relevance, feasibility, metadata, calibration, and audit constraints are satisfied. The final language-model component receives only the verified audit trace and produces evidence-linked narration after the ranking decision is fixed. This design gives the agent runtime responsibility while keeping fairness enforcement measurable, bounded, and replayable.",
+      "url": "https://arxiv.org/abs/2610.30359",
+      "source": "arxiv",
+      "published": "2026-10-21",
+      "discovered_at": "2026-10-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "fetch_method": "cached_oai_recovery",
+        "announced": "2026-10-23",
+        "cache_path": ".cache/arxiv_oai/cs_2026-10-20_open.json"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 3,
+        "evidence_quality": 1,
+        "timeliness": 4
+      },
+      "total_score": 3.2,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.2,
+      "rank": 10,
+      "summary": "公平推荐常在训练里写死一个目标，或在打分后套固定重排；线上却因候选池、曝光欠债、偏好史与效用预算不同，合适动作会随请求变。FAIRGate 在基座排序与最终 top-K 之间加一层策略选择 agent，从预设策略库（长尾曝光、组曝光均衡、集中度控制、校准保护等）里按请求选策略，而不是现场发明公平目标。==部署期的公平是「选哪条已验证策略」，不是每次在线重新定义公平==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company": [],
+      "company_logos": []
+    }
+  ],
+  "code_projects": [],
+  "warnings": [
+    "discovery_network_failures: live sources DNS resolution unavailable; arXiv OAI cache used",
+    "git_sync_failed: git pull --rebase refused because of existing unstaged changes",
+    "coverage_source_diversity: arxiv=90%; no further eligible unseen alternative source after dedup",
+    "code_projects_unavailable: live GitHub/HuggingFace DNS failures; offline completion produced empty project lanes",
+    "venue_verification_unavailable: arXiv API DNS failure; no unverified venue badges added"
+  ],
+  "coverage": {
+    "core": true,
+    "industry": true,
+    "recent": true,
+    "source_diversity": false
+  },
+  "scenario_by": "grok-bot"
+}
