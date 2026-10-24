@@ -503,7 +503,7 @@
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
       '<div class="weekly-rule"><a class="open-raw" href="' + reportHtmlHref(r.date, r.track) +
-      TR('" target="_blank" rel="noopener">独立报告页 report.html &#8599;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读', '" target="_blank" rel="noopener">Standalone report page &#8599;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; Deep dives') +
+      TR('" target="_blank" rel="noopener">独立报告页 report.html &#8599;</a> · <a class="open-raw" href="deep-readings/">&#128214; 深度解读', '" target="_blank" rel="noopener">Standalone report page &#8599;</a> · <a class="open-raw" href="deep-readings/">&#128214; Deep dives') +
       (DATA.deep_reading_entries ? " " + DATA.deep_reading_entries + TR(" 篇", "") : "") + " &#8594;</a></div>";
     setMast(TR("第 ", "Issue ") + issueNo(r.idx) + TR(" 期", ""), dateLine(r.date));
     setBodyTrack(r.track);
@@ -743,7 +743,7 @@
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
       TR('<div class="weekly-rule">排序：adjusted_score（含偏好加分）降序，其次 total_score；按 arXiv id / URL / 标题去重 · ', '<div class="weekly-rule">Order: adjusted_score (with preference bonus) desc, then total_score; deduped by arXiv id / URL / title · ') +
-      TR('<a class="open-raw" href="./">今日 &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读 &#8594;</a></div>', '<a class="open-raw" href="./">Today &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; Deep dives &#8594;</a></div>');
+      TR('<a class="open-raw" href="./">今日 &#8594;</a> · <a class="open-raw" href="deep-readings/">&#128214; 深度解读 &#8594;</a></div>', '<a class="open-raw" href="./">Today &#8594;</a> · <a class="open-raw" href="deep-readings/">&#128214; Deep dives &#8594;</a></div>');
     setMast(TR("第 ", "Issue ") + (DATA.days.length || DATA.day_count || "") + TR(" 期", ""), dateLine(DATA.latest_date || ""));
     setBodyTrack(r.track);
   }
