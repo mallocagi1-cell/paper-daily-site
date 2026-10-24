@@ -13,6 +13,14 @@
     personalization: TR("个性化推荐", ""), generative: TR("生成式推荐", ""), retrieval: TR("检索与RAG", ""),
     agentic: TR("智能体搜索", ""), infra: TR("系统与索引", ""),
   };
+  // Track scope (redefined 2026-10-24): shown as a tooltip on the track tabs.
+  const TRACK_DESC = {
+    personalization: TR("推荐建模（非生成式）：长序列/用户兴趣建模、多目标/多任务、模型结构、特征交叉、CTR/CVR、位置偏差、校准，以及推荐模型 Scaling Law / Scaling Up",
+      "Recsys modelling (non-generative): long user-behaviour sequences, user interest, multi-objective/multi-task, architecture, feature crossing, CTR/CVR, position bias, calibration, plus recsys scaling laws / scaling up"),
+    generative: TR("生成式推荐：语义 ID、生成式召回/排序、端到端生成式链路，以及基于 LLM 的推荐（含对话式推荐）",
+      "Generative recommendation: semantic IDs, generative retrieval/ranking, end-to-end generative pipelines, plus LLM-based recommenders incl. conversational recommendation"),
+  };
+  function trackTitle(t) { return TRACK_DESC[t] ? ' title="' + escapeHtml(TRACK_DESC[t]) + '"' : ""; }
   const SOURCE_LABELS = {
     arxiv: "arXiv", huggingface: "HuggingFace", semantic_scholar: "Semantic Scholar",
     conference_papers: "Conference", github: "GitHub", web_search: TR("网页来源", "Web source"), blog_rss: TR("技术博客", "Tech blog"),
@@ -459,7 +467,7 @@
     const tabs = r.tracks.map(function (t) {
       const c = meta[t] && meta[t].papers_selected != null ? meta[t].papers_selected : "-";
       return '<a class="track-tab ' + trackClass(t) + (t === r.track ? " active" : "") + '" data-track="' + escapeHtml(t) +
-        '" href="' + viewHash(r.date, t) + '"' + (t === r.track ? ' aria-current="page"' : "") + "><b>" + escapeHtml(trackLabel(t)) +
+        '" href="' + viewHash(r.date, t) + '"' + trackTitle(t) + (t === r.track ? ' aria-current="page"' : "") + "><b>" + escapeHtml(trackLabel(t)) +
         '</b><span class="rs">' + escapeHtml(TRACK_ZH[t] || "") + " · <em>" + escapeHtml(c) + TR("</em> 篇</span></a>", "</em> papers</span></a>");
     }).join("");
     main.innerHTML =
@@ -660,7 +668,7 @@
     const tabs = TRACKS.map(function (t) {
       const c = counts[t] || 0;
       return '<a class="track-tab ' + trackClass(t) + (t === r.track ? " active" : "") + (c ? "" : " weekly-empty-tab") + '" data-track="' +
-        escapeHtml(t) + '" href="' + weeklyHash(r.week.week_start, t) + '"><b>' + escapeHtml(trackLabel(t)) +
+        escapeHtml(t) + '" href="' + weeklyHash(r.week.week_start, t) + '"' + trackTitle(t) + '><b>' + escapeHtml(trackLabel(t)) +
         TR('</b><span class="rs">本周去重 <em>', '</b><span class="rs">unique this week <em>') + escapeHtml(c) + TR("</em> 篇</span></a>", "</em> papers</span></a>");
     }).join("");
     const w = r.week;
