@@ -549,7 +549,38 @@
     const a = document.querySelector(".lang-tg[data-base]");
     if (a) a.setAttribute("href", a.getAttribute("data-base") + (location.hash || ""));
   }
+  // ---------- clean home URL (2026-10-24) ----------
+  // Home is the bare directory ("/" or "/en/"): strip "index.html" and a bare "#/" from the address
+  // bar (old shared links index.html#/... and #/... keep working), and handle same-page links to
+  // the directory root ("./", the logo, 今日) with pushState instead of a reload or a "#/" hash.
+  function homePath() { return location.pathname.replace(/index\.html$/, ""); }
+  function cleanUrl() {
+    const h = location.hash, bare = h === "" || h === "#" || h === "#/";
+    const path = homePath();
+    if (path !== location.pathname || (bare && h !== "")) {
+      try { history.replaceState(history.state, "", path + location.search + (bare ? "" : h)); } catch (e) { /* ignore */ }
+    }
+  }
+  let lastHref = null;
+  function renderIfMoved() { cleanUrl(); if (location.href !== lastHref) render(); }
+  document.addEventListener("click", function (ev) {
+    if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    const a = ev.target && ev.target.closest ? ev.target.closest("a[href]") : null;
+    if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+    let u;
+    try { u = new URL(a.getAttribute("href"), location.href); } catch (e) { return; }
+    if (u.origin !== location.origin || u.hash || u.pathname.replace(/index\.html$/, "") !== homePath()) return;
+    ev.preventDefault();
+    if (lastHref === null) { location.href = u.pathname; return; } // data.json not rendered yet
+    if (location.hash || location.search !== u.search) {
+      try { history.pushState(null, "", homePath() + u.search); } catch (e) { location.href = u.pathname; return; }
+    }
+    render();
+    window.scrollTo(0, 0);
+  });
   function render() {
+    cleanUrl();
+    lastHref = location.href;
     syncLangToggle();
     const route = parseRoute();
     try { setDocMeta(route); } catch (e) { /* never block rendering */ }
@@ -712,7 +743,7 @@
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
       TR('<div class="weekly-rule">排序：adjusted_score（含偏好加分）降序，其次 total_score；按 arXiv id / URL / 标题去重 · ', '<div class="weekly-rule">Order: adjusted_score (with preference bonus) desc, then total_score; deduped by arXiv id / URL / title · ') +
-      TR('<a class="open-raw" href="#/">今日 &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读 &#8594;</a></div>', '<a class="open-raw" href="#/">Today &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; Deep dives &#8594;</a></div>');
+      TR('<a class="open-raw" href="./">今日 &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; 深度解读 &#8594;</a></div>', '<a class="open-raw" href="./">Today &#8594;</a> · <a class="open-raw" href="deep-readings/index.html">&#128214; Deep dives &#8594;</a></div>');
     setMast(TR("第 ", "Issue ") + (DATA.days.length || DATA.day_count || "") + TR(" 期", ""), dateLine(DATA.latest_date || ""));
     setBodyTrack(r.track);
   }
@@ -931,7 +962,8 @@
           if (counter) foot.appendChild(counter);
         }
         render();
-        window.addEventListener("hashchange", render);
+        window.addEventListener("hashchange", renderIfMoved);
+        window.addEventListener("popstate", renderIfMoved);
       })
       .catch(function (err) {
         document.getElementById("main").innerHTML = '<div class="empty-state"><h3>Failed to load data.json</h3><p>' + escapeHtml(String(err)) + "</p></div>";
