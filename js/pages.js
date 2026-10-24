@@ -6,11 +6,11 @@
   // Display order everywhere (user preference); data.json "tracks" overrides at boot.
   let TRACKS = ["generative", "personalization", "retrieval", "agentic", "infra"];
   let TRACK_LABELS = {
-    personalization: "Personalization", generative: "Generative", retrieval: "Retrieval",
+    personalization: "Personalization", generative: "Generative", retrieval: "AI Search",
     agentic: "Agentic", infra: "Infra",
   };
   let TRACK_ZH = {
-    personalization: TR("个性化推荐", ""), generative: TR("生成式推荐", ""), retrieval: TR("检索与RAG", ""),
+    personalization: TR("个性化推荐", ""), generative: TR("生成式推荐", ""), retrieval: TR("AI 搜索", ""),
     agentic: TR("智能体搜索", ""), infra: TR("系统与索引", ""),
   };
   // Track scope (redefined 2026-10-24): shown as a tooltip on the track tabs.
@@ -19,7 +19,26 @@
       "Recsys modelling (non-generative): long user-behaviour sequences, user interest, multi-objective/multi-task, architecture, feature crossing, CTR/CVR, position bias, calibration, plus recsys scaling laws / scaling up"),
     generative: TR("生成式推荐：语义 ID、生成式召回/排序、端到端生成式链路，以及基于 LLM 的推荐（含对话式推荐）",
       "Generative recommendation: semantic IDs, generative retrieval/ranking, end-to-end generative pipelines, plus LLM-based recommenders incl. conversational recommendation"),
+    retrieval: TR("AI 搜索：查询理解与改写、语义召回、多模态匹配、相关性与重排、RAG 链路、问答与深度研究；Agent 论文只收信息获取类，通用 Agent 不收（2026-10-24 起合并原检索与智能体搜索）",
+      "AI Search: query understanding & rewriting, semantic retrieval, multimodal matching, relevance & reranking, RAG pipelines, QA & deep research; agent papers only when the task is information-seeking, generic agents excluded (merges the former Retrieval and Agentic tracks from 2026-10-24)"),
+    agentic: TR("智能体搜索（旧方向，仅 2026-10-24 之前的日报；之后并入 AI 搜索）", "Agentic search (legacy track, issues before 2026-10-24; merged into AI Search afterwards)"),
   };
+  // AI Search merge (2026-10-24): `retrieval` slug = AI Search; agentic -> retrieval alias from the cutover on.
+  let AI = { cutover: "2026-10-24", track: "retrieval", alias: { agentic: "retrieval" }, subarea_labels: {
+    query: { zh: "查询理解与改写", en: "Query Understanding & Rewriting" }, retrieval: { zh: "语义召回", en: "Semantic Retrieval" },
+    multimodal: { zh: "多模态匹配", en: "Multimodal Matching" }, relevance: { zh: "相关性与重排", en: "Relevance & Reranking" },
+    rag: { zh: "RAG 链路", en: "RAG Pipeline" }, qa: { zh: "问答与深度研究", en: "QA & Deep Research" } } };
+  function aiMerged(date) { return !!date && date >= AI.cutover; }
+  function aliasTrack(t, date, available) {
+    const to = AI.alias && AI.alias[t];
+    return to && aiMerged(date) && (!available || (available.indexOf(t) === -1 && available.indexOf(to) !== -1)) ? to : t;
+  }
+  function subareaHtml(p, track) {
+    if (track !== AI.track || !p || !p.subarea) return "";
+    const L = (AI.subarea_labels || {})[p.subarea];
+    if (!L) return "";
+    return '<span class="chip sub" title="' + escapeHtml(TR("AI 搜索子方向 · " + L.en, "AI Search sub-area · " + L.zh)) + '">' + escapeHtml(TR(L.zh, L.en)) + "</span>";
+  }
   function trackTitle(t) { return TRACK_DESC[t] ? ' title="' + escapeHtml(TRACK_DESC[t]) + '"' : ""; }
   const SOURCE_LABELS = {
     arxiv: "arXiv", huggingface: "HuggingFace", semantic_scholar: "Semantic Scholar",
@@ -278,7 +297,7 @@
       '<div class="art" data-n="' + pad2(p.rank || i + 1) + '"><div>' +
       TR('<div class="k">LEAD STORY · 今日必读', '<div class="k">LEAD STORY · Must-read today') + (comp.length ? " · " + compHtml(p, 3).join(" / ") : "") + "</div>" +
       '<h2><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h2>" +
-      (venueHtml(p) ? '<div class="lead-venue">' + venueHtml(p) + "</div>" : "") +
+      (venueHtml(p) || subareaHtml(p, track) ? '<div class="lead-venue">' + venueHtml(p) + subareaHtml(p, track) + "</div>" : "") +
       "<p>" + hlText(escapeHtml(p.summary || "")) + "</p></div>" +
       '<div class="btns">' + btns + "</div></div>" +
       '<div class="side"><div class="ring">' + radarSvg(p.scores, 170) +
@@ -292,7 +311,7 @@
   function renderCard(p, i, track) {
     const pid = pidOf(p, i);
     const dr = p.deep_reading && p.deep_reading.status === "completed" ? p.deep_reading : null;
-    let chips = venueHtml(p) + compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
+    let chips = venueHtml(p) + subareaHtml(p, track) + compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
     if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
     const ins = insightInner(p);
     let foot = "<span>" + escapeHtml(sourceLabel(p.source, p.url)) + "</span>";
@@ -408,6 +427,13 @@
     const day = DATA.days[idx];
     const tracks = orderTracks(day.tracks);
     let track = tracks[0] || "";
+    if (route.track) {
+      const to = aliasTrack(route.track, day.date, tracks); // agentic -> AI Search from the cutover
+      if (to !== route.track) {
+        route.track = to;
+        try { history.replaceState(null, "", viewHash(day.date, to) + (route.focus ? "?p=" + encodeURIComponent(route.focus) : "")); } catch (e) { /* ignore */ }
+      }
+    }
     if (route.track) {
       if (tracks.indexOf(route.track) !== -1) track = route.track;
       else if (!notice) notice = day.date + TR(" 没有 ", " has no ") + trackLabel(route.track) + TR(" 日报，已显示 ", " issue; showing ") + trackLabel(track);
@@ -605,11 +631,14 @@
     });
     return best;
   }
+  // weeks whose Sunday is on/after the AI Search cutover have no Agentic tab (weekly.py pools its info-seeking papers into AI Search)
+  function weekTracks(w) { return w && Array.isArray(w.tracks) && w.tracks.length ? orderTracks(w.tracks) : TRACKS; }
   function weeklyHash(monday, track) { return "#/weekly/" + monday + "/" + track; }
   function goWeek(i) {
     const w = (DATA.weeks || [])[i];
     if (!w) return;
-    const h = weeklyHash(w.week_start, state.track && TRACKS.indexOf(state.track) !== -1 ? state.track : TRACKS[0]);
+    const wt = weekTracks(w), st = state.track ? aliasTrack(state.track, w.week_end, wt) : null;
+    const h = weeklyHash(w.week_start, st && wt.indexOf(st) !== -1 ? st : wt[0]);
     if (location.hash === h) render();
     else location.hash = h;
   }
@@ -623,9 +652,11 @@
         notice = route.week + TR(" 所在周没有日报，已显示 ", " falls in a week without issues; showing ") + weekRangeLabel(ws[idx]);
       }
     }
-    let track = TRACKS[0];
+    const wt = weekTracks(ws[idx]);
+    let track = wt[0];
+    if (route.track) route.track = aliasTrack(route.track, ws[idx].week_end, wt);
     if (route.track) {
-      if (TRACKS.indexOf(route.track) !== -1) track = route.track;
+      if (wt.indexOf(route.track) !== -1) track = route.track;
       else if (!notice) notice = TR("未知方向 ", "Unknown track ") + route.track + TR("，已显示 ", "; showing ") + trackLabel(track);
     }
     return { idx: idx, week: ws[idx], track: track, notice: notice };
@@ -665,7 +696,7 @@
   function renderWeeklyShell(r) {
     const main = document.getElementById("main");
     const counts = r.week.unique_counts || {};
-    const tabs = TRACKS.map(function (t) {
+    const tabs = weekTracks(r.week).map(function (t) {
       const c = counts[t] || 0;
       return '<a class="track-tab ' + trackClass(t) + (t === r.track ? " active" : "") + (c ? "" : " weekly-empty-tab") + '" data-track="' +
         escapeHtml(t) + '" href="' + weeklyHash(r.week.week_start, t) + '"' + trackTitle(t) + '><b>' + escapeHtml(trackLabel(t)) +
@@ -696,11 +727,11 @@
       scoreLine += TR(" · 偏好 ", " · bonus ") + (bonus === null ? "-" : (bonus >= 0 ? "+" : "") + bonus.toFixed(2)) + " · Adjusted " + fmt2(paper.adjusted_score);
     }
     const apps = (paper.appearances || []).map(function (a) {
-      return '<a href="' + viewHash(a.date, track) + "?p=" + encodeURIComponent(a.id || pid) + '">' + escapeHtml(shortDay(a.date)) +
+      return '<a href="' + viewHash(a.date, a.track || track) + "?p=" + encodeURIComponent(a.id || pid) + '">' + escapeHtml(shortDay(a.date)) +
         (a.rank != null ? TR(" · 当日 #", " · #") + escapeHtml(a.rank) : "") + "</a>";
     }).join("");
     const dr = paper.deep_reading && paper.deep_reading.status === "completed" ? paper.deep_reading : null;
-    let chips = venueHtml(paper) + compHtml(paper, 3).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
+    let chips = venueHtml(paper) + subareaHtml(paper, track) + compHtml(paper, 3).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
     if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
     const dl = dimLine(paper.scores);
     const first = paper.best_date ? TR("首见 ", "First seen ") + escapeHtml(shortDay(paper.best_date)) : "";
@@ -887,6 +918,10 @@
         if (Array.isArray(DATA.tracks) && DATA.tracks.length) TRACKS = DATA.tracks.slice();
         if (DATA.track_labels) TRACK_LABELS = Object.assign({}, TRACK_LABELS, DATA.track_labels);
         if (DATA.track_labels_zh) TRACK_ZH = Object.assign({}, TRACK_ZH, DATA.track_labels_zh);
+        if (DATA.ai_search) {
+          AI = Object.assign({}, AI, DATA.ai_search);
+          if (AI.desc) TRACK_DESC[AI.track] = TR(AI.desc.zh, AI.desc.en);
+        }
         const foot = document.getElementById("site-foot");
         if (foot && DATA.latest_date) {
           const counter = document.getElementById("busuanzi_container_site_pv"); // 不蒜子 counter: keep the live node

@@ -1,7 +1,7 @@
 {
   "date": "2026-10-24",
   "track": "retrieval",
-  "scenario": "今天 10 篇以 RAG 链路里的检索环节为主：混合检索什么时候反而拉低效果，知识库修订后要重算多少分块向量，多模态检回结果怎么按需压缩，检索证据偏向干扰答案时模型会不会选错。另有快手 OneLatent 把推荐大模型的推理文本压成 3 个隐 token，以及面向 Mathlib 定理库和药物初筛的专用检索。",
+  "scenario": "今天 10 篇覆盖一条问答链路的几个环节。检索环节有三篇：混合检索在哪些查询上反而不如只用向量检索，Lean Finder V2 用强化学习生成短查询来训练 Mathlib 定理检索，SurveyGraph 沿方法关系图为综述的每一节检索论文。RAG 链路有四篇：知识库修订后要重算多少分块向量，CANOPY 按查询把多模态检回内容裁到句子、表格行或视频片段，层级 RAG 里大模型逐层选章节时怎样用一次前向代替串行解码，GBOR-RAG 从条目–基因图里取出证据子图交给大模型写解读。问答端，JCA 让模型逐条核对问题里的条件，避免选中在检索结果里出现更多的干扰答案。工业侧有两篇：阿里云 AI Search 从检索引擎到 Embedding 模型的全栈优化，以及腾讯云 TokenHub 把联网搜索做成模型自己调用的工具、引用来源随答案一起返回的接口。",
   "stats": {
     "papers_scored": 11,
     "papers_selected": 10,
@@ -33,6 +33,7 @@
       "key_insight": "",
       "card_status": "done",
       "abstract": "Hybrid retrieval, which fuses a sparse lexical retriever with a dense neural one, is widely recommended in the software documentation surveyed in September 2026, usually with reciprocal rank fusion (RRF), on the strength of aggregate gains. We ask what fusion costs on individual queries, treating \"do not fuse\" as a first-class outcome, in the setting in which hybrid retrieval is deployed: a standard Anserini BM25, five dense encoders spanning 22M-596M parameters and three model generations, a learned-sparse (SPLADE) alternative, and a cross-encoder second stage, on seven BEIR datasets and three fusion functions. Even the best method, dense-weighted score interpolation, ranks relevant documents below the better of its two components on 13-48% of queries and below the deployable dense-only retriever on 8-21%, while beating dense-only in aggregate on every corpus with the primary encoder; the downside is significant under loss-averse risk-sensitive evaluation on six of the seven corpora. We call this loss the fusion tax. It is mostly a ranking effect that preserves recall in aggregate, it is most likely on the queries that only one retriever covers, and it persists across the encoder ladder and the SPLADE substitution. RRF carries the higher tax wherever the dense retriever is clearly stronger and only beats dense-only where the two components are balanced. Fusion failure is weakly predictable within a corpus but transfers unreliably across corpora, because the features that predict it change sign with the sparse-dense balance. A cross-encoder recovers part of the tax only where it is itself reliable. We distill these findings into guidance that keys the fusion decision to the measured sparse-dense balance of the target corpus.",
+      "subarea": "retrieval",
       "company_logos": [],
       "deep_reading": {
         "paper_id": "arxiv:2610.30612",
@@ -69,6 +70,7 @@
       "key_insight": "",
       "card_status": "done",
       "abstract": "Chunking strategies for retrieval-augmented generation are almost always evaluated on a static snapshot, yet the documents underlying a knowledge base continue to change. Because chunks are embedded independently, a boundary that moves after an edit forces unchanged text to be re-embedded. We measure this update cost on 120 pairs of adjacent Chinese and English Wikipedia revisions for three stateless chunkers (non-overlapping fixed-size, recursive paragraph-first, and content-defined chunking) under a strict byte-identical reuse rule and a frozen dense encoder. On the 116-article common-success pool, with frozen, length-calibrated parameters, fixed-size chunking recomputes 57-68% of its full new-version embedding-input workload, recursive chunking 38-56%, and content-defined chunking 43-54%, while at these parameters mean evidence recall under a fixed 2048-token retrieval budget differs by less than two percentage points within either language. A cost-only parameter grid shows that the ranking of the two content-aware chunkers changes with chunk-length settings, whereas non-overlapping fixed-size chunking has the highest recomputation cost in every length-matched condition. Update cost is therefore a substantial, parameter-sensitive dimension that static retrieval evaluations do not expose and that should be reported alongside retrieval quality.",
+      "subarea": "rag",
       "company_logos": [],
       "deep_reading": {
         "paper_id": "arxiv:2610.31019",
@@ -83,50 +85,6 @@
     },
     {
       "rank": 3,
-      "id": "arxiv:2610.30675",
-      "title": "OneLatent: Latent Reasoning for Efficient Foundation Recommendation Models",
-      "url": "https://arxiv.org/abs/2610.30675",
-      "authors": "Hao Jiang, Peiru Du, Pengfei Yao, Mengting Li, Siyuan Lou, Kuo Cai, Sheng Yu, Qiang Luo, Jian Liang, Ruiming Tang, Fei Pan, Peng Jiang, Wenwu Ou",
-      "company": [
-        "Kuaishou"
-      ],
-      "source": "arxiv",
-      "published": "2026-10-22",
-      "track_fit": "adjacent",
-      "total_score": 4.4,
-      "preference_bonus": 0.2,
-      "adjusted_score": 4.6,
-      "scores": {
-        "business_relevance": 4,
-        "technical_novelty": 5,
-        "practicality": 5,
-        "evidence_quality": 5,
-        "timeliness": 5
-      },
-      "summary": "用大模型做推荐底座时，先生成一段自然语言推理（CoT）再输出物品语义编码（SID），推理文本很长，吞吐跟着下降。快手的 OneLatent 在用户上下文和目标 SID 之间插入 3 个可学习的特殊 token：训练时先让模型在这 3 个 token 之后复现教师大模型写的推理文本，再改成在它们之后直接预测 SID；上线时只输入这 3 个 token，不生成推理文字。教师推理从推测意图、给点击物品打分、解释点击原因三个角度写。工业数据集上，SID@64 比 OneReason-CoT 先写推理再答的模式高 17.44%；但和用同样教师推理训练、直接作答的最强对照相比只高 1.58%，大部分提升来自教师推理数据。==推理位置固定只有 3 个，解码不随推理长度增长==，吞吐是显式推理的 17.49 倍。本地生活广告 A/B 测试估算收入提升 9.6%。",
-      "key_insight": "",
-      "card_status": "done",
-      "abstract": "Large language models (LLMs) have demonstrated strong reasoning capabilities, motivating their use as the backbone of foundation recommendation models (FRMs). Existing methods enhance recommendations through explicit Chain-of-Thought (CoT) reasoning under a Think-then-Answer paradigm. However, explicit CoT incurs substantial inference overhead by generating lengthy reasoning traces and relies on manually designed templates that struggle to capture diverse, dynamic user interests. We propose OneLatent, an efficient latent reasoning framework that compresses explicit reasoning traces into several learnable latent tokens, enabling Latent-Reason-then-Answer inference without generating verbose traces. OneLatent first introduces Multi-View Adaptive CoT (MV-ACoT), which creates diverse, high-quality teacher-generated supervision by exploring user interests from multiple perspectives and automatically adapting reasoning complexity to each instance. Building on pretrained FRMs, it then uses a three-stage latent-token alignment paradigm to progressively internalize CoT traces into learnable latent tokens. Experiments on an industrial-scale Kuaishou dataset and the public Kuaishou LLM-Rec benchmark show that OneLatent consistently outperforms explicit CoT-based methods and traditional baselines. Compared with the Think and No-Think variants of FRMs, OneLatent improves SID@64 by 17.44% and 9.33%, respectively, while achieving over 17x higher online inference throughput. An online A/B test in Kuaishou's local-services advertising scenario shows an estimated 9.6% revenue lift over strong online baselines.",
-      "company_logos": [
-        {
-          "name": "Kuaishou",
-          "logo": "logos/kuaishou.png",
-          "hue": 21
-        }
-      ],
-      "deep_reading": {
-        "paper_id": "arxiv:2610.30675",
-        "title": "OneLatent: Latent Reasoning for Efficient Foundation Recommendation Models",
-        "status": "completed",
-        "content": "把大语言模型当作推荐底座时，一种做法是让模型先写一段自然语言推理（CoT），再输出下一个物品的语义编码（SID，把物品映射成三层离散编码的标识）。推理文本比三层 SID 长得多，解码时间和吞吐都被它拖住；而且此前的 OneReason 工作已经报告，同一个模型先推理再作答，并不稳定地好于直接作答。快手这篇 OneLatent 的做法是在用户上下文后面接 3 个固定的特殊 token，训练分几步：先让模型在这 3 个 token 之后复现教师大模型写的推理文本，再改成在它们之后直接输出目标 SID；上线时只接这 3 个 token，不生成任何推理文字。在快手本地生活工业数据上，OneLatent 的 SID@64 是 0.1993，比先写推理再作答的 OneReason-CoT 高 17.44%，推理吞吐是显式推理的 17.49 倍，和不推理的直接预测基本相同。==和用同样教师推理数据训练、直接作答的最强对照相比，3 个潜在 token 在工业数据上只多出 1.58%，说明大部分提升来自教师推理数据本身==。5% 流量的线上 A/B 测试估算收入提升 9.6%，目前已全量上线。\n\n## 1. 显式推理为什么在推荐里不好用\n\n推荐底座模型（FRM）的输入是用户画像 $P_u$、按时间排列的交互历史 $H_u$ 和请求时的上下文 $\\mathcal{C}_u$（时间、地点、搜索词等），输出是下一个交互物品的 SID。让模型先写推理有两个问题。一是成本：每个请求都要逐个解码整段推理文字。二是准确率不一定涨：推理文字和 SID 之间多了一段生成路径，推理写偏一步，后面的 SID 就跟着偏。论文的 Table 2 里，OneReason-CoT 的先推理模式在工业数据上 SID@64 是 0.1697，低于同一检查点直接作答的 0.1823。\n\n作者的思路是把教师写的推理只当训练信号，推理过程留在模型内部的隐状态里，推理时不输出文字。\n\n## 2. 方法\n\n![OneLatent 的整体流程（论文 Figure 2）。从左往右看：教师模型 Qwen3-235B 从三个视角写推理文本；推荐底座先做预训练，再经过三阶段的潜在 token 对齐，最后做课程式后训练。注意右侧推理时的输入只有用户上下文加 3 个潜在 token，输出直接是 SID。](figs/2610.30675/fig2_onelatent_framework.png)\n\n### 2.1 潜在 token 是什么\n\n作者在词表里加了 3 个特殊 token $\\langle L_1\\rangle\\langle L_2\\rangle\\langle L_3\\rangle$，所有样本共用这同一组 token ID。Transformer 处理到这 3 个位置时会产生随上下文变化的隐状态，后面的 SID token 通过普通的因果注意力读取这些隐状态。这里没有额外的编码器、投影层或解码器，推理时多出来的计算就是固定的 3 个 token。作者也明确说，后面的 token 仍然能直接看到原始上下文，所以不能保证推理信息全部压在这 3 个位置里。\n\n### 2.2 教师推理：三个视角，长度随难度调整\n\n教师模型是 Qwen3-235B-A22B-Instruct-2507，从三个视角为每个样本写推理：\n\n- 探索：只给用户画像和历史，让教师推测用户可能的消费意图，输出推理和意图列表。\n- 评估：额外告诉教师用户真实交互的物品，让它判断这个物品和用户证据的匹配程度，输出推理和 1–5 分。\n- 归因：告诉教师这个物品是正样本，让它解释是哪些历史信号导致了这次交互。\n\n评估和归因视角用到了真实物品，但这个信息只给教师，不进学生模型的输入，所以不会泄露答案。提示词还要求教师先判断证据的复杂程度：信号明确的样本快速收敛，信号冲突的样本做多维比较。这样生成的推理平均长度降到原来的 65%（把不做自适应时的平均长度记为 100），在最长的一成样本上，两种推理的语义相似度约 0.92。\n\n### 2.3 三阶段对齐和后训练\n\n学生模型从 Qwen3.5-0.8B 初始化，先做推荐领域预训练，让 SID 和物品文字描述能互相生成：\n\n$$\\mathcal{L}_{\\mathrm{sem}}=-\\log p_\\phi(\\mathcal{S}_v\\mid C_v)-\\log p_\\phi(C_v\\mid\\mathcal{S}_v)$$\n\n其中 $\\mathcal{S}_v$ 是物品 $v$ 的三层 SID，$C_v$ 是它的文字描述。之后分三个阶段训练潜在 token：\n\n- 阶段一：输入是“画像、历史、视角标记、3 个潜在 token”，目标是复现一个视角的教师推理。\n- 阶段二：同样的输入，目标换成该样本的所有视角推理。每条推理内部按 token 数取平均，避免长推理在损失里占更大比重。\n- 阶段三：输入加上请求上下文，目标从推理文本换成下一个物品的 SID。\n\n后训练先按用户活跃度从高到低做课程式微调，然后把“接潜在 token 再预测 SID”和“不接潜在 token 直接预测 SID”两种样本按 1:1 混合训练，保证两种模式都能用。\n\n## 3. 实验\n\n### 3.1 主结果\n\n这组实验比较 OneLatent 和三类基线：基于物品 ID 的序列推荐（GRU4Rec、BERT4Rec、HSTU），基于 SID 的生成式推荐（TIGER、OneRec），以及基于 OneReason 的推理增强模型。数据有两份：快手本地生活 7 天的工业日志（测试集 20,393 条），以及快手公开的 LLM-Rec 基准（测试集 10,000 条）。指标 Hit@64 表示正确物品是否出现在模型生成的前 64 个结果里。下表摘自论文 Table 2，NoThink 和 Think 是同一个检查点的直接作答和先推理模式，括号里是训练所用的推理数据：\n\n| 方法 | 公开 SID@64 | 公开 ID@64 | 工业 SID@64 | 工业 ID@64 |\n|---|---|---|---|---|\n| TIGER | 0.0078 | 0.0156 | 0.1432 | 0.0859 |\n| OneRec | 0.0082 | 0.0177 | 0.1468 | 0.0900 |\n| OneReason | 0.0081 | 0.0272 | 0.1658 | 0.4941 |\n| OneReason-CoT NoThink（原 CoT） | 0.0104 | 0.0334 | 0.1823 | 0.4936 |\n| OneReason-CoT NoThink（评估视角） | 0.0213 | 0.0623 | 0.1962 | 0.5065 |\n| OneReason-CoT Think（原 CoT） | 0.0089 | 0.0305 | 0.1697 | 0.4759 |\n| OneReason-CoT Think（三视角合并） | 0.0091 | 0.0303 | 0.1505 | 0.4567 |\n| OneLatent（三视角合并） | 0.0239 | 0.0742 | 0.1993 | 0.5088 |\n\nOneLatent 在所有指标上都是最高。但看提升来源要分开看两组对比。和 Think 模式比，工业 SID@64 高 17.44%；而且同样用三视角数据训练，Think 模式只有 0.1505，OneLatent 是 0.1993，==说明同一份推理数据，让模型逐字写出来再作答反而降低准确率，因为 SID 要等推理写完才生成，推理里的偏差会传给 SID==。和每一列最强的非 OneLatent 结果比，工业 SID@64 只高 1.58%，ID@64 只高 0.45%；公开数据上分别高 12.21% 和 19.10%。工业数据上的最强对照是用评估视角推理训练、直接作答的模型，它已经拿到了大部分收益。\n\n在 9B 主干上，OneLatent 的 SID@64 是 0.2008，比同尺寸最好的非潜在推理结果 0.1857 高 8.13%（论文 Table 3）。\n\n### 3.2 推理效率\n\n这组实验检验潜在 token 的推理开销。作者在 872 条测试样本上比较三种推理方式（论文 Table 7）：\n\n| 方法 | 总耗时（秒） | QPS |\n|---|---|---|\n| 直接预测（不推理） | 3.17 | 274.56 |\n| 显式推理 | 55.59 | 15.68 |\n| OneLatent | 3.17 | 274.29 |\n\nOneLatent 的吞吐是显式推理的 17.49 倍，和直接预测几乎相同，因为每个请求只多处理 3 个固定 token，不需要逐个解码推理文字。论文结论部分写的是“10 倍以上”，和正文的 17.49 倍不一致，以表中数字为准。\n\n### 3.3 教师推理的质量和作用\n\n这组实验检验三视角推理是否比原有推理更好。作者用 GPT-5.5 按九个维度（事实性、证据使用、因果逻辑等）给每种推理各 100 条样本打 1–5 分：OneReason 原推理平均 3.14，自适应长度推理 3.54，探索、评估、归因三个视角分别是 4.16、4.33 和 4.03（论文 Table 4）。换不同推理数据训练 OneLatent，公开数据上 SID@64 从原推理的 0.0092 升到三视角合并的 0.0239，评估视角单独就有 0.0233（论文 Table 5）。\n\n潜在 token 的数量从 1 加到 3 时，三层 SID 的命中率都在上升，加到 4 或 5 个不再稳定提升，所以最终用 3 个。\n\n为了看潜在 token 里存了什么，作者把画像、视角标记和 3 个潜在 token 输入训练好的模型，故意去掉交互历史，让它生成推理文字，再和教师推理比较语义相似度，三个视角的余弦相似度在 0.79 到 0.80 之间（论文 Table 8）。作者自己说明，画像仍然可见，这个相似度只能说明有关联，不能证明推理信息都存在潜在 token 里。\n\n### 3.4 上线方式和 A/B 测试\n\n![线上推理架构（论文 Figure 3）。看中间的异步链路：用户行为触发刷新，调度器按用户价值排优先级并限制总 QPS，OneLatent 异步生成候选并写入缓存；在线请求只读缓存，不同步调用模型。](figs/2610.30675/fig3_serving.png)\n\n即便没有推理文字，对每个请求同步调用底座模型仍然超出延迟和吞吐预算。所以 OneLatent 作为一路独立召回部署：用户有新行为时触发异步推理，按用户价值和行为强度决定刷新优先级，生成的候选写入 Redis，在线请求从缓存取候选，和原有召回结果一起进入精排竞争。A/B 测试在快手本地生活广告的一个子场景进行，实验组和对照组各占 5% 流量，时间是 2026 年 9 月 3 日到 10 日。实验组曝光量提升 2.566%，广告消耗提升 5.157%，后验估计收入提升 9.6%。\n\n## 4. 局限\n\n论文没有单独的局限章节，作者在正文里承认两点：潜在 token 不是严格的信息瓶颈，推理信息可能分散在整个模型里；Table 6 的提升来自完整的训练流程，不能单独归因于潜在 token。\n\n另外两点需要注意。第一，工业数据上 OneLatent 比用同样教师数据训练的直接作答模型只高 1.58%，论文没有报告多次运行的方差，这个差距是否稳定无法判断。第二，线上采用异步缓存，候选是在用户上次行为之后生成的，A/B 的收益里有多少来自潜在推理、有多少来自新增一路召回，论文没有拆开。\n\n## 5. 实践意义\n\n一是想给推荐模型加推理能力，可以先把教师推理当作训练数据用，而不是要求模型在线上生成推理。论文里同一份三视角推理数据，用作训练信号时工业 SID@64 达到 0.1993，要求模型先写出来再作答只有 0.1505。\n\n二是评估“潜在推理”类方法时，要把用同样教师数据训练的直接作答模型作为对照。本文工业数据上大部分提升在这个对照里已经出现，只和显式推理对比会高估潜在 token 本身的作用。",
-        "content_html": "<p>把大语言模型当作推荐底座时，一种做法是让模型先写一段自然语言推理（CoT），再输出下一个物品的语义编码（SID，把物品映射成三层离散编码的标识）。推理文本比三层 SID 长得多，解码时间和吞吐都被它拖住；而且此前的 OneReason 工作已经报告，同一个模型先推理再作答，并不稳定地好于直接作答。快手这篇 OneLatent 的做法是在用户上下文后面接 3 个固定的特殊 token，训练分几步：先让模型在这 3 个 token 之后复现教师大模型写的推理文本，再改成在它们之后直接输出目标 SID；上线时只接这 3 个 token，不生成任何推理文字。在快手本地生活工业数据上，OneLatent 的 SID@64 是 0.1993，比先写推理再作答的 OneReason-CoT 高 17.44%，推理吞吐是显式推理的 17.49 倍，和不推理的直接预测基本相同。<strong class=\"hl\">和用同样教师推理数据训练、直接作答的最强对照相比，3 个潜在 token 在工业数据上只多出 1.58%，说明大部分提升来自教师推理数据本身</strong>。5% 流量的线上 A/B 测试估算收入提升 9.6%，目前已全量上线。</p>\n<h2>1. 显式推理为什么在推荐里不好用</h2>\n<p>推荐底座模型（FRM）的输入是用户画像 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.13889em;\">P</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">u</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span></span></span></span>、按时间排列的交互历史 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.08125em;\">H</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">u</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span></span></span></span> 和请求时的上下文 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathcal\" style=\"margin-right:0.05834em;\">C</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.0583em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">u</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span></span></span></span>（时间、地点、搜索词等），输出是下一个交互物品的 SID。让模型先写推理有两个问题。一是成本：每个请求都要逐个解码整段推理文字。二是准确率不一定涨：推理文字和 SID 之间多了一段生成路径，推理写偏一步，后面的 SID 就跟着偏。论文的 Table 2 里，OneReason-CoT 的先推理模式在工业数据上 SID@64 是 0.1697，低于同一检查点直接作答的 0.1823。</p>\n<p>作者的思路是把教师写的推理只当训练信号，推理过程留在模型内部的隐状态里，推理时不输出文字。</p>\n<h2>2. 方法</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-24/retrieval/2610.30675/fig2_onelatent_framework.png\" alt=\"OneLatent 的整体流程（论文 Figure 2）。从左往右看：教师模型 Qwen3-235B 从三个视角写推理文本；推荐底座先做预训练，再经过三阶段的潜在 token 对齐，最后做课程式后训练。注意右侧推理时的输入只有用户上下文加 3 个潜在 token，输出直接是 SID。\" loading=\"lazy\" decoding=\"async\"><figcaption>OneLatent 的整体流程（论文 Figure 2）。从左往右看：教师模型 Qwen3-235B 从三个视角写推理文本；推荐底座先做预训练，再经过三阶段的潜在 token 对齐，最后做课程式后训练。注意右侧推理时的输入只有用户上下文加 3 个潜在 token，输出直接是 SID。</figcaption></figure>\n<h3>2.1 潜在 token 是什么</h3>\n<p>作者在词表里加了 3 个特殊 token <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mopen\">⟨</span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3011em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\">1</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mclose\">⟩</span><span class=\"mopen\">⟨</span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3011em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\">2</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mclose\">⟩</span><span class=\"mopen\">⟨</span><span class=\"mord\"><span class=\"mord mathnormal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3011em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\">3</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mclose\">⟩</span></span></span></span>，所有样本共用这同一组 token ID。Transformer 处理到这 3 个位置时会产生随上下文变化的隐状态，后面的 SID token 通过普通的因果注意力读取这些隐状态。这里没有额外的编码器、投影层或解码器，推理时多出来的计算就是固定的 3 个 token。作者也明确说，后面的 token 仍然能直接看到原始上下文，所以不能保证推理信息全部压在这 3 个位置里。</p>\n<h3>2.2 教师推理：三个视角，长度随难度调整</h3>\n<p>教师模型是 Qwen3-235B-A22B-Instruct-2507，从三个视角为每个样本写推理：</p>\n<ul>\n<li>探索：只给用户画像和历史，让教师推测用户可能的消费意图，输出推理和意图列表。</li>\n<li>评估：额外告诉教师用户真实交互的物品，让它判断这个物品和用户证据的匹配程度，输出推理和 1–5 分。</li>\n<li>归因：告诉教师这个物品是正样本，让它解释是哪些历史信号导致了这次交互。</li>\n</ul>\n<p>评估和归因视角用到了真实物品，但这个信息只给教师，不进学生模型的输入，所以不会泄露答案。提示词还要求教师先判断证据的复杂程度：信号明确的样本快速收敛，信号冲突的样本做多维比较。这样生成的推理平均长度降到原来的 65%（把不做自适应时的平均长度记为 100），在最长的一成样本上，两种推理的语义相似度约 0.92。</p>\n<h3>2.3 三阶段对齐和后训练</h3>\n<p>学生模型从 Qwen3.5-0.8B 初始化，先做推荐领域预训练，让 SID 和物品文字描述能互相生成：<br><span class=\"katex-display\"><span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathcal\">L</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mtight\"><span class=\"mord mtight\"><span class=\"mord mathrm mtight\">sem</span></span></span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">=</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1.0361em;vertical-align:-0.2861em;\"></span><span class=\"mord\">−</span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mop\">lo<span style=\"margin-right:0.01389em;\">g</span></span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">p</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3361em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">ϕ</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span><span class=\"mopen\">(</span><span class=\"mord\"><span class=\"mord mathcal\" style=\"margin-right:0.075em;\">S</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.075em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03588em;\">v</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">∣</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.07153em;\">C</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03588em;\">v</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mclose\">)</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span><span class=\"mbin\">−</span><span class=\"mspace\" style=\"margin-right:0.2222em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1.0361em;vertical-align:-0.2861em;\"></span><span class=\"mop\">lo<span style=\"margin-right:0.01389em;\">g</span></span><span class=\"mspace\" style=\"margin-right:0.1667em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\">p</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.3361em;\"><span style=\"top:-2.55em;margin-left:0em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\">ϕ</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.2861em;\"><span></span></span></span></span></span></span><span class=\"mopen\">(</span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.07153em;\">C</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03588em;\">v</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span><span class=\"mrel\">∣</span><span class=\"mspace\" style=\"margin-right:0.2778em;\"></span></span><span class=\"base\"><span class=\"strut\" style=\"height:1em;vertical-align:-0.25em;\"></span><span class=\"mord\"><span class=\"mord mathcal\" style=\"margin-right:0.075em;\">S</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.075em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03588em;\">v</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span><span class=\"mclose\">)</span></span></span></span></span><br>其中 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathcal\" style=\"margin-right:0.075em;\">S</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.075em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03588em;\">v</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span></span></span></span> 是物品 <span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.4306em;\"></span><span class=\"mord mathnormal\" style=\"margin-right:0.03588em;\">v</span></span></span></span> 的三层 SID，<span class=\"katex\"><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"base\"><span class=\"strut\" style=\"height:0.8333em;vertical-align:-0.15em;\"></span><span class=\"mord\"><span class=\"mord mathnormal\" style=\"margin-right:0.07153em;\">C</span><span class=\"msupsub\"><span class=\"vlist-t vlist-t2\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.1514em;\"><span style=\"top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;\"><span class=\"pstrut\" style=\"height:2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathnormal mtight\" style=\"margin-right:0.03588em;\">v</span></span></span></span><span class=\"vlist-s\">​</span></span><span class=\"vlist-r\"><span class=\"vlist\" style=\"height:0.15em;\"><span></span></span></span></span></span></span></span></span></span> 是它的文字描述。之后分三个阶段训练潜在 token：</p>\n<ul>\n<li>阶段一：输入是“画像、历史、视角标记、3 个潜在 token”，目标是复现一个视角的教师推理。</li>\n<li>阶段二：同样的输入，目标换成该样本的所有视角推理。每条推理内部按 token 数取平均，避免长推理在损失里占更大比重。</li>\n<li>阶段三：输入加上请求上下文，目标从推理文本换成下一个物品的 SID。</li>\n</ul>\n<p>后训练先按用户活跃度从高到低做课程式微调，然后把“接潜在 token 再预测 SID”和“不接潜在 token 直接预测 SID”两种样本按 1:1 混合训练，保证两种模式都能用。</p>\n<h2>3. 实验</h2>\n<h3>3.1 主结果</h3>\n<p>这组实验比较 OneLatent 和三类基线：基于物品 ID 的序列推荐（GRU4Rec、BERT4Rec、HSTU），基于 SID 的生成式推荐（TIGER、OneRec），以及基于 OneReason 的推理增强模型。数据有两份：快手本地生活 7 天的工业日志（测试集 20,393 条），以及快手公开的 LLM-Rec 基准（测试集 10,000 条）。指标 Hit@64 表示正确物品是否出现在模型生成的前 64 个结果里。下表摘自论文 Table 2，NoThink 和 Think 是同一个检查点的直接作答和先推理模式，括号里是训练所用的推理数据：</p>\n<table><thead><tr><th>方法</th><th>公开 SID@64</th><th>公开 ID@64</th><th>工业 SID@64</th><th>工业 ID@64</th></tr></thead><tbody><tr><td>TIGER</td><td>0.0078</td><td>0.0156</td><td>0.1432</td><td>0.0859</td></tr><tr><td>OneRec</td><td>0.0082</td><td>0.0177</td><td>0.1468</td><td>0.0900</td></tr><tr><td>OneReason</td><td>0.0081</td><td>0.0272</td><td>0.1658</td><td>0.4941</td></tr><tr><td>OneReason-CoT NoThink（原 CoT）</td><td>0.0104</td><td>0.0334</td><td>0.1823</td><td>0.4936</td></tr><tr><td>OneReason-CoT NoThink（评估视角）</td><td>0.0213</td><td>0.0623</td><td>0.1962</td><td>0.5065</td></tr><tr><td>OneReason-CoT Think（原 CoT）</td><td>0.0089</td><td>0.0305</td><td>0.1697</td><td>0.4759</td></tr><tr><td>OneReason-CoT Think（三视角合并）</td><td>0.0091</td><td>0.0303</td><td>0.1505</td><td>0.4567</td></tr><tr><td>OneLatent（三视角合并）</td><td>0.0239</td><td>0.0742</td><td>0.1993</td><td>0.5088</td></tr></tbody></table>\n<p>OneLatent 在所有指标上都是最高。但看提升来源要分开看两组对比。和 Think 模式比，工业 SID@64 高 17.44%；而且同样用三视角数据训练，Think 模式只有 0.1505，OneLatent 是 0.1993，<strong class=\"hl\">说明同一份推理数据，让模型逐字写出来再作答反而降低准确率，因为 SID 要等推理写完才生成，推理里的偏差会传给 SID</strong>。和每一列最强的非 OneLatent 结果比，工业 SID@64 只高 1.58%，ID@64 只高 0.45%；公开数据上分别高 12.21% 和 19.10%。工业数据上的最强对照是用评估视角推理训练、直接作答的模型，它已经拿到了大部分收益。</p>\n<p>在 9B 主干上，OneLatent 的 SID@64 是 0.2008，比同尺寸最好的非潜在推理结果 0.1857 高 8.13%（论文 Table 3）。</p>\n<h3>3.2 推理效率</h3>\n<p>这组实验检验潜在 token 的推理开销。作者在 872 条测试样本上比较三种推理方式（论文 Table 7）：</p>\n<table><thead><tr><th>方法</th><th>总耗时（秒）</th><th>QPS</th></tr></thead><tbody><tr><td>直接预测（不推理）</td><td>3.17</td><td>274.56</td></tr><tr><td>显式推理</td><td>55.59</td><td>15.68</td></tr><tr><td>OneLatent</td><td>3.17</td><td>274.29</td></tr></tbody></table>\n<p>OneLatent 的吞吐是显式推理的 17.49 倍，和直接预测几乎相同，因为每个请求只多处理 3 个固定 token，不需要逐个解码推理文字。论文结论部分写的是“10 倍以上”，和正文的 17.49 倍不一致，以表中数字为准。</p>\n<h3>3.3 教师推理的质量和作用</h3>\n<p>这组实验检验三视角推理是否比原有推理更好。作者用 GPT-5.5 按九个维度（事实性、证据使用、因果逻辑等）给每种推理各 100 条样本打 1–5 分：OneReason 原推理平均 3.14，自适应长度推理 3.54，探索、评估、归因三个视角分别是 4.16、4.33 和 4.03（论文 Table 4）。换不同推理数据训练 OneLatent，公开数据上 SID@64 从原推理的 0.0092 升到三视角合并的 0.0239，评估视角单独就有 0.0233（论文 Table 5）。</p>\n<p>潜在 token 的数量从 1 加到 3 时，三层 SID 的命中率都在上升，加到 4 或 5 个不再稳定提升，所以最终用 3 个。</p>\n<p>为了看潜在 token 里存了什么，作者把画像、视角标记和 3 个潜在 token 输入训练好的模型，故意去掉交互历史，让它生成推理文字，再和教师推理比较语义相似度，三个视角的余弦相似度在 0.79 到 0.80 之间（论文 Table 8）。作者自己说明，画像仍然可见，这个相似度只能说明有关联，不能证明推理信息都存在潜在 token 里。</p>\n<h3>3.4 上线方式和 A/B 测试</h3>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-24/retrieval/2610.30675/fig3_serving.png\" alt=\"线上推理架构（论文 Figure 3）。看中间的异步链路：用户行为触发刷新，调度器按用户价值排优先级并限制总 QPS，OneLatent 异步生成候选并写入缓存；在线请求只读缓存，不同步调用模型。\" loading=\"lazy\" decoding=\"async\"><figcaption>线上推理架构（论文 Figure 3）。看中间的异步链路：用户行为触发刷新，调度器按用户价值排优先级并限制总 QPS，OneLatent 异步生成候选并写入缓存；在线请求只读缓存，不同步调用模型。</figcaption></figure>\n<p>即便没有推理文字，对每个请求同步调用底座模型仍然超出延迟和吞吐预算。所以 OneLatent 作为一路独立召回部署：用户有新行为时触发异步推理，按用户价值和行为强度决定刷新优先级，生成的候选写入 Redis，在线请求从缓存取候选，和原有召回结果一起进入精排竞争。A/B 测试在快手本地生活广告的一个子场景进行，实验组和对照组各占 5% 流量，时间是 2026 年 9 月 3 日到 10 日。实验组曝光量提升 2.566%，广告消耗提升 5.157%，后验估计收入提升 9.6%。</p>\n<h2>4. 局限</h2>\n<p>论文没有单独的局限章节，作者在正文里承认两点：潜在 token 不是严格的信息瓶颈，推理信息可能分散在整个模型里；Table 6 的提升来自完整的训练流程，不能单独归因于潜在 token。</p>\n<p>另外两点需要注意。第一，工业数据上 OneLatent 比用同样教师数据训练的直接作答模型只高 1.58%，论文没有报告多次运行的方差，这个差距是否稳定无法判断。第二，线上采用异步缓存，候选是在用户上次行为之后生成的，A/B 的收益里有多少来自潜在推理、有多少来自新增一路召回，论文没有拆开。</p>\n<h2>5. 实践意义</h2>\n<p>一是想给推荐模型加推理能力，可以先把教师推理当作训练数据用，而不是要求模型在线上生成推理。论文里同一份三视角推理数据，用作训练信号时工业 SID@64 达到 0.1993，要求模型先写出来再作答只有 0.1505。</p>\n<p>二是评估“潜在推理”类方法时，要把用同样教师数据训练的直接作答模型作为对照。本文工业数据上大部分提升在这个对照里已经出现，只和显式推理对比会高估潜在 token 本身的作用。</p>",
-        "slug": "2610.30675",
-        "chars": 4198,
-        "minutes": 11
-      }
-    },
-    {
-      "rank": 4,
       "id": "arxiv:2610.30843",
       "title": "Lean Finder V2: Semantic Search for Mathlib That Disambiguates User Queries",
       "url": "https://arxiv.org/abs/2610.30843",
@@ -149,6 +107,7 @@
       "key_insight": "",
       "card_status": "done",
       "abstract": "We introduce Lean Finder V2, a semantic search framework for Mathlib that disambiguates user queries through complementary model-level adversarial training and input-level query rewriting. Human mathematicians and coding agents rarely search Mathlib by providing detailed context. In practice, they query short properties, notation, aliases, or hypotheses, leaving much of the intended mathematics implicit. In contrast, existing Mathlib search engines unrealistically assume context-rich queries. The scarcity of real-world short queries paired with ground-truth Mathlib statements makes this ambiguity even more intractable. We argue that this is essentially a data problem. Through adversarial training, we scale up the generation of labeled short and ambiguous queries, and learn to disambiguate user queries at both model-level fine-tuning and input-level query rewriting. On the human-curated MathlibQR benchmark, our Lean Finder V2 sets a new state of the art, with at least 11% relative improvement over the previous best Mathlib semantic search engines. On top of our state-of-the-art retriever, optimized query rewriting further improves MathlibQR retrieval. On unlabeled queries from human and coding-agent interactions, Lean Finder V2 is ranked as the strongest system. Integrated with Claude Code, Lean Finder V2 improves proof success on downstream theorem-proving task.",
+      "subarea": "query",
       "company_logos": [],
       "deep_reading": {
         "paper_id": "arxiv:2610.30843",
@@ -162,7 +121,7 @@
       }
     },
     {
-      "rank": 5,
+      "rank": 4,
       "id": "arxiv:2610.00923",
       "title": "CANOPY: Adaptive-Granularity Evidence Compression for Multimodal RAG",
       "url": "https://huggingface.co/papers/2610.00923",
@@ -185,62 +144,81 @@
       "key_insight": "",
       "card_status": "done",
       "abstract": "Multimodal RAG retrieves text, tables, images, and videos, but choosing a retrieval granularity does not determine how much context to retain within each item. Coarse units include irrelevant content, while uniformly fine selection can remove context needed to interpret the evidence. Existing compressors address this trade-off with modality-specific mechanisms, leaving open a shared procedure for adapting the retained extent region by region across heterogeneous items. We introduce CANOPY (Canonical Projection over Hierarchy), a framework for adaptive-granularity post-retrieval evidence compression. CANOPY represents retrieved items as hierarchies and uses a node encoder fine-tuned on gold evidence to score regions against the query. Parent-relative refinement compares these scores to select multiple regions at different granularities without LLM calls for node-level pruning. Because compression cannot recover evidence that was never retrieved, a critic requests targeted follow-up retrieval when it judges the accumulated evidence insufficient; newly retrieved items are compressed before being added. Across five QA benchmarks over a 33M-item heterogeneous corpus, CANOPY achieves higher average answer accuracy than the evaluated retrieval baselines. In the unrouted Qwen3-VL-8B-Instruct setting, compression reduces reader-input evidence tokens by 14.2-27.7% relative to the same iterative pipeline without compression, with comparable answer accuracy.",
+      "subarea": "rag",
       "company_logos": []
+    },
+    {
+      "rank": 5,
+      "id": "web:alibaba-ai-search-full-stack-2026-08-19",
+      "title": "从 VDBBench 到 MMEB 榜首：阿里云 AI Search 从引擎到模型的全栈优化",
+      "url": "https://developer.aliyun.com/article/1756804",
+      "authors": "阿里云",
+      "company": [
+        "Alibaba"
+      ],
+      "source": "industry_blog",
+      "published": "2026-08-19",
+      "track_fit": "core",
+      "total_score": 3.85,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.95,
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 2
+      },
+      "summary": "这是阿里云开发者社区的一篇文章，介绍 AI Search 从检索引擎到 Embedding 模型的全栈优化。作者的出发点是：智能体进入生产后，搜索要持续给模型提供高质量上下文，链路包括模型理解、向量与全文召回、混合检索、融合重排和引擎执行。文章称 AI Search 在 VDBBench 向量检索、Big5 与 Tantivy 传统检索、MMEB 多模态文档检索等评测中取得突破，背后是自研的 Elasticsearch 引擎 FalconSeek 和多模态 Embedding 模型。==它的参考价值在于把一条 AI 搜索链路拆成了可以分别优化的环节==；文章摘要没有给出具体分数，选型时需要回各榜单核对原始结果。",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "当 Agent 开始进入生产环境，搜索正在从找到相关文档的工具升级为持续供给高质量上下文的基础设施。AI Search 不再只是搜索引擎，而是贯穿模型理解、向量与全文召回、混合检索、融合重排和引擎执行的完整链路。阿里云 AI Search 在 VDBBench 向量检索、Big5 与 Tantivy 传统检索，以及 MMEB 多模态文档检索等评测中进行全栈优化。",
+      "subarea": "multimodal",
+      "company_logos": [
+        {
+          "name": "Alibaba",
+          "logo": "logos/alibaba.png",
+          "hue": 324
+        }
+      ]
     },
     {
       "rank": 6,
-      "id": "arxiv:2610.30664",
-      "title": "Compiling Autoregressive LLM Control into Policy-Exact Parallel Inference for Hierarchical RAG",
-      "url": "https://arxiv.org/abs/2610.30664",
-      "authors": "Zehao Lin, Qianfeng Shen, Xixuan Hao, Shaobo Cui, Chunyu Li, Kai Chen, Bo Tang, Zhenjun Wang, Jin Yan, Zhiyu Li, Feiyu Xiong",
-      "company": [],
-      "source": "arxiv",
-      "published": "2026-10-22",
-      "track_fit": "adjacent",
-      "total_score": 3.5,
-      "preference_bonus": 0.1,
-      "adjusted_score": 3.6,
+      "id": "web:tencent-tokenhub-search",
+      "title": "大模型服务平台 TokenHub 联网搜索",
+      "url": "https://cloud.tencent.com/document/product/1823/132358",
+      "authors": "Tencent Cloud",
+      "company": [
+        "Tencent"
+      ],
+      "source": "industry_blog",
+      "published": "2026-09-29",
+      "total_score": 3.9,
+      "preference_bonus": 0.15,
+      "adjusted_score": 3.9,
+      "track_fit": "core",
       "scores": {
-        "business_relevance": 3,
-        "technical_novelty": 5,
-        "practicality": 3,
-        "evidence_quality": 4,
-        "timeliness": 5
+        "business_relevance": 5,
+        "technical_novelty": 2,
+        "practicality": 5,
+        "evidence_quality": 2,
+        "timeliness": 3
       },
-      "summary": "层级 RAG 里，大模型在文档目录树的每一层从最多 20 个章节里选 3 个往下读。用语法约束解码执行这个选择时，每输出一个动作 token 或格式 token 都要串行跑一次前向。作者把 3 步之内所有可能走到的选择前缀穷举成一棵浅树：先对提示做一次 prefill 定下第一个选择，再把所有可能的后续前缀拼成一个序列做一次前向，用树形因果掩码让每个前缀只看到提示和自己的祖先，位置编号也和串行解码一致。==每个前缀看到的输入和串行解码完全相同，所以在精确算术下算出的概率分布也相同==，整个过程不生成任何 token。在 Qwen2.5-7B 和 3B 上，84–89% 的问题选出的章节序列与串行解码完全一致，不一致的都出在 bf16 精度下的近似平局；选择环节延迟降低 35–47%。",
+      "summary": "这是腾讯云大模型服务平台 TokenHub 的联网搜索接口文档。开启联网搜索后，模型在回答时自己判断要不要搜、搜什么关键词，再根据搜索结果生成回答。接入有两种方式：Responses API 在 tools 字段里声明 web_search 工具，引用来源放在 annotations 里结构化返回；Chat Completions API 用 web_search_options 开启，引用来源放在 search_results 里。目前支持 Hy3 和 DeepSeek V4 系列模型，搜索分轻量版和标准版两档计价，限 5 QPS，只开放广州地域。==对做搜索的团队，参考价值在接口形态：搜索被包装成模型自己调用的工具，引用来源和答案一起返回==，自建的 RAG 服务可以对齐这套字段，方便以后切换。",
       "key_insight": "",
       "card_status": "done",
-      "abstract": "Large language models increasingly act as controllers in structured decision pipelines, yet their decisions are still executed by autoregressive text decoding. Hierarchical RAG is one such setting: at each frontier of a document tree, an LLM commits to b of k sections under an input-dependent action grammar, executed as either failure-prone free-form JSON or reliable but strictly serial grammar-constrained generation. We show that this serialization is unnecessary for bounded-horizon control: the reachable future forms a shallow action-prefix tree, which we compile—one root prefill plus one tree-causal probe evaluate every prefix-conditioned action distribution with serial decoding's tokens, positions, and causal ancestry. A prefix-state lemma makes compiled control policy-exact in exact arithmetic: the same policy with a two-forward critical path and zero output tokens. One further probe pass certifies the exact order-marginalized MAP set. Across four document-disjoint splits and two scales on the primary MetaX device, compiled control matches the serial policy on 84-89% of questions and cuts control latency by 35-47% versus token-wise serial decoding and 6-7% versus an idealized chunked engine; an H800 repetition preserves the ordering.",
-      "company_logos": []
+      "abstract": "联网搜索是 TokenHub 提供的模型增强能力。开启后，大模型在回答时可自动调用搜索引擎获取实时网络信息，解决模型知识时效性不足的问题。平台支持 Responses API 与 Chat Completions API 两种协议，模型可自主判断是否需要搜索、搜索什么关键词，并基于搜索结果生成回答，同时通过结构化 annotations 返回引用来源。",
+      "subarea": "qa",
+      "company_logos": [
+        {
+          "name": "Tencent",
+          "logo": "logos/tencent.png",
+          "hue": 301
+        }
+      ]
     },
     {
       "rank": 7,
-      "id": "arxiv:2610.27306",
-      "title": "SweepANN: A GPU-Accelerated Large-K Approximate Vector Search for Drug Discovery",
-      "url": "https://arxiv.org/abs/2610.27306",
-      "authors": "Zhenyu Zhang, Qi Lin, Nan Zhang, Zhichao Cao",
-      "company": [],
-      "source": "arxiv",
-      "published": "2026-10-19",
-      "track_fit": "core",
-      "total_score": 3.8,
-      "preference_bonus": 0.0,
-      "adjusted_score": 3.8,
-      "scores": {
-        "business_relevance": 3,
-        "technical_novelty": 4,
-        "practicality": 4,
-        "evidence_quality": 5,
-        "timeliness": 4
-      },
-      "summary": "DrugCLIP 把蛋白口袋和小分子编码到同一个向量空间，药物初筛于是变成向量检索：一次筛选要拿 2 万多个口袋查 5 亿个分子，每个口袋保留 50 万个候选，平均召回率相对精确搜索要达到 99%。答案大到这个程度，IVF 索引几乎要探测所有列表，图索引至少要维护 K 个候选，==索引能跳过的部分所剩无几，瓶颈变成维护每个查询的 K 个候选==。SweepANN 改为直接扫描：INT8 压缩后的分子向量常驻在 4 张 GPU 显存里，每块数据对一整批口袋只读一遍；先在抽样块里取每个口袋的前 K 名，以其中最低分为门槛，之后只有高于门槛的行才进缓冲区。4 张 RTX PRO 6000 约 61 秒跑完 26,562 个口袋，平均召回 99.6%；达到召回目标的 GPU IVF 配置耗时是它的 8.2–24 倍。",
-      "key_insight": "",
-      "card_status": "done",
-      "abstract": "DrugCLIP places small molecules and protein pockets in one space, turning genome-wide drug discovery into large-K retrieval by vector proximity. A campaign fixes over 20K pockets in advance for one library of over 500M molecules. Each pocket keeps K = 500K candidates, 0.1% of the collection, versus 100 in ANN benchmarks. Missed hits never get tested, so mean recall must reach 99% relative to exact search. SweepANN partitions compressed vectors across GPUs and scans each resident partition. One matrix multiplication scores each block for a whole query batch, reading it once. Four Blackwell GPUs answer all 26,562 pockets with a resident time of about 61 seconds, excluding library loading, and 99.6% mean recall relative to exact FP32 search. On 500M rows, the window plan runs 1.41x faster than SweepANN's grouped plan in the same memory. Across 25M-500M rows and K of 10K-500K, all GPU IVF configurations meeting the recall target take 8.2-24x SweepANN's resident time.",
-      "company_logos": []
-    },
-    {
-      "rank": 8,
       "id": "arxiv:2610.27114",
       "title": "Joint Constraint Aggregation for Qualifier-Sensitive Retrieval-Augmented QA",
       "url": "https://arxiv.org/abs/2610.27114",
@@ -265,6 +243,7 @@
       "key_insight": "",
       "card_status": "done",
       "abstract": "Retrieval-augmented QA can fail even when the correct answer is in the retrieved evidence. This can happen when a competing answer satisfies some, but not all, of the question's requirements and is mentioned frequently in the retrieved documents, which can make it appear to be the best-supported answer. To test whether this retrieval skew actually affects the decision, we manipulate it directly: increasing the prevalence of passages that favor the competing answer makes the model more likely to select it. This points to a decision problem that candidate-level support alone cannot resolve. We therefore introduce Joint Constraint Aggregation (JCA), which compares candidates against the same question-derived requirements using the retrieved evidence. Across three evaluation settings and three instruction-tuned backbones, JCA improves overall accuracy, and its advantage grows when retrieval favors a competing answer. Together, these results suggest that when partial matches and retrieval prominence pull models toward a competing answer, comparing candidates against the question's full requirements can make selection more reliable.",
+      "subarea": "qa",
       "company_logos": [
         {
           "name": "CMU",
@@ -272,6 +251,33 @@
           "hue": 0
         }
       ]
+    },
+    {
+      "rank": 8,
+      "id": "arxiv:2610.30664",
+      "title": "Compiling Autoregressive LLM Control into Policy-Exact Parallel Inference for Hierarchical RAG",
+      "url": "https://arxiv.org/abs/2610.30664",
+      "authors": "Zehao Lin, Qianfeng Shen, Xixuan Hao, Shaobo Cui, Chunyu Li, Kai Chen, Bo Tang, Zhenjun Wang, Jin Yan, Zhiyu Li, Feiyu Xiong",
+      "company": [],
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "track_fit": "adjacent",
+      "total_score": 3.5,
+      "preference_bonus": 0.1,
+      "adjusted_score": 3.6,
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 5,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "summary": "层级 RAG 里，大模型在文档目录树的每一层从最多 20 个章节里选 3 个往下读。用语法约束解码执行这个选择时，每输出一个动作 token 或格式 token 都要串行跑一次前向。作者把 3 步之内所有可能走到的选择前缀穷举成一棵浅树：先对提示做一次 prefill 定下第一个选择，再把所有可能的后续前缀拼成一个序列做一次前向，用树形因果掩码让每个前缀只看到提示和自己的祖先，位置编号也和串行解码一致。==每个前缀看到的输入和串行解码完全相同，所以在精确算术下算出的概率分布也相同==，整个过程不生成任何 token。在 Qwen2.5-7B 和 3B 上，84–89% 的问题选出的章节序列与串行解码完全一致，不一致的都出在 bf16 精度下的近似平局；选择环节延迟降低 35–47%。",
+      "key_insight": "",
+      "card_status": "done",
+      "abstract": "Large language models increasingly act as controllers in structured decision pipelines, yet their decisions are still executed by autoregressive text decoding. Hierarchical RAG is one such setting: at each frontier of a document tree, an LLM commits to b of k sections under an input-dependent action grammar, executed as either failure-prone free-form JSON or reliable but strictly serial grammar-constrained generation. We show that this serialization is unnecessary for bounded-horizon control: the reachable future forms a shallow action-prefix tree, which we compile—one root prefill plus one tree-causal probe evaluate every prefix-conditioned action distribution with serial decoding's tokens, positions, and causal ancestry. A prefix-state lemma makes compiled control policy-exact in exact arithmetic: the same policy with a two-forward critical path and zero output tokens. One further probe pass certifies the exact order-marginalized MAP set. Across four document-disjoint splits and two scales on the primary MetaX device, compiled control matches the serial policy on 84-89% of questions and cuts control latency by 35-47% versus token-wise serial decoding and 6-7% versus an idealized chunked engine; an H800 repetition preserves the ordering.",
+      "subarea": "rag",
+      "company_logos": []
     },
     {
       "rank": 9,
@@ -306,6 +312,7 @@
         "source": "arxiv_comment",
         "evidence": "Accepted at EMNLP 2026 Findings. 34 pages including appendices"
       },
+      "subarea": "retrieval",
       "venue_badge": {
         "label": "EMNLP 2026",
         "url": "https://arxiv.org/abs/2610.31317",
@@ -339,10 +346,50 @@
       "key_insight": "",
       "card_status": "done",
       "abstract": "Over-representation analysis (ORA) is widely used to interpret gene-expression studies, but its outputs are often fragmented across gene-set databases and presented as flat term lists that obscure gene-level links among related enrichment signals. We propose Graph-Based Over-Representation Retrieval-Augmented Generation (GBOR-RAG), an integrated and traceable framework for ORA interpretation. GBOR-RAG represents heterogeneous gene-set databases as a unified term-gene knowledge graph, where shared genes connect related terms across sources. After graph-based ORA scoring, the framework retrieves a compact connected evidence subgraph that preserves both cross-database relationships and gene-level support. The subgraph conditions an LLM to generate biological interpretations, and we introduce a claim-level faithfulness metric to assess whether generated claims are supported by explicit evidence. Experiments show that graph-based ORA preserves conventional ORA results with high consistency (mean Pearson r=0.997) while reducing query time by a median of 37x (up to 48x). The retrieved subgraphs average 36.8 nodes and achieve the highest overall integration score (4.12), and GBOR-RAG attains the highest claim-level faithfulness (0.90) among the compared systems. Adding a PubMed literature layer further improves the overall interpretation quality from 4.17 to 4.75.",
+      "subarea": "rag",
       "company_logos": []
     }
   ],
   "code_projects": [],
   "scenario_status": "done",
-  "scenario_by": "grok-bot"
+  "scenario_by": "grok-bot",
+  "reorg": {
+    "at": "2026-10-24T10:00+08:00",
+    "rules": "AI Search merge (track_rules classify_ai_search rev.1 + generative-core rev.3), cutover 2026-10-24",
+    "merged_from": {
+      "retrieval": [
+        "arxiv:2610.30612",
+        "arxiv:2610.31019",
+        "arxiv:2610.30843",
+        "arxiv:2610.00923",
+        "arxiv:2610.27114",
+        "arxiv:2610.30664",
+        "arxiv:2610.31317",
+        "arxiv:2610.30710"
+      ],
+      "agentic": [
+        "web:tencent-tokenhub-search"
+      ],
+      "infra": [
+        "web:alibaba-ai-search-full-stack-2026-08-19"
+      ]
+    },
+    "moved_out": {
+      "arxiv:2610.30675": "generative",
+      "arxiv:2610.27306": "infra"
+    },
+    "excluded_generic_agents": {
+      "arxiv:2610.04889": "generic agent: trajectory / test-time search",
+      "arxiv:2610.05437": "generic agent: tool retrieval / orchestration",
+      "arxiv:2609.09233": "generic agent: tool retrieval / orchestration",
+      "arxiv:2610.10610": "generic agent: coding / terminal agent"
+    },
+    "dropped_cap": [
+      "web:aliyun-agentic-rag-intro"
+    ]
+  },
+  "track_label": {
+    "zh": "AI 搜索",
+    "en": "AI Search"
+  }
 }
