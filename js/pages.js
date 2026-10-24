@@ -67,6 +67,14 @@
       return '<span class="cname">' + icon + escapeHtml(c.name) + "</span>";
     });
   }
+  function venueHtml(p) {
+    const b = p.venue_badge;
+    if (!b || !b.url || !/^https?:\/\//.test(b.url)) return "";
+    const root = document.documentElement.getAttribute("data-root") || "";
+    return '<a class="vbadge" href="' + escapeHtml(b.url) + '" target="_blank" rel="noopener" title="' +
+      escapeHtml(TR("录用于 " + b.label, b.title || b.label)) + '"><img class="vlogo" src="' + escapeHtml(root + b.logo) +
+      '" alt="" height="14" loading="lazy" decoding="async" onerror="this.remove()">' + TR("已录用 ", "") + escapeHtml(b.label) + "</a>";
+  }
   function linkLabel(p) {
     const url = String(p.url || "");
     if (url.indexOf("arxiv.org") !== -1) return "arXiv";
@@ -249,6 +257,7 @@
       '<div class="art" data-n="' + pad2(p.rank || i + 1) + '"><div>' +
       TR('<div class="k">LEAD STORY · 今日必读', '<div class="k">LEAD STORY · Must-read today') + (comp.length ? " · " + compHtml(p, 3).join(" / ") : "") + "</div>" +
       '<h2><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h2>" +
+      (venueHtml(p) ? '<div class="lead-venue">' + venueHtml(p) + "</div>" : "") +
       "<p>" + hlText(escapeHtml(p.summary || "")) + "</p></div>" +
       '<div class="btns">' + btns + "</div></div>" +
       '<div class="side"><div class="ring">' + radarSvg(p.scores, 170) +
@@ -262,7 +271,7 @@
   function renderCard(p, i, track) {
     const pid = pidOf(p, i);
     const dr = p.deep_reading && p.deep_reading.status === "completed" ? p.deep_reading : null;
-    let chips = compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
+    let chips = venueHtml(p) + compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
     if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
     const ins = insightInner(p);
     let foot = "<span>" + escapeHtml(sourceLabel(p.source)) + "</span>";
@@ -670,7 +679,7 @@
         (a.rank != null ? TR(" · 当日 #", " · #") + escapeHtml(a.rank) : "") + "</a>";
     }).join("");
     const dr = paper.deep_reading && paper.deep_reading.status === "completed" ? paper.deep_reading : null;
-    let chips = compHtml(paper, 3).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
+    let chips = venueHtml(paper) + compHtml(paper, 3).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
     if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
     const dl = dimLine(paper.scores);
     const first = paper.best_date ? TR("首见 ", "First seen ") + escapeHtml(shortDay(paper.best_date)) : "";
