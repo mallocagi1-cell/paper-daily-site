@@ -55,7 +55,7 @@
     <div>
       <div class="k">LEAD STORY · 今日必读 · <span class="cname"><img class="clogo" src="../../../logos/google.png" alt="" width="16" height="16" loading="lazy" decoding="async">Google</span></div>
       <h2><a href="https://cloud.google.com/blog/topics/ai-infrastructure/llm-d-1-0-an-open-source-stack-for-distributed-inference/" target="_blank" rel="noopener">llm-d 1.0, an open source stack for distributed inference</a></h2>
-      <p>agent 的请求往往分多步、共享很长的前缀，并且突发到达。放在普通轮询负载均衡后面，各副本会重复计算相同的提示，显存里堆满重复的 KV cache。Google 联合 Red Hat、IBM 等发布的 llm-d 1.0 是一个跑在 Kubernetes 上的开源分布式推理栈，它把一组 vLLM 和 SGLang 服务器组织成一个服务池。路由器记录每个缓存前缀存在哪些副本上，再结合负载选副本，显存满时把 KV cache 挪到主机内存和 SSD。在 Ironwood TPU 上的编码 agent 负载里，首 token 延迟中位数下降 85% 以上，总吞吐是普通 Kubernetes Service 的 2.4 倍。<strong class="hl">收益主要来自把同一会话的请求送回已经存着它上下文的副本，省掉重复的预填充</strong>。</p>
+      <p>在 Ironwood TPU 上跑一个 agent 写代码的负载，和直接用普通的 Kubernetes Service 分发请求相比，llm-d 让首 token 的中位等待时间缩短了 85% 以上。同一负载下，总吞吐是原来的 2.4 倍。它做了两件事。第一，路由时看每台模型服务器的负载，也看它是否已经存着这次请求共用的提示前缀，有就优先发过去，省掉重复计算。第二，加速卡显存满了，就把缓存的上下文挪到主机内存和其他存储里，下次还能复用。Google 在博客里还提到，一家做合成数据的公司用同样的路由后，同样的 TPU 配额每天能生成的 token 数变成原来的 4 倍以上。<strong class="hl">agent 负载里大段提示反复出现，把请求送到已有缓存的机器上，比加机器更划算</strong>。</p>
     </div>
     <div class="btns"><a class="btn w" href="../../../deep-readings/web-google-llmd-1.0-2026-10-20.html">&#128214; 深度解读 · 11 分钟</a><a class="btn ghost" href="https://cloud.google.com/blog/topics/ai-infrastructure/llm-d-1-0-an-open-source-stack-for-distributed-inference/" target="_blank" rel="noopener">技术博客 &#8599;</a></div>
   </div>
@@ -125,7 +125,7 @@
   <div class="top"><span class="n">02</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.80</span></div>
   <h4><a href="https://arxiv.org/abs/2610.27306" target="_blank" rel="noopener">SweepANN: A GPU-Accelerated Large-K Approximate Vector Search for Drug Discovery</a></h4>
   
-  <p>DrugCLIP 把蛋白口袋和小分子编码到同一个向量空间，药物初筛于是变成向量检索。一次筛选要用两万多个口袋去查五亿个分子，每个口袋保留五十万个候选。要返回的结果这么多，倒排索引几乎要查遍所有分桶，索引能跳过的部分所剩无几。SweepANN 改为直接扫描，把压缩成 INT8 的分子向量常驻在四张 GPU 的显存里，每块数据对一整批口袋只读一遍。它先扫一部分数据块，把每个口袋在样本里的第五十万名分数当门槛，之后低于门槛的行直接丢掉。它约 61 秒跑完全部口袋，平均召回率 99.6%。<strong class="hl">要返回的候选太多、索引几乎没什么可跳过时，直接扫描反而更快</strong>。</p>
+  <p>药物筛选要在一个 5 亿个分子的库里，为 26,562 个蛋白口袋各找出最匹配的 50 万个分子。用 4 块 RTX PRO 6000 Blackwell GPU，SweepANN 在库已经装进显存的情况下 61.04 秒就搜完了。和精确的 FP32 搜索相比，平均召回率是 99.63%。普通的近似向量检索只取前几十个结果，这里每个口袋要取几十万个，做法也不一样。作者先压缩分子向量，分到几块 GPU 上，每台把所有分子扫一遍，同时给一批口袋打分。它不是每扫一块就排一次序，而是每扫完一组块才挑一次，挑完记下当前第 50 万名的分数作为分数线，此后低于这条线的分子不再保留，几块 GPU 之间也只交换一次分数线，最后合并结果。把库装进显存和压缩要另花约 500 秒，这部分没有算在内。<strong class="hl">要取的结果很多时，整库扫描加分数线比建索引更合适</strong>。</p>
   
   <div class="foot">Zhenyu Zhang, Qi Lin, Nan Zhang, Zhichao Cao</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-19</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 4 · Practical 4 · Evidence 5 · Timely 4</span></div>
@@ -135,7 +135,7 @@
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.35</span></div>
   <h4><a href="https://research.ibm.com/blog/llmd-1-0-is-ready-for-production-inference-serving" target="_blank" rel="noopener">llm-d 1.0 hardens open-source AI inference for production</a></h4>
   <div><span class="chip"><span class="cname"><img class="clogo" src="../../../logos/ibm.png" alt="" width="16" height="16" loading="lazy" decoding="async">IBM</span></span></div>
-  <p>IBM Research 这篇文章介绍 llm-d 1.0，重点放在上线之后的日常运维。前缀缓存感知路由、KV cache 分级卸载、预填充与解码分离等技术在 1.0 里没有新增。变化在于这些技术被整合到可以长期运维的程度，包括稳定的 API、多个租户按优先级共享同一批硬件，以及升级时服务不中断。在一个编码 agent 的负载测试里，前缀感知路由用上了 97% 的可复用缓存。IBM 和 Red Hat 在自建部署上同时运行 3,000 个软件工程 agent，成本只有按服务购买同一开源模型的十分之一到五分之一。<strong class="hl">agent 会反复回到同样的代码和指令，所以把会话固定在同一副本上，收益比聊天场景更大</strong>。</p>
+  <p>IBM 和 Red Hat 在自己运维的集群上同时跑了 3,000 个写代码的 agent，成本比直接买同一个开源模型的托管服务便宜 5 到 10 倍。在另一个 agent 写代码的测试里，所有本来可以复用的缓存中，llm-d 的路由器有 97% 真的复用上了。llm-d 是 Google、IBM 和 Red Hat 一起做的开源推理栈，刚发布 1.0 版。它把带着同一段上下文回来的请求送到已经存着这段上下文的服务器，并让缓存在 GPU、CPU 和存储之间流动，尽量多复用。它还管理相互争抢资源的请求，并把读入提示和生成回答分到不同机器上做。博客没有说明测试用的模型、硬件和具体任务。<strong class="hl">agent 请求大量共用上下文，自建推理时把缓存复用做好，成本可以远低于托管服务</strong>。</p>
   
   <div class="foot">IBM Research</div>
   <div class="foot"><span>技术博客</span><span>·</span><span>2026-10-20</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 3 · Practical 4 · Evidence 3 · Timely 4</span></div>
@@ -145,7 +145,7 @@
   <div class="top"><span class="n">04</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.35</span></div>
   <h4><a href="https://www.itpro.com/software/development/amazon-targets-trainium-gains-with-new-torchneuron-developer-tool" target="_blank" rel="noopener">Amazon targets Trainium gains with new TorchNeuron developer tool</a></h4>
   <div><span class="chip"><span class="cname"><img class="clogo" src="../../../logos/amazon.png" alt="" width="16" height="16" loading="lazy" decoding="async">Amazon</span></span></div>
-  <p>亚马逊发布了 TorchNeuron，让现有的 PyTorch 代码只改一行配置就能跑在 AWS Trainium 芯片上，并以 Apache 2.0 协议开源。亚马逊称，同一个训练脚本在常规芯片和 Trainium 上学到的东西和学习速度一致，测试、调试和扩展工具也不用修改。语音 AI 公司 Cartesia 表示，只有反复调用、决定端到端延迟的那几层需要用 NKI（AWS 给 Trainium 手写内核的编程接口）重写，其余算子照原样交给 TorchNeuron 运行。文章没有给出 Trainium 和 GPU 的性能对比数据。<strong class="hl">对推理团队来说，它降低的是换硬件时重写和重新验证代码的成本</strong>。</p>
+  <p>Amazon 的工程师把同一个训练脚本分别放在普通芯片和自家的 Trainium 芯片上跑，唯一的改动是告诉代码用哪块芯片的那项设置，结果模型以同样的速度学到了同样的东西。语音公司 Cartesia 说，他们的标准推理流程在 Trainium 上几乎没改 PyTorch 代码就跑起来了，小算子靠原生支持就够快，只需给反复调用、决定延迟的那几层手写算子。这靠的是新工具 TorchNeuron，它让现有的 PyTorch 代码只改一行配置就能跑在 Trainium 上。以前换到新芯片往往要重写和重新验证代码，而据 Amazon 说，85% 的 AI 研究者和开发者用 PyTorch 写代码。文章没有给出性能对比数字。TorchNeuron 会以 Apache 2.0 许可开源。<strong class="hl">换芯片的成本主要在改代码，框架原生支持能把这部分降到一行配置</strong>。</p>
   
   <div class="foot">ITPro</div>
   <div class="foot"><span>网页来源</span><span>·</span><span>2026-10-20</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 3 · Practical 4 · Evidence 3 · Timely 4</span></div>
@@ -155,7 +155,7 @@
   <div class="top"><span class="n">05</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.20</span></div>
   <h4><a href="https://hysenlabs.com/projects/ztxz16-fastllm" target="_blank" rel="noopener">FastLLM: a C++ LLM inference engine</a></h4>
   <div><span class="chip"><span class="cname"><span class="clogo mono" style="--h:148" aria-hidden="true">H</span>Hysen Labs</span></span></div>
-  <p>FastLLM 是一个用 C++ 写的 LLM 推理引擎，不依赖 PyTorch，直接读取 Hugging Face 权重，并提供和 OpenAI、Anthropic 兼容的接口。它的核心设计是不要求权重全部放进显存，普通层和 MoE 的专家层可以按用户指定的比例，分别放在 GPU、CPU 内存或磁盘上。作者称，在一台双路服务器加一张 GPU 上，全精度 DeepSeek 单并发能达到每秒 20 个 token，但仓库里没有可以复核的基准数据。<strong class="hl">它针对的是显存放不下模型、但主机内存和 SSD 富余的机器</strong>。</p>
+  <p>FastLLM 的仓库介绍说，它能在任何显存 10 GB 以上的 GPU 上跑不做裁剪的完整版 DeepSeek，但没有写明是哪一版 DeepSeek。在双路 AMD EPYC 9004 或 9005 服务器上，全精度、一次只处理一个请求时，每秒能生成 20 个 token。这篇评测文章指出，仓库里没有可以核对这些数字的基准数据。FastLLM 是一个用 C++ 写的推理引擎，不依赖 PyTorch，直接读取 Hugging Face 上的权重，提供和 OpenAI、Anthropic 兼容的接口。它最特别的地方是不要求权重全部放进显存，用户可以把普通层和 MoE 的专家层分别放在 GPU 显存、CPU 内存甚至磁盘上，按自己选的比例组合硬件。它适合的场景很窄，主要是内存或固态硬盘比显存大得多、又要跑 MoE 模型的机器。<strong class="hl">显存不够时，按层把权重分到内存和磁盘上，是在小机器上跑大 MoE 模型的现实做法</strong>。</p>
   
   <div class="foot">Hysen Labs</div>
   <div class="foot"><span>网页来源</span><span>·</span><span>2026-10-10</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 3 · Practical 4 · Evidence 3 · Timely 3</span></div>
@@ -165,7 +165,7 @@
   <div class="top"><span class="n">06</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.20</span></div>
   <h4><a href="https://developer.aliyun.com/article/1758314" target="_blank" rel="noopener">向量检索数据库选型：Tair（Redis 企业版）内置向量引擎方案</a></h4>
   <div><span class="chip"><span class="cname"><img class="clogo" src="../../../logos/alibaba.png" alt="" width="16" height="16" loading="lazy" decoding="async">Alibaba</span></span></div>
-  <p>这是阿里云开发者社区的一篇选型文章，介绍 Tair（Redis 企业版）内置的 TairVector 向量引擎。它支持 HNSW 和 FLAT 两种索引，也支持向量检索加 BM25 全文检索的混合检索。文章主张 RAG 场景不必再单独部署 Milvus 或 Qdrant，用一套 Tair 同时负责缓存、向量检索和状态管理，并称单节点能达到 51 万 QPS。不过文章没有说明这个数字对应的向量维度、数据量和召回率，选型时应该用自己的数据复测。<strong class="hl">这个方案的主要卖点是少维护一套独立的向量数据库</strong>。</p>
+  <p>阿里云称，Tair（Redis 企业版）单节点能跑到 51 万 QPS，并以此推荐它作为 RAG 应用的向量数据库。不过简介没有说明这个数字测的是什么操作、用什么硬件和多大的数据。方案的思路是不再单独部署 Milvus 或 Qdrant，直接用 Tair 内置的 TairVector 向量引擎。它支持 HNSW 和 FLAT 两种索引，也支持向量检索和 BM25 全文检索混合使用，检索延迟在毫秒级。这样一套 Tair 同时负责缓存、向量检索和会话状态管理，系统里少一个组件。这是一篇产品选型文章，我们只读到了简介，正文需要登录才能看到。<strong class="hl">RAG 系统已经用 Redis 做缓存时，直接用它的向量引擎可以少维护一套数据库</strong>。</p>
   
   <div class="foot">阿里云</div>
   <div class="foot"><span>技术博客</span><span>·</span><span>2026-08-26</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 2 · Practical 4 · Evidence 3 · Timely 2</span></div>
@@ -175,7 +175,7 @@
   <div class="top"><span class="n">07</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.00</span></div>
   <h4><a href="https://arxiv.org/abs/2610.19405" target="_blank" rel="noopener">Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off</a></h4>
   
-  <p>戴尔 CTO 办公室的这篇测量论文研究大模型推理该怎么选并行方式。预填充阶段决定首 token 延迟（TTFT），解码阶段决定相邻 token 之间的延迟（ITL）。作者在 8 张 H200 上用 vLLM 跑 Qwen2.5-14B，比较张量并行（TP）、流水线并行（PP）和两者混合的配置。负载越偏向预填充、TTFT 要求越严格、上下文越长，以 PP 为主的配置越有优势，而延迟要求放宽后，以 TP 为主的配置因为吞吐更高而胜出。<strong class="hl">最优的并行方式随负载、延迟要求和上下文长度变化，更适合做成运行时可调的参数</strong>。</p>
+  <p>作者在 H200 GPU 上跑 Qwen2.5-14B-Instruct，每个请求输入 1200 个 token、输出 2800 个 token，同时有 256 个请求。要求首 token 在 5 秒或 10 秒内出来时，把模型的各层按顺序分给不同 GPU 的流水线并行，能按时完成的请求最多。把要求放宽到 20 秒或 25 秒，优势先转向两种并行各用一部分的混合配置，再转向把每一层拆到多块 GPU 上一起算的张量并行。作者分别测了首 token 时间、相邻 token 的间隔和每秒完成的请求数，再用吞吐乘以按时出首 token 的请求比例，算出真正有用的吞吐。在输入越来越长的实验里，流水线为主的配置按时完成的比例更高，最后有用吞吐也超过了张量并行为主的配置。<strong class="hl">选哪种并行方式，要先看首 token 的时限有多紧，而不是只看吞吐</strong>。</p>
   
   
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-14</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 3 · Practical 3 · Evidence 3 · Timely 3</span></div>
@@ -185,7 +185,7 @@
   <div class="top"><span class="n">08</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.05</span></div>
   <h4><a href="https://huggingface.co/blog/basecompute/superfluid" target="_blank" rel="noopener">Introducing Superfluid: the local-AI native LLM server for multi-agent inference</a></h4>
   <div><span class="chip"><span class="cname"><span class="clogo mono" style="--h:26" aria-hidden="true">B</span>BaseCompute</span></span></div>
-  <p>Superfluid 是 BaseCompute 开源的本地 LLM 服务器，面向一台机器上同时跑多个 agent 的场景，兼容 OpenAI、Anthropic 和 Ollama 的接口。交互请求会在下一个调度周期抢占正在运行的批量任务；每个 token 先写进日志再返回，工作进程崩溃后会话能从断点继续；共享同一个系统提示的请求只做一次预填充。在 Apple M5 Pro 上，8 个 agent 在后台工作时，一条聊天请求的首 token 延迟是 1.5 秒，llama-server 要 291 秒。<strong class="hl">差距来自优先级抢占，同样的模型和运行时，聊天请求不再排在批量任务后面</strong>。</p>
+  <p>一台 Mac 上有 8 个 agent 在处理 7.5k token 的文档，2 秒后用户在聊天框里问了一个问题。Superfluid 0.36 秒就给出了回答，同一台机器、同一个模型用 llama-server 要等 10 秒以上，相差约 30 倍。原因在调度。llama-server 这类服务器为吞吐设计，新来的聊天请求要排在批处理任务后面。Superfluid 在下一个调度周期就让交互请求插队，agent 的任务稍后继续。另一个例子是 32 个请求共用同一段系统提示，它只做一次预填充，所有请求共用结果。这些数字来自发布博客里的演示，不是独立的基准测试。<strong class="hl">本地多个 agent 共用一台机器时，调度要优先照顾人在等的那个请求</strong>。</p>
   
   <div class="foot">BaseCompute</div>
   <div class="foot"><span>技术博客</span><span>·</span><span>2026-10-08</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 3 · Practical 4 · Evidence 2 · Timely 2</span></div>
