@@ -29,6 +29,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../css/pages.css?v=ffad741ab2" />
+<link rel="stylesheet" href="../vendor/katex/katex.min.css?v=ffad741ab2"><style>.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:1em 0}.katex{font-size:1.08em}</style>
 </head>
 <body class="t-agentic">
 <div class="navwrap"><div class="wrap"><nav class="nav" aria-label="主导航">
@@ -53,8 +54,8 @@
     <div class="by">Yam Marcovitz · Parlant · arXiv 2610.29326 · 发表 2026-10-21</div>
   </div>
   <div class="rmeta">
-    <span><b>12 分钟</b>阅读时长</span>
-    <span><b>4643</b>字</span>
+    <span><b>13 分钟</b>阅读时长</span>
+    <span><b>5032</b>字</span>
     <span><b>4.40</b>综合分</span>
     <span><b>第 3 名</b><a href="../#/view/2026-10-23/agentic">10-23 Agentic 日报</a></span>
   </div>
@@ -72,26 +73,26 @@
 <h3>2.1 离线：为每条规则造正例和难负例</h3>
 <p>对每条规则，用 gemini-3.5-flash 仅根据规则原文生成两组用户消息。第一组是 signals，即应当触发这条规则的消息，例如取消政策对应&quot;我想取消下周去芝加哥的航班&quot;。第二组是 anti-signals，即同一话题附近、但应由别的规则处理的消息，例如&quot;我想把航班从周二改到周四&quot;，这属于改签规则。生成过程不使用任何真实对话。</p>
 <h3>2.2 每条规则一个逻辑回归</h3>
-<p>对每条规则，用这 20 条消息的向量训练一个逻辑回归，输出&quot;相关&quot;的概率。每条规则的分类器只依赖它自己的样例，新增或修改一条规则，只需为它重新生成样例、训练一个分类器（约 2 毫秒），其他规则不受影响。</p>
+<p>对每条规则，用这 20 条消息的向量训练一个逻辑回归。打分用的是逻辑回归在 sigmoid 之前的值 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7778em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span>（对数几率）：0 对应&quot;相关&quot;概率 0.5，负值对应概率低于一半；分数高于阈值 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span></span></span></span> 就把这条规则交给后面的 LLM 判断。每条规则的分类器只依赖它自己的样例，新增或修改一条规则，只需为它重新生成样例、训练一个分类器（约 2 毫秒），其他规则不受影响。</p>
 <p>作者解释了为什么不用&quot;其他规则的正例&quot;当负例。他们早期试过这种做法，结果两条在向量空间里挨得很近的规则会互相落进对方的负例集，两个分类器都把它们共同的区域推到负的一侧，一轮对话明明和其中一条相关，却被两个分类器同时拒绝。规则越多、近义规则越多，这个问题越严重。每条规则自带负例，就从结构上避免了这种互相压制。</p>
 <h3>2.3 线上：两种对话视角取最大值</h3>
-<p>第 t 轮时，对两种向量打分并取最大值：一是到当前为止整段对话的向量，二是到当前为止每一条用户消息单独的向量。所有向量先减去全部规则向量的中心再归一化，分数超过全局阈值 θ 就保留该规则。对单条用户消息取最大值，是为了在对话换话题时，前面的内容不会稀释后面话题的信号。</p>
+<p>第 t 轮时，对两种向量打分并取最大值：一是到当前为止整段对话的向量，二是到当前为止每一条用户消息单独的向量。所有向量先减去中心向量再归一化，中心是 36 条规则原文向量的平均；分数超过全局阈值 θ 就保留该规则。对单条用户消息取最大值，是为了在对话换话题时，前面的内容不会稀释后面话题的信号。</p>
 <figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/agentic/2610.29326/fig2_logreg.png" alt="一条规则（取消航班）的逻辑回归分类器上各点的位置（论文 Figure 2）。横轴是分类器的打分。绿色为生成的 signals，红色为生成的 anti-signals，两者分得很开；蓝色星号是大模型判为相关的真实对话，灰色叉号是判为无关的真实对话，两者都挤在中间且大量重叠。紫色虚线是为保召回而设的负阈值。" loading="lazy" decoding="async"><figcaption>一条规则（取消航班）的逻辑回归分类器上各点的位置（论文 Figure 2）。横轴是分类器的打分。绿色为生成的 signals，红色为生成的 anti-signals，两者分得很开；蓝色星号是大模型判为相关的真实对话，灰色叉号是判为无关的真实对话，两者都挤在中间且大量重叠。紫色虚线是为保召回而设的负阈值。</figcaption></figure>
-<p>这张图把整篇论文的难点画得很清楚。生成的样例在分类器上分得干干净净，真实对话却全都落在两者之间，相关和无关的大量重叠。为了让相关对话尽量不漏，阈值只能放到负值（Gemini 用 −0.45，OpenAI 用 −0.4），代价是大批无关对话也被放了进来。精确率只有三成多，根源就在这里：<strong class="hl">生成样例和真实对话之间存在明显的分布差异</strong>。</p>
+<p>这张图把整篇论文的难点画得很清楚。生成的样例在分类器上分得干干净净，真实对话却全都落在两者之间，相关和无关的大量重叠。为了让相关对话尽量不漏，阈值只能放到负值（Gemini 用 −0.45，OpenAI 用 −0.4，即相关概率约 0.4 也放行），代价是大批无关对话也被放了进来。精确率只有三成多，根源就在这里：<strong class="hl">生成样例和真实对话之间存在明显的分布差异</strong>。</p>
 <h2 id="s3">3. 实验</h2>
 <h3>3.1 设置</h3>
-<p>对话是 50 段由 Parlant 客服和 τ²-bench 用户模拟器生成的航空客服对话，每个以用户消息结尾的前缀算一个查询状态，共 254 个。规则共 36 条：τ²-bench 航空政策的 6 节，加上作者另写的 30 条（身份验证、行李索赔、无人陪伴儿童、票价规则、欺诈处理等），其中故意放了几组近义规则。标准答案由 gemini-3.1-flash-lite 用 Parlant 线上的相关性提示词，对每个（对话前缀，规则）组合打 1 到 5 分，4 分及以上算相关，共 9,144 个标签。指标在 31 条至少出现过一次的规则上做宏平均。基线有四种：按规则原文或按 signals 的余弦相似度取前 K 条，或者按余弦阈值截断。</p>
+<p>对话是 50 段由 Parlant 客服和 τ²-bench 用户模拟器生成的航空客服对话，每个以用户消息结尾的前缀算一个查询状态，共 254 个。规则共 36 条：τ²-bench 航空政策的 6 节，加上作者另写的 30 条（身份验证、行李索赔、无人陪伴儿童、票价规则、欺诈处理等），其中故意放了几组近义规则。标准答案由 gemini-3.1-flash-lite 用 Parlant 线上的相关性提示词，对每个（对话前缀，规则）组合打 1 到 5 分，4 分及以上算相关，共 9,144 个标签。指标在 31 条至少出现过一次的规则上做宏平均。基线有四种，打分方式两类：一类用查询和规则原文的余弦；另一类用查询和这条规则 10 条 signals 的余弦里的最大值。每类再分别取前 K 条，或者按余弦阈值截断。基线和 S&amp;Q 用同样的两种查询向量、同样取最大值。</p>
 <h3>3.2 召回率和精确率</h3>
 <figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/agentic/2610.29326/fig3_frontier.png" alt="宏平均召回率–精确率曲线（论文 Figure 3）。深蓝为 S&amp;Q，实线为 Gemini embedding，虚线为 OpenAI embedding；取前 K 条的方法在 K=15 时召回率停在约 66%。" loading="lazy" decoding="async"><figcaption>宏平均召回率–精确率曲线（论文 Figure 3）。深蓝为 S&amp;Q，实线为 Gemini embedding，虚线为 OpenAI embedding；取前 K 条的方法在 K=15 时召回率停在约 66%。</figcaption></figure>
 <p>S&amp;Q 在每个召回水平上精确率都最高，在 60% 到 70% 的召回区间领先约 4 个点，但到了实际要用的高召回端，差距缩小到 OpenAI 上 2.9 个点、Gemini 上 0.9 个点。取前 K 条的方法即使取 K=15（36 条中的 15 条），召回率也只有约 66%，因为每轮同时相关的规则数量变化很大，固定条数的截断天然不适合这个任务。</p>
 <div class="tbl"><table><thead><tr><th>方法</th><th>Gemini 召回%</th><th>Gemini 精确%</th><th>OpenAI 召回%</th><th>OpenAI 精确%</th></tr></thead><tbody><tr><td>前 K 条（规则原文，K=15）</td><td>66</td><td>40</td><td>64</td><td>41</td></tr><tr><td>前 K 条（signals，K=15）</td><td>65</td><td>39</td><td>64</td><td>39</td></tr><tr><td>余弦阈值（规则原文）</td><td>93</td><td>31</td><td>94</td><td>31</td></tr><tr><td>余弦阈值（signals）</td><td>91</td><td>31</td><td>92</td><td>31</td></tr><tr><td>S&amp;Q</td><td>93</td><td>32</td><td>91</td><td>34</td></tr></tbody></table></div>
 <p>在 90% 召回这个工作点上，S&amp;Q 和最简单的余弦阈值只差 1 到 3 个点。换句话说，如果只看默认配置，训练分类器带来的好处很小。论文的标题性贡献，即&quot;比向量检索更好&quot;，在部署工作点上并不显著。</p>
 <h3>3.3 消融：几乎什么都不重要</h3>
-<div class="tbl"><table><thead><tr><th>变体</th><th>曲线下面积（Gemini）</th><th>曲线下面积（OpenAI）</th><th>90% 召回下精确率（G/O）</th></tr></thead><tbody><tr><td>默认设置</td><td>.471</td><td>.475</td><td>32 / 34</td></tr><tr><td>负例换成其他规则的 signals</td><td>.501</td><td>.498</td><td>32 / 33</td></tr><tr><td>不用负例</td><td>.423</td><td>.429</td><td>31 / 31</td></tr><tr><td>只用整段对话视角</td><td>.526</td><td>.531</td><td>34 / 34</td></tr><tr><td>线性支持向量机</td><td>.463</td><td>.473</td><td>32 / 33</td></tr><tr><td>带符号 k-NN</td><td>.399</td><td>.396</td><td>30 / 30</td></tr><tr><td>每条规则 5+5 个样例</td><td>.436</td><td>.436</td><td>31 / 33</td></tr></tbody></table></div>
-<p>表中&quot;曲线下面积&quot;即 AUPRC（召回–精确率曲线下面积），衡量整条曲线。看最后一列就会发现，所有变体在 90% 召回下的精确率都挤在 30% 到 34% 之间，分类器换成支持向量机、去掉中心化、样例减半，结果都差不多。逻辑回归和线性支持向量机学到的方向余弦相似度为 0.98，几乎是同一个分类器。把每条规则的 anti-signals 从 10 条加到 30 条，精确率从 32.4% 变成 32.3%，因为新增的样例中 94% 和已有的某一条余弦相似度在 0.6 以内，生成模型写来写去都是相似的句子。</p>
+<div class="tbl"><table><thead><tr><th>变体</th><th>曲线下面积（Gemini）</th><th>曲线下面积（OpenAI）</th><th>90% 召回下精确率（G/O）</th></tr></thead><tbody><tr><td>默认设置</td><td>.471</td><td>.475</td><td>32 / 34</td></tr><tr><td>负例换成其他规则的 signals</td><td>.501</td><td>.498</td><td>32 / 33</td></tr><tr><td>不用负例（不训练分类器，直接按和最近 signal 的相似度打分）</td><td>.423</td><td>.429</td><td>31 / 31</td></tr><tr><td>只用整段对话视角</td><td>.526</td><td>.531</td><td>34 / 34</td></tr><tr><td>线性支持向量机</td><td>.463</td><td>.473</td><td>32 / 33</td></tr><tr><td>带符号 k-NN（找最近的几条样例，signal 记正、anti-signal 记负）</td><td>.399</td><td>.396</td><td>30 / 30</td></tr><tr><td>每条规则 5+5 个样例</td><td>.436</td><td>.436</td><td>31 / 33</td></tr></tbody></table></div>
+<p>表中&quot;曲线下面积&quot;即 AUPRC（召回–精确率曲线下面积），衡量整条曲线。看最后一列就会发现，所有变体在 90% 召回下的精确率都挤在 30% 到 34% 之间，分类器换成支持向量机、去掉中心化、样例减半，结果都差不多。逻辑回归和线性支持向量机学到的方向余弦相似度为 0.98，几乎是同一个分类器。把每条规则的 anti-signals 从 10 条加到 30 条，精确率从 32.4% 变成 32.3%，因为新增的样例中 94% 和已有的某一条余弦相似度不低于 0.6，生成模型写来写去都是相似的句子。</p>
 <p>有两项结果和默认设置相反。用其他规则的 signals 当负例，AUPRC 略高于专门生成的 anti-signals，作者保留后者是为了避免 2.2 节说的互相压制。只用整段对话视角的 AUPRC 也更高，因为基准里的对话短而且话题单一（中位数约 1,600 字符），逐条取最大值的设计用不上。为此作者另做了合成测试：把两段不同任务的对话拼成&quot;先 A 后 B&quot;，在 30% 误报率下，逐条取最大值比整段视角在 B 话题规则上的召回率高 12 到 19 个点。所以这项设计在真实的长对话里可能有用，但在论文的主基准上反而拖了后腿。</p>
 <h3>3.4 换成真实对话里的样例</h3>
-<p>既然分类器、编码器、样例数量都不重要，剩下的只有样例的来源。作者把对话场景对半分，从一半里挖样例：规则得分首次达到最高的那条用户消息作 signal，被判为明显无关、且最接近该规则 signals 的用户消息作 anti-signal；在另一半上评估。</p>
+<p>既然分类器、编码器、样例数量都不重要，剩下的只有样例的来源。作者把对话场景对半分，从一半里挖样例：用 LLM 评委逐轮给这条规则打相关分，分数第一次升到这段对话里的最高值的那条用户消息，就是真正触发这条规则的消息，作 signal，被判为明显无关、且最接近该规则 signals 的用户消息作 anti-signal；在另一半上评估。下表箭头左边是用 LLM 从规则文本生成的样例（前文的做法），右边是换成挖出的样例，其他都不变。最后一行的 SetFit 是一种少样本分类方法：先用少量标注样例对句向量编码器做对比学习微调，再在微调后的向量上训练分类头，这里拿它检验“微调编码器”会不会比 S&amp;Q 的冻结编码器更好。</p>
 <div class="tbl"><table><thead><tr><th>方法</th><th>90% 召回下精确率（%）</th><th>AUPRC</th></tr></thead><tbody><tr><td>余弦（signals，Gemini）</td><td>32.0 → 35.3</td><td>.459 → .501</td></tr><tr><td>余弦（signals，OpenAI）</td><td>32.8 → 36.5</td><td>.467 → .480</td></tr><tr><td>S&amp;Q（Gemini）</td><td>33.9 → 43.5</td><td>.475 → .602</td></tr><tr><td>S&amp;Q（OpenAI）</td><td>35.3 → 41.6</td><td>.496 → .608</td></tr><tr><td>S&amp;Q（本地 MiniLM）</td><td>32.6 → 39.7</td><td>.457 → .540</td></tr><tr><td>SetFit 微调（本地 MiniLM）</td><td>31.6 → 37.3</td><td>.450 → .559</td></tr></tbody></table></div>
 <p>这里才拉开了差距。同样换成挖出的样例，余弦方法的精确率只涨 3 到 4 个点，S&amp;Q 涨 6 到 10 个点。原因是余弦相似度只能用正例，没有地方放负例，而 S&amp;Q 的提升几乎全部来自挖出的难负例：只替换正例时，Gemini 上提升 0.5 个点，OpenAI 上反而下降 1.5 个点。用同一个本地小模型 all-MiniLM-L6-v2 比较，冻结编码器加逻辑回归也比微调编码器的 SetFit 涨得多，而且后者每条规则要部署一个约 90 MB 的模型，逻辑回归权重只有约 12 KB。不过评估集只有 131 个对话片段，作者也承认这组结果只能看方向和大致幅度。</p>
 <h2 id="s4">4. 局限</h2>

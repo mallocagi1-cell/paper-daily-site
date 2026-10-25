@@ -27,6 +27,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../../../css/pages.css?v=ffad741ab2" />
+<link rel="stylesheet" href="../../../vendor/katex/katex.min.css?v=ffad741ab2"><style>.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:1em 0}.katex{font-size:1.08em}</style>
 </head>
 <body class="t-personalization">
 <div class="navwrap"><div class="wrap"><nav class="nav" aria-label="主导航">
@@ -55,7 +56,7 @@
     <div>
       <div class="k">LEAD STORY · 今日必读 · <span class="cname"><img class="clogo" src="../../../logos/linkedin.png" alt="" width="16" height="16" loading="lazy" decoding="async">LinkedIn</span></div>
       <h2><a href="https://arxiv.org/abs/2610.30941" target="_blank" rel="noopener">PAIR: Preference-Aligned Intent Retrieval for Premium People Recommendation at LinkedIn</a></h2>
-      <p>LinkedIn 给 Premium 会员推荐可以浏览的人脉时，用户已经看过谁本身就是偏好信号，但通用的会员向量和开箱即用的 LLM embedding 都没有学过这一点。PAIR 把展示过并被点开的人当正例、展示过却没点开的人当负例，用一个 0.6B 的小模型做对比学习，让曝光条件直接进入训练目标。离线召回指标 MAR@100 从通用会员向量的 0.288 提到 0.450，线上 A/B 测试的点击率提高 7.5%，服务延迟没有明显变化。<strong class="hl">把用户看过却没点的人写进训练目标，小模型也能胜过大而通用的会员向量</strong>。</p>
+      <p>LinkedIn 给 Premium 会员推荐可以浏览的人脉时，用户已经看过谁本身就是偏好信号，但通用的会员向量和开箱即用的 LLM embedding 都没有学过这一点。PAIR 把展示过并被点开的人当正例、展示过却没点开的人当负例，用一个 0.6B 的小模型做对比学习，让曝光条件直接进入训练目标。离线召回指标 MAR@100（被点开的人有多少排进了模型给的前 100 名，按用户取平均）从通用会员向量的 0.288 提到 0.450，线上点击率也有提高，服务延迟没有明显变化。<strong class="hl">把用户看过却没点的人写进训练目标，小模型也能胜过通用会员向量</strong>。</p>
     </div>
     <div class="btns"><a class="btn w" href="../../../deep-readings/2610.30941.html">&#128214; 深度解读 · 10 分钟</a><a class="btn ghost" href="https://arxiv.org/abs/2610.30941" target="_blank" rel="noopener">arXiv &#8599;</a></div>
   </div>
@@ -101,7 +102,7 @@
 <p>最后一个设计是让一个模型输出长短不同的向量。训练时同时要求向量的前 200、256、512、1024 个数都能单独拿来用，这就是 Matryoshka 训练。上线时按场景截取需要的长度即可，不必为每个场景另训一个模型。200 这个长度，是为了和线上现用模型的存储占用（171 个数）差不多。</p>
 <h2>4. 实验怎么做</h2>
 <p>数据按时间切分：较早的日志用来训练，共 20.9 万条查询，涉及 440 万份不同资料；较晚的用来测试，共 1.18 万条查询，涉及 9.3 万份资料。按时间切分是为了模拟真实情况：模型只能用过去学，再去预测将来。</p>
-<p>主要看的指标叫 MAR@k（平均召回率，k 表示看前几名）。做法是给每个查询用户准备一个固定的 100 人候选池，里面混着他真正点过的人和其他人，看模型把这 100 人排完序后，点过的人有多少落进了前 k 名。比如 MAR@100 等于 0.45，可以大致理解为点过的人里有 45% 被找了回来。作者还报告了一个更容易的指标：从 1 个点过的、3 个没点的共 4 人里，模型能不能把点过的排第一。随便猜也有 25% 的命中率。这个指标所有改进版本都超过 96%，已经区分不出好坏，所以主要看 MAR@k。</p>
+<p>主要看的指标叫 MAR@k（平均召回率，k 表示看前几名）。做法是给每个查询用户准备一个固定的 100 人候选池，里面混着他真正点过的人和其他人，看模型把这 100 人排完序后，点过的人有多少落进了前 k 名。要注意，论文对 MAR@k 只有这一句定义。候选池正好 100 人时，前 100 名必然包含所有点过的人，简单的“前 100 名召回率”应当是 1，所以 0.45 不会是这个意思；从名字（Mean Average Recall）看，更可能是把 1 到 k 各个截断位置上的召回率再取平均，排得越靠前分越高，但论文没有写明。因此下文的 MAR@k 只适合比较模型之间的高低，不宜换算成“找回了百分之几”。作者还报告了一个更容易的指标：从 1 个点过的、3 个没点的共 4 人里，模型能不能把点过的排第一。随便猜也有 25% 的命中率。这个指标所有改进版本都超过 96%，已经区分不出好坏，所以主要看 MAR@k。</p>
 <p>对比的对象有三个：LinkedIn 线上正在用的通用成员向量 Holistic-171（171 个数，为多个业务目标一起训练）、没有经过任何微调的同一个 6 亿参数模型，以及 PAIR 的各种变体。</p>
 <h2>5. 结果</h2>
 <table><thead><tr><th>模型</th><th>MAR@25</th><th>MAR@100</th></tr></thead><tbody><tr><td>线上现用的 Holistic-171</td><td>0.169</td><td>0.288</td></tr><tr><td>未微调的 6 亿参数模型</td><td>0.100</td><td>0.192</td></tr><tr><td>PAIR，不用最近点击</td><td>0.255</td><td>0.436</td></tr><tr><td>PAIR，最近点击取简单平均</td><td>0.253</td><td>0.430</td></tr><tr><td>PAIR，最近点击用学出来的权重</td><td>0.265</td><td>0.450</td></tr></tbody></table>
@@ -114,7 +115,7 @@
 <p>离线提升了 56%，线上点击率只涨了 7.5%，作者解释了这个落差。召回改善的只是“候选名单”，最终用户点不点，还取决于排序、页面展示和用户当时的情境。这在多步骤的推荐系统里是常见现象。</p>
 <h2>6. 局限与实践意义</h2>
 <p>作者列出的局限有四点。线上实验固定了后面的排序模型，召回和排序一起调可能还有空间。实验看的主要是短期点击和续订，更长期的订阅效果需要更长时间观察。负例怎么选是工程上的折中，“只用随机的”“只用看到没点的”“用相似度挖出来的”三种做法还没系统比较。测试只在 Premium Browsemaps 上做，能不能用到邮件推荐、职位匹配等其他场景还没验证。再加上前面说的，日志里的负例会把老系统的偏向带进新模型。</p>
-<p>对做推荐召回的团队，这篇论文有三条可以直接借鉴的经验。第一，如果你的场景是<strong>双边或互补匹配</strong>，比如招聘、婚恋、企业间撮合、导师匹配，“像就是相关”这个假设可能不成立。用“看到了却没点”的样本来训练，成本低，论文里大部分提升都来自这一步。第二，想跟上用户的实时意图又不想在线跑大模型，可以学 PAIR 把最近行为做成预先算好的向量的加权平均，更新只要一次很小的计算。但<strong class="hl">先确认这种做法真的比不加强</strong>，论文里几种常见的平均方法都比不加还差。第三，多个场景共用一个模型时，“套娃”式训练能让一个模型满足不同的存储和速度要求，不必维护好几套模型。</p></div>
+<p>对做推荐召回的团队，这篇论文有三条可以直接借鉴的经验。第一，如果你的场景是<strong>双边或互补匹配</strong>，比如招聘、婚恋、企业间撮合、导师匹配，“像就是相关”这个假设可能不成立。用“看到了却没点”的样本来训练，成本低，论文里大部分提升都来自这一步。第二，想跟上用户的实时意图又不想在线跑大模型，可以学 PAIR 把最近行为做成预先算好的向量的加权平均，更新只要一次很小的计算。但<strong class="hl">先确认加了最近行为之后效果真的比不加更好</strong>，论文里几种常见的平均方法都比不加还差。第三，多个场景共用一个模型时，“套娃”式训练能让一个模型满足不同的存储和速度要求，不必维护好几套模型。</p></div>
   </div>
 </div></div>
 </section>
@@ -123,7 +124,7 @@
   <div class="top"><span class="n">02</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.00</span></div>
   <h4><a href="https://arxiv.org/abs/2610.05220" target="_blank" rel="noopener">Ranking Bandits for Carousel Interfaces with Observable Browsing Depth</a></h4>
   <div><span class="chip deep">&#128214; 有深读 · 10 分钟</span></div>
-  <p>在轮播和信息流里，用户往往浏览到某个深度就停下，更靠后的位置根本没被看到。经典的位置偏差模型（PBM）却把这些位置当成看到了但没点，给它们记上负反馈。这篇论文假设浏览深度可以直接观测，提出 OD-UCB、OD-TS 和 OD-DMED 三种算法，只用真正被看到的位置更新统计量，并证明了 OD-UCB 的累积遗憾按对数增长。在模拟浅浏览和深浏览的环境里，OD-TS 的累积遗憾和事先知道各位置被看概率的 PBM-TS 相当，三种新方法都优于 PBM-UCB。<strong class="hl">能看到用户浏览到哪里，就不该给没被看到的位置记负反馈</strong>。</p>
+  <p>在轮播和信息流里，用户往往浏览到某个深度就停下，更靠后的位置根本没被看到。经典的位置偏差模型（PBM）却把这些位置当成看到了但没点，给它们记上负反馈。这篇论文假设浏览深度可以直接观测，在三种常见的多臂老虎机策略上各做了一个版本，其中包括置信上界法（UCB）和汤普森采样（TS），都只用真正被看到的位置更新统计量，并证明了 UCB 版本的累积遗憾按对数增长。在模拟环境里，TS 版本的累积遗憾和事先知道各位置被看概率的 PBM 汤普森采样相当，三种新方法都优于基于 PBM 的置信上界法。<strong class="hl">能看到用户浏览到哪里，就不该给没被看到的位置记负反馈</strong>。</p>
   
   <div class="foot">Takuma Yasuda, Atsuyoshi Nakamura, Dai Hai Nguyen</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-20</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 4 · Timely 4</span></div>
@@ -166,7 +167,7 @@
 <ul>
 <li><strong>OD-UCB</strong> 是 UCB：点击比例加上置信项，没被看过的物品得分无限大，一定会被试。每轮展示得分最高的 5 个，实现最简单。</li>
 <li><strong>OD-TS</strong> 是 Thompson sampling。因为分母只有确认看到的次数，每个物品的后验一直是共轭的 Beta 分布，直接采样就行，每轮计算量很小。</li>
-<li><strong>OD-DMED-L</strong> 平时就展示当前估计最好的 5 个；同时对前 5 名之外的物品逐个用 KL 散度检验“能不能确定它比第 5 名差”，证据不够的，就安排它在第 5 个位置上试一次。试错只花在没把握的地方，所以理论上最省。</li>
+<li><strong>OD-DMED-L</strong> 平时就展示当前估计最好的 5 个；同时检查前 5 名之外的每个物品能不能断定比第 5 名差：用它被确认看到的次数，乘以它和第 5 名的点击率之间的 KL 散度（把两个点击率各看成一个伯努利分布，算两者差多远）。乘积小于 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">t</span></span></span></span>，说明看到的次数还太少、差距也不够大，证据不够，就把它排进队列，下一轮放在第 5 个位置上试一次。试错只花在没把握的地方，所以理论上最省。</li>
 </ul>
 <p>三个算法有一个共同点：真正需要分辨的，只是某个物品能不能挤进前 5，也就是它和第 5 名差多少。前面几名之间谁高谁低，对“该不该展示”影响不大。</p>
 <h2>4. 理论结果说明了什么</h2>
@@ -200,7 +201,7 @@
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.75</span></div>
   <h4><a href="https://arxiv.org/abs/2610.30825" target="_blank" rel="noopener">Bezier-Guided Adaptive Flow for Cross-domain Sequential Recommendation</a></h4>
   
-  <p>跨域序列推荐通常把一个域里学到的偏好整体对齐到另一个域，但不同用户在两个域里的兴趣一致程度差别很大，统一对齐容易把无关的偏好也搬过去。BGAFlow 先建立两个域共享的语义空间，再沿一条由贝塞尔曲线给出的参考路径，让每个用户的表示逐步向目标域演化。一个用户级的门控决定迁移多少：两个域兴趣一致的用户多迁移，不一致的用户少迁移。<strong class="hl">迁移多少偏好应该按用户决定，看这个人在两个域的兴趣有多一致</strong>。</p>
+  <p>跨域序列推荐通常把一个域里学到的偏好整体对齐到另一个域，但不同用户在两个域里的兴趣一致程度差别很大，统一对齐容易把无关的偏好也搬过去。推荐某个域的物品时，BGAFlow 让用户在这个域的表示朝另一个域的表示移动，再用走到的位置做推荐。移动沿一条贝塞尔曲线进行，曲线的中间控制点由一个小网络根据这个用户在两个域的画像向量算出。模型先把两个域的物品聚成一组共享的兴趣类别，比较用户在两个域里的兴趣分布有多重合，再据此预测这个用户沿曲线走多远。重合多的走得远，吸收另一个域的偏好多；重合少的走得近。<strong class="hl">迁移多少偏好应该按用户决定，看这个人在两个域的兴趣有多一致</strong>。</p>
   
   <div class="foot">Ziang Lu, Yu Zhang, Xinzhe Jiang, Lei Sang, Yiwen Zhang</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-22</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 3 · Evidence 3 · Timely 5</span></div>
@@ -210,7 +211,7 @@
   <div class="top"><span class="n">04</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.65</span></div>
   <h4><a href="https://link.springer.com/article/10.1007/s44163-026-02419-1" target="_blank" rel="noopener">Behavior lifetime modeling uses time sensitive behavioral signals to rank candidate items for purchase in E commerce recommendation</a></h4>
   <div><span class="chip"><span class="cname"><span class="clogo mono" style="--h:280" aria-hidden="true">J</span>Jiangxi University of Software Professional Technology</span></span></div>
-  <p>在多行为推荐里，用户的浏览、收藏和加购行为对预测购买的作用会随时间衰减，很久以前的一次加购不该再被当作强烈的购买意图。BLMRec 按行为类型和这条行为距离预测时刻的时间给每条行为编码，用多个时间窗口分别估计它的短期作用和长期作用，再把这些时效信号送进购买排序。在淘宝数据集上，它的 Recall@20 比最强基线提高 6.0%。<strong class="hl">每类行为都有自己的有效期，排序前要先判断它是否已经过时</strong>。</p>
+  <p>在多行为推荐里，用户的浏览、收藏和加购行为对预测购买的作用会随时间衰减，很久以前的一次加购不该再被当作强烈的购买意图。BLMRec 按行为类型和这条行为发生在预测时刻之前多久给每条行为编码，学出每类行为刚发生时作用有多强、能持续多久，再在购买排序时压低已经过时的行为。在淘宝数据集上，它的 Recall@20 比最强基线提高 6.0%。<strong class="hl">每类行为都有自己的有效期，排序前要先判断它是否已经过时</strong>。</p>
   
   <div class="foot">[&#x27;Yu Chen&#x27;]</div>
   <div class="foot"><span>网页来源</span><span>·</span><span>2026-10-13</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 3 · Practical 4 · Evidence 4 · Timely 3</span></div>
@@ -230,7 +231,7 @@
   <div class="top"><span class="n">06</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.85</span></div>
   <h4><a href="https://arxiv.org/abs/2610.30932" target="_blank" rel="noopener">UserArena: Benchmarking Interactive User Simulation for Long-Horizon Shopping Agents</a></h4>
   
-  <p>用 agent 做购物推荐，需要一个能模拟用户长时间交互的环境来做离线评测，但现有数据很少有细粒度的真人行为轨迹，离线结果也难和线上 A/B 测试对上。UserArena 公开了来自 11,010 名真实用户的 64,729 条会话轨迹，并配套交互环境和按整条轨迹打分的评估方法。它的离线策略评测可以和生产环境的 A/B 结果对照，用来检验模拟用户是否可信。<strong class="hl">有了长时间的真人轨迹和线上结果作参照，模拟用户的评测才可信</strong>。</p>
+  <p>用 agent 做购物推荐，需要一个能模拟用户长时间交互的环境来做离线评测，但现有数据很少有细粒度的真人行为轨迹，离线结果也难和线上 A/B 测试对上。UserArena 公开了来自 11,010 名真实用户的 64,729 条会话轨迹，并配套交互环境和评估方法。评估分五级，依次检查模拟用户是否遵守环境规则，以及它的单步行为、整段行为序列、人群分布和最终结果是否和真人一致。它的离线策略评测可以和生产环境的 A/B 结果对照，用来检验模拟用户是否可信。<strong class="hl">有了长时间的真人轨迹和线上结果作参照，模拟用户的评测才可信</strong>。</p>
   
   <div class="foot">Jujia Zhao, Jiakai Tang, Jing Yu, Wen Chen, Jian Wu, Han Zhu, Fei Sun, Suzan Verberne, Zhaochun Ren</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-22</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 3 · Evidence 4 · Timely 5</span></div>
@@ -240,7 +241,7 @@
   <div class="top"><span class="n">07</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.55</span></div>
   <h4><a href="https://arxiv.org/abs/2610.31506" target="_blank" rel="noopener">FairFRESH: A Neuro-Symbolic Framework for Fair and Explainable Household Food Recommendation</a></h4>
   
-  <p>一家人共用一个冰箱，每个人的饮食规则又不同，如果给每个人单独推荐食品，就可能争用同一份食材，或者违反某个人的饮食禁忌。FairFRESH 把家庭食品推荐当成带约束的公平分配问题。它先学习每个人对食品的偏好，再按全家的整体福利分配，最后用确定性的规则过滤器保证不违反任何饮食规则，并用 Shapley 值解释每项推荐。和先各自推荐再处理冲突的做法相比，成员之间的不公平程度（Gini 系数）降低 42%，所有推荐都满足饮食规则。<strong class="hl">共享库存和饮食禁忌是硬约束，必须用能强制执行的规则来保证</strong>。</p>
+  <p>一家人共用一个冰箱，每个人的饮食规则又不同，如果给每个人单独推荐食品，就可能争用同一份食材，或者违反某个人的饮食禁忌。FairFRESH 把家庭食品推荐当成带约束的公平分配问题。它先学习每个人对各种食品的喜好程度，再按纳什福利分配，也就是让各成员喜好得分的乘积最大，任何一个人被压得很低都会拉低总分。最后用确定性的规则过滤器保证不违反饮食规则。和先各自推荐再处理冲突相比，成员之间的不公平程度（Gini 系数）降低 42%。<strong class="hl">共享库存和饮食禁忌是硬约束，必须用能强制执行的规则来保证</strong>。</p>
   
   <div class="foot">Kodur Sai Vinay Sathvik, Kakoli Bora, Tejaswini R. M</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-22</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 4 · Practical 3 · Evidence 4 · Timely 5</span></div>
@@ -250,7 +251,7 @@
   <div class="top"><span class="n">08</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.45</span></div>
   <h4><a href="https://arxiv.org/abs/2610.30999" target="_blank" rel="noopener">Truthful by Omission: Click Thinning for LLM-Native Advertising</a></h4>
   
-  <p>生成式助手把广告写进回答时，点击率取决于广告所在的段落，而且用户常常点了第一个广告就不再往下看，所以排在前面的广告会抢走后面广告的点击。在这种情况下，现有拍卖机制要么福利有保证却不能确保广告主如实出价，要么能确保如实出价，福利却随段落增多而变差。作者提出点击稀疏化：随机省略一部分广告，让靠前的广告少出现一些，使每条广告的总点击概率不再取决于顺序，再按 VCG 规则收费。这样如实出价成为最优策略，社会福利也至少达到最优值的一半。<strong class="hl">助手里的广告不能照搬搜索广告的位置拍卖，诚实出价和福利要一起重新设计</strong>。</p>
+  <p>生成式助手把广告写进回答时，用户从上往下读，读到一条广告时按它自己的点击率决定点不点，点了就不再往下看，所以靠前的广告会抢走后面广告的点击。作者提出点击稀疏化，让靠前的广告少展示一些。每条广告单独随机决定是否保留，保留概率是 1 除以它自己和后面所有广告的点击率之和再加 1，越靠前分母越大。这样每条广告最终被点的概率都等于自己的点击率除以全部入选广告点击率之和加 1，和位置无关。收费按 VCG 规则，每家付的钱等于它的出现让其他广告主少得的价值。这样如实出价成为最优策略，福利至少达到最优值的一半。<strong class="hl">助手里的广告不能照搬搜索广告的位置拍卖</strong>。</p>
   
   <div class="foot">Junhua Liu, Zhicheng Liang, Zejun Zhang, Langzhou He, Feng Qian</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-22</span><span>·</span><span class="score-detail">Relevance 3 · Novelty 4 · Practical 3 · Evidence 3 · Timely 5</span></div>
@@ -270,7 +271,7 @@
   <div class="top"><span class="n">10</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.20</span></div>
   <h4><a href="https://arxiv.org/abs/2610.30359" target="_blank" rel="noopener">FAIRGate: Agentic Runtime Policy Selection and Verified Repair for Fairer Recommendation Delivery</a></h4>
   
-  <p>公平推荐通常在训练时固定一个公平目标，或在打分后套一个固定的重排规则，但线上每个请求的候选池、历史曝光欠账和效用预算都不同，适合的做法也不同。FAIRGate 在基础排序和最终的前 K 个结果之间加入一个选择策略的 agent，它从一个事先验证过的策略库里为每个请求选一种，比如扶持长尾曝光或平衡各组曝光。随后由执行器应用这条策略，再由校验器检查结果是否达标，不达标就修正。<strong class="hl">上线时的公平应该从验证过的策略里挑选，而不是每次临时重新定义</strong>。</p>
+  <p>公平推荐通常在训练时固定一个公平目标，或在打分后套一个固定的重排规则，但线上每个请求的候选池、各物品此前欠下的曝光、能为公平让出多少相关性都不同，适合的做法也不同。FAIRGate 在基础排序和最终的前 K 个结果之间加入一个选择策略的 agent，它从一个事先验证过的策略库里为每个请求选一种，比如扶持长尾曝光或平衡各组曝光。随后执行器在约束范围内按这条策略调整排序，校验器检查相关性、可行性等约束是否都满足，满足才放行。<strong class="hl">上线时的公平应该从验证过的策略里挑选，而不是每次临时重新定义</strong>。</p>
   
   <div class="foot">Navkar Jain, Enock Ayiku, Kenneth Fletcher</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-21</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 3 · Practical 3 · Evidence 1 · Timely 4</span></div>

@@ -29,6 +29,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../css/pages.css?v=ffad741ab2" />
+<link rel="stylesheet" href="../vendor/katex/katex.min.css?v=ffad741ab2"><style>.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:1em 0}.katex{font-size:1.08em}</style>
 </head>
 <body class="t-infra">
 <div class="navwrap"><div class="wrap"><nav class="nav" aria-label="主导航">
@@ -54,7 +55,7 @@
   </div>
   <div class="rmeta">
     <span><b>11 分钟</b>阅读时长</span>
-    <span><b>4017</b>字</span>
+    <span><b>4096</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span><b>第 3 名</b><a href="../#/view/2026-10-23/infra">10-23 Infra 日报</a></span>
   </div>
@@ -72,9 +73,9 @@
 <p>由此作者把目标改了：不再要求草稿“模仿整个分布”，而是让它把概率集中到大模型最可能选的那条路上，宁可放弃分布尾部。用论文的话说，从覆盖所有峰（mode-covering）改成只抓主峰（mode-seeking）。</p>
 <h2 id="s2">2. 方法：拿大模型自己的输出当正例</h2>
 <p>两种训练方式都从训好的 HASS 草稿模型出发，并把这份初始权重冻结一份作参考，防止新模型偏得太远。</p>
-<p>DPO 版需要成对的“好”与“差”序列。好的那条完全由大模型逐个 token 生成，代表草稿理想中应该猜出来的内容。差的那条是交替生成的：大模型先写 1 个 token，然后草稿模型不经核对、连着写 k 个，再换回大模型写 1 个，如此循环。草稿自己写的部分往往会慢慢偏离大模型会写的内容，所以这条序列自然就是反例。训练时让草稿对好序列的概率相对参考模型上升，对差序列的概率下降。</p>
+<p>DPO 版需要成对的“好”与“差”序列。好的那条完全由大模型逐个 token 生成，代表草稿理想中应该猜出来的内容。差的那条是交替生成的：大模型先写 1 个 token，然后草稿模型不经核对、连着写 k 个，再换回大模型写 1 个，如此循环（DPO 版里 k 取多少，论文没有写明）。草稿自己写的部分往往会慢慢偏离大模型会写的内容，所以这条序列自然就是反例。训练时让草稿对好序列的概率相对参考模型上升，对差序列的概率下降。</p>
 <p>这里有一个细节很关键：差序列里由大模型写的那些 token 在计算损失时被屏蔽掉。如果不屏蔽，训练会把这些本来就正确的 token 也当成错误来压低。另外，DPO 对序列长度敏感，所以好序列上也用了同样的屏蔽位置，保证两边比较的 token 数一致。</p>
-<p>GRPO 版不再只比一对，而是对同一个提示准备一组序列：一条由大模型直接生成，另外几条分别让草稿每次连写 1、2、3 个 token。每条序列的得分由两部分相加，两部分都先在组内做标准化：一是大模型认为这条序列有多自然，用大模型给它的对数概率衡量，也就是每个 token 概率取对数后求和；二是这条序列里草稿写的 token 有多少能被大模型接受。组内得分高于平均的序列被加强，低于平均的被削弱。</p>
+<p>GRPO 版不再只比一对，而是对同一个提示准备一组序列：一条由大模型直接生成，另外三条由两者交替写：大模型写 1 个 token，草稿接着不经验证连写 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> 个，再轮到大模型，<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> 分别取 1、2、3。每条序列的得分由两部分相加，两部分都先在组内做标准化：一是大模型认为这条序列有多自然，用大模型给它的对数概率衡量，也就是每个 token 概率取对数后求和；二是这条序列里草稿写的 token 被大模型接受的比例。大模型直接生成的那条没有草稿 token，论文没有说明它这一项怎么算。组内得分高于平均的序列被加强，低于平均的被削弱。</p>
 <figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29527/fig3_overview.png" alt="RCSD 框架（论文 Figure 3）。左：投机解码时，核对结果把输出分成被接受和被提前拒绝的部分；右上（A）：DPO 版，大模型生成的序列为正例，大模型与草稿交替生成的序列为反例；右下（B）：GRPO 版，按接受率给一组序列打分。底部示意：训练后草稿的分布更集中在大模型的高概率 token 上。" loading="lazy" decoding="async"><figcaption>RCSD 框架（论文 Figure 3）。左：投机解码时，核对结果把输出分成被接受和被提前拒绝的部分；右上（A）：DPO 版，大模型生成的序列为正例，大模型与草稿交替生成的序列为反例；右下（B）：GRPO 版，按接受率给一组序列打分。底部示意：训练后草稿的分布更集中在大模型的高概率 token 上。</figcaption></figure>
 <p>两种方法的共同点是：正例、反例和分数全部由大模型自动给出，数据可以从线上请求或任意文本提示里批量构造。这也是标题里“持续学习”的出发点：上线后可以不断用新请求继续训练草稿。不过正文并没有做这类实验，后文会再提。</p>
 <h2 id="s3">3. 结果一：接受长度在所有设置里都变长了</h2>
