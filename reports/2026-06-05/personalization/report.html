@@ -99,9 +99,9 @@
 <article class="card t-personalization" id="paper-arxiv:2606.04944" data-paper-id="arxiv:2606.04944" data-card>
   <div class="top"><span class="n">02</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.10</span></div>
   <h4><a href="https://arxiv.org/abs/2606.04944" target="_blank" rel="noopener">Dual-Stream MLP is All You Need for CTR Prediction</a></h4>
-  <div><span class="chip"><span class="cname"><img class="clogo" src="../../../logos/ruc.png" alt="" width="16" height="16" loading="lazy" decoding="async">RUC</span></span><span class="chip deep">&#128214; 有深读 · 6 分钟</span></div>
-  <p>人大 RUCAIBox 提出 DS-MLP，质疑 CTR 模型里复杂特征交互模块的必要性。现有双流架构有两个毛病：显式特征交互复杂度高、易过拟合；显式/隐式两路输出不平衡，一路常主导最终预测。DS-MLP 用知识蒸馏把「学习显式特征交互」的能力压进一个主 MLP 网络，再用一条并行 MLP 捕获隐式交互，整体结构就是纯 MLP。在三个公开 benchmark 上达到 SOTA，论文已被 TKDD 接收，代码开源在 RUCAIBox/DS-MLP。</p>
-  <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>用知识蒸馏把显式特征交互的归纳偏置注入纯 MLP，绕开 cross-network / attention 这类高复杂度算子，是在推理延迟敏感的排序场景里值得试的简化路径。纯 MLP 主干对 serving 友好（算子简单、易量化、易上 GPU/CPU），对社区搜索这种 QPS 高、特征维度大的排序链路尤其有吸引力——先用复杂 teacher 训出交互能力，再蒸馏到轻量 student 上线。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
+  <div><span class="chip"><span class="cname"><img class="clogo" src="../../../logos/ruc.png" alt="" width="16" height="16" loading="lazy" decoding="async">RUC</span></span><span class="chip deep">&#128214; 有深读 · 15 分钟</span></div>
+  <p>主流 CTR 模型都是双流结构：一路用乘法显式构造特征交叉，一路用 MLP 隐式学习，两路输出直接相加。结构越复杂越难调，乘法那一路的输出还会随交叉阶数变大，相加时容易压过 MLP 那一路。DS-MLP 让最终模型只剩两个普通 MLP：一个通过知识蒸馏学会老师模型的显式交叉，另一个从零学习、补上老师漏掉的模式，两路先做批归一化，再各自用点击标签监督。<strong class="hl">先把老师变成同构的 MLP，再对齐融合</strong>。三个公开数据集上 AUC 都排第一，但 Criteo、Avazu 上只领先最强基线 0.0003 和 0.0006，只有 MovieLens 领先 0.0035。</p>
+  
   <div class="foot">Kesha Ou, Zhen Tian, Wayne Xin Zhao, Long Zhang, Sheng Chen, Ji-Rong Wen</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-06-04</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 3 · Practical 5 · Evidence 4 · Timely 5</span></div>
   
@@ -109,7 +109,7 @@
   <div class="deep-read-toggle-row">
     <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
       <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 6 分钟</span>
+      <span>&#128214; 展开深度解读 · 15 分钟</span>
     </button>
     <a class="deep-read-page-link" href="../../../deep-readings/2606.04944.html">独立页面阅读 &#8599;</a>
   </div>
@@ -121,19 +121,64 @@
       </button>
       <a class="deep-read-page-link" href="../../../deep-readings/2606.04944.html">独立页面阅读 &#8599;</a>
     </div>
-    <div class="deep-read-content"><h2>DS-MLP 深度解读：用知识蒸馏把特征交互压进纯 MLP</h2>
-<h3>1. 问题与动机</h3>
-<p>CTR 预估里主流是&quot;双流&quot;架构（一路显式特征交互、一路隐式 DNN），但人大 RUCAIBox 指出两个毛病。其一<strong>高复杂度</strong>：直接枚举预定义阶数内的所有特征组合，特征空间随阶数指数膨胀，高阶交互建模代价极高且易过拟合。其二<strong>两路融合失衡</strong>：显式交互的输出数值范围会随参与特征数增多而被放大，隐式交互的输出则趋于衰减，导致某一路在特定情形下主导最终预测、压制另一路。作者由此质疑：是否真的需要专门的复杂交互算子，还是可以用结构最简单、工业最友好的 MLP 把交互能力&quot;学过来&quot;，从而在保住精度的同时大幅简化 serving。</p>
-<h3>2. 方法详解</h3>
-<p>DS-MLP 两阶段训练。<strong>阶段一 知识蒸馏</strong>：用一个强 teacher（GDCN，门控深度交叉网络，φ_GDCN=φ_GCN+φ_DNN）去教一个轻量主 MLP（student，三层 [600,600,600]）。蒸馏损失在 teacher 与 student 的目标知识间最小化 BCE，联合目标 L=L_CTR+λ·L_KD，λ 在 {0.1,0.5,1.0,1.5,10} 搜索。这一阶段把&quot;显式特征交互&quot;的归纳偏置注入主 MLP，teacher 冻结、只更新 student。<strong>阶段二 双 MLP 对齐</strong>：再加一条并行 MLP 捕获主流忽略的隐式交互，预测 ŷ_dual=σ((y_M+y_P)/2)。为防一路主导，设计两类对齐：(a) 隐状态对齐——对中间层做 batch normalization，把两路隐状态拉到可比尺度；(b) 预测对齐——分支各自的 CTR 损失强制一致性。组合损失 L=L_CTR+α·L_M+β·L_P，α,β∈[0.5,1.5]。梯度流上，主 MLP 只在阶段一更新（teacher 冻结），两路都在阶段二对齐阶段更新，利于分布式训练。整体框架 teacher-agnostic，可换任意 SOTA CTR 模型当 teacher；论文还给理论：在光滑性与过参数化假设下，MLP 可通过蒸馏以有界近似误差恢复显式特征交互——这是&quot;MLP is all you need&quot;标题的支撑。</p>
-<h3>3. 核心技术贡献</h3>
-<p>(1) <strong>teacher 无关框架</strong>：可插任意 SOTA CTR 模型作 teacher，保证方法不过时（future-proof）。(2) <strong>知识固化</strong>：用蒸馏把显式交互模式搬进主 MLP，不引入额外结构复杂度，单 embedding 表即可。(3) <strong>双流对齐损失</strong>：用隐状态 BN + 分支预测一致性两类对齐，解决输出主导、保证两路互补（主 MLP 学蒸馏来的显式交互，并行 MLP 学数据驱动的隐式交互）。(4) <strong>理论支撑</strong>：给出 MLP 在光滑性假设下恢复显式交互的有界误差论证。</p>
-<h3>4. 实验结果分析</h3>
-<p>三个公开基准：Criteo（4580 万样本、39 域、210 万特征）、Avazu（4040 万、22 域、150 万）、MovieLens（200 万、3 域、9 万），对比 20+ 方法（DCNv2、FinalMLP、GDCN、xDeepFM、AutoInt+、WuKong、SFG 等）。AUC/LogLoss：Criteo DS-MLP 0.8152/0.4366 优于 FinalMLP 0.8147、GDCN 0.8137；Avazu 0.7670/0.3657 优于 FinalMLP 0.7659；MovieLens 0.9752/0.1971 优于 FinalMLP 0.9716、GDCN 0.9685。绝对 AUC 增益 +0.0015(Criteo)/+0.0022(Avazu)/+0.0036(MovieLens)——在 CTR 领域 0.001 AUC 即被视为显著。消融（MovieLens）：去对齐损失 −0.49% AUC（影响最大）、去 student MLP −0.83%、去并行 MLP −0.62%、去 KD −0.37%，四个组件都不可省，对齐损失最关键，说明&quot;防两路失衡&quot;比&quot;加一路&quot;更重要。兼容性实验换 5 个 teacher（AutoInt 0.9688→0.9734、DCNv2 0.9690→0.9728、FinalMLP 0.9716→0.9752 等）均稳定提升（RelaImpr 0.4–3.6%）。效率上 DS-MLP 延迟 59.43ms(Criteo)/25.89ms(Avazu)，与 FinalMLP(56.71/21.03ms) 同量级，相对 teacher GDCN(45.02ms) 仅小幅开销。可扩展性上 GDCN 随参数增长饱和甚至下降，DS-MLP 通过加宽/加深隐层持续提升，显示更抗过拟合、scaling 更可控。</p>
-<h3>5. 局限与未来方向</h3>
-<p>作者未明列局限。可见约束：效果上界受 teacher 容量限制（teacher 弱则 student 弱）；λ、α、β 需按数据集调（Criteo/Avazu/MovieLens 各不同）；两阶段训练 + 并行 MLP 推理带来一定开销；理论保证依赖&quot;充分光滑&quot;与过参数化假设，实际不一定满足；缺少工业大规模在线 A/B 验证，目前为公开数据集结果。</p>
-<h3>6. 工业实践意义</h3>
-<p>对延迟敏感的排序链路，这是一条务实简化路径：<strong>先用复杂 teacher（GDCN 等）训出交互能力，再蒸馏到纯 MLP student 上线</strong>。纯 MLP 主干在现代深度学习库里高度优化、算子简单、易量化、易上 GPU/CPU，单 embedding 表即可，实现与维护成本低，延迟≤60ms（4580 万样本级），对社区搜索这种 QPS 高、特征维度大的排序场景尤其友好。可直接复用的设计点：用 teacher-agnostic 蒸馏替代手工设计交互算子，未来换更强 teacher 即可平滑升级；用隐状态 BN + 分支预测一致性两类对齐防止显式/隐式两路失衡——后者是很多双流模型上线后效果不稳的常见根因。代码已开源 RUCAIBox/DS-MLP，可低成本复现验证。落地需注意 λ/α/β 要在自有数据上重搜，且两阶段训练流程比单模型略重，需在训练管线里预留 teacher 训练与蒸馏两步。</p></div>
+    <div class="deep-read-content"><h1>DS-MLP：先把复杂 CTR 模型蒸馏进一个三层 MLP，再并联一个独立 MLP 纠正老师的错，三个公开数据集上 AUC 小幅领先</h1>
+<p>我的判断：维护 CTR 排序模型、又被各种特征交叉结构折腾得够呛的团队值得一读，但别指望大幅提升。它要解决的问题是：主流 CTR 模型（DeepFM、DCNv2、GDCN（Gated Deep Cross Network，门控深度交叉网络）等）都是“双流”结构，一路用乘法显式构造特征交叉，一路用 MLP 隐式学习，两路输出直接相加；结构越复杂越难调，而且乘法那一路的输出会随交叉阶数变大，相加时容易压过 MLP 那一路。DS-MLP 的结论是：最终上线的模型只要两个普通 MLP 就够。一个 MLP 通过知识蒸馏学会老师模型的显式交叉，另一个从零学习、补上老师漏掉的模式，两路先做 batch normalization，再各自用点击标签监督，所以谁也压不过谁。作者在 Criteo、Avazu、MovieLens 三个公开数据集上和 17 个基线比较，DS-MLP 的 AUC 都是第一，但领先幅度很小，前两个数据集甚至低于论文自己给的显著线。</p>
+<h2>它到底在解决什么问题？</h2>
+<p>CTR 预估的输入是一堆离散特征：用户 ID、性别、广告类目、设备、时段等。单个特征的信息有限，真正有用的是组合，比如“晚上十点 + 手机端 + 游戏类广告”。怎么学这些组合，是 CTR 模型过去十年的主线。</p>
+<p>两种学法的取舍：</p>
+<table><thead><tr><th>学法</th><th>怎么做</th><th>代表模型</th><th>问题</th></tr></thead><tbody><tr><td>显式交叉</td><td>用内积、逐元素乘法直接构造特征组合，叠几层就是几阶交叉</td><td>FM、CrossNet、DCNv2</td><td>阶数越高结构越复杂、越难调；乘法让输出数值随阶数放大</td></tr><tr><td>隐式交叉</td><td>把所有特征拼起来过 MLP，让网络自己学组合</td><td>DNN、FinalMLP</td><td>学到了什么说不清，作者认为单靠它学不好显式组合</td></tr><tr><td>双流（两者相加）</td><td>两路并联，输出直接相加</td><td>DeepFM、xDeepFM、GDCN</td><td>两路结构差异大，输出尺度不一致，一路容易压过另一路</td></tr></tbody></table>
+<p>作者把第三行的问题叫作不平衡融合：显式那一路做的是逐元素乘法，高阶交叉的数值会越乘越大；MLP 那一路经过 ReLU 之类的激活，输出范围有限。两者相加时，显式那一路就主导了最终预测。</p>
+<h2>先看全景</h2>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig1_arch.png" alt="DS-MLP 结构。左边是高阶老师模型（如 GDCN），第一步把它的预测蒸馏给学生 MLP；中间是学生 MLP 和并联 MLP 两路，各自先过 Norm 层，再把两路的 logit 相加得到最终预测；右上是第二步的对齐损失，每一路都单独用点击标签算一次交叉熵。" loading="lazy" decoding="async"><figcaption>DS-MLP 结构。左边是高阶老师模型（如 GDCN），第一步把它的预测蒸馏给学生 MLP；中间是学生 MLP 和并联 MLP 两路，各自先过 Norm 层，再把两路的 logit 相加得到最终预测；右上是第二步的对齐损失，每一路都单独用点击标签算一次交叉熵。</figcaption></figure>
+<p>训练分两步，上线时只保留两个 MLP：</p>
+<table><thead><tr><th>阶段</th><th>做什么</th><th>训练谁</th></tr></thead><tbody><tr><td>0. 准备老师</td><td>先按常规训练好一个强 CTR 模型（Criteo 用 GDCN，Avazu 用 DCNv2，MovieLens 用 FinalMLP）</td><td>老师</td></tr><tr><td>1. 蒸馏</td><td>冻结老师，学生 MLP 同时拟合点击标签和老师的预测</td><td>学生 MLP</td></tr><tr><td>2. 对齐微调</td><td>加入并联 MLP，两路隐藏层做 batch normalization，总损失 = 融合预测的交叉熵 + 每一路各自的交叉熵</td><td>两个 MLP 一起</td></tr><tr><td>上线</td><td>两路 logit 取平均，过 sigmoid 得到点击率</td><td>只有两个 MLP，没有老师</td></tr></tbody></table>
+<h2>第一步：把老师的显式交叉蒸馏进一个三层 MLP</h2>
+<p>老师 GDCN 每一层做的事可以这样理解：拿原始特征向量和上一层结果逐元素相乘，得到更高一阶的组合，再乘一个 sigmoid 门过滤掉没用的组合，最后加回上一层。叠 L 层就是 L+1 阶交叉。最终预测是这个交叉网络的输出加上一个普通 DNN（深度全连接网络，结构上就是 MLP）的输出。</p>
+<p>学生是一个三层 MLP，宽度比基线常用的 400 更大：Criteo 上每层 600，Avazu 900，MovieLens 1000。损失是点击交叉熵加上 λ 倍的蒸馏损失，λ 在 Criteo 和 Avazu 上取 1.0，MovieLens 取 0.5。</p>
+<p>为什么 MLP 能学会乘法结构？论文第 3.5 节给了一个理论论证：MLP 是通用函数逼近器，只要容量够，就能在输出上逼近老师；再假设函数足够光滑，输出接近意味着二阶导数也接近，而二阶混合偏导正好衡量两个特征之间的交互强度。这个论证的前提（光滑性、过参数化优化能收敛）在实际训练里无法验证，它说明的是“可能学会”，不是“一定学会”。</p>
+<p>作者在实验里做了一个更直接的检查：用老师 GDCN 在三个合成特征上生成标签，看谁能拟合这些显式交叉。</p>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig3_mse.png" alt="拟合老师生成的显式交叉时各模块的均方误差（MSE，越低越好），横轴是每层隐藏单元数。学生 MLP（蓝）稳定在 0.45 到 0.75，宽度到 1200 时最低；并联 MLP（橙）一直在 1.6 以上；老师自己的 CrossNet（绿）在接近 0 和 0.87 之间来回跳。" loading="lazy" decoding="async"><figcaption>拟合老师生成的显式交叉时各模块的均方误差（MSE，越低越好），横轴是每层隐藏单元数。学生 MLP（蓝）稳定在 0.45 到 0.75，宽度到 1200 时最低；并联 MLP（橙）一直在 1.6 以上；老师自己的 CrossNet（绿）在接近 0 和 0.87 之间来回跳。</figcaption></figure>
+<p>这张图可以读出两点。一是学生的误差比并联 MLP 低得多，说明蒸馏确实把老师的交叉模式传了过去，而并联 MLP 没有学老师，留给它去学别的东西。二是 CrossNet 本身的误差忽高忽低，这正是作者说的显式结构难优化，而 MLP 的曲线平稳得多。</p>
+<h2>第二步：并联一个 MLP，用两种对齐让两路平起平坐</h2>
+<p>作者在初步实验里发现，老师本身就是不平衡的双流，显式那一路主导预测，所以学生蒸馏到的也主要是显式交叉，隐式那部分被忽略了。补救办法是再并联一个 MLP，专门学隐式交叉。这个并联 MLP 不用老师的特征 embedding，而是从零学习，因为它的任务不是模仿老师。</p>
+<p>两路训练方式不同，输出差别会很大，直接相加又会回到“一路压过另一路”的老问题。作者用了两种对齐：</p>
+<table><thead><tr><th>对齐方式</th><th>做法</th><th>解决什么</th></tr></thead><tbody><tr><td>隐藏状态对齐</td><td>两路的隐藏层都做 batch normalization，把每个维度按批内均值和方差标准化</td><td>两路输出落在相近的数值范围，谁也不会因为数值大而主导</td></tr><tr><td>预测对齐</td><td>除了融合预测的交叉熵，每一路单独再算一次点击交叉熵，分别乘 α 和 β</td><td>每一路自己也要能预测点击，不能只靠另一路兜底</td></tr></tbody></table>
+<p>α 和 β 不能太大也不能太小。作者在 0.5 到 1.5 之间扫 α，效果在 1 附近最好：这是因为太大时两路被逼得几乎一样，失去互补；太小时对齐不够。各数据集最终选的 α 在 0.8 到 1.5 之间，β 在 0.6 到 1.2 之间，说明这组权重需要按数据集调。</p>
+<p>并联 MLP 到底补了什么？作者挑了 20 个样本画出各模型的预测：</p>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig4_case.png" alt="20 个样本上老师、只蒸馏的学生和完整 DS-MLP 的预测值。负样本 3 上老师给出约 0.68，学生跟着给出约 0.93，DS-MLP 降到约 0.07；正样本 18 上老师约 0.13，学生约 0.14，DS-MLP 升到约 0.94。" loading="lazy" decoding="async"><figcaption>20 个样本上老师、只蒸馏的学生和完整 DS-MLP 的预测值。负样本 3 上老师给出约 0.68，学生跟着给出约 0.93，DS-MLP 降到约 0.07；正样本 18 上老师约 0.13，学生约 0.14，DS-MLP 升到约 0.94。</figcaption></figure>
+<p>这个例子说明了蒸馏的一个代价：学生会把老师的错误一起学走。并联 MLP 不受老师影响，能在这些样本上把预测拉回来。不过这是挑出来的 20 个样本，只能当示意，不能说明整体上纠错有多频繁。</p>
+<h2>效果：领先多少，算不算数</h2>
+<p>实验沿用 BARS（CTR 领域的开源可复现基准）的设置：embedding 维度 10，batch 4096，基线的 MLP 都是三层 400。指标是 AUC（随机取一个点击样本和一个未点击样本，模型把点击样本排在前面的概率）和 LogLoss（预测概率与真实点击的交叉熵，越低越好）。论文表头写明，AUC 高 0.001 或 LogLoss 低 0.001 在 CTR 任务里就算显著。下表里出现的两个基线：FCN（Fusing Cross Network，2024 年的融合交叉网络，把线性和指数增长的交叉子网络合在一起）和 Final（2023 年的因子化交互层模型，用改造过的线性层显式学二阶交叉，和 FinalMLP 是两个不同的模型）。</p>
+<table><thead><tr><th>数据集（样本量）</th><th>最强基线 AUC</th><th>DS-MLP AUC</th><th>差值</th><th>DS-MLP 延迟 / 最快的强基线延迟（ms）</th></tr></thead><tbody><tr><td>Criteo（4,584 万）</td><td>FCN 0.8149</td><td>0.8152</td><td>+0.0003</td><td>59.43 / Final 25.56</td></tr><tr><td>Avazu（4,043 万）</td><td>Final 0.7664</td><td>0.7670</td><td>+0.0006</td><td>25.89 / Final 19.26</td></tr><tr><td>MovieLens（201 万）</td><td>Final 0.9717</td><td>0.9752</td><td>+0.0035</td><td>2.65 / Final 2.29</td></tr></tbody></table>
+<p>按论文自己的 0.001 标准，Criteo 和 Avazu 上 DS-MLP 相对最强基线的领先都不到显著线，只有 MovieLens 上是明确的提升。论文没有报告多次运行的标准差，也没有做显著性检验，所以 0.0003 这种差距很可能落在随机种子的波动里。</p>
+<p>延迟方面，DS-MLP 在 Criteo 上是 59.43 ms，和 FinalMLP 的 56.71 接近，但比 Final 和 DeepFM 慢一倍多，比老师 GDCN 的 45.02 也慢。原因不难理解：学生每层 600 宽，再加一个并联 MLP，计算量并不比 GDCN 小。论文说的“简单高效”更多指结构单一、好部署，而不是更快。另外论文没说明延迟是按单条样本还是按一个 batch 测的。</p>
+<h2>换个老师也行吗</h2>
+<p>作者用五种不同结构的老师各训练一个 DS-MLP，和老师本身比较：</p>
+<table><thead><tr><th>老师</th><th>Criteo AUC（老师 → DS-MLP）</th><th>Avazu AUC</th><th>MovieLens AUC</th></tr></thead><tbody><tr><td>AutoInt</td><td>0.8138 → 0.8145</td><td>0.7634 → 0.7656</td><td>0.9688 → 0.9734</td></tr><tr><td>DCNv2</td><td>0.8132 → 0.8147</td><td>0.7627 → 0.7670</td><td>0.9690 → 0.9728</td></tr><tr><td>xDeepFM</td><td>0.8136 → 0.8149</td><td>0.7639 → 0.7659</td><td>0.9685 → 0.9714</td></tr><tr><td>GDCN</td><td>0.8137 → 0.8152</td><td>0.7648 → 0.7662</td><td>0.9685 → 0.9737</td></tr><tr><td>FinalMLP</td><td>0.8147 → 0.8148</td><td>0.7659 → 0.7662</td><td>0.9716 → 0.9752</td></tr></tbody></table>
+<p>AUC 上十五组全部超过老师，这是全文最有说服力的一张表，因为它是同一框架对不同老师的稳定提升，而且多数组的提升超过 0.001。但 LogLoss 并非全都改善：以 FinalMLP 为老师时，Criteo 的 LogLoss 从 0.4374 变差到 0.4431，Avazu 从 0.3662 变差到 0.3675；以 DCNv2 为老师时，MovieLens 从 0.2139 变差到 0.2173。如果线上依赖校准后的点击率出价，这几组需要另做校准。另外，老师本身已经很强时（FinalMLP），Criteo 和 Avazu 上几乎没有提升。</p>
+<h2>消融：哪一块在起作用</h2>
+<table><thead><tr><th>配置</th><th>Avazu AUC</th><th>Criteo AUC</th><th>MovieLens AUC</th></tr></thead><tbody><tr><td>完整 DS-MLP</td><td>0.7670</td><td>0.8152</td><td>0.9752</td></tr><tr><td>去掉对齐损失</td><td>0.7641</td><td>0.8145</td><td>0.9703</td></tr><tr><td>去掉学生 MLP（老师直接和并联 MLP 融合）</td><td>0.7652</td><td>0.8137</td><td>0.9669</td></tr><tr><td>去掉并联 MLP（只用蒸馏后的学生）</td><td>0.7648</td><td>0.8140</td><td>0.9690</td></tr><tr><td>学生换成 CrossNet</td><td>0.7639</td><td>0.8138</td><td>0.9708</td></tr><tr><td>去掉蒸馏（两个 MLP 从零训练）</td><td>0.7655</td><td>0.8135</td><td>0.9715</td></tr></tbody></table>
+<p>有三点值得注意。第一，Criteo 上去掉蒸馏掉得最多，两个 MLP 从零训练只有 0.8135，和老师 GDCN 的 0.8137 差不多，说明 Criteo 上的提升主要来自蒸馏。第二，Avazu 上去掉对齐损失掉得最多，说明两路怎么融合在这里更关键。第三，“老师直接和并联 MLP 融合”反而更差，作者的解释是结构差异太大、对不齐，这支持了“先把老师变成 MLP 再融合”的思路。</p>
+<p>再看“只用蒸馏后的学生”这一行和老师对比：Avazu 上学生 0.7648 比老师 DCNv2 的 0.7627 还高，Criteo 上 0.8140 和 GDCN 的 0.8137 持平，MovieLens 上 0.9690 却低于老师 FinalMLP 的 0.9716。也就是说，单独一个蒸馏 MLP 在不同数据集上可能超过老师，也可能不如老师，并联 MLP 才是让三个数据集都稳定领先的那一块。</p>
+<h2>加大模型会更好吗</h2>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig2_scaling_criteo.png" alt="Criteo 上 DS-MLP（红方块）和 GDCN（蓝圆点）的 AUC 随参数量的变化，横轴刻度为 ×10^6，直线是最小二乘拟合。DS-MLP 从最小配置约 0.8122 升到约 200 万参数时的约 0.8153，之后在 0.8150 到 0.8153 之间持平；GDCN 基本在 0.8132 到 0.8143 之间波动，拟合线是平的。" loading="lazy" decoding="async"><figcaption>Criteo 上 DS-MLP（红方块）和 GDCN（蓝圆点）的 AUC 随参数量的变化，横轴刻度为 ×10^6，直线是最小二乘拟合。DS-MLP 从最小配置约 0.8122 升到约 200 万参数时的约 0.8153，之后在 0.8150 到 0.8153 之间持平；GDCN 基本在 0.8132 到 0.8143 之间波动，拟合线是平的。</figcaption></figure>
+<p>论文据此说 DS-MLP 随容量增长持续提升，而 GDCN 饱和甚至下降。看散点会更谨慎一些：DS-MLP 在约 200 万参数后也已经饱和，拟合直线的上升主要来自左边几个很小的配置。这张图能说明的是，加宽 MLP 不会像 GDCN 那样不稳定，但说不上“越大越好”。Avazu 上的情况类似，DS-MLP 的点散布在 0.7647 到 0.7660 之间，GDCN 的波动更大。</p>
+<h2>我认为它的局限</h2>
+<p>第一，提升幅度和统计证据都偏弱。两个大数据集上领先最强基线不到 0.001，又没有多次运行的方差，结论“全部 SOTA”站得不太稳。</p>
+<p>第二，总成本没有算全。上线模型是两个 MLP，但训练前必须先训好一个强老师，再蒸馏、再微调，整个流程要依次跑老师训练、蒸馏、对齐微调三轮。延迟也没有比主流双流模型低。</p>
+<p>第三，方法描述前后不一致。第 3.1.3 节说蒸馏的是 logit、用带温度的交叉熵；算法 1 写的是对隐藏表示算 KL 散度；理论部分又用均方误差。融合方式也是一处写 logit 取平均、一处写概率按 γ=0.5 加权。复现时应以开源代码为准。</p>
+<p>第四，embedding 表的数量不清楚。正文说并联 MLP 不复用老师的 embedding、从零学习，这意味着可能有两套 embedding；而对比表里又标注 DS-MLP 只用单个 embedding 表。CTR 模型的参数大头在 embedding，这一点直接影响线上内存。</p>
+<p>第五，“显式那一路压过隐式那一路”是全文动机，但论文只给了文字描述，没有展示两路输出的数值分布。此外，超参数图里 MovieLens 的最高 AUC 约为 0.9711，和主表的 0.9752 对不上，可能是不同配置，论文没有解释。</p>
+<h2>一个排序团队可以怎么试</h2>
+<ol>
+<li>拿线上现有的交叉网络模型当老师，不必换成 GDCN，兼容性实验说明换老师基本都有收益。</li>
+<li>先只做第一步，训练一个比现有 MLP 更宽的学生，看它单独能否追平老师；如果追平了，就已经得到一个结构更简单的模型。</li>
+<li>再加并联 MLP 和两种对齐，α、β 从 1 附近开始调，同时盯 AUC 和 LogLoss，后者变差时要补校准。</li>
+<li>用自己的线上延迟标准测一遍，不要假设它比现有模型快。</li>
+</ol>
+<h2>结论</h2>
+<p>一句话：把复杂交叉网络的知识蒸馏进 MLP，再并联一个独立 MLP 纠正老师的偏差，能得到一个结构单一、效果不输复杂模型的 CTR 模型，但离线提升很小，成本也没有省下来。</p>
+<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>中。双流结构的复杂度和融合不平衡是真问题，但多数团队已有成熟方案</td></tr><tr><td>方法创新性</td><td>中。蒸馏加双 MLP 都不新，新在“先变成同构的 MLP 再对齐融合”这个组合</td></tr><tr><td>实验证据</td><td>偏弱。只有公开数据集，大数据集上提升低于显著线，无方差、无线上实验</td></tr><tr><td>工程成本</td><td>中。上线结构简单，但训练流程变长，延迟没有优势</td></tr><tr><td>是否值得尝试</td><td>可以小规模试。适合想把复杂交叉结构换成纯 MLP、便于部署和扩展的团队</td></tr></tbody></table></div>
   </div>
 </div>
 </article>
