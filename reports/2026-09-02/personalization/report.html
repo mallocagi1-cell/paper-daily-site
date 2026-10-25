@@ -24,6 +24,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../../../css/pages.css?v=ffad741ab2" />
+<link rel="stylesheet" href="../../../vendor/katex/katex.min.css?v=ffad741ab2"><style>.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:1em 0}.katex{font-size:1.08em}</style>
 </head>
 <body class="t-personalization">
 <div class="navwrap"><div class="wrap"><nav class="nav" aria-label="主导航">
@@ -54,7 +55,7 @@
       <h2><a href="https://arxiv.org/abs/2608.30251" target="_blank" rel="noopener">SetMIR: Multi-Interest Retrieval as Set Prediction</a></h2>
       <p>工业推荐中的单一用户向量难以覆盖多兴趣，而固定多路召回又会产生兴趣坍缩和无效 ANN 查询。SetMIR 用 Transformer 与 K 个可学习查询把兴趣建模为集合，以匈牙利匹配保证一对一分工，并用 presence 分数和查询级 NMS 动态发起召回；在 Snap DPA 中减少 33% ANN 查询，整体 CVR 提升 3.1%。</p>
     </div>
-    <div class="btns"><a class="btn w" href="../../../deep-readings/2608.30251.html">&#128214; 深度解读 · 8 分钟</a><a class="btn ghost" href="https://arxiv.org/abs/2608.30251" target="_blank" rel="noopener">arXiv &#8599;</a></div>
+    <div class="btns"><a class="btn w" href="../../../deep-readings/2608.30251.html">&#128214; 深度解读 · 14 分钟</a><a class="btn ghost" href="https://arxiv.org/abs/2608.30251" target="_blank" rel="noopener">arXiv &#8599;</a></div>
   </div>
   <div class="side">
     <div class="ring"><svg class="radar" width="170" height="170" viewBox="0 0 170 170" role="img" aria-label="五维评分：Relevance 5，Novelty 5，Practical 5，Evidence 5，Timely 5"><polygon class="rg" points="85.0,59.8 108.97,77.21 99.81,105.39 70.19,105.39 61.03,77.21"/><polygon class="rg" points="85.0,47.2 120.95,73.32 107.22,115.58 62.78,115.58 49.05,73.32"/><polygon class="rg" points="85.0,34.6 132.93,69.43 114.62,125.77 55.38,125.77 37.07,69.43"/><polygon class="rg" points="85.0,22.0 144.92,65.53 122.03,135.97 47.97,135.97 25.08,65.53"/><polygon class="rp" points="85.0,22.0 144.92,65.53 122.03,135.97 47.97,135.97 25.08,65.53"/><text x="85.0" y="11.14" text-anchor="middle">相关 5</text><text x="158.1" y="64.25" text-anchor="middle">新颖 5</text><text x="130.18" y="150.18" text-anchor="middle">实用 5</text><text x="39.82" y="150.18" text-anchor="middle">证据 5</text><text x="11.9" y="64.25" text-anchor="middle">时效 5</text></svg><div><div class="big">5.00</div><div class="lbl">综合分 / 5<br>偏好调整 5.00</div></div></div>
@@ -66,7 +67,7 @@
   <div class="deep-read-toggle-row">
     <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
       <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
+      <span>&#128214; 展开深度解读 · 14 分钟</span>
     </button>
     <a class="deep-read-page-link" href="../../../deep-readings/2608.30251.html">独立页面阅读 &#8599;</a>
   </div>
@@ -78,28 +79,60 @@
       </button>
       <a class="deep-read-page-link" href="../../../deep-readings/2608.30251.html">独立页面阅读 &#8599;</a>
     </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>工业推荐的召回层通常要从数亿乃至数十亿商品中，在一次请求内取回几千个候选。经典双塔只输出一个用户向量，当用户最近同时浏览街头服饰、婴儿用品和护肤品时，向量平均会偏向主导兴趣，短期或窄兴趣容易消失。多兴趣模型虽输出 K 个向量，却有两个生产问题：其一，MIND、ComiRec 一类 argmax 目标分配允许多个正样本同时选择同一个兴趣向量，未被选中的 query 没有梯度，最终出现 interest collapse；其二，线上固定发起 K 次 ANN 查询，不区分用户实际有几个有效兴趣，重复 query 会瓜分固定候选预算并增加调用成本。</p>
-<p>SetMIR 的出发点是把多兴趣召回看成“可变大小集合预测”，而不是 K 个彼此独立的向量预测。这个转换借鉴 DETR 的 learnable query 与匈牙利匹配，但预测对象从边界框变成冻结商品向量空间里的兴趣方向。论文强调，未匹配 query 并不代表用户永远没有该兴趣，只表示未来监督窗口内没有更多高意向目标；presence 头因此是请求级调度信号，而不是永久用户标签。</p>
-<h2>2. 方法详解</h2>
-<p>输入是用户按时间排序的行为历史，最近三天的 purchase、add-to-cart、swipe-up 构成目标集合，目标按商品去重、按意向强度保留，最多 15 个；窗口之前最近 40 个事件作为模型输入。每个历史商品先由冻结的内容模型根据标题、品牌、类目、图片生成 128 维归一化向量，再叠加位置向量和事件类型向量。事件类型前有可学习标量 α，且 α 从 0 初始化，使训练从稳定的纯内容空间逐步吸收行为类型差异。</p>
-<p>两层、8 头 Transformer encoder 编码历史；6 层 decoder 持有 K=10 个全局可学习 query，每层先让 query 自注意力交互，再 cross-attend 用户历史。每个 decoder 输出经两个头得到：L2 归一化兴趣向量 e_k，以及 sigmoid presence 概率 p_k。query 间自注意力让它们在读取历史前协调分工，避免各自追逐同一主兴趣。</p>
-<p>训练的关键是小规模匈牙利匹配。对每个 query—目标对，代价为负的向量内积加负的 presence 对数概率：嵌入项权重 1，分类项权重 0.5；分类项在前 10% 步数线性 warm-up，避免早期错误 presence 干扰几何分配。K=10 时只是 K×W 的小矩阵，求解成本可忽略。匹配后的 query 用跨 8 卡 all-gather 的目标向量做 InfoNCE，温度 0.05；所有 query 再用匹配/未匹配标签训练二元 presence loss。活跃 query 之间另加 margin=0.3 的余弦排斥损失，只惩罚相似度超过阈值的 pair。总损失权重为 retrieval 1.0、presence 0.5、diversity 0.1。</p>
-<p>模型约 300 万可训练参数，AdamW 峰值学习率 5e-4、4000 步 warm-up、weight decay 0.01、余弦衰减、BF16；使用 8 张 A100 40GB，每卡 batch 1536。论文没有披露总训练步数，而是让每种模型训练到各自收敛点。</p>
-<p>推理先保留 p_k&gt;0.3 的 query；若全部未通过则保留最大 p_k。随后按 presence 降序做 query 级 NMS，余弦相似度超过 0.9 的低优先级 query 被删除。剩余 query 各取 ceil(N/有效 query 数) 个 ANN 结果，重复商品用各兴趣内积的最大值合并。该设计不改商品单向量索引，只动态减少用户侧 ANN 请求。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，匈牙利一对一分配从目标函数层面消除“多个目标挤到同一 query”的结构性原因。与靠辅助正则缓解坍缩的方法不同，每个匹配 query 都获得检索梯度，每个未匹配 query 都获得明确的 absence 监督。消融中改回 argmax 后，平均有效 query 从 6.70 降到 2.16，R@10 只剩完整模型的 63.5%，说明匹配机制是最大贡献项。</p>
-<p>第二，presence 既参与匹配又驱动线上 dispatch，把表征学习和系统预算统一。去掉 presence loss 后平均 query 反而升至 8.23，但 R@10 降至 91.4%、HR@100 降至 88.4%，说明“多发 ANN”并不能替代 query 质量判断。</p>
-<p>第三，训练期多样性约束和推理期 NMS 分工明确：前者塑造兴趣几何，后者删除请求级重复。去掉 diversity loss 后 R@1 仅为完整模型的 88.5%，表明兴趣去重不仅节省调用，还改善头部命中。</p>
-<h2>4. 实验结果分析</h2>
-<p>数据来自 Snap Dynamic Product Ads，商品目录为数亿规模。测试约 100 万用户、530 万目标商品，验证集也约 100 万用户。所有模型共享冻结商品向量、K=10、优化器、batch 和每请求预算，指标按 SetMIR=100% 归一化。</p>
-<table><thead><tr><th>模型</th><th>平均 ANN query</th><th>R@10</th><th>NDCG@100</th><th>MRR</th></tr></thead><tbody><tr><td>MIND</td><td>10.00</td><td>52.9%</td><td>54.3%</td><td>44.4%</td></tr><tr><td>ComiRec-SA</td><td>10.00</td><td>89.8%</td><td>89.8%</td><td>80.0%</td></tr><tr><td>KuaiFormer</td><td>10.00</td><td>52.0%</td><td>52.3%</td><td>42.2%</td></tr><tr><td>SetMIR-argmax</td><td>2.16</td><td>63.5%</td><td>63.1%</td><td>56.4%</td></tr><tr><td>SetMIR</td><td>6.70</td><td>100.0%</td><td>100.0%</td><td>100.0%</td></tr></tbody></table>
-<p>K 扫描显示从 K=1 到 10，R@10 从 100% 增至 155.0%，而有效 query 仅从 1 增至 6.70；K=15 时 R@10 155.1%，几乎饱和，说明 presence 自动吸收了额外 query，K=10 是质量与计算的合理折点。完整模型相对固定 K=10 发起的查询减少 33%。线上作为 DPA 新召回源后，整体 CVR 提升 3.1%；与相同商品向量、ANN 索引和配额的 I2I 源相比，CTR 提升 44%、CVR 提升 51%。这里后两项是“召回源内”相对提升，不能与全系统 lift 混为一谈。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文没有单列 limitations。正文明确的边界包括：所有离线和线上证据来自 Snap DPA，绝对指标因公司披露政策被隐藏；item encoder 已冻结，因此实验没有回答联合优化商品塔是否继续增益；未匹配 query 只表示三天目标窗口内未观察到兴趣，presence 可能把低频或延迟转化兴趣误判为不存在；历史仅保留 40 个事件，也未研究超长序列。作者的 K 扫描表明 10 之后收益饱和，但不同业务的兴趣数量和 ANN 成本曲线未必一致。论文也未披露端到端训练时长、线上 latency 分位数和 presence 阈值漂移，这些是复现与长期运维需要补齐的指标。</p>
-<h2>6. 工业实践意义</h2>
-<p>最现实的落地路径是保持现有商品 embedding 与 ANN 索引不动，只替换用户兴趣抽取和 query dispatch。先离线记录每请求有效 query 数、query 间余弦分布、按兴趣分桶的召回覆盖，再影子运行 presence+NMS；确认固定总候选预算下重复率下降后，才接入主召回。阈值应按流量、用户活跃度和候选预算分层校准，并保留“至少一个 query”兜底。</p>
-<p>对社区 UGC，可把高意向目标换成收藏、长停留、关注或高质量评论，把帖子文本/图片的冻结向量当 item space。匈牙利匹配尤其适合同时有长期主题和突发兴趣的用户。不过，应避免把点击全部视为同质量目标，可借论文的事件强度优先级和 α 门控逐步引入行为。生产监控除 CTR/CVR 外，还应关注 ANN 调用数、兴趣覆盖、长尾召回、重复候选率、冷启动用户 presence 分布，以及模型更新后 query 语义是否发生置换。</p></div>
+    <div class="deep-read-content"><h1>SetMIR：把多兴趣召回当成“集合预测”，顺便决定每次请求该发几路 ANN</h1>
+<p>我的判断：做召回的团队值得认真读，尤其是已经在用多兴趣召回、又苦于几个兴趣向量越学越像的团队。它的改动很小，一个训练时的匹配方式和一个输出头，却同时处理了训练和线上两个老问题。来自 Snap 的动态商品广告（DPA，Dynamic Product Ads）团队，已在线上作为新召回源上线。核心思想一句话：用 K 个可学习的兴趣 query 去“预测一个兴趣集合”，没分到真实目标的 query 学会说“这次不存在”，线上据此决定实际发几路 ANN 检索。做法借自目标检测里的 DETR（用一组可学习 query 直接预测目标框集合的检测模型）：训练时用匈牙利匹配把真实目标一对一分给 query。几个数字：把匹配方式从常见的 argmax 换成匈牙利匹配，R@10 差距达 36.5%（argmax 版本只有完整版的 63.5%）；线上平均每次请求只发 6.70 路 ANN，比固定发 10 路少 33%；作为新召回源上线后整体 CVR +3.11%。</p>
+<h2>它到底在解决什么问题？</h2>
+<p>先看一个示意场景。一个用户这周看了衬衫、裤子、连衣裙、凉鞋和耳饰。单向量双塔会把这些平均成一个向量，结果往往偏向点得最多的那个品类。论文图 3 的真实案例就是如此：单向量召回的前 10 个全是裤子。</p>
+<p>多兴趣召回（MIND、ComiRec 一类）给每个用户输出 K 个向量，每个向量各发一路 ANN 检索再合并。但它们有两个毛病。</p>
+<p>第一个叫兴趣坍缩（interest collapse）。常见训练方式是让每个目标商品去找和它最近的那个兴趣向量（argmax），只更新那一个。看一个示意的相似度表：</p>
+<table><thead><tr><th>兴趣 query</th><th>目标 1：衬衫</th><th>目标 2：连衣裙</th></tr></thead><tbody><tr><td>q1</td><td>0.8</td><td>0.6</td></tr><tr><td>q2</td><td>0.3</td><td>0.5</td></tr><tr><td>q3</td><td>0.1</td><td>0.2</td></tr></tbody></table>
+<p>按 argmax，两个目标都选 q1（0.8 和 0.6 都是各自那一列的最大值），q2、q3 收不到任何梯度。训下去 q1 什么都管，其他 query 要么不动，要么漂移，最后有效兴趣只剩一两个。论文的消融里，argmax 训练的模型平均只有 2.16 个 query 被判为“存在”。</p>
+<p>第二个叫静态派发（static dispatch）。线上不管用户今天有几个兴趣，都固定发 K 路 ANN，每路分 N/K 个候选名额。如果 10 个向量里有 4 个几乎重复，就有 4 路检索在重复取回同一批商品，白白占了候选预算和调用成本。</p>
+<p><strong class="hl">SetMIR 的出发点是：用户的兴趣是一个大小不定的集合，模型应该预测这个集合，而不是硬造 K 个互相独立的向量</strong>。</p>
+<h2>先看全景</h2>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-09-02/personalization/2608.30251/fig1_pipeline.png" alt="SetMIR 的三段结构。左边是输入嵌入：历史商品先过一个冻结的预训练商品内容模型，再加上可学习的位置嵌入和行为类型嵌入（浏览、加购、购买）。中间是 J 层 transformer 编码器读历史得到 H。右边是 M 层兴趣解码器：K 个可学习的兴趣 query 先互相做 self-attention，再对 H 做 cross-attention，最后每个 query 输出一个召回向量 e_k 和一个存在分数 p_k。" loading="lazy" decoding="async"><figcaption>SetMIR 的三段结构。左边是输入嵌入：历史商品先过一个冻结的预训练商品内容模型，再加上可学习的位置嵌入和行为类型嵌入（浏览、加购、购买）。中间是 J 层 transformer 编码器读历史得到 H。右边是 M 层兴趣解码器：K 个可学习的兴趣 query 先互相做 self-attention，再对 H 做 cross-attention，最后每个 query 输出一个召回向量 e_k 和一个存在分数 p_k。</figcaption></figure>
+<table><thead><tr><th>阶段</th><th>做什么</th><th>为什么需要</th></tr></thead><tbody><tr><td>输入</td><td>最近 40 个行为，每个商品用冻结的内容向量，加位置和行为类型</td><td>商品塔冻结，线上直接复用现成的单向量 ANN 索引</td></tr><tr><td>编码</td><td>2 层 transformer 读历史</td><td>得到上下文化的历史表征</td></tr><tr><td>解码</td><td>10 个 query，6 层解码器，query 之间先互相看、再读历史</td><td>让 query 在读历史前先“分工”，不去追同一个主信号</td></tr><tr><td>输出</td><td>每个 query 一个归一化召回向量和一个存在分数</td><td>存在分数决定线上这路检索发不发</td></tr><tr><td>训练</td><td>匈牙利匹配 + InfoNCE + 存在损失 + 多样性损失</td><td>一对一分配目标，未分到的 query 学会说“不存在”</td></tr><tr><td>线上</td><td>存在分数过阈值 → query 去重 → 每路 ANN → 取最大分合并</td><td>按请求动态决定发几路</td></tr></tbody></table>
+<p>模型很小，隐藏维 128，可学习参数约 3M。监督信号来自未来 3 天窗口里的高意向行为：购买、加购和上划（swipe-up，Snap 广告里点进商品落地页的动作）。目标按商品去重，同一商品保留最强的行为，最多保留 15 个；窗口之前的最近 40 个行为作为输入。</p>
+<h2>拆开看：训练时怎么分配目标</h2>
+<p><strong>匈牙利匹配是什么，为什么能防坍缩？</strong> 匈牙利匹配是一种经典算法：给定一张“query × 目标”的代价表，找出一种一对一的配对，使总代价最小，任何 query、任何目标都不能被用两次。SetMIR 的代价是“负相似度”加一项“负的存在置信度”：<br><span class="katex-display"><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord">Γ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1461em;vertical-align:-0.247em;"></span><span class="mord">−</span><span class="mord"><span class="mord mathnormal">λ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">mb</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">t</span></span><span style="top:-3.1841em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">λ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">c</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span><span class="mord mathnormal mtight">s</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="mopen">(</span><span class="mord"><span class="mord">ℓ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span><br>两项权重分别取 1 和 0.5，第二项在前 10% 的训练步里线性升温，让早期的匹配主要由向量几何决定。</p>
+<p>回到上面的示意表，先只看相似度。可选的一对一配对里，q1→衬衫、q2→连衣裙 的总相似度是 0.8+0.5=1.3；q1→连衣裙、q2→衬衫 是 0.6+0.3=0.9；q1→衬衫、q3→连衣裙 是 0.8+0.2=1.0。最优是第一种。于是 q2 被迫负责连衣裙，拿到梯度往连衣裙方向走；q3 没分到目标，得到一个“存在 = 0”的标签。这说明匈牙利匹配从训练目标上就保证了“一个兴趣只由一个 query 负责”，不需要额外的正则去硬拉开 query。</p>
+<p><strong>分到之后怎么学？</strong> 每对（query，目标）用 InfoNCE 训练：正样本是分到的目标，负样本是同一个 batch 里跨 GPU 收集到的所有目标向量，温度 0.05。没分到的 query 不参与 InfoNCE，不会被拉向任何方向。</p>
+<p><strong>存在分数怎么学，为什么需要？</strong> 每个 query 的存在头输出 p_k，标签就是“这次有没有被匹配上”，用二分类交叉熵训练。这是 argmax 训练缺的那块：argmax 下没被选中的 query 什么信号都没有，在 SetMIR 里它会被明确告知“这次不存在”。要注意论文自己的说明：没匹配上只代表未来 3 天窗口里没有更多高意向目标，不代表用户永远没有这个兴趣，所以存在分数是“这次请求要不要发”的调度信号，不是用户画像标签。</p>
+<p><strong>多样性损失做什么？</strong> 只对存在分数大于 0.5 的 query 两两计算余弦相似度，超过 0.3 的部分才罚。示意：两个活跃 query 余弦 0.5，罚 0.5−0.3=0.2；余弦 0.2，不罚。已经分开的 query 不受影响。三项损失权重分别是 1.0、0.5、0.1。</p>
+<h2>拆开看：线上怎么决定发几路</h2>
+<p>线上只做一次前向，得到 10 组（e_k, p_k），然后三步：</p>
+<ol>
+<li>存在门控：只保留 p_k &gt; 0.3 的 query；一个都不过就保留分数最高的那个。</li>
+<li>query 去重：按 p_k 从高到低排，如果某个 query 和排在它前面、已保留的 query 余弦超过 0.9，就去掉。这一步论文叫 query 级 NMS（非极大值抑制，目标检测里去掉重复框的做法）。</li>
+<li>每个剩下的 query 各检索 ⌈N/K̃⌉ 个商品，K̃ 是剩下的路数；同一商品被多路召回时取最高分，再取前 N 个。</li>
+</ol>
+<p>手算一个示意例子：5 个 query 的存在分数是 0.95、0.90、0.70、0.25、0.10。门控后剩前 3 个。第 2 个和第 1 个余弦 0.93，超过 0.9，被去掉。最后 K̃=2，假设候选预算 N=1000，每路取 500 个。这说明总召回深度基本不变，省下的是 ANN 调用次数，以及重复检索浪费掉的名额。</p>
+<h2>这套方案真的更好吗？</h2>
+<p>离线数据是 Snap DPA 的用户-商品行为日志，商品库数亿，测试集约 100 万用户、530 万个目标商品。按 Snap 的规定只报相对值，下表每列都以 SetMIR 为 100%。所有方法共用同一套冻结商品向量、K=10、同样的优化器和召回预算：</p>
+<table><thead><tr><th>方法</th><th>平均 ANN 路数</th><th>R@1</th><th>R@10</th><th>R@100</th><th>MRR</th></tr></thead><tbody><tr><td>MIND</td><td>10</td><td>45.7%</td><td>52.9%</td><td>61.7%</td><td>44.4%</td></tr><tr><td>ComiRec-SA</td><td>10</td><td>67.4%</td><td>89.8%</td><td>99.9%</td><td>80.0%</td></tr><tr><td>DCM</td><td>10</td><td>26.0%</td><td>37.4%</td><td>49.3%</td><td>29.1%</td></tr><tr><td>KuaiFormer</td><td>10</td><td>43.0%</td><td>52.0%</td><td>62.8%</td><td>42.2%</td></tr><tr><td>SetMIR（argmax）</td><td>2.16</td><td>62.1%</td><td>63.5%</td><td>69.1%</td><td>56.4%</td></tr><tr><td>SetMIR</td><td>6.70</td><td>100%</td><td>100%</td><td>100%</td><td>100%</td></tr></tbody></table>
+<p>最强的基线 ComiRec-SA 在 R@100 上几乎追平（99.9%），但 R@1 只有 67.4%、MRR 80.0%。这说明它能捞回差不多的候选池，排序却差得多，而下游精排最看重的正是靠前的那部分。最有说服力的一行是 SetMIR（argmax）：结构完全一样，只把匈牙利匹配换成 argmax，R@10 就掉到 63.5%，活跃 query 从 6.70 个降到 2.16 个。KuaiFormer 结构和 SetMIR 最接近，也是 transformer 加可学习 query，R@10 只有 52.0%。这说明差距主要来自 query 怎么被监督，而不是网络结构。</p>
+<p>单项消融里，去掉存在损失后 R@10 降到 91.4%，门控还放进了 8.23 路而不是 6.70 路。这说明没有监督的存在分数不携带“该不该发”的信息，结果是发得更多、召回反而更差。去掉多样性损失后 R@10 降到 93.2%，query 之间更相似了。三者中匹配方式的影响最大。</p>
+<p>K 的扫描也很有信息量：以 K=1 为 100%，K=3 时 R@10 已到 137.5%，K=10 到 155.0%，K=15 是 155.1%，基本饱和。更有意思的是活跃路数：K=15 时平均也只有 7.59 路被判为存在。这说明有效兴趣的个数是由数据决定的，给更多 query 模型也不会全用。</p>
+<p>线上服务的消融用同一个模型、三种派发策略：</p>
+<table><thead><tr><th>派发策略</th><th>平均 ANN 调用</th><th>R@1</th><th>R@10</th><th>MRR</th></tr></thead><tbody><tr><td>固定发 10 路</td><td>10.00</td><td>100%</td><td>100%</td><td>100%</td></tr><tr><td>+ 存在门控（阈值 0.3）</td><td>7.73</td><td>101.9%</td><td>99.4%</td><td>100.7%</td></tr><tr><td>+ query 去重（阈值 0.9）</td><td>6.70</td><td>101.8%</td><td>99.2%</td><td>100.7%</td></tr></tbody></table>
+<p>门控砍掉 23% 的调用，R@10 只损失 0.6%，R@1 反而略升，因为低置信 query 召回的候选本来就会稀释合并列表。</p>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-09-02/personalization/2608.30251/fig3_qualitative.png" alt="单个用户的召回对比。最上面是用户历史，覆盖衬衫上衣、裤子、连衣裙、鞋、半裙、手袋和配饰。黄色一栏是单向量召回，前 10 个全是裤子。绿色部分是 SetMIR 各活跃 query 的召回：head 3 负责衬衫，head 9 负责连衣裙和半裙，head 5 负责裤子，head 0 负责配饰，head 7 负责鞋；head 1 也是衬衫，因为和 head 3 太像被去重掉（灰色）。" loading="lazy" decoding="async"><figcaption>单个用户的召回对比。最上面是用户历史，覆盖衬衫上衣、裤子、连衣裙、鞋、半裙、手袋和配饰。黄色一栏是单向量召回，前 10 个全是裤子。绿色部分是 SetMIR 各活跃 query 的召回：head 3 负责衬衫，head 9 负责连衣裙和半裙，head 5 负责裤子，head 0 负责配饰，head 7 负责鞋；head 1 也是衬衫，因为和 head 3 太像被去重掉（灰色）。</figcaption></figure>
+<p>线上 A/B 跑了约一周，下游排序模型不变，SetMIR 作为新召回源加入、总召回名额不变。整体 CTR +0.21%、CVR +3.11%。另外在实验组内部按召回源归因，SetMIR 比并行跑的 I2I 召回（直接拿用户最近的高意向商品当种子去 ANN）CTR 高 44%、CVR 高 51%；两者共用同一套商品向量、索引和单路名额，区别只在查询向量怎么来。</p>
+<h2>我认为它的局限</h2>
+<p>第一，离线对比对基线不太公平。SetMIR 用冻结商品塔，而 MIND、DCM（用可微聚类构造兴趣向量的多兴趣模型）等本来是和商品塔联合训练的；DCM 和 KuaiFormer 没有公开代码，是作者按论文复现的；训练步数也不同，基线在 6 万到 10 万步收敛，SetMIR 训到 16 万步。作者自己也说 MIND、DCM 的数字只能看作“在冻结商品空间下这些机制的表现”。所以表里 37.4%、52.9% 这类大差距不宜直接当作方法优劣。</p>
+<p>第二，线上证据不完整。论文不报流量比例、样本量和显著性；整体 CTR 只 +0.21%，CVR 却 +3.11%，两者差了 15 倍，论文没有解释。44% 和 51% 这组数是实验组内部按召回源归因得来的，不是随机对照，会受精排偏好和召回源之间相互挤占的影响。</p>
+<p>第三，存在标签依赖监督窗口。“没匹配上”只表示未来 3 天没有高意向行为，所以窗口一改，存在分数的含义就跟着变。另外目标最多保留 15 个，而 query 只有 10 个，意味着目标多于 10 个的用户一定有目标分不到 query。论文没有做窗口长度或目标上限的敏感性实验。</p>
+<h2>一个推荐/搜索团队可以怎么试</h2>
+<ol>
+<li>如果已有多兴趣召回，先离线统计 K 个兴趣向量两两的平均余弦，以及每个 query 平均分到多少目标。分布很偏（一两个 query 包揽大部分目标），就说明有坍缩，值得试。</li>
+<li>最小改动是只换训练时的分配方式：argmax 换成匈牙利匹配，K=10 时每个用户只是一个 10×W 的小问题，算法开销可以忽略。看 R@10 和 MRR 的变化。</li>
+<li>再加存在头，线上先不改派发，离线按论文的阈值 0.3 和去重阈值 0.9 回放，算 ANN 调用能省多少、召回损失多少。</li>
+<li>线上 A/B 时，优先看实验组和对照组的整体指标；按召回源归因的指标只作参考，避免把挤占效应当成增益。</li>
+<li>换监督窗口长度（例如 1 天、3 天、7 天）各训一版，看存在分数和活跃路数是否稳定，确认它适合自己的业务节奏。</li>
+</ol>
+<h2>一句话结论</h2>
+<p>多兴趣召回的问题不全在模型结构，更在训练时 query 怎么分目标；SetMIR 用一对一匹配加一个“这次存不存在”的分数，把防坍缩和按请求动态派发合成了一件事，改动小，离线消融和线上效果都支持它。</p>
+<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>高。兴趣坍缩和固定派发是多兴趣召回的普遍问题</td></tr><tr><td>方法创新性</td><td>中高。DETR 式集合预测在推荐召回里的直接迁移，存在头用于派发是新用法</td></tr><tr><td>实验证据</td><td>中高。消融干净，有线上 A/B；但基线对比不完全公平，线上缺显著性</td></tr><tr><td>工程成本</td><td>低。约 3M 参数，商品侧和 ANN 索引不用改</td></tr><tr><td>是否值得尝试</td><td>值得，尤其是已有多兴趣召回的团队，先换匹配方式</td></tr><tr><td>适用场景</td><td>用户兴趣分散、品类多的电商和广告召回</td></tr></tbody></table></div>
   </div>
 </div></div>
 </section>
@@ -107,7 +140,7 @@
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2608.30255" data-paper-id="arxiv:oai:arXiv.org:2608.30255" data-card>
   <div class="top"><span class="n">02</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></span> 4.75</span></div>
   <h4><a href="https://arxiv.org/abs/2608.30255" target="_blank" rel="noopener">CAMIE: Co-Engagement-Aware Multimodal Item Embeddings for Snap Dynamic Product Ads Retrieval</a></h4>
-  <div><span class="chip"><span class="cname"><img class="clogo" src="../../../logos/snap.png" alt="" width="16" height="16" loading="lazy" decoding="async">Snap</span></span><span class="chip deep">&#128214; 有深读 · 8 分钟</span></div>
+  <div><span class="chip"><span class="cname"><img class="clogo" src="../../../logos/snap.png" alt="" width="16" height="16" loading="lazy" decoding="async">Snap</span></span><span class="chip deep">&#128214; 有深读 · 13 分钟</span></div>
   <p>CAMIE 面向 Snap 动态商品广告的 I2I 召回，把图像与商品元数据送入同一 LLM/MLLM 原生多模态接口，再用用户旅程挖掘的共参与商品对和对称式 in-batch InfoNCE 对齐转化行为。线上替换两个内容编码器后，相对多模态对照 CTR +0.390%、CVR +10.832%，整体 DPA 流量 CTR +0.211%、CVR +1.911%。</p>
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>关键不是继续堆独立视觉/文本塔，而是让统一内容空间接受真实共参与信号监督，使相似性直接靠近转化目标。该方案可作为现有 I2I 向量源的低风险替换：保持 ANN 基础设施不变，以统一 checkpoint 支持多模态和纯文本召回，并通过离线 Recall@10 与线上 CTR/CVR 双重把关。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Xiaodong Liu, Siman Wang, Congfei Zhang, Hsiang-wei Chao, Xiao Bai, Wen Zhang, Jingxiao Ma, Zhe Liu,...</div>
@@ -117,7 +150,7 @@
   <div class="deep-read-toggle-row">
     <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
       <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
+      <span>&#128214; 展开深度解读 · 13 分钟</span>
     </button>
     <a class="deep-read-page-link" href="../../../deep-readings/2608.30255.html">独立页面阅读 &#8599;</a>
   </div>
@@ -129,30 +162,51 @@
       </button>
       <a class="deep-read-page-link" href="../../../deep-readings/2608.30255.html">独立页面阅读 &#8599;</a>
     </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>大规模 I2I 召回通常离线编码商品、构建 ANN 索引，在线只做一次向量查询，因此时延低且能覆盖冷启动商品。但生产系统往往分别维护图像、文本和多模态编码器，每套模型都有独立训练、刷新和索引链路；同时，CLIP/SigLIP 等内容相似度并不等于用户行为上的共同转化。两个视觉相似商品可能只是替代品，而用户连续互动的商品可能在图像上差异很大但业务上互补。</p>
-<p>CAMIE 的目标是用一个原生 LLM/MLLM 多模态接口统一商品表征，并用真实用户旅程中的 co-engagement 而非内容标签对齐召回空间。作者特别区分“更强 backbone”和“更合适监督”：后续 matched recipe 实验表明，大部分收益来自共参与监督，不是简单换成 2B MLLM。该问题重要之处在于可作为现有 I2I encoder 的 drop-in replacement，不改变线上 ANN 形态。</p>
-<h2>2. 方法详解</h2>
-<p>数据由 30 天 Snap DPA 用户旅程构建。每条事件包含用户、商品、时间和 view/click/add-to-cart/purchase 类型；同一用户旅程按 item_id 去重，再在局部 session 或 attribution window 内产生无序商品 pair。过滤要求 EXACT attribution、标题与图片非空、同一广告主、顶级类目一致，时间衰减权重至少 0.5；衰减半衰期为 7 天，每用户最多采样 2 对。离线实验用 1000 万训练 pair、10 万测试 pair，线上 checkpoint 用同流程扩到 1 亿 pair。</p>
-<p>每个商品可含主图、标题、品牌、描述和类目路径。renderer 根据 multimodal、text-only、image-only 模式选择字段，图像走 backbone 原生视觉接口，文本走 tokenizer，不增加模态专用 projection。共享编码器 f 与 projection g 输出 L2 归一化向量；decoder-only 模型采用 last-token pooling。相同 checkpoint 通过改变 renderer 支持三种表面。</p>
-<p>训练目标是加权、对称的 in-batch InfoNCE。对 pair(i,j)，既计算 i 查询 j 的 softmax，也计算 j 查询 i；分母含同 batch 其他商品，分布式 all-gather 提供跨卡负例。对称性符合 co-engagement 无方向关系，时间可靠度 ω 可作为样本权重。主模型是 Qwen3-VL-Embedding 2B，backbone 冻结，仅在 q/k/v/o attention projection 加 LoRA（r=32、α=64）并训练 projection head。AdamW 峰值学习率 2e-5、200 warm-up steps、余弦衰减、BF16，温度从 0.07 可学习；8 张 A100 40GB，有效 batch 32–64，训练 1 epoch。离线向量 512 维，线上取前 128 维以匹配既有 I2I_MM 索引占用。</p>
-<p>部署时每次 catalog refresh 离线编码所有活跃商品并写入 ANN。在线 seed 商品优先查缓存 embedding，新商品才即时编码，然后只发一次 ANN top-K；因此昂贵 MLLM 主要在索引构建期，不进入绝大多数请求关键路径。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，原生多模态输入加统一 projection，避免为视觉、文本、多模态分别设计融合塔。一个多模态训练 checkpoint 在 text-only R@10 上达到专用文本 fine-tune 的 87.9% 对 89.0%，仅差 1.1 个百分点，说明文本链路可以合并。</p>
-<p>第二，co-engagement pair 把预训练语义空间对齐到转化相关性。相同 Qwen3-VL 2B 从未经微调到 CAMIE，归一化 R@10 从 100.0% 提到 137.7%。在 matched backbone 实验中，三种 backbone 的多模态结果落在 5.5pp 范围内，而共参与微调本身带来 37.7% 相对增益，证明监督是主因。</p>
-<p>第三，论文把“数据纯度还是规模”做了可行动的拆解。高意向 pair 在同样三分之一数据量时只比全事件子集高 1.6% R@10；保留全部事件把 R@10 提高 8.9%，最终比只用高意向高 7.2%。对稀疏转化场景，这支持用可靠过滤后的全漏斗数据，而非过度追求 purchase 标签。</p>
-<h2>4. 实验结果分析</h2>
-<p>主要离线结果以预训练 Qwen3-VL-Embedding 2B 多模态结果归一化：</p>
-<table><thead><tr><th>模型/输入</th><th>R@1</th><th>R@10</th><th>R@50</th><th>MRR</th></tr></thead><tbody><tr><td>预训练 Qwen3-VL，多模态</td><td>100.0%</td><td>100.0%</td><td>100.0%</td><td>100.0%</td></tr><tr><td>CAMIE Qwen3-VL，多模态</td><td>126.4%</td><td>137.7%</td><td>141.8%</td><td>130.5%</td></tr><tr><td>CAMIE Qwen3-VL，纯文本</td><td>117.8%</td><td>122.5%</td><td>134.1%</td><td>116.4%</td></tr><tr><td>Gemini Embedding 2，多模态</td><td>129.1%</td><td>129.9%</td><td>129.2%</td><td>129.4%</td></tr></tbody></table>
-<p>CAMIE 在 R@10 上比 Gemini 约高 6% 相对值，且向量 512 维而 Gemini 为 3072 维；但 Gemini 在 R@1 仍领先，说明优势集中在候选生成需要的较大 cutoff。backbone 对纯图像表面出现反例：Qwen3-VL 只有 68.8%，SigLIP2-large 达 87.3%，差 18.5pp。作者解释 MLLM 用“图像后接空文本的 last-token”读取图像并非其预训练强项，因此图像-only 不宜强行统一。</p>
-<p>线上随机 A/B 保持其他组件不变：</p>
-<table><thead><tr><th>对比</th><th>CTR lift</th><th>CVR lift</th></tr></thead><tbody><tr><td>全部 DPA 流量</td><td>+0.211%</td><td>+1.911%</td></tr><tr><td>替换 I2I_MM</td><td>+0.390%</td><td>+10.832%</td></tr><tr><td>替换 I2I_TEXT</td><td>+18.958%</td><td>+13.12%</td></tr></tbody></table>
-<p>三项 CVR 和对文本控制的 CTR 在 99% 置信水平显著；总体 CTR +0.211% 不显著。对多模态控制主要提升 CVR 而非点击，说明共参与监督更容易找出真正转化相关候选；对文本控制同时大幅提升 CTR/CVR，表明补入图像后恢复了原系统完全漏掉的候选。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文未设置独立 limitations 章节，但正文明确指出图像-only 是统一方案的例外：专用 SigLIP2 视觉塔明显更强，生产上仍应保留专用视觉 encoder。所有数据和线上实验来自 Snap DPA，绝对指标、pair 数之外的目录规模、A/B 时长与流量分桶未公开；离线测试候选池由测试 pair 中出现的商品构成，也不等同完整线上目录。作者还指出离线 co-engagement 测试天然偏好同类监督，真正归因必须依靠线上 A/B。未被充分讨论的风险包括同一广告主/同类目过滤会限制跨商家和跨类目的互补发现，co-engagement 也可能继承曝光与流行度偏差。</p>
-<h2>6. 工业实践意义</h2>
-<p>最值得复制的顺序是“先改监督，再换大模型”。团队可先用现有双塔或 SigLIP 在同一套可靠 co-engagement pair 上训练，验证行为监督带来的离线/线上收益；只有文本与多模态统一确有运维价值时，再引入 MLLM。pair 生成要记录 attribution 置信度、时间差、广告主/类目边界和事件类型，避免同页曝光造成伪共现；同时用时间切分防止近邻泄漏。</p>
-<p>对社区 UGC，可把帖子或商品换成内容单元，将同一会话内的点击、收藏、长停留、关注作者构成 pair，用时间半衰与来源一致性过滤。线上仍可保持“离线全量编码 + 缓存 seed + 单次 ANN”，从而把 2B 模型成本放在索引刷新。部署监控应拆分总体流量与被替换召回源，分别观察 CTR、深度消费、转化、候选覆盖和长尾分布；总体 lift 会被召回源流量占比稀释。若图像-only 是关键入口，应保留专用视觉塔，避免为了模型统一牺牲约 18.5pp 的离线 R@10。</p></div>
+    <div class="deep-read-content"><h1>CAMIE：商品向量的大部分收益来自“用户一起互动过”的监督，而不是换成多模态大模型</h1>
+<p>我的判断：做 I2I 召回或商品向量的团队值得读，主要因为它回答了一个大家常在争的问题：把商品编码器换成多模态大模型（MLLM），收益到底来自模型本身，还是来自训练用的监督信号。CAMIE（Co-Engagement-Aware Multimodal Item Embeddings，意思是“考虑共同互动的多模态商品向量”）来自 Snap 动态商品广告（DPA）团队，已上线替换了两套旧编码器。核心思想一句话：用 Qwen3-VL-Embedding 2B 把商品图片和文字一起编码成一个向量，再用从用户浏览路径里挖出的“共同互动商品对”做对比学习微调，同一个模型同时服务多模态和纯文本两条召回线。几个关键数字：同一个底座，微调后 R@10 比微调前高 37.7%；而在完全相同的训练配方下，换不同底座（MLLM、SigLIP2、CLIP）的多模态 R@10 最多只差 5.8%；线上替换旧的多模态 I2I 编码器后，这条召回线的 CVR +10.832%。</p>
+<h2>它到底在解决什么问题？</h2>
+<p>I2I 召回的输入是一个种子商品，输出是“相关”的商品。线上通常离线把整个商品库编码好、建 ANN 索引，请求来了只查一次，延迟低，冷启动商品也能覆盖。</p>
+<p>问题一：相似不等于会一起买。用一个示意例子看：</p>
+<table><thead><tr><th>示意</th><th>种子：白色亚麻衬衫</th><th>内容相似度会召回</th><th>用户实际会一起看、一起买</th></tr></thead><tbody><tr><td>商品 A</td><td>–</td><td>另一件白色衬衫（长得像）</td><td>同店的亚麻长裤</td></tr><tr><td>商品 B</td><td>–</td><td>白色 T 恤（颜色、品类像）</td><td>同系列的另一个颜色</td></tr><tr><td>商品 C</td><td>–</td><td>白色床单（材质词相同）</td><td>搭配的草编凉鞋</td></tr></tbody></table>
+<p>CLIP/SigLIP 这类模型学的是“图文是否匹配”，把它直接用来做 I2I，召回的是长得像、写得像的商品，而广告关心的是用户接下来会点、会买的商品。</p>
+<p>问题二：模态割裂。线上往往同时维护纯文本、纯图片和多模态三套编码器，各有各的微调、刷新流程和 ANN 索引。论文要的是一个模型、一套训练，同时能服务这几条线。</p>
+<p><strong class="hl">这篇论文真正想回答的是一个归因问题：效果提升有多少来自更强的 MLLM 底座，有多少来自“共同互动”这种行为监督</strong>。它用一个对照实验把两者拆开了，这是它比同类工作（例如小红书的 NoteLLM）多走的一步。</p>
+<h2>先看全景</h2>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-09-02/personalization/2608.30255/fig1_framework.png" alt="CAMIE 的训练框架。一对共同互动过的商品 i 和 j，各自按当前服务模式渲染成“可选图片 + 标题 + 品牌 + 描述 + 类目”的输入，送进同一个 LLM/MLLM 向量底座（可加适配器微调），过一个投影头并做 L2 归一化，得到 z_i 和 z_j，最后用对称的 batch 内 InfoNCE 训练。" loading="lazy" decoding="async"><figcaption>CAMIE 的训练框架。一对共同互动过的商品 i 和 j，各自按当前服务模式渲染成“可选图片 + 标题 + 品牌 + 描述 + 类目”的输入，送进同一个 LLM/MLLM 向量底座（可加适配器微调），过一个投影头并做 L2 归一化，得到 z_i 和 z_j，最后用对称的 batch 内 InfoNCE 训练。</figcaption></figure>
+<table><thead><tr><th>步骤</th><th>做什么</th><th>为什么需要</th></tr></thead><tbody><tr><td>1. 挖商品对</td><td>从 30 天的用户路径里找同一用户在一小段时间内互动过的两个商品</td><td>这是“会一起看、一起买”的直接证据</td></tr><tr><td>2. 渲染输入</td><td>把图片和“Title: … Brand: … Description: … Category: …”拼成一条记录</td><td>换模态时只改拼哪些字段，模型不变</td></tr><tr><td>3. 编码</td><td>冻结的 Qwen3-VL-Embedding 2B 加 LoRA，取最后一个 token，过投影头</td><td>底座自带多模态接口，不用另做融合模块</td></tr><tr><td>4. 训练</td><td>对称 InfoNCE，负样本是 batch 内和跨卡收集到的其他商品</td><td>把“一起互动”的商品拉近</td></tr><tr><td>5. 上线</td><td>商品库刷新时离线编码，写进 ANN 索引；请求时查一次</td><td>在线链路和旧的内容 I2I 一样，延迟形态不变</td></tr></tbody></table>
+<h2>拆开看：商品对怎么挖、损失怎么算</h2>
+<p><strong>商品对按什么规则挖？</strong> 对每个用户 30 天内的路径按商品去重，每个用户最多采 2 对。保留浏览、点击、加购、购买四种行为，不只用高意向行为。然后过一组过滤：归因必须是论文所说的“精确匹配”类型（字面意思是这次互动能精确归到具体的广告商品，论文没有给出更细的定义），标题和图片都不能为空，两个商品属于同一个广告主，一级类目一致，时间衰减权重至少 0.5。时间衰减用 7 天半衰期，权重是 0.5 的（间隔天数 / 7）次方。</p>
+<p>手算一下这条规则的含义：两次互动隔 3 天，权重 0.5^(3/7) ≈ 0.74，保留；隔 7 天正好是 0.5，刚好卡在线上；隔 10 天约 0.37，被过滤掉。所以“权重至少 0.5”等价于只保留一周内的共同互动。为什么要“同一广告主”？论文的通用规则要求两个商品属于同一个“服务范围”，也就是线上允许互相召回的商品集合；在 DPA 的实验里，这一条落成了“同一个广告主”。范围外的商品对，线上本来就召回不到，学了也用不上。离线实验用 1000 万训练对、10 万测试对；上线模型用同一流程挖的 1 亿对。</p>
+<p><strong>对称 InfoNCE 怎么算？</strong> 一个 batch 有 N 个商品对。对第 n 对，把 i_n 当查询，j_n 是正样本，其余 N−1 个 j 是负样本，算一次 softmax 交叉熵；再反过来把 j_n 当查询、i 们当候选算一次，两者平均。</p>
+<p>示意：batch 里 3 对，i_1 和三个 j 的余弦是 0.8、0.2、0.1，温度取 0.5。除以温度后是 1.6、0.4、0.2，取指数约 4.95、1.49、1.22，正样本的概率是 4.95/7.66 ≈ 0.65，这一项损失 −ln 0.65 ≈ 0.44。为什么要对称？因为“一起互动”没有方向，衬衫→长裤和长裤→衬衫是同一种关系，两个方向都要学。论文实际用可学习温度，初值 0.07。</p>
+<p><strong>换模态为什么不用重训？</strong> 服务纯文本线时，只是不把图片拼进输入；服务纯图片线时，只拼图片。底座和投影头完全不变。这就是“一个 checkpoint 多条线”的含义。</p>
+<h2>这套方案真的更好吗？</h2>
+<p>论文按 Snap 的规定只报相对值，离线以“没有微调的 Qwen3-VL-Embedding 2B、多模态输入”为 100%，测试时每个查询商品要在测试集出现过的所有商品里找到它的配对商品。</p>
+<table><thead><tr><th>模型</th><th>类型</th><th>输入</th><th>R@1</th><th>R@10</th><th>MRR</th></tr></thead><tbody><tr><td>Qwen3-VL-Embedding 2B</td><td>CAMIE 微调</td><td>多模态</td><td>126.4%</td><td>137.7%</td><td>130.5%</td></tr><tr><td>Qwen3-VL-Embedding 2B</td><td>未微调</td><td>多模态</td><td>100.0%</td><td>100.0%</td><td>100.0%</td></tr><tr><td>Qwen3-VL-Embedding 2B</td><td>CAMIE 微调</td><td>纯文本</td><td>117.8%</td><td>122.5%</td><td>116.4%</td></tr><tr><td>Gemini Embedding 2</td><td>商用 API</td><td>多模态</td><td>129.1%</td><td>129.9%</td><td>129.4%</td></tr><tr><td>Gemma 4 E2B</td><td>CAMIE 微调</td><td>多模态</td><td>94.5%</td><td>108.2%</td><td>100.0%</td></tr></tbody></table>
+<p>这张表能读出三点。第一，同一个底座，微调带来 37.7% 的 R@10 提升，说明行为监督本身就是大头。第二，没微调时，加图片反而不如只用文字（纯文本 111.1% 对多模态 100%）；微调后图片才开始有用（137.7% 对 122.5%），所以图片的价值要靠行为监督才能释放出来。第三，CAMIE 在 R@10 上比最强的商用模型 Gemini Embedding 2 高约 6%，向量还小得多（512 维对 3072 维），但在 R@1 上 Gemini 仍略好。</p>
+<p><strong>一个模型能不能顶替纯文本编码器？</strong> 多模态训练的模型只喂文字时，R@10 是多模态的 87.9%，专门用纯文本训练的模型是 89.0%，只差 1.1 个百分点。这说明纯文本线可以直接合并到同一个模型上。纯图片输入只有 67.0%，专门训的纯图片版也只有 68.8%，说明问题不在“合并”，而在这个底座本身不擅长只看图。</p>
+<p><strong>收益到底来自底座还是监督？</strong> 这是全文最关键的实验。作者用完全相同的配方训了两个非大模型的双塔：SigLIP2-large 和 CLIP ViT-L/14。商品对、损失、负样本数、输出维度、LoRA 设置、学习率和步数都一样，唯一的差别是底座。</p>
+<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-09-02/personalization/2608.30255/tab4_backbones.png" alt="匹配配方下的底座对比（论文表 4），以 CAMIE 多模态为 100%。多模态一列三者很接近（100%、95.7%、94.5%）；纯文本一列 MLLM 大幅领先（89.0% 对 60.1% 和 77.7%）；纯图片一列反过来，SigLIP2 的 87.3% 远高于 MLLM 的 68.8%。" loading="lazy" decoding="async"><figcaption>匹配配方下的底座对比（论文表 4），以 CAMIE 多模态为 100%。多模态一列三者很接近（100%、95.7%、94.5%）；纯文本一列 MLLM 大幅领先（89.0% 对 60.1% 和 77.7%）；纯图片一列反过来，SigLIP2 的 87.3% 远高于 MLLM 的 68.8%。</figcaption></figure>
+<p>这说明行为监督是收益的大头：三个底座用同样的商品对训完，多模态 R@10 最多差 5.8%，而微调本身带来 37.7%。MLLM 的优势在两处：多模态上比 SigLIP2 高 4.3 个百分点，作者做了配对 bootstrap 和置换检验，p&lt;0.001；纯文本上优势大得多。纯图片则应该交给专门的视觉塔。作者还给了一个训练曲线：在一个 epoch 的 40% 处，两个双塔就基本饱和了，MLLM 一直涨到最后，和 SigLIP2 的差距从 20% 处的 2.3 个百分点拉大到最后的 4.3 个百分点。</p>
+<p>还有一个数据量和纯度的对比：只用加购和购买对，数量约为全量的三分之一；以“从全行为对里随机采三分之一”为基准：同样三分之一的规模，只用高意向对 R@10 只高 1.6%；用全量的全行为对，R@10 高 8.9%。这说明对这个任务，多保留数据比只挑高意向行为更划算。</p>
+<p><strong>上线后效果如何？</strong> 线上做的是随机 A/B，其他服务组件保持不变：</p>
+<table><thead><tr><th>对比</th><th>CTR</th><th>CVR</th></tr></thead><tbody><tr><td>DPA 整体流量</td><td>+0.211%（不显著）</td><td>+1.911%</td></tr><tr><td>替换多模态 I2I 编码器那条线</td><td>+0.390%（不显著）</td><td>+10.832%</td></tr><tr><td>替换纯文本 I2I 编码器那条线</td><td>+18.958%</td><td>+13.12%</td></tr></tbody></table>
+<p>三个 CVR 提升和纯文本线的 CTR 提升在 99% 置信度下显著。线上的旧多模态编码器本身就是 SigLIP2-large，只不过是用内容标签训的。结合上面的匹配实验，这说明线上的增益主要来自“把监督换成共同互动”，而不是换了底座。</p>
+<h2>我认为它的局限</h2>
+<p>第一，离线测试集本身偏向这种训练方式。测试对和训练对用同一个流程从共同互动里挖出来，所以任何用这个信号训过的模型都占便宜，未微调的底座和商用 API 天然吃亏。作者自己也承认离线集“无法公平衡量”监督方式的差异。所以 37.7% 和“超过 Gemini 6%”更多说明“对齐到自己的行为分布有用”，不能当作通用向量质量的比较。</p>
+<p>第二，匹配对照对双塔可能不利。有效 batch 只有 32 到 64，因为 2B 的 MLLM 在 40GB 显卡上放不下更大的 batch，作者就把所有底座的负样本数都固定在 MLLM 能承受的上限。CLIP/SigLIP 这类对比学习模型通常很依赖大 batch 的负样本，固定在这么小的 batch 上，它们 5% 左右的差距里可能有一部分来自这个限制。论文说这样“算力和负样本对齐、不偏向 CAMIE”，但没有给双塔用大 batch 的对照。</p>
+<p>第三，线上和离线用的不是同一个模型。离线表里的模型用 1000 万对训练、输出 512 维；上线模型用 1 亿对训练，而且为了让索引和旧的一样大，只取向量的前 128 维。论文没说训练时有没有针对截断做处理，也没有报 128 维的离线数字，所以离线表并不能直接说明上线模型的质量。纯文本线的旧编码器也没有离线评估，它的 +18.958% CTR 缺少离线对照。</p>
+<h2>一个推荐/搜索团队可以怎么试</h2>
+<ol>
+<li>先不换底座。拿现在线上的内容向量模型（例如 CLIP 或 SigLIP 系列），用同一用户一周内共同互动过的商品对做对比学习微调，按论文的过滤规则去噪。按论文的结论，这一步就能拿到大部分收益。</li>
+<li>测试集要两套：一套用同样方式挖的共同互动对，一套和训练信号无关的人工相关性标注，避免第一套测试集偏向行为监督。</li>
+<li>如果同时维护多模态和纯文本两套编码器，再试一个多模态大模型底座，用“拼不拼图片”的方式同时服务两条线，比较纯文本线和专用文本模型的差距。纯图片线保留专门的视觉塔。</li>
+<li>挖商品对时比较“只用高意向行为”和“全行为、更多数据”，在相同规模和不同规模下各看一次，确认自己数据上数据量和纯度哪个更重要。</li>
+<li>上线前先离线测好截断维度后的效果，再决定索引维度。</li>
+</ol>
+<h2>一句话结论</h2>
+<p>商品向量要对齐的是用户的行为，而不是内容本身；CAMIE 用一个干净的对照实验说明，行为监督带来了绝大部分收益，多模态大模型的价值主要在于让一个模型同时撑起多模态和纯文本两条召回线。</p>
+<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>高。I2I 召回和商品向量在电商、广告里普遍存在，“该不该换大模型底座”是实际决策</td></tr><tr><td>方法创新性</td><td>中。共同互动对比学习和 MLLM 向量都不新，新意在严格的归因对照</td></tr><tr><td>实验证据</td><td>中高。有匹配配方对照和显著性检验，有随机 A/B；但离线集偏向行为监督，线上模型和离线不同</td></tr><tr><td>工程成本</td><td>中。2B 底座加 LoRA，离线编码商品库的成本比双塔高；在线链路不变</td></tr><tr><td>是否值得尝试</td><td>值得，先在现有内容模型上加行为监督，再考虑换底座</td></tr><tr><td>适用场景</td><td>有用户路径日志、需要同时服务多模态和纯文本召回的商品 I2I</td></tr></tbody></table></div>
   </div>
 </div>
 </article>
