@@ -53,54 +53,54 @@
     <div class="by">Isaac Zhu, Alan Cao, Hugh Yin, Rocky Wang, Orion Wang, Hscos Zhang, Jack Li, Jason Zhao · arXiv 2610.29820 · 发表 2026-10-21</div>
   </div>
   <div class="rmeta">
-    <span><b>7 分钟</b>阅读时长</span>
-    <span><b>2670</b>字</span>
+    <span><b>11 分钟</b>阅读时长</span>
+    <span><b>4223</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span><b>第 4 名</b><a href="../#/view/2026-10-23/infra">10-23 Infra 日报</a></span>
   </div>
   <div class="rbody">
-    <nav class="toc" id="toc" aria-label="目录"><h6>目录 CONTENTS</h6><a href="#s1"><i>1</i><span>问题：存储空间大多被副本占掉</span></a><a href="#s2"><i>2</i><span>方法</span></a><a href="#s3"><i>3</i><span>实验</span></a><a href="#s4"><i>4</i><span>局限</span></a><a href="#s5"><i>5</i><span>实践意义</span></a></nav>
+    <nav class="toc" id="toc" aria-label="目录"><h6>目录 CONTENTS</h6><a href="#s1"><i>1</i><span>问题：内存大多被重复的副本占掉</span></a><a href="#s2"><i>2</i><span>统一逻辑地址：引擎只管“第几号”，不管“放在哪”</span></a><a href="#s3"><i>3</i><span>PB-LRU：共享的 GPU 池里先换出谁</span></a><a href="#s4"><i>4</i><span>实验：容量翻几倍，吞吐跟着涨</span></a><a href="#s5"><i>5</i><span>局限与适用范围</span></a><a href="#s6"><i>6</i><span>实践意义</span></a></nav>
     <article class="long deep-read-article" id="article">
-      <details class="toc-m"><summary>目录 · 5 节</summary><a href="#s1"><i>1</i><span>问题：存储空间大多被副本占掉</span></a><a href="#s2"><i>2</i><span>方法</span></a><a href="#s3"><i>3</i><span>实验</span></a><a href="#s4"><i>4</i><span>局限</span></a><a href="#s5"><i>5</i><span>实践意义</span></a></details>
+      <details class="toc-m"><summary>目录 · 6 节</summary><a href="#s1"><i>1</i><span>问题：内存大多被重复的副本占掉</span></a><a href="#s2"><i>2</i><span>统一逻辑地址：引擎只管“第几号”，不管“放在哪”</span></a><a href="#s3"><i>3</i><span>PB-LRU：共享的 GPU 池里先换出谁</span></a><a href="#s4"><i>4</i><span>实验：容量翻几倍，吞吐跟着涨</span></a><a href="#s5"><i>5</i><span>局限与适用范围</span></a><a href="#s6"><i>6</i><span>实践意义</span></a></details>
       <div class="r-narrow"><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 4，Evidence 4，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg></div>
-      <p class="lede">稀疏注意力（例如 DeepSeek-V4.1-Flash、GLM-5 系列使用的按索引选取历史 token 的注意力）让每步解码只读一部分 KV cache，但没被选中的历史以后还可能被选中，所以全部历史仍要保存。长上下文、多请求时，存这些历史的显存决定了能同时解码多少请求。Scitix.AI 的 UlaCache 把所有 GPU 的 KV 池和可选的 CPU 内存编进同一个&quot;逻辑地址空间&quot;：推理引擎只拿逻辑地址分配和选取 KV，数据实际放在哪张卡或 CPU 上由 UlaCache 负责搬运和更新映射。<strong class="hl">这样 GPU 和 CPU 各存不同的历史，而不是 CPU 存全量、GPU 存副本</strong>。在 SGLang 中用 GLM-5.3、输入 64K–128K token 的 Multi-LexSum 请求测试，开启投机解码、GPU 和 CPU 内存预算相同时，峰值解码吞吐相对 HiSparse 在 8×H200 上提高 1.16 倍（DP）和 1.70 倍（TP），在 8×B300 上提高 1.73 倍（DP）和 2.51 倍（TP）。</p>
-<h2 id="s1">1. 问题：存储空间大多被副本占掉</h2>
-<p>作者用 GLM-5.3 在 8×B300 上统计了两种现有做法的 KV 分配：</p>
-<figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig2_replicas.png" alt="GLM-5.3 在 8×B300 上的 KV 分配（论文 Figure 2）。(a) TP 模式下，SGLang 和 HiSparse 只有 12.5% 的空间存不重复的历史，87.5% 是各卡之间的重复副本；(b) SGLang 只用 GPU 存 2710 万个历史位置；HiSparse 用 CPU 存 3000 万个完整历史，另用 2330 万个 GPU 槽存其中一部分的副本。" loading="lazy" decoding="async"><figcaption>GLM-5.3 在 8×B300 上的 KV 分配（论文 Figure 2）。(a) TP 模式下，SGLang 和 HiSparse 只有 12.5% 的空间存不重复的历史，87.5% 是各卡之间的重复副本；(b) SGLang 只用 GPU 存 2710 万个历史位置；HiSparse 用 CPU 存 3000 万个完整历史，另用 2330 万个 GPU 槽存其中一部分的副本。</figcaption></figure>
-<p>两个来源的重复：</p>
+      <p class="lede">DeepSeek-V4.1-Flash、GLM-5 系列这类模型用的是按索引挑选的稀疏注意力：每步解码先由一个打分模块从全部历史里挑出一小部分位置，注意力只读这些位置的 KV cache。这样每步读的数据少了，但存储并没有省下来，因为这一步没被挑中的历史，下一步可能就会被挑中，所以全部历史都得留着。上下文一长、请求一多，显存能装下多少历史，就决定了能同时解码多少请求。Scitix.AI 的 UlaCache 把所有 GPU 的 KV 池和可选的 CPU 内存编进同一个“逻辑地址空间”：推理引擎只按逻辑地址分配和选取 KV，数据实际放在哪张卡、在 GPU 还是 CPU 上，由 UlaCache 负责搬运和改映射。<strong class="hl">它的核心不是“多用 CPU”，而是让每一份内存都存不同的历史，不再存副本</strong>。在 SGLang 上用 GLM-5.3 跑 64K–128K token 的长文摘要请求，开启投机解码、内存预算相同时，峰值吞吐比 HiSparse 高 1.16 到 2.51 倍。从论文自己的曲线看，这些收益几乎全部来自“能同时装下更多请求”，同样批大小下的单步速度并没有变快。</p>
+<h2 id="s1">1. 问题：内存大多被重复的副本占掉</h2>
+<p>作者先统计了 GLM-5.3 在 8×B300 上的 KV 分配，发现现有两种做法都有大量重复存储，来源有两个。</p>
+<p>第一个来源是跨卡重复。GLM-5.3 用 MLA，它把所有注意力头的 KV 压成一份共享的表示。常规的张量并行（TP）按注意力头把计算分到各卡，可这份共享表示没法按头切开，于是每张卡都存一份完整的。8 卡 TP 下，只有 12.5% 的空间存的是不重复的历史，其余 87.5% 都是副本。也就是说，8 张卡的显存只发挥了 1 张卡的存储容量。</p>
+<p>第二个来源是 GPU 和 CPU 之间的重复。HiSparse 是目前用 CPU 扩展稀疏注意力 KV 的代表做法：完整历史放在 CPU，每步把被挑中的那部分搬到 GPU 并缓存起来。问题是 GPU 上缓存的每一条在 CPU 上也都还在。图中它一共用了 5330 万个物理槽，却只存了 3000 万个不同的历史位置。GPU 那 2330 万个槽只让访问变快，并没有让能存的历史变多。</p>
+<figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig2_replicas.png" alt="GLM-5.3 在 8×B300 上的 KV 分配（论文 Figure 2，不开投机解码）。(a) TP 模式下，SGLang 和 HiSparse 只有 12.5% 的空间存不重复的历史；(b) SGLang 只用 GPU 存 2710 万个历史位置，HiSparse 在 CPU 存 3000 万个完整历史，另用 2330 万个 GPU 槽存其中一部分的副本。" loading="lazy" decoding="async"><figcaption>GLM-5.3 在 8×B300 上的 KV 分配（论文 Figure 2，不开投机解码）。(a) TP 模式下，SGLang 和 HiSparse 只有 12.5% 的空间存不重复的历史；(b) SGLang 只用 GPU 存 2710 万个历史位置，HiSparse 在 CPU 存 3000 万个完整历史，另用 2330 万个 GPU 槽存其中一部分的副本。</figcaption></figure>
+<p>HiSparse 还有一个分配上的问题：它给每个请求一块固定大小的 GPU 缓存。请求少的时候，空出来的显存别的请求也用不上。作者举的例子是 8×B300、DP 模式、开投机解码、只有 1 个请求时，GPU 本来装得下全部历史，但单个请求的缓存配额装不下，于是仍然不断从 CPU 取数据。结果它每生成一个 token 的时间（TPOT）比纯 GPU 的 SGLang 高 23.5%。</p>
+<h2 id="s2">2. 统一逻辑地址：引擎只管“第几号”，不管“放在哪”</h2>
+<p>UlaCache 的做法是给每条 KV 一个固定的逻辑地址，再用一张映射表记录它当前实际在哪个 GPU 槽或 CPU 槽。数据在 GPU 和 CPU 之间搬动时只改映射表，逻辑地址不变，所以推理引擎那一侧的代码不用知道数据被挪过。这和 PagedAttention 把逻辑块映射到显存物理块是同一个思路，只是范围从一张卡扩大到了多张卡加 CPU。</p>
+<p>在 DP 模式下，每张卡负责自己的请求，管理自己的 GPU 池和 CPU 池，一个请求可用的容量就是两者之和。这里去掉的是 GPU 和 CPU 之间的重复：一条 KV 要么在 GPU，要么在 CPU，不会两边都有。</p>
+<p>TP 模式的变化更大。所有卡的 GPU 池合成一个分布式地址空间，每张卡只存每个请求历史的一部分：逻辑地址 t 放在第 t mod P 张卡上，P 是卡数。这样 8 张卡存的是 8 份不同的历史，而不是 8 份同样的副本。代价是计算时要从别的卡取数据，所以负责计算的卡另外留一块本地缓冲区，存最近挑中过的 KV。稀疏注意力连续几步挑中的位置重合度很高，所以缓冲区命中率高，大部分时候只需要补取少数缺的条目。</p>
+<figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig4_tp_pooling.png" alt="TP 模式下的显存合并与本地缓冲区（论文 Figure 4）。逻辑地址按奇偶分到 GPU 0 和 GPU 1 的池里；GPU 0 这一步挑中 2、4、5 三个位置：2 已在本地缓冲区中直接复用，4 从本卡的池里取，5 通过 CUDA IPC 从 GPU 1 的池里取。" loading="lazy" decoding="async"><figcaption>TP 模式下的显存合并与本地缓冲区（论文 Figure 4）。逻辑地址按奇偶分到 GPU 0 和 GPU 1 的池里；GPU 0 这一步挑中 2、4、5 三个位置：2 已在本地缓冲区中直接复用，4 从本卡的池里取，5 通过 CUDA IPC 从 GPU 1 的池里取。</figcaption></figure>
+<p>还有两个细节值得一提。GLM-5.3 里有些层共用同一次稀疏选择的结果，UlaCache 对这组层只做一次地址查找和去重，并在当前层计算时，用单独的 CUDA stream 预取后面几层要用的数据。另外，打分模块用到的索引键也按同样规则分散到各卡：每张卡只给本地的键打分，再用一次 all-gather 汇总。这一步省掉了重复打分，但在低并发时会带来额外的通信等待。</p>
+<h2 id="s3">3. PB-LRU：共享的 GPU 池里先换出谁</h2>
+<p>开启 CPU 存储后，GPU 池不再按请求切块，而是所有请求共享，最近用过的留在 GPU，久没用的换到 CPU。这就需要一个替换策略。标准 LRU 要给每个槽记时间戳，选替换对象时要扫描整个池。每步解码、每一层都要做一遍，开销会落在解码的关键路径上。</p>
+<p>PB-LRU（作者提出的并行分桶 LRU）用一个近似来避免扫描。它不再给每个槽排精确的先后，而是把同一轮调度里被访问的槽都放进同一个“桶”。每组层维护一圈最近的桶，外加一个冷桶。每轮调度当前桶往前挪一格，即将被复用的旧桶里剩下的槽归入冷桶，只改标记，不搬数据。需要腾位置时，先用空槽，再从冷桶里挑，再按从旧到新的顺序挑最近的桶。当前桶不参与挑选，因为里面的数据正要被这一步的注意力用到。</p>
+<p>每个桶用位图表示，一位对应一个 GPU 槽。上面再叠几层汇总位图，每一位表示下面一段里有没有被占用的槽，挑选时可以直接跳过整段空白。命中检测、更新访问时间、去重都由 GPU 线程并行完成。数据搬运也有顺序要求：先把数据搬完，再更新映射表并发出完成信号，注意力等到信号才去读新位置，这样不会读到搬到一半的数据。</p>
+<h2 id="s4">4. 实验：容量翻几倍，吞吐跟着涨</h2>
+<p>实验用 GLM-5.3（权重和 KV cache 都是 FP8），在 8×H200 和 8×B300 上测。对照组是 KV 全放 GPU 的 SGLang 和用 CPU 存历史的 HiSparse，投机解码用 MTP。为了公平，三个系统分到的显存相同，CPU 内存预算也相同（每张 H200 配 128 GB，每张 B300 配 192 GB）。负载是 Multi-LexSum 长文摘要，输入 64K 到 128K token，上下文足够长，KV 存储是主要压力。</p>
+<p>先看能同时装下多少请求。下表是论文 Figure 8 里的可接纳请求数（开投机解码）：</p>
+<div class="tbl"><table><thead><tr><th>配置</th><th>SGLang</th><th>HiSparse</th><th>UlaCache</th><th>UlaCache 比 HiSparse</th></tr></thead><tbody><tr><td>8×H200 TP</td><td>6</td><td>25</td><td>70</td><td>2.8 倍</td></tr><tr><td>8×H200 DP</td><td>29</td><td>197</td><td>213</td><td>1.1 倍</td></tr><tr><td>8×B300 TP</td><td>36</td><td>37</td><td>363</td><td>9.8 倍</td></tr><tr><td>8×B300 DP</td><td>260</td><td>295</td><td>566</td><td>1.9 倍</td></tr></tbody></table></div>
+<p>TP 模式下的差距最大，因为那里去掉的是 87.5% 的跨卡副本。DP 模式下 HiSparse 本来就把历史放 CPU，所以 H200 上只多了一成。B300 DP 多出近一倍，是因为 B300 的显存大，GPU 和 CPU 不再互相重复后，多出来的空间相当可观。</p>
+<figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig8_capacity.png" alt="有效 KV 容量（上，单位百万槽，实心为 GPU，斜线为 CPU）和可接纳的请求数（下）（论文 Figure 8 左半）。" loading="lazy" decoding="async"><figcaption>有效 KV 容量（上，单位百万槽，实心为 GPU，斜线为 CPU）和可接纳的请求数（下）（论文 Figure 8 左半）。</figcaption></figure>
+<p>容量多出来以后，要看它能不能变成吞吐。开投机解码时，峰值吞吐比 HiSparse 高：H200 DP 1.16 倍、H200 TP 1.70 倍、B300 DP 1.73 倍、B300 TP 2.51 倍。不开投机解码时，B300 TP 的峰值是 SGLang 的 3.51 倍。</p>
+<figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig7_throughput.png" alt="不同批大小下的输出吞吐（论文 Figure 7）。蓝色为 UlaCache，橙色为 HiSparse，紫色为 SGLang；叉号表示该系统装不下这么多请求。" loading="lazy" decoding="async"><figcaption>不同批大小下的输出吞吐（论文 Figure 7）。蓝色为 UlaCache，橙色为 HiSparse，紫色为 SGLang；叉号表示该系统装不下这么多请求。</figcaption></figure>
+<p>这张图比峰值数字更能说明问题。在两条曲线都存在的批大小上，UlaCache 和 HiSparse 几乎重合，所以单步速度并没有变快。差距出现在 HiSparse 曲线到头之后：它装不下更多请求，UlaCache 还能接着往上走。B300 TP 的请求数多了近 10 倍，吞吐只高 2.51 倍，因为批大到一定程度后吞吐曲线就平了，更多请求不再换来等比例的速度。唯一的例外是 H200 DP 开投机解码：请求数只多 8%，吞吐却高 16%。从曲线看，HiSparse 在大批量时有一段下滑，这符合它固定配额导致命中率下降的解释。</p>
+<p>低并发时，在批大小 1 到 8 的八种配置下，UlaCache 的 TPOT 都比 HiSparse 低，但比纯 GPU 的 SGLang 高。原因是多了地址查找、调度和 TP 下的跨卡通信。PB-LRU 的单独测试在 8×H200 DP 上回放同一组访问记录：它和精确 LRU 的 GPU 命中率相差不到 0.1 个百分点，说明分桶近似几乎不损失缓存效果。在较大批量下它的调度快 1.5 到 2.3 倍。但需要替换很少时，精确 LRU 反而更快，因为 PB-LRU 仍要维护桶的标记。</p>
+<h2 id="s5">5. 局限与适用范围</h2>
 <ul>
-<li><strong>跨卡重复。</strong> 模型使用 MLA（多头潜在注意力）时，按注意力头切分的 TP 让每张卡都存同一份 KV。8 卡 TP 下只有 12.5% 是不重复的历史。</li>
-<li><strong>GPU 与 CPU 重复。</strong> HiSparse 把完整历史放 CPU，把选中的部分复制到 GPU。它的 5330 万个物理槽只存了 3000 万个不重复的历史位置，GPU 那部分不增加容量。</li>
+<li>只测了一个模型、一种负载：GLM-5.3 加长文摘要。不同的稀疏选择模式（每步重合度更低的任务）会影响缓冲区和 GPU 池的命中率，论文没有覆盖。</li>
+<li>吞吐比较取的是各系统在所有批大小中的最高值，而各自的最高点出现在不同的批大小上。所以“2.51 倍”反映的是“能装下多少请求”，不是同样负载下更快。如果你的线上并发本来就到不了基线的容量上限，这个收益基本拿不到。</li>
+<li>低并发下比纯 GPU 的 SGLang 慢。对延迟敏感、并发低的服务，纯 GPU 方案仍然更合适。</li>
+<li>论文没有测精度。UlaCache 不改变注意力挑选哪些位置，理论上输出不变，但跨卡取数和换出换入的正确性只能靠实现保证，没有给出一致性验证。</li>
+<li>没有报告 CPU 与 GPU 之间的带宽占用，也没有和同期其他稀疏注意力 KV 卸载系统做对比。</li>
 </ul>
-<p>此外，HiSparse 给每个请求固定大小的 GPU 缓存配额。请求变少时，剩下的请求也用不上空出来的显存。作者给出的例子：8×B300、DP、开投机解码、批大小 1 时，GPU 本来装得下所有历史，HiSparse 的每 token 时延（TPOT）仍比纯 GPU 的 SGLang 高 23.5%。</p>
-<h2 id="s2">2. 方法</h2>
-<p><strong>统一逻辑地址。</strong> 每个 KV 条目有一个固定的逻辑地址，映射表记录它当前在哪个 GPU 槽或 CPU 槽。KV 在 GPU 和 CPU 之间移动时，只改映射，不改逻辑地址。</p>
-<ul>
-<li>DP 模式：每张卡管理自己的 GPU 池和 CPU 池，容量是两者之和。</li>
-<li>TP 模式：所有卡的 GPU 池合成一个分布式地址空间，每张卡存每个请求历史的不同部分（逻辑地址 t 放在第 t mod P 张卡上）。负责计算的卡另有一个本地 GPU 缓冲区，缓存最近选中的 KV，下一步再被选中时直接复用，只从本卡或其他卡取缺失的部分。共享同一稀疏选择的层可以在当前层计算时预取后面层需要的 KV。</li>
-</ul>
-<p><strong>PB-LRU（并行分桶 LRU）。</strong> 开启 CPU 存储后，GPU 池由所有请求共享，需要决定把哪些 KV 换出到 CPU。标准 LRU 每次都要扫描整个池，PB-LRU 把 GPU 槽按最近使用时间分成若干桶，命中检测和更新并行处理，用分层位图快速找到可替换的槽，优先替换最冷的桶，并保护当前注意力计算正要用的条目。数据先搬运，搬完再更新映射，保证后续访问读到的是已就绪的数据。</p>
-<h2 id="s3">3. 实验</h2>
-<p>设置：GLM-5.3，FP8 权重和 KV cache，8×H200 和 8×B300。基线是 GPU 存全部 KV 的 SGLang 和用 CPU 存历史的 HiSparse。投机解码用 MTP，草稿 2 步。三个系统的 GPU 显存分配相同，CPU 预算为每张 H200 128 GB、每张 B300 192 GB。负载是 Multi-LexSum，输入 64K–128K token，每个请求贪心生成 2,048 个 token。</p>
-<h3>3.1 容量与可同时解码的请求数</h3>
-<p>这组实验检验统一地址能否在相同内存下装下更多历史、接纳更多请求。</p>
-<figure class="dr-fig"><img data-fig="1" src="../figs/2026-10-23/infra/2610.29820/fig8_capacity.png" alt="有效 KV 容量（上，百万槽，实心为 GPU、斜线为 CPU）和可接纳的请求数（下）（论文 Figure 8 左半）。" loading="lazy" decoding="async"><figcaption>有效 KV 容量（上，百万槽，实心为 GPU、斜线为 CPU）和可接纳的请求数（下）（论文 Figure 8 左半）。</figcaption></figure>
-<p>可接纳的请求数：</p>
-<div class="tbl"><table><thead><tr><th>配置</th><th>SGLang</th><th>HiSparse</th><th>UlaCache</th></tr></thead><tbody><tr><td>8×H200 TP，不开投机</td><td>7</td><td>22</td><td>128</td></tr><tr><td>8×H200 TP，开投机</td><td>6</td><td>25</td><td>70</td></tr><tr><td>8×H200 DP，不开投机</td><td>31</td><td>174</td><td>220</td></tr><tr><td>8×H200 DP，开投机</td><td>29</td><td>197</td><td>213</td></tr><tr><td>8×B300 TP，不开投机</td><td>37</td><td>37</td><td>452</td></tr><tr><td>8×B300 TP，开投机</td><td>36</td><td>37</td><td>363</td></tr><tr><td>8×B300 DP，不开投机</td><td>267</td><td>295</td><td>578</td></tr><tr><td>8×B300 DP，开投机</td><td>260</td><td>295</td><td>566</td></tr></tbody></table></div>
-<p>TP 模式下差距最大，<strong class="hl">因为 UlaCache 消除了 MLA 的跨卡重复</strong>。DP 模式下 HiSparse 本来就用 CPU 存历史，差距较小。</p>
-<h3>3.2 吞吐与延迟</h3>
-<p>这组实验检验容量增加能否变成吞吐提升，以及低负载时多出来的查找和调度是否拖慢单请求。</p>
-<ul>
-<li><strong>吞吐。</strong> 开投机解码时峰值吞吐相对 HiSparse 为 1.16×（H200 DP）、1.70×（H200 TP）、1.73×（B300 DP）、2.51×（B300 TP）。B300 TP 不开投机时，UlaCache 峰值吞吐是 SGLang 的 3.51 倍。峰值对比取各系统在所有批大小中的最高值，提升主要来自能同时解码更多请求。</li>
-<li><strong>低负载延迟。</strong> 批大小 1–8 的八种配置下，UlaCache 的 TPOT 都低于 HiSparse，但高于 SGLang。作者认为差距来自额外的查找、调度和 TP 通信。</li>
-</ul>
-<h3>3.3 PB-LRU 消融</h3>
-<p>这组实验检验分桶近似会不会降低缓存命中率，以及能省多少调度时间。设置：8×H200 DP，PB-LRU 和基于时间戳的普通 LRU 回放同一组访问记录，缓存容量相同。</p>
-<p>结果：两者 GPU 命中率相差不到 0.10 个百分点；在较大批大小下，PB-LRU 调度快约 1.5–2.3 倍。批大小小、几乎不需要替换时，普通 LRU 反而更快，因为 PB-LRU 仍要维护桶的元数据。</p>
-<h2 id="s4">4. 局限</h2>
-<p>只测了一个模型（GLM-5.3）和一种负载（Multi-LexSum 长文摘要）。吞吐对比取峰值，各系统峰值出现在不同的批大小上，所以数字主要反映&quot;能装下多少请求&quot;，不是同一批大小下的单步速度。低并发时比纯 GPU 的 SGLang 慢。论文没有报告精度，因为 UlaCache 不改变注意力本身的选取。</p>
-<h2 id="s5">5. 实践意义</h2>
-<p>如果你在 SGLang 上服务使用 MLA 和稀疏注意力的模型（GLM-5、DeepSeek-V4.1 一类）、请求上下文很长、瓶颈是显存装不下更多并发请求，尤其是用 TP 部署时，UlaCache 的思路值得关注：先消除跨卡和 GPU/CPU 之间的重复存储，再谈换入换出。若主要场景是低并发、对单请求延迟敏感，纯 GPU 的 SGLang 仍更快。</p>
+<h2 id="s6">6. 实践意义</h2>
+<p>如果你在 SGLang 上部署 MLA 加稀疏注意力的模型，比如 GLM-5、DeepSeek-V4.1 一类，请求上下文很长，并且瓶颈是“显存装不下更多并发”，那么这篇论文最值得借鉴的是先查重复存储。用 TP 部署 MLA 模型时，先算一下每张卡上有多少 KV 是别的卡也有的。按论文的统计，8 卡 TP 下这个比例是 87.5%，去掉它带来的容量提升比加 CPU 内存还大。</p>
+<p>其次，用 CPU 扩容时，要让 GPU 和 CPU 存不同的东西，并让所有请求共享 GPU 池，而不是给每个请求固定配额。最后，评估这类方案时要看同样批大小下的曲线，而不只看峰值倍数。前者告诉你单步有没有变慢，后者只告诉你能多装多少请求。</p>
     </article>
     <aside class="aside">
       <div class="box"><h6>五维评分</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 4，Evidence 4，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg></div>
