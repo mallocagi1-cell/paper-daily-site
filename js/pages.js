@@ -4,14 +4,14 @@
   function TR(zh, en) { return IS_EN ? en : zh; }
   // Paper Daily static SPA — design direction C "Newsletter / magazine" (2026-10-10).
   // Display order everywhere (user preference); data.json "tracks" overrides at boot.
-  let TRACKS = ["generative", "personalization", "retrieval", "agentic", "infra"];
+  let TRACKS = ["generative", "personalization", "retrieval", "agentic", "infra", "embodied"];
   let TRACK_LABELS = {
     personalization: "Personalization", generative: "Generative", retrieval: "AI Search",
-    agentic: "Agentic", infra: "Infra",
+    agentic: "Agentic", infra: "Infra", embodied: "Embodied AI",
   };
   let TRACK_ZH = {
     personalization: TR("个性化推荐", ""), generative: TR("生成式推荐", ""), retrieval: TR("AI 搜索", ""),
-    agentic: TR("智能体搜索", ""), infra: TR("系统与索引", ""),
+    agentic: TR("智能体搜索", ""), infra: TR("系统与索引", ""), embodied: TR("具身智能", ""),
   };
   // Track scope (redefined 2026-10-24): shown as a tooltip on the track tabs.
   const TRACK_DESC = {
@@ -22,6 +22,8 @@
     retrieval: TR("AI 搜索：查询理解与改写、语义召回、多模态匹配、相关性与重排、RAG 链路、问答与深度研究；Agent 论文只收信息获取类，通用 Agent 不收（2026-10-24 起合并原检索与智能体搜索）",
       "AI Search: query understanding & rewriting, semantic retrieval, multimodal matching, relevance & reranking, RAG pipelines, QA & deep research; agent papers only when the task is information-seeking, generic agents excluded (merges the former Retrieval and Agentic tracks from 2026-10-24)"),
     agentic: TR("智能体搜索（旧方向，仅 2026-10-24 之前的日报；之后并入 AI 搜索）", "Agentic search (legacy track, issues before 2026-10-24; merged into AI Search afterwards)"),
+    embodied: TR("具身智能（2026-10-27 起）：VLA 与机器人基础模型、机器人操作与移动、具身规划与世界模型、仿真到真机、人形与灵巧手",
+      "Embodied AI (from 2026-10-27): vision-language-action and robot foundation models, manipulation and navigation, embodied planning and world models, sim-to-real, humanoids and dexterous hands"),
   };
   // AI Search merge (2026-10-24): `retrieval` slug = AI Search; agentic -> retrieval alias from the cutover on.
   let AI = { cutover: "2026-10-24", track: "retrieval", alias: { agentic: "retrieval" }, subarea_labels: {
