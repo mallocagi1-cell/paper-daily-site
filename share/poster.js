@@ -73,7 +73,7 @@ function layout(ctx,D,o){ /* v1 (no figure): returns the y where content ends; d
    var lx=P+nw+28,ll=wrap(ctx,p[1],W-P-lx,99),rh=Math.max(50,ll.length*38);
    if(d){ctx.font=F(46,'disp');ctx.fillStyle=ACC;ctx.fillText(num,P,y);ctx.font=F(27,'sans');ctx.fillStyle=INK2;ll.forEach(function(l,j){ctx.fillText(l,lx,y+8+j*38)})}
    y+=rh+(i<pts.length-1?18:0)})}
- y+=40+g;return scoreRow(ctx,D,y,d)-14}
+ return y+g}
 /* ---- v2 parts ---- */
 function pill(ctx,x,y,txt,fill,d){ctx.font=F(24,fill?'sansb':'sans');var w=ctx.measureText(txt).width+32;if(!d)return w;
  if(fill){ctx.fillStyle=fill;rr(ctx,x,y,w,42,21);ctx.fill();ctx.fillStyle='#fff'}
@@ -113,14 +113,7 @@ function header(ctx,D,o,d){var t=D.p,y=P,g=o.gap||0;ctx.textBaseline='top';
  ctx.font=F(24,'sansb');ctx.fillStyle=ACC;if(d)spaced(ctx,t.kicker,P,y,3.8);y+=24+22;
  y=pills(ctx,D,y,d)+30;y=titleB(ctx,D,y,o,d)+26+g;
  if(D.orgs&&D.orgs.length)y=orgRow(ctx,D,o.L,y,d)+30+g;return y}
-function scoreRow(ctx,D,y,d){var t=D.p,cw=W-2*P,tw=150,bw=(cw-tw-16-4*16)/5;y=lab(ctx,t.l_sc,P,y,d)+22;
- if(d){t.scores.forEach(function(s,i){var bx=P+i*(bw+16);ctx.fillStyle='#EAE3D8';rr(ctx,bx,y+30,bw,12,6);ctx.fill();
-   var v=Math.max(0,Math.min(5,+s[1]||0));if(v>0){ctx.fillStyle=ACC;rr(ctx,bx,y+30,Math.max(12,bw*v/5),12,6);ctx.fill()}
-   ctx.font=F(21,'sans');ctx.fillStyle=INK2;var lb=s[0]+' '+s[1];ctx.fillText(lb,bx+(bw-ctx.measureText(lb).width)/2,y+54)});
-  ctx.font=F(64,'disp');ctx.fillStyle=INK;ctx.fillText(t.total,W-P-ctx.measureText(t.total).width,y);
-  ctx.font=F(20,'sans');ctx.fillStyle=MUTE;ctx.fillText(t.l_tot,W-P-ctx.measureText(t.l_tot).width,y+70)}
- return y+92}
-var FPAD=10,FCAP=30,GAP=36,SCH=21+22+92;
+var FPAD=10,FCAP=30,GAP=36,SCH=0; /* 2026-10-27: no 五维评分 row -- the figure and key numbers get its height */
 /* figure: cut the uniform background border (corner colour, or transparent) once more at draw time, so the card can
    hug the drawing even when the build-time trim missed a tinted or off-white margin; returns the source rectangle */
 function trimFig(img){var W0=img.naturalWidth||img.width,H0=img.naturalHeight||img.height,full={img:img,sx:0,sy:0,sw:W0,sh:H0};
@@ -152,7 +145,7 @@ function numBlock(ctx,D,pts,x,y,w,d){var t=D.p;if(!pts.length)return y;y=lab(ctx
  pts.forEach(function(p,i){ctx.font=F(46,'disp');var num=ellip(ctx,p[0],w);if(d){ctx.fillStyle=ACC;ctx.fillText(num,x,y)}
   ctx.font=F(24,'sans');var ll=wrap(ctx,p[1],w,99);if(d){ctx.fillStyle=INK2;ll.forEach(function(l,j){ctx.fillText(l,x,y+54+j*32)})}y+=54+ll.length*32+(i<pts.length-1?16:0)});return y}
 /* B. o: s (takeaway text), ks, np, hl (header level), mode 'side' | 'wide', fw (max figure-card width, side), gap.
-   Returns {end, area} or null when it does not fit above the score row. */
+   Returns {end, area} or null when it does not fit above the footer. */
 function layoutB(ctx,D,o){var d=o.draw,t=D.p,F0=o.F0,ar=F0.sw/F0.sh,g=o.gap||0,cw=W-2*P,pts=(o.pts||numsFor(t,o.s)).slice(0,o.np);
  var top=header(ctx,D,o,d),bottom=o.limit-SCH-30-g,iw,ih,r;
  if(o.mode==='side'){ /* LEFT 核心结论 + 关键数字 | RIGHT figure card filling the slot height (width capped at fw) */
@@ -166,7 +159,6 @@ function layoutB(ctx,D,o){var d=o.draw,t=D.p,F0=o.F0,ar=F0.sw/F0.sh,g=o.gap||0,c
   var mxI=bottom-(y2+35)-2*FPAD-FCAP;iw=Math.min(cw-2*FPAD,mxI*ar);ih=Math.round(iw/ar);iw=Math.round(iw);if(ih<140||iw<480)return null;
   r=figCard(ctx,D,F0,P+Math.round((cw-iw-2*FPAD)/2),y2,iw,ih,d)}
  if(r>bottom)return null;
- if(d)scoreRow(ctx,D,Math.max(r+30+g,o.limit-SCH),true);
  return {end:r,area:iw*ih,slack:bottom-r}}
 /* search: takeaway candidates in order (the highlighted finding first) -> 2, 1, 0 key numbers (strict priorities);
    within those, every header size x arrangement x figure-card width x takeaway size is laid out and the one with the
