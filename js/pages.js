@@ -44,7 +44,7 @@
   function trackTitle(t) { return TRACK_DESC[t] ? ' title="' + escapeHtml(TRACK_DESC[t]) + '"' : ""; }
   const SOURCE_LABELS = {
     arxiv: "arXiv", huggingface: "HuggingFace", semantic_scholar: "Semantic Scholar",
-    conference_papers: "Conference", github: "GitHub", web_search: TR("网页来源", "Web source"), blog_rss: TR("技术博客", "Tech blog"),
+    github: "GitHub", web_search: TR("网页来源", "Web source"), blog_rss: TR("技术博客", "Tech blog"),
   };
   const DIMS = [
     ["business_relevance", "Relevance", TR("相关", "Rel")], ["technical_novelty", "Novelty", TR("新颖", "Nov")],
@@ -91,7 +91,26 @@
     if (webSrc && PROGRAM_RE.test(u)) return TR("会议日程", "Conference program");
     if (blogSrc || ((webSrc) && BLOG_RE.test(u))) return TR("技术博客", "Tech blog");
     if (webSrc) return TR("网页来源", "Web source");
+    if (s === "conference_papers") return hostLabel(u);
     return SOURCE_LABELS[src] || src || "Unknown";
+  }
+  // Conference-source records (OpenAlex / OpenReview / DBLP) are labelled by the host they link to, never by the
+  // generic word "Conference" (2026-10-27); mirrors report_render.host_label.
+  function hostLabel(u) {
+    if (/arxiv\.org\/|doi\.org\/10\.48550\/arxiv/i.test(u)) return "arXiv";
+    if (/openreview\.net\//i.test(u)) return "OpenReview";
+    if (/(^|\/\/)(dx\.)?doi\.org\/|dl\.acm\.org\/doi\//i.test(u)) return "DOI";
+    if (/dblp\.(org|uni-trier\.de)\//i.test(u)) return "DBLP";
+    if (/openalex\.org\//i.test(u)) return "OpenAlex";
+    if (/ceur-ws\.org\//i.test(u)) return "CEUR-WS";
+    if (/aclanthology\.org\//i.test(u)) return "ACL Anthology";
+    return TR("原文", "Source");
+  }
+  // verified venue ("KDD 2026") for conference-source records, else sourceLabel (report_render.paper_source_label)
+  function paperSource(p) {
+    const b = p && p.venue_badge;
+    if (p && p.source === "conference_papers" && b && b.label && b.url && /^https?:\/\//.test(b.url)) return b.label;
+    return sourceLabel(p && p.source, p && p.url);
   }
   function truncate(text, n) { const t = String(text || ""); return t.length <= n ? t : t.slice(0, n) + "..."; }
   function companiesOf(p) {
@@ -120,7 +139,7 @@
   function linkLabel(p) {
     const url = String(p.url || "");
     if (url.indexOf("arxiv.org") !== -1) return "arXiv";
-    return p.source ? sourceLabel(p.source, p.url) : TR("原文", "Source");
+    return p.source ? paperSource(p) : TR("原文", "Source");
   }
   function dots(v) {
     const r = Math.round(num(v) || 0);
@@ -283,7 +302,7 @@
     if (p.evidence) more += TR('<span class="more"><b>证据</b> ', '<span class="more"><b>Evidence</b> ') + escapeHtml(p.evidence) + "</span>";
     const pq = p.key_insight || more
       ? TR('<div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>', '<div class="pq"><small>KEY INSIGHT · What it means for the business</small>') + hlText(escapeHtml(p.key_insight || "")) + more + "</div>" : "";
-    const foot = [truncate(p.authors, 90), p.published, sourceLabel(p.source, p.url)].filter(Boolean).map(escapeHtml).join(" · ");
+    const foot = [truncate(p.authors, 90), p.published, paperSource(p)].filter(Boolean).map(escapeHtml).join(" · ");
     return (
       '<section class="lead ' + trackClass(track) + '" id="paper-' + escapeHtml(pid) + '" data-paper-id="' + escapeHtml(pid) + '" data-card>' +
       '<div class="art" data-n="' + pad2(p.rank || i + 1) + '"><div>' +
@@ -305,7 +324,7 @@
     let chips = venueHtml(p) + subareaHtml(p, track) + compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
     if (dr) chips += deepChip(dr);
     const ins = insightInner(p);
-    let foot = "<span>" + escapeHtml(sourceLabel(p.source, p.url)) + "</span>";
+    let foot = "<span>" + escapeHtml(paperSource(p)) + "</span>";
     if (p.published) foot += "<span>·</span><span>" + escapeHtml(p.published) + "</span>";
     const dl = dimLine(p.scores);
     if (dl) foot += '<span>·</span><span class="score-detail">' + dl + "</span>";
@@ -776,7 +795,7 @@
       pid: pid,
       chips: chips,
       scoreLine: '<div class="weekly-score-line">' + escapeHtml(scoreLine) + "</div>",
-      meta: '<div class="foot">' + [first, escapeHtml(sourceLabel(paper.source, paper.url)), paper.published ? escapeHtml(paper.published) : ""]
+      meta: '<div class="foot">' + [first, escapeHtml(paperSource(paper)), paper.published ? escapeHtml(paper.published) : ""]
         .filter(Boolean).join(" · ") + (dl ? ' · <span class="score-detail">' + dl + "</span>" : "") + "</div>",
       apps: TR('<div class="dr-appearances weekly-appearances">出现于日报：', '<div class="dr-appearances weekly-appearances">Appeared in: ') + apps + "</div>",
       title: '<a href="' + escapeHtml(paper.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(paper.title || "Untitled") + "</a>",
