@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>9 分钟</b>阅读时长</span>
-    <span><b>3204</b>字</span>
+    <span><b>3211</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-06-17/">06-17 Generative 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -73,7 +73,7 @@
       <h2 id="s1">1. 问题与动机</h2>
 <p>短视频播放器下方的&quot;可点击搜索入口&quot;（bottom-bar query）要把用户从被动观看引导到主动搜索，但它的在线预算极其苛刻：整条链路只有 20–30ms。传统多阶段级联（MCA：召回→过滤→排序）为了塞进这个预算，只能依赖离线预计算的候选 query 池，于是被迫在 query 新鲜度、语义相关性与服务效率之间做取舍——无法利用当前视频的实时上下文，对新发布视频和长尾 query 表现差，且各阶段目标割裂、难以联合优化。近期的生成式方案虽然能端到端出 query，却又受 content 侧噪声元数据（标题党、boilerplate）和偏好漂移困扰。OneBar 的目标就是用单次生成替换 MCA：既要抓住视频内容诱发的即时意图，又要守住在线延迟，还要能在没有安全/相关 query 时主动弃权（abstain）。这是快手电商单列信息流的真实生产问题。</p>
 <h2 id="s2">2. 方法详解</h2>
-<p>OneBar 把每个触发视频抽象成结构化证据 ℰ(x,u) = ⟨Tx, Mx, Ax, Hu⟩：Tx 是清洗后的文本元数据（去掉 @、话题标签、模板词）；Mx 是多模态基础模型每日刷新的视频摘要（视觉物体、OCR、语音、场景、商品使用）；Ax 是协同 anchor，由一个行为对齐的嵌入模型（Qwen3-Embedding 0.6B，在 query→video 搜点日志、video→query 看后搜、query→query 改写三种关系上训练）做 ANN 召回 query anchor，再加同触发的 RAG 历史 query，阈值 0.88 过滤把命中率从 0.282 抬到 0.335；Hu 是按触发相关性（而非长期兴趣）筛出的用户历史 query。</p>
+<p>OneBar 把每个触发视频抽象成结构化证据 ℰ(x,u) = ⟨Tx, Mx, Ax, Hu⟩：Tx 是清洗后的文本元数据（去掉 @、话题标签、模板词）；Mx 是多模态基础模型每日刷新的视频摘要（视觉物体、OCR、语音、场景、商品使用）；Ax 是协同 anchor，由一个行为对齐的 embedding 模型（Qwen3-Embedding 0.6B，在 query→video 搜点日志、video→query 看后搜、query→query 改写三种关系上训练）做 ANN 召回 query anchor，再加同触发的 RAG 历史 query，阈值 0.88 过滤把命中率从 0.282 抬到 0.335；Hu 是按触发相关性（而非长期兴趣）筛出的用户历史 query。</p>
 <p>证据用 [SEP] 拼成紧凑序列 sx = [Tx;[SEP];Mx;[SEP];Ax;[SEP];Hu]，喂给 BART encoder-decoder；解码 pθ(y|sx)=∏ pθ(yt|y&lt;t,Enc(sx))，输出要么是一条 query，要么是特殊 token [REJECT] 主动弃权。这个紧凑 schema 比冗长指令式 prompt 显著更好（HR@8 0.3564 对 0.1864），与 BART 的文本重建预训练目标对齐。</p>
 <p>训练分三阶段递进内化偏好：Stage I 内容 grounded SFT，在点击 query 对上做标准 SFT，并把违规内容样本映射到 [REJECT] 学会何时弃权；Stage II 行为反馈偏好对齐，把同触发候选按 6 个行为档（点击+互动 &gt; 仅点击 &gt; 人群点击+互动 &gt; 人群点击 &gt; 曝光未点 &gt; 召回未曝）组织，用 list-wise Softmax DPO（β=0.1, T=1.0, λ_SFT=1.0）拉开偏好；Stage III 偏好内化的 on-policy 蒸馏（PIOPD），不另训 reward model，而是把点击 query y_ref 随机插进 teacher 输入、student 只看普通触发并 on-policy 采样轨迹，teacher 在 student 访问到的状态上给软分布，用双向 KL（前向 KL 覆盖 teacher 支持的备选、反向 KL 抑制无依据 token，τ=2）+ 熵正则 + R-Drop + FGM 对抗扰动联合优化。关键是训练后 teacher 和 y_ref 全部丢弃，只留不依赖 y_ref 的 student，在线接口不变。训练规模：Stage I 6 epoch、batch 128、lr 1e-5；Stage III 500 步、batch 64、lr 1e-6。</p>
 <h2 id="s3">3. 核心技术贡献</h2>

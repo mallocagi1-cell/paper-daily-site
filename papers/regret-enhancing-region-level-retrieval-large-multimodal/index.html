@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>10 分钟</b>阅读时长</span>
-    <span><b>3918</b>字</span>
+    <span><b>3925</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-09-17/retrieval/">09-17 AI Search 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -77,7 +77,7 @@
 <h2 id="s2">2. 方法详解</h2>
 <p>RegRet保留原LMM的全图视觉编码器CE，另设区域编码器RAE。全图由CE产生分层特征；ROI经过区域自注意力后，以区域隐状态为query、相应CE层隐状态为key和value，进行跨注意力。其核心更新可理解为“区域表示加上alpha乘以从全图读取的信息”，alpha是从零初始化的可学习权重。对应层的自注意力共享权重，避免从头训练另一套完整视觉网络；跨层对应读取则让区域同时接触浅层纹理和深层语义，而不是只读取CE最后一层。</p>
 <p>RAE和CE分别通过独立projector连接语言模型。作者最初共享projector，但区域训练会显著破坏全图表征，因此改为冻结CE，并给区域通道独立映射空间。输入末尾加入特殊[EMB]标记，取其最终隐藏状态作为检索向量；查询和候选通过向量相似度进行匹配。因此，它仍然属于表征检索，没有把文档ID作为自回归目标。</p>
-<p>训练分为三阶段。第一阶段使用DAM与PAM的80万区域图文对，进行详细局部描述的下一词预测，只更新RAE跨注意力和projector，语言骨干冻结。batch size为64、学习率为1e-4。第二阶段使用NLI、HotpotQA、MSMARCO共78万文本对，以InfoNCE将语言能力转为嵌入能力；batch size为1104、学习率1.1e-4、训练1个epoch，语言骨干使用rank 64的LoRA。第三阶段混合M-BEIR的180万图像级对与REGMB的20万区域级对，继续InfoNCE训练2个epoch，batch size同为1104、学习率2e-4、LoRA rank为128。论文称三阶段可在24张NVIDIA H20上20小时内完成；可读取的训练附录没有明确优化器名称或完整步数，不额外补写。</p>
+<p>训练分为三阶段。第一阶段使用DAM与PAM的80万区域图文对，进行详细局部描述的下一词预测，只更新RAE跨注意力和projector，语言骨干冻结。batch size为64、学习率为1e-4。第二阶段使用NLI、HotpotQA、MSMARCO共78万文本对，以InfoNCE将语言能力转为 embedding 能力；batch size为1104、学习率1.1e-4、训练1个epoch，语言骨干使用rank 64的LoRA。第三阶段混合M-BEIR的180万图像级对与REGMB的20万区域级对，继续InfoNCE训练2个epoch，batch size同为1104、学习率2e-4、LoRA rank为128。论文称三阶段可在24张NVIDIA H20上20小时内完成；可读取的训练附录没有明确优化器名称或完整步数，不额外补写。</p>
 <p>InfoNCE把本查询与正候选的相似度除以温度后做指数，再除以当前批次候选的指数和，最小化负对数。第三阶段还按任务控制视觉token：局部优先的任务1至3只提供RAE token，需要背景关系的任务4则拼接CE与RAE token。这使背景成为受任务控制的输入，减少简单拼接造成的语义污染。论文以3B和8B版本报告结果；复现时应依据最终代码确认具体骨干标识，因为正文采用Qwen2-VL及3B/8B的总模型口径。</p>
 <h2 id="s3">3. 核心技术贡献</h2>
 <p>第一，逐层跨注意力把“裁剪后看不到背景”变成可学习的信息选择。它不要求局部独立解释，也不强制完整背景全部进入最后的向量。对细粒度材质、轮廓与环境关系共存的社区内容，这比单独调画框提示更接近结构性修复。表4中，在已有独立projector的前提下，加入逐层协调使REGMB均分从82.6到86.2，即增加3.6分。</p>

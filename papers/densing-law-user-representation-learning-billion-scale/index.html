@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>14 分钟</b>阅读时长</span>
-    <span><b>5390</b>字</span>
+    <span><b>5389</b>字</span>
     <span><b>4.75</b>综合分</span>
     <span class="pd-rk"><b>第 2 名</b><a href="../../2026-08-26/personalization/">08-26 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -75,7 +75,7 @@
 <p>传统做法通常把更长的原始序列直接送入更大的 Transformer，忽略了两类成本：序列长度让训练和 serving 线性变贵，重复行为占据 context 又会挤掉真正有区分度的事件。已有 tokenization 工作往往只回答“如何压缩”，没有回答“当用户规模、窗口和来源变化时，应该配置多大的码本和多少个 residual stage”。论文因此提出 Behavioral Densing Law，用性能—成本 Pareto 轨迹估计 minimal sufficient tokenization capacity，再提出 ALGN 将全局容量选择落到样本级的变长分配。</p>
 <h1>2. 方法详解</h1>
 <p>论文先定义三个可扩展维度：用户规模 N、行为时间窗口 D 和模型容量 M。下游任务不是直接看语言生成，而是用冻结的用户 encoder 做三种实用评估。第一是 classification：冻结用户向量后只训练线性分类器，报告 AUC、KS 和 Accuracy。第二是 text-based retrieval：用自然语言 query 的 embedding 与用户 embedding 做 cosine 相似度，判断用户是否属于目标人群，报告 AUC、Precision、Recall。第三是 U2U retrieval：给少量 seed users，通过 prompt-tuning 学习上下文，再检索兴趣相近的用户，同样报告排序与覆盖指标。这让 tokenization 的价值直接对应到推荐、广告和用户定向的下游工作流。</p>
-<p>在表示侧，作者使用 RQ-VAE、VQ-VAE 和 SARQ 把行为表示压成离散 semantic IDs。RQ-VAE 通过多个 residual quantization stage 复用 codebook 组合，理论表示空间为 K^M；VQ-VAE 容易为相似表示保存重复的完整 SID，SARQ 则试图减少激活空间中的冗余。论文不把“容量”简单等同于 token 个数，而是把 codebook size K、residual stage 数 M、embedding 维度 d 和输出长度 H 组合成配置 κ，再测量在给定数据规模下获得目标下游效用所需的最小容量。</p>
+<p>在表示侧，作者使用 RQ-VAE、VQ-VAE 和 SARQ 把行为表示压成离散 Semantic ID。RQ-VAE 通过多个 residual quantization stage 复用 codebook 组合，理论表示空间为 K^M；VQ-VAE 容易为相似表示保存重复的完整 SID，SARQ 则试图减少激活空间中的冗余。论文不把“容量”简单等同于 token 个数，而是把 codebook size K、residual stage 数 M、embedding 维度 d 和输出长度 H 组合成配置 κ，再测量在给定数据规模下获得目标下游效用所需的最小容量。</p>
 <p>Behavioral Densing Law 被写成一个带成本权重的 Pareto 问题。令 φ 是表示变换，U(φ,s) 是数据规模状态 s 下的下游效用，C(φ) 是表示成本，lambda 控制对成本的敏感度，则最优表示为 φ<em>(lambda,s)=argmax[U(φ,s)-lambda C(φ)]。作者还定义行为密度 rho</em>(s)=C_raw_hat(s)/C*(s)，其中 C_raw_hat 是 raw sequence 达到同等效用的有效成本。这个定义强调 densing 不是追求最大压缩率，也不是盲目增大码本，而是在当前用户量、窗口和应用目标下找到最小充分容量。</p>
 <p>在不同来源、不同任务和不同 tokenizer 的 Pareto 前沿上，作者观察到 ln(C*) 与 ln(s) 近似线性，因此可以在 tokenizer 方法校准后，用轻量统计估计新数据规模所需容量。斜率受 tokenizer 的表示空间冗余影响：VQ-VAE 的斜率较高，RQ-VAE 利用 compositional reuse 降低冗余，SARQ 的斜率最低；同一 tokenizer 下，不同数据源的斜率与 intra-source uniqueness 的平方近似相关，三个来源的斜率比约为 1:1.15:0.92，而唯一性比约为 1:1.07:0.96，误差在 10^-2 数量级。</p>
 <p>ALGN 是第二层贡献，把“数据规模级别的容量曲线”转成“单个行为片段的变长容量”。固定长度 RQ-VAE 给每个片段相同的 residual 深度，但用户历史中高熵、含歧义的行为需要更多 code，规律性强的重复行为不应继续编码。ALGN 在每个 quantization level l 计算残差范数 R_l=||r_(l-1)-e_(l,m)||_2，反映当前 code 仍未解释的内容；再计算累计 code uncertainty E_l=-sum_k log p(m_k|m_&lt;k)，反映当前路径的歧义程度。续接概率为 g_l=sigmoid(sp(w_R)R_l+sp(w_E)E_l-sp(w_C)c_l+b)，其中 Softplus 保证权重为正，c_l 是新增 code 的边际成本。第一次 g_l 小于阈值 theta 时停止，得到 L_act；如果一直不低于阈值，则使用最大长度 L_max。</p>

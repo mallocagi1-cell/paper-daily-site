@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>11 分钟</b>阅读时长</span>
-    <span><b>4146</b>字</span>
+    <span><b>4158</b>字</span>
     <span><b>4.40</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-10-09/">10-09 Generative 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -75,7 +75,7 @@
 <p>正文给出 RecIF-Ads 的具体例子：用户有三个未来点击目标，生成器返回 126 个物品，只命中其中一个；另外两个目标仅在训练时补入。补入组初始只占全列表 softmax 概率的 0.011%，均匀多目标监督却要求它承担 66.7% 的目标概率。训练因此产生非常强的跨组概率分配压力，而这种压力对应的物品在线上不存在。直观的“补入与不补入”比较，同时改变了原候选目标权重、补入组监督和组间竞争，无法解释最终排序变化来自哪一项。</p>
 <p>论文以 ListNet 式列表交叉熵为基础，并借用 profile minimization 的思路消除组间竞争。它与目标/非目标解耦蒸馏不同，这里的分组由物品是否存在于推理候选池决定。对社区 UGC 搜索而言，问题对应生成式召回漏掉已知相关帖子后，训练阶段强制补正样本的做法；这只是业务迁移判断，论文实验本身并未在社区搜索上开展。</p>
 <h2 id="s2">2. 方法详解</h2>
-<p>首先冻结生成器，令 N 为生成器实际返回的候选，Y 为用户完整的观测目标集合，A 为可表示但未被 N 召回的目标。训练列表是 N 与 A 的并集，推理列表始终为 N。物品的原始分数是其语义 ID 各 token 条件概率的对数之和，重排器只学习一个残差修正 h，最终打分为生成器对数似然加 h。输出层以零初始化，使未训练的重排器恢复生成器原始排序；用户与物品表征也在比较中保持固定。</p>
+<p>首先冻结生成器，令 N 为生成器实际返回的候选，Y 为用户完整的观测目标集合，A 为可表示但未被 N 召回的目标。训练列表是 N 与 A 的并集，推理列表始终为 N。物品的原始分数是其 Semantic ID 各 token 条件概率的对数之和，重排器只学习一个残差修正 h，最终打分为生成器对数似然加 h。输出层以零初始化，使未训练的重排器恢复生成器原始排序；用户与物品表征也在比较中保持固定。</p>
 <p>令 r 为原候选中的目标数量，k 为补入目标数量，alpha=r/(r+k)，gamma=k/(r+k)。在 N 内单独计算 softmax 和多目标交叉熵 L_N，在 A 内单独计算 L_A。普通补入训练 Full 的损失可精确分成 alpha L_N、gamma L_A、以及两组总概率质量的交叉熵三项。最后一项要求两组分得的总概率达到 alpha 与 gamma；它不等同于任何一组内部的排序监督。</p>
 <p>作者构造三个受控版本：WN 只有 alpha L_N；Cond 增加 gamma L_A；Full 再增加组间概率竞争项。这样 Cond 对 WN 测量补入组监督的作用，Cond 对 Full 测量移除竞争的作用。三者使用完全相同的候选、输入特征、初始化、批次顺序、优化器与推理池，而不是通过替换模型架构来获得差异。</p>
 <p>Cond 的推导是给所有 A 组分数加同一个临时偏移 delta，组内排序不变，但总概率可变化。使 Full 最小的偏移是 log(k/r)+log Z_N-log Z_A。代入后，损失变成两项组内损失加只依赖目标数量的熵常数；常数不产生模型梯度，所以实际实现直接计算两项组内损失，不需要求解、存储或在线应用 delta。这一细节意味着方法改变训练目标，线上重排接口保持原样。</p>
@@ -100,7 +100,7 @@
 <p>最值得采用的是实验设计。对于社区搜索中“生成式召回—重排”的试点，先固定召回版本和候选数量，缓存用户或 query 状态与物品表征，构建与线上一致的返回池，再单独标出训练期补入目标。用相同重排器、批次与预算分别训练 WN、Cond、Full；不能把增大候选池、改变负采样或增加注意力上下文同时混进去，否则无法归因。</p>
 <p>选型时应同时报完整目标 nDCG、召回可达率、多个训练种子的方差，以及漏召回目标数分桶结果。若多数查询只有一个补入目标，Cond 的额外组内监督为零，应预先明确这类请求的比例。开发集规则应按生成器或召回路由执行，阈值可设置为业务最小可用收益；论文主阈值为零，不代表真实业务应忽略工程成本。</p>
 <p>部署方面，Cond 不需要把补入目标送入线上、不保留临时偏移，也不要求全库 softmax。已有重排器可沿用原在线候选池，主要新增工作发生在训练数据组织和分组归一化。但这不意味着训练成本必然为零：需缓存补入物品特征并增加离线打分，实际显存、批大小和训练吞吐要实测。原文没有在线延迟数字，不能承诺具体毫秒收益。</p>
-<p>业务上应把漏召回纠正与重排学习分开。若完整目标指标受召回瓶颈限制，改善语义 ID、解码或多路召回可能比改重排损失更有价值；当前论文只是证明补正样本的训练方式需要验证。推荐的最小行动是做固定候选的三损失离线对照，收益下界满足业务门槛后再进行线上 nDCG、CTR 与内容质量评估。</p>
+<p>业务上应把漏召回纠正与重排学习分开。若完整目标指标受召回瓶颈限制，改善 Semantic ID、解码或多路召回可能比改重排损失更有价值；当前论文只是证明补正样本的训练方式需要验证。推荐的最小行动是做固定候选的三损失离线对照，收益下界满足业务门槛后再进行线上 nDCG、CTR 与内容质量评估。</p>
 <p>原文与正文缓存：https://arxiv.org/html/2610.10124 。全部数值来自正文或附录；社区 UGC 搜索建议属于本报告的迁移分析。</p>
     <aside class="pd-shB" aria-label="分享这篇深度解读"><div class="pd-shB-t">分享这篇深度解读<small>复制链接、分享到 X 或微信，或生成一张分享图</small></div><div class="pd-sh-acts"><button type="button" class="pd-sh-btn" data-pd-share="copy"><svg class="pd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>复制链接</button><a class="pd-sh-btn" data-pd-share="x" href="https://x.com/intent/post?text=Training%20with%20Missed%20Targets%20in%20Generative%20Recommendation%3A%20Separating%20Supervision%20from%20Probability%20Competition&amp;url=https%3A%2F%2Fpaper-daily.com%2Fpapers%2Ftraining-missed-targets-generative-recommendation-separating%2F" target="_blank" rel="noopener"><svg class="pd-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.75 3h3.07l-6.7 7.66L22 21h-6.17l-4.83-6.32L5.47 21H2.4l7.17-8.2L2 3h6.33l4.37 5.77L17.75 3Zm-1.08 16.2h1.7L7.4 4.73H5.58L16.67 19.2Z"/></svg>分享到 X</a><button type="button" class="pd-sh-btn" data-pd-share="wechat" aria-haspopup="dialog" aria-expanded="false"><svg class="pd-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.1 4C5.2 4 2 6.6 2 9.9c0 1.9 1.1 3.6 2.8 4.7l-.7 2.1 2.5-1.3c.8.2 1.6.3 2.5.3h.5a5.3 5.3 0 0 1-.2-1.4c0-3.2 3.1-5.8 6.9-5.8h.5C16 5.7 12.9 4 9.1 4Zm-2.4 3.2a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm4.8 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/><path d="M22 14.3c0-2.7-2.7-4.9-6-4.9s-6 2.2-6 4.9 2.7 4.9 6 4.9c.7 0 1.4-.1 2-.3l2 1.1-.5-1.8c1.5-.9 2.5-2.3 2.5-3.9Zm-8-.9a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Zm4 0a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"/></svg>微信</button><button type="button" class="pd-sh-btn" data-pd-share="poster"><svg class="pd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.8"/><path d="m21 15-4.5-4.5L7 20"/></svg>生成分享图</button></div></aside>
 

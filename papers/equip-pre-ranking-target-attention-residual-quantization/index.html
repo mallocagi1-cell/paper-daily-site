@@ -75,12 +75,12 @@
 <h2 id="s2">2. 方法详解（约 640 字）</h2>
 <p><strong>核心思路：用 Residual Quantization (RQ) 把 user-target 交互离散化为“查表”</strong>。</p>
 <ul>
-<li><strong>量化对象</strong>：不是 Q/K/V，而是 target item 自身的表征 <code>xᵢₜₑₘ</code>。流程上先用 AutoEncoder 把 item embedding 压缩到隐空间，再做多级残差量化：第 l 级把残差 <code>rₗ</code> 投到最近的码本条目 <code>ecₗˡ</code>，更新 <code>rₗ₊₁ = rₗ - ecₗˡ</code>，最终得到一串 semantic ID <code>s = [c₀, c₁, ..., c_{m-1}]</code>。</li>
+<li><strong>量化对象</strong>：不是 Q/K/V，而是 target item 自身的表征 <code>xᵢₜₑₘ</code>。流程上先用 AutoEncoder 把 item embedding 压缩到隐空间，再做多级残差量化：第 l 级把残差 <code>rₗ</code> 投到最近的码本条目 <code>ecₗˡ</code>，更新 <code>rₗ₊₁ = rₗ - ecₗˡ</code>，最终得到一串 Semantic ID <code>s = [c₀, c₁, ..., c_{m-1}]</code>。</li>
 <li><strong>配置</strong>：<strong>m = 8 个码本，每个 16 entries</strong>，每个请求只需处理 <code>8 × 16 = 128</code> 个向量，复杂度与候选池大小 N₁ 解耦。</li>
-<li><strong>个性化码本</strong>：对原始码本做 Multi-Head Attention（query 是 user 历史 <code>Hˢᵉᵍ</code>），生成 user-conditional 的 <code>Ĉₗ</code>。在线时通过 semantic ID 直接 lookup <code>Ĉₗ[cₗ]</code>，pooling 后得到近似 TA 输出 <code>hᵣᵩ</code>。</li>
+<li><strong>个性化码本</strong>：对原始码本做 Multi-Head Attention（query 是 user 历史 <code>Hˢᵉᵍ</code>），生成 user-conditional 的 <code>Ĉₗ</code>。在线时通过 Semantic ID 直接 lookup <code>Ĉₗ[cₗ]</code>，pooling 后得到近似 TA 输出 <code>hᵣᵩ</code>。</li>
 <li><strong>训练</strong>：teacher-student 框架。Teacher 是完整的 Target-Attention Net（离线），算出 ground-truth <code>hₜₐᵣ = MHA(xᵢₜₑₘ, Hˢᵉᵍᵗᵃʳ, Hˢᵉᵍᵗᵃʳ)</code>；Student 是 RQ-Attention Net（在线），通过个性化码本 lookup 近似。蒸馏损失 <code>ℒ_distill = ||sg[hₜₐᵣ] - hᵣᵩ||²</code>。</li>
 <li><strong>辅助 loss</strong>：AE 重建 <code>ℒ_recon = ||xᵢₜₑₘ - x̂ᵢₜₑₘ||²</code>、RQ 量化 <code>ℒ_rq = Σₗ ||sg[rₗ] - ecₗˡ||²</code>、主任务 CTR 二分类（ensemble 预测 <code>ŷ = σ(ŷₜₜ + ŷᵣᵩ)</code>）；权重 λ₁..λ₆ = (1.0, 1.0, 1.0, 0.1, 1.0, 0.8)。</li>
-<li><strong>Codebook Alignment Loss</strong>：双向 KL 对齐 semantic ID 分布与 teacher 表征分布，把码本利用率从 <strong>59% 拉到 98%</strong>，这是防止 codebook collapse 的关键。</li>
+<li><strong>Codebook Alignment Loss</strong>：双向 KL 对齐 Semantic ID 分布与 teacher 表征分布，把码本利用率从 <strong>59% 拉到 98%</strong>，这是防止 codebook collapse 的关键。</li>
 </ul>
 <h2 id="s3">3. 核心技术贡献（约 420 字）</h2>
 <ol>

@@ -62,7 +62,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>14 分钟</b>阅读时长</span>
-    <span><b>5282</b>字</span>
+    <span><b>5303</b>字</span>
     <span><b>5.00</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-09-02/personalization/">09-02 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -81,7 +81,7 @@
 <p>第二个叫静态派发（static dispatch）。线上不管用户今天有几个兴趣，都固定发 K 路 ANN，每路分 N/K 个候选名额。如果 10 个向量里有 4 个几乎重复，就有 4 路检索在重复取回同一批商品，白白占了候选预算和调用成本。</p>
 <p><strong class="hl">SetMIR 的出发点是：用户的兴趣是一个大小不定的集合，模型应该预测这个集合，而不是硬造 K 个互相独立的向量</strong>。</p>
 <h2 id="s2">先看全景</h2>
-<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-09-02/personalization/2608.30251/fig1_pipeline.png" alt="SetMIR 的三段结构。左边是输入嵌入：历史商品先过一个冻结的预训练商品内容模型，再加上可学习的位置嵌入和行为类型嵌入（浏览、加购、购买）。中间是 J 层 transformer 编码器读历史得到 H。右边是 M 层兴趣解码器：K 个可学习的兴趣 query 先互相做 self-attention，再对 H 做 cross-attention，最后每个 query 输出一个召回向量 e_k 和一个存在分数 p_k。" loading="lazy" decoding="async"><figcaption>SetMIR 的三段结构。左边是输入嵌入：历史商品先过一个冻结的预训练商品内容模型，再加上可学习的位置嵌入和行为类型嵌入（浏览、加购、购买）。中间是 J 层 transformer 编码器读历史得到 H。右边是 M 层兴趣解码器：K 个可学习的兴趣 query 先互相做 self-attention，再对 H 做 cross-attention，最后每个 query 输出一个召回向量 e_k 和一个存在分数 p_k。</figcaption></figure>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-09-02/personalization/2608.30251/fig1_pipeline.png" alt="SetMIR 的三段结构。左边是输入 embedding：历史商品先过一个冻结的预训练商品内容模型，再加上可学习的位置 embedding 和行为类型 embedding（浏览、加购、购买）。中间是 J 层 transformer 编码器读历史得到 H。右边是 M 层兴趣解码器：K 个可学习的兴趣 query 先互相做 self-attention，再对 H 做 cross-attention，最后每个 query 输出一个召回向量 e_k 和一个存在分数 p_k。" loading="lazy" decoding="async"><figcaption>SetMIR 的三段结构。左边是输入 embedding：历史商品先过一个冻结的预训练商品内容模型，再加上可学习的位置 embedding 和行为类型 embedding（浏览、加购、购买）。中间是 J 层 transformer 编码器读历史得到 H。右边是 M 层兴趣解码器：K 个可学习的兴趣 query 先互相做 self-attention，再对 H 做 cross-attention，最后每个 query 输出一个召回向量 e_k 和一个存在分数 p_k。</figcaption></figure>
 <div class="tbl"><table><thead><tr><th>阶段</th><th>做什么</th><th>为什么需要</th></tr></thead><tbody><tr><td>输入</td><td>最近 40 个行为，每个商品用冻结的内容向量，加位置和行为类型</td><td>商品塔冻结，线上直接复用现成的单向量 ANN 索引</td></tr><tr><td>编码</td><td>2 层 transformer 读历史</td><td>得到上下文化的历史表征</td></tr><tr><td>解码</td><td>10 个 query，6 层解码器，query 之间先互相看、再读历史</td><td>让 query 在读历史前先“分工”，不去追同一个主信号</td></tr><tr><td>输出</td><td>每个 query 一个归一化召回向量和一个存在分数</td><td>存在分数决定线上这路检索发不发</td></tr><tr><td>训练</td><td>匈牙利匹配 + InfoNCE + 存在损失 + 多样性损失</td><td>一对一分配目标，未分到的 query 学会说“不存在”</td></tr><tr><td>线上</td><td>存在分数过阈值 → query 去重 → 每路 ANN → 取最大分合并</td><td>按请求动态决定发几路</td></tr></tbody></table></div>
 <p>模型很小，隐藏维 128，可学习参数约 3M。监督信号来自未来 3 天窗口里的高意向行为：购买、加购和上划（swipe-up，Snap 广告里点进商品落地页的动作）。目标按商品去重，同一商品保留最强的行为，最多保留 15 个；窗口之前的最近 40 个行为作为输入。</p>
 <h2 id="s3">拆开看：训练时怎么分配目标</h2>

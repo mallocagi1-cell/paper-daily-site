@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>12 分钟</b>阅读时长</span>
-    <span><b>4463</b>字</span>
+    <span><b>4470</b>字</span>
     <span><b>4.65</b>综合分</span>
     <span class="pd-rk"><b>第 2 名</b><a href="../../2026-08-21/personalization/">08-21 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -74,7 +74,7 @@
 <p>现有扩散推荐多服务于Top-K生成，LLM推荐多服务于生成或解释，二者没有自然接入候选条件下的点式CVR排名。GateDiffInt用最终转化信号共同指导序列去噪和意图抽取，再把大模型语义能力蒸馏到小学生模型，目标是在线可部署而不直接调用大模型。</p>
 <h1>2. 方法详解</h1>
 <p>输入是用户最近L条按时间排序的交互，每条包含物品、动作类型和距当前时刻的时间间隔；给定目标物品，模型预测购买概率，主任务使用二元交叉熵。整体数据流为行为序列到增强序列表示和位置重要性，再到四个结构化意图，最后与候选物品融合预测。系统由GMCD、MILD和Intent-aware Conversion Prediction三块组成，训练分阶段进行。</p>
-<p>GMCD是Gate-Mediated Controllable Diffusion。第一块CACE将物品和时间嵌入线性投影后，与可学习fusion token拼接，使用只在每个位置内部工作的共享Transformer完成特征融合。对每个非padding位置独立采样item mask和action mask，浅层pv等弱行为的action mask概率更高，buy等强行为概率更低；物品被替换成MASK token后重新编码，得到clean view X1和masked view。训练时每个序列采样2个masked view，推理不做mask。</p>
+<p>GMCD是Gate-Mediated Controllable Diffusion。第一块CACE将物品和时间 embedding 线性投影后，与可学习fusion token拼接，使用只在每个位置内部工作的共享Transformer完成特征融合。对每个非padding位置独立采样item mask和action mask，浅层pv等弱行为的action mask概率更高，buy等强行为概率更低；物品被替换成MASK token后重新编码，得到clean view X1和masked view。训练时每个序列采样2个masked view，推理不做mask。</p>
 <p>第二块MFCD在CACE隐空间运行DDPM式条件扩散。不同掩码状态使用不同噪声强度，双重掩码位置受到更强噪声；共享denoising network预测原始X1，损失是重建均方误差。两个masked view的池化去噪表示还用InfoNCE拉近同一序列的不同增强、拉远batch内其他用户。推理从中间步开始，用cosine schedule和确定性的DDIM反向采样，eta=0，避免随机采样造成线上结果抖动。</p>
 <p>第三块DDGH用两个结构相同但参数独立的门融合原始和去噪表示。融合门按位置计算，E_final等于g_f乘去噪表示加上1减g_f乘原始表示；重要性门不参与融合，只输出给大模型教师的可解释位置权重。融合门的伪标签是归一化去噪误差的反值，重要性门的伪标签还混合行为可靠性先验，两个门都用BCE训练。GMCD总损失由denoise、contrastive、fusion和importance四项构成，让模型保留去噪器无法重建的弱信号，也能压制明显噪声。</p>
 <p>MILD是Multi-Intent LLM Distillation。用户目标拆为四类：长期意图来自身份和生活方式，短期意图来自事件或状态变化，潜在意图来自重复浏览和比较但尚未转化，转化意图表示当前上下文下最可能的购买决策。教师使用冻结的Gemini 3.5 Flash API，根据行为序列和重要性提示生成四类意图文本。学生使用冻结的Qwen3-1.7B骨干，前置4个可学习intent token；每个token通过独立LoRA路径只读取行为位置，四个intent token彼此不可见，行为token使用因果mask且不能读取intent token。教师文本用Qwen3-Embedding-8B编码，学生向量经projection head映射后用带有效监督mask的余弦距离对齐。</p>

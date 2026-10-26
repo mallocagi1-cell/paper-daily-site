@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>12 分钟</b>阅读时长</span>
-    <span><b>4596</b>字</span>
+    <span><b>4602</b>字</span>
     <span><b>4.35</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-09-03/">09-03 Generative 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -74,7 +74,7 @@
 <p>CoGR 针对的是第一阶段检索里一个长期存在但常被分开处理的问题：query 端与 item 端的表示并没有围绕同一个线上目标共同演化。BM25 等词法方法兼容成熟倒排索引，但难以跨越字面差异；DPR、ANCE 等稠密方法能捕获语义，却需要额外的向量索引和近邻检索栈；DSI、RIPOR 一类生成式检索直接生成文档标识，又受标识设计、解码规模和新物品泛化限制。近年的 LLM 检索通常只生成 query expansion、伪文档或改写，再交给另一个检索器匹配，因此生成器只看到 query 侧反馈，item 表示始终固定。对于搜索与广告，这个断点尤其重要：漏召回在后续排序中无法挽回，而召回过宽又增加排序和竞价负担。</p>
 <p>论文把问题改写为“双边生成”：两个 LLM 分别把 query 与 item 标题/描述压缩成关键词集合，集合重叠决定召回，BM25 决定顺序。难点是两套生成词表必须对齐，否则双方各自合理的词仍可能没有交集。作者因此先用监督数据建立可用的共同空间，再用共享的检索 F1 让两端交替协同进化。实验覆盖内部 App Marketplace（13,500 个训练 query、1,500 个评估 query、39,600 个应用，每个 query 约 1,000 个相关应用）和 WANDS（430/50 个训练/评估 query、42,994 个商品，每个 query 约 200 个相关商品），属于多相关项、强召回压力的工业式设置。</p>
 <h2 id="s2">2. 方法详解</h2>
-<p>系统包含查询生成器 Gq 和物品生成器 Gi。输入 query q 或 item i 后，两者分别输出关键词集合 Sq 与 Si；只要“原始文本加生成关键词”的两侧集合存在交集，item 就进入召回集，随后把关键词当作 bag-of-words 用 BM25 排序。该设计没有生成语义 ID，也不需要自回归枚举整个 item 标识树，而是把 LLM 的语义能力落到现有倒排接口上。</p>
+<p>系统包含查询生成器 Gq 和物品生成器 Gi。输入 query q 或 item i 后，两者分别输出关键词集合 Sq 与 Si；只要“原始文本加生成关键词”的两侧集合存在交集，item 就进入召回集，随后把关键词当作 bag-of-words 用 BM25 排序。该设计没有生成 Semantic ID，也不需要自回归枚举整个 item 标识树，而是把 LLM 的语义能力落到现有倒排接口上。</p>
 <p>第一阶段是 SFT 对齐初始化。作者先让基础 LLM 为每个 item 生成 M=10 个关键词；对于每个 query，汇总所有相关 item 的关键词为多重集合，再选择频率最高的 N=15 个词作为 query 侧监督目标。这样每个 query target 天然来自其相关 item，训练开始时就有足够关键词重叠和召回，避免 RL 从零探索时几乎总得零奖励。两个生成器分别做 SFT，而不是共享一个检查点，因为 query 是短意图表达，item 是标题加描述，两者的输入分布和职责不同。</p>
 <p>第二阶段进行五轮交替 GRPO。更新 query 端时，Gi 生成的 item 倒排索引完全冻结；Gq 为同一 query 采样 8 组关键词，实际执行召回，以宏平均 precision 与 recall 的调和均值 F1 作为终局奖励。若关键词数超过 Kmax=30，奖励直接置零，防止模型靠无约束扩词刷 recall。更新 item 端时，冻结最新 query 索引，并对单个 item 的候选关键词构造反事实：只替换该 item 的关键词，其他 item 不变，奖励等于替换后所有 query 的 F1 总和减去替换前总和；超预算奖励为 -1。这个边际贡献奖励把 item 优化仍然锚定在“query 找 item”的业务方向，避免对称地让 item 去找 query 所带来的目标错位。</p>
 <p>反事实奖励若朴素实现，需要为每个 rollout 重建索引并遍历全部 query。作者缓存每个 query 的召回数、真阳性数、相关项数，以及参考状态下每个 item 被哪些 query 命中。新关键词只需在冻结 query 索引中查一次，取候选命中集合与参考命中集合的对称差；只有这些受影响 query 的 F1 会变化，其余项在差分中抵消，因此每个 rollout 变成一次索引查询加若干常数时间计数更新。</p>

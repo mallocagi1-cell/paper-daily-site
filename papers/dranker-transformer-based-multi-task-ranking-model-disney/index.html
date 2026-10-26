@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>9 分钟</b>阅读时长</span>
-    <span><b>3348</b>字</span>
+    <span><b>3383</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span class="pd-rk"><b>第 2 名</b><a href="../../2026-10-15/personalization/">10-15 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -77,8 +77,8 @@
 <h2 id="s2">2. 方法详解</h2>
 <p>系统采用召回后排序：上游提供影片与剧集候选，DRanker 根据用户行为历史和会话上下文给每个候选打分。每日 ETL 从数月合格观看记录生成数亿训练样本，输出 Mosaic Data Shards；模型在一周内频繁重训，使用常规 GPU 实例。全文未公开批大小、优化器、学习率、确切训练步数或 GPU 型号，不能按常见配置擅自补全。</p>
 <p>正样本先按观看时长过滤误触，再对每个 profile 与 title 只保留首次有效互动，移除续看和重看，因为首页目标是新内容发现。这一步减少超过 60% 的训练样本并改善指标。随后按片名类型、地区和设备等分层，避免大地区与热门标题占据训练集。负例从内容库随机采样；作者发现刻意挑选非常不相似的负例过于容易，曝光负例则在初始交付阶段需要昂贵日志联表。每条历史只能包含候选发生前的观看，明确防止时间泄漏。</p>
-<p>每个历史 token 拼接由片名元数据得到的 LLM 文本嵌入、可学习内容 ID、设备 ID、周期编码时间与观看长度。双向自注意力 Transformer 使用相对位置偏置，把关系加到注意力分数上；输出经逐位置前馈、预归一化残差和平均池化得到历史表示。候选也结合文本与 ID 嵌入；再拼接完整历史平均表示、当前上下文等，送进共享 ReLU MLP。两条任务分支分别以二元交叉熵预测参与分数、以均方误差预测参与长度。因为随机负采样改变了样本分布，参与输出是排序分数，不是校准过的曝光点击概率。</p>
-<p>轻量因果塔接候选嵌入与历史编码，学习热门和相关性两个辅助二元目标。热门且发生互动标记为 pop=1、rel=0；非热门且互动标记为 pop=0、rel=1；其余都为零。热门依据数月参与次数的高分位阈值定义。辅助损失使用固定权重，相关性权重较高，热门权重较低，两者和为 1。主任务读取因果表征时停止向辅助塔回传梯度，使主任务不能把去偏表征重新拉回热门方向；塔自身损失仍训练其表示。推理丢弃辅助预测输出，仅保留学得的嵌入作为主任务输入。</p>
+<p>每个历史 token 拼接由片名元数据得到的 LLM 文本 embedding、可学习内容 ID、设备 ID、周期编码时间与观看长度。双向自注意力 Transformer 使用相对位置偏置，把关系加到注意力分数上；输出经逐位置前馈、预归一化残差和平均池化得到历史表示。候选也结合文本与 ID embedding；再拼接完整历史平均表示、当前上下文等，送进共享 ReLU MLP。两条任务分支分别以二元交叉熵预测参与分数、以均方误差预测参与长度。因为随机负采样改变了样本分布，参与输出是排序分数，不是校准过的曝光点击概率。</p>
+<p>轻量因果塔接候选 embedding 与历史编码，学习热门和相关性两个辅助二元目标。热门且发生互动标记为 pop=1、rel=0；非热门且互动标记为 pop=0、rel=1；其余都为零。热门依据数月参与次数的高分位阈值定义。辅助损失使用固定权重，相关性权重较高，热门权重较低，两者和为 1。主任务读取因果表征时停止向辅助塔回传梯度，使主任务不能把去偏表征重新拉回热门方向；塔自身损失仍训练其表示。推理丢弃辅助预测输出，仅保留学得的 embedding 作为主任务输入。</p>
 <h2 id="s3">3. 核心技术贡献</h2>
 <p>第一，统一序列表征把内容语义、协同 ID、设备和时间放在同一序列上下文中。相对位置编码比其他位置方案更快学会前传与续集等关系，也适应同一 profile 在不同时段由不同家庭成员使用。它解决的是表示质量，而不只是增加一个复杂预测头。</p>
 <p>第二，因果塔用已有行为次数生成两类辅助标签，额外参数低于总量的 5%，不依赖额外曝光数据源。梯度隔离是关键：热门物品确实容易有高参与度，若让主任务任意更新辅助塔，就可能重新把热门与偏好混在一起。不过标签本身仍是“非热门互动更像真实兴趣”的建模假设，不能将该塔解读为严格识别全部因果效应。</p>
@@ -95,7 +95,7 @@
 <p>目前随机负采样意味着输出未校准，不能直接当 CTR；简单共享头胜出依赖当前两个正相关任务，任务冲突更强时结论未必成立。作者也承认长序列与平均池化搭配可能弱化精排。读者额外应关注：工业数据未公开，部分表格值近似，缺少完整训练超参，无法仅靠本文复刻商业收益；因果塔的代理标签假设并没有被随机干预完全验证。</p>
 <h2 id="s6">6. 工业实践意义</h2>
 <p>社区 UGC 搜索可借鉴丰富行为序列与轻量去偏，但应保留 query 语义相关性约束，不能用观看首页排序替代搜索相关性。首先按“发现新帖子”与“回访已有内容”拆清样本目标，比较首次互动过滤与保留重复互动的差异；检查分层策略、负采样和时间泄漏，再尝试新任务头。输出若用于点击率融合，还要另外做校准验证。</p>
-<p>生产服务将特征提取与推理解耦，通过 TensorRT、统一形状、CUDA pinned memory、无锁缓冲池及嵌入缓存减少开销。作者报告每秒数万请求、每次上千候选、每秒数千万预测，中位推理不超过 50ms，部分优化路径低于 25ms；相对 CPU 方案性能约 10 倍、成本为 25%。这些指标来自不同服务描述，不应简单组合成单次固定 SLA，更不能保证社区硬件上同样收益。</p>
+<p>生产服务将特征提取与推理解耦，通过 TensorRT、统一形状、CUDA pinned memory、无锁缓冲池及 embedding 缓存减少开销。作者报告每秒数万请求、每次上千候选、每秒数千万预测，中位推理不超过 50ms，部分优化路径低于 25ms；相对 CPU 方案性能约 10 倍、成本为 25%。这些指标来自不同服务描述，不应简单组合成单次固定 SLA，更不能保证社区硬件上同样收益。</p>
 <p>模型晋级前用合成 profile 检查类型偏好、年龄和地区行为，失败则阻止进入 canary。社区可以对应设计用户偏好、query 意图与近期互动变化的行为测试，再与真实 nDCG、CTR 和长尾质量联合验收。最值得迁移的是可解释的实验流程：强数据基线、逐项消融、定性失败检查、线上 A/B，以及把跨页面后续效果与单轮模型实验分别记录。</p>
     <aside class="pd-shB" aria-label="分享这篇深度解读"><div class="pd-shB-t">分享这篇深度解读<small>复制链接、分享到 X 或微信，或生成一张分享图</small></div><div class="pd-sh-acts"><button type="button" class="pd-sh-btn" data-pd-share="copy"><svg class="pd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>复制链接</button><a class="pd-sh-btn" data-pd-share="x" href="https://x.com/intent/post?text=DRanker%3A%20A%20Transformer-Based%20Multi-Task%20Ranking%20Model%20for%20the%20Disney%2B%20Homepage&amp;url=https%3A%2F%2Fpaper-daily.com%2Fpapers%2Fdranker-transformer-based-multi-task-ranking-model-disney%2F" target="_blank" rel="noopener"><svg class="pd-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.75 3h3.07l-6.7 7.66L22 21h-6.17l-4.83-6.32L5.47 21H2.4l7.17-8.2L2 3h6.33l4.37 5.77L17.75 3Zm-1.08 16.2h1.7L7.4 4.73H5.58L16.67 19.2Z"/></svg>分享到 X</a><button type="button" class="pd-sh-btn" data-pd-share="wechat" aria-haspopup="dialog" aria-expanded="false"><svg class="pd-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.1 4C5.2 4 2 6.6 2 9.9c0 1.9 1.1 3.6 2.8 4.7l-.7 2.1 2.5-1.3c.8.2 1.6.3 2.5.3h.5a5.3 5.3 0 0 1-.2-1.4c0-3.2 3.1-5.8 6.9-5.8h.5C16 5.7 12.9 4 9.1 4Zm-2.4 3.2a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm4.8 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/><path d="M22 14.3c0-2.7-2.7-4.9-6-4.9s-6 2.2-6 4.9 2.7 4.9 6 4.9c.7 0 1.4-.1 2-.3l2 1.1-.5-1.8c1.5-.9 2.5-2.3 2.5-3.9Zm-8-.9a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Zm4 0a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"/></svg>微信</button><button type="button" class="pd-sh-btn" data-pd-share="poster"><svg class="pd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.8"/><path d="m21 15-4.5-4.5L7 20"/></svg>生成分享图</button></div></aside>
 

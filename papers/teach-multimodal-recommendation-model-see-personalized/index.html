@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>9 分钟</b>阅读时长</span>
-    <span><b>3561</b>字</span>
+    <span><b>3575</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-06-10/personalization/">06-10 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -75,7 +75,7 @@
 <p>作者把根因拆成两条：(1) 视觉表征学习不足——在通用图文数据上预训练的视觉编码器/VLM 只关注视觉上最显眼的区域，抓不到与用户偏好相关的细粒度属性(例如颜色、材质、款式细节);(2) 训练期模态失衡——文本模态更容易被 MSR 模型利用、会主导训练过程，挤压视觉信号的学习。这两点合起来导致&quot;视觉看得见、用不上&quot;。这正是社区图文/短视频推荐里封面、配图特征长期跑不过标题文本的典型病灶。</p>
 <h2 id="s2">2. 方法详解</h2>
 <p>REVEAL 由两个互补模块组成，且都只在训练期生效。</p>
-<p><strong>Feedback-Guided Visual Extraction (FVE)</strong>：核心是用推荐任务的反馈去迭代精修喂给冻结 VLM 的 prompt，而不更新 VLM 参数。三阶段循环(重复 Xmax 次)：① 视觉编码 e^v_X = VLM(p^v, Prompt_X)，p^v 为物品视觉内容、Prompt_X 为当前 prompt；② 推荐 Result_X = f_MSR(e^v_X, e^id, e^t)，把视觉嵌入连同 ID、文本嵌入送入 MSR 主干；③ prompt 分析与精修——让 VLM 充当 critic：Critic_X ← VLM(Prompt_X, EvalInstr, G, Result_X)，再据此精修 Prompt_(X+1) = VLM(Critic_X, Prompt_X, p^v)。初始 prompt 模板按实例构造，包含物品标题、类别、以及该物品评论里 top-5 高频关键词(如 &quot;An item image of &lt;category&gt;. Item name: &lt;title&gt;. Users often mention: &lt;keywords&gt;. Focus on...&quot;)，不持久化用户级存储、每次交互动态拼。</p>
+<p><strong>Feedback-Guided Visual Extraction (FVE)</strong>：核心是用推荐任务的反馈去迭代精修喂给冻结 VLM 的 prompt，而不更新 VLM 参数。三阶段循环(重复 Xmax 次)：① 视觉编码 e^v_X = VLM(p^v, Prompt_X)，p^v 为物品视觉内容、Prompt_X 为当前 prompt；② 推荐 Result_X = f_MSR(e^v_X, e^id, e^t)，把视觉 embedding 连同 ID、文本 embedding 送入 MSR 主干；③ prompt 分析与精修——让 VLM 充当 critic：Critic_X ← VLM(Prompt_X, EvalInstr, G, Result_X)，再据此精修 Prompt_(X+1) = VLM(Critic_X, Prompt_X, p^v)。初始 prompt 模板按实例构造，包含物品标题、类别、以及该物品评论里 top-5 高频关键词(如 &quot;An item image of &lt;category&gt;. Item name: &lt;title&gt;. Users often mention: &lt;keywords&gt;. Focus on...&quot;)，不持久化用户级存储、每次交互动态拼。</p>
 <p><strong>Adaptive Visual Learning (AVL)</strong>：在反向传播时动态重加权视觉梯度以缓解模态失衡。每次迭代先算单模态损失：把文本置零得到 vision-only 损失 L^v、把视觉置零得到 text-only 损失 L^t，损失越小说明该模态贡献越强。瞬时差 Δ^v_x = L^v_x − L^t_x，映射成缩放 r^v_x = exp(Δ^v_x)，并维护累计均值 r̄^v_x = exp(L̄^v_x − L̄^t_x)。校准因子 K^v_x = exp(α·(r^v_x − r̄^v_x))：当视觉表现比历史均值更差时 K&gt;1、放大视觉梯度，否则 K&lt;1、抑制。最终对视觉参数梯度施加 ∂L/∂θ^v ← K^v_x·∂L/∂θ^v，参数更新 θ^v_{x+1} = θ^v_x − η·K^v_x·∂L/∂θ^v_x。两个超参：校准强度 α、精修轮数 Xmax。训练采用交替优化(把主干训到收敛→分析/精修 prompt→再训)，prompt 精修用贪心解码加固定随机种子保证可复现。硬件为 8×4090。</p>
 <h2 id="s3">3. 核心技术贡献</h2>
 <p>(1) 诊断性贡献：系统性地揭示并量化了 MSR 中视觉欠利用的两条根因(偏好相关特征抽取不足 + 训练期模态失衡)，并在 Amazon Beauty 上用模态消融给出可复现证据，把&quot;多模态推荐到底用没用上图片&quot;变成可测量的问题。</p>

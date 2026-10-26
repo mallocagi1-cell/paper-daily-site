@@ -61,7 +61,7 @@
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>12 分钟</b>阅读时长</span>
-    <span><b>4434</b>字</span>
+    <span><b>4441</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span class="pd-rk"><b>第 2 名</b><a href="../../2026-10-08/personalization/">10-08 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -78,7 +78,7 @@
 <h2 id="s2">2. 方法详解</h2>
 <p>平台提案 B 包含候选集合、完整平台排序和候选元数据。代理输入还包括本平台历史 H_within 和跨平台历史 H_cross，并先生成可见理由 R，再给出有序列表 S。平台内部得分与群体交互不向代理暴露。最终列表只可从现有候选中选择，保持平台 top-K 本身是合法动作。</p>
 <p>MediateRec 用 Amazon Reviews 2023 的四个品类模拟不同平台：Movies、Toys 为见过的目标平台，Grocery、Beauty 用于未见平台迁移。同一用户在其他品类的先前交互作为跨平台记录，没有额外 k-core 过滤。Movie 和 Toy 各有 5,000 训练、1,000 验证和 2,000 测试；Grocery 与 Beauty 各有 2,000 仅测试样本。真实外部测试用 OpenPlay 链接 Steam、Nintendo、Xbox 的匿名同人记录，共 645 名用户，Steam 是唯一目标平台。这些用户不进入代理训练、超参数选择或检查点选择。</p>
-<p>每次评测固定 50 个候选：真实目标加 49 个按流行度采样、此前未交互的物品，目标项明确被插入。这是候选条件排序测试，不是端到端召回评测。平台先用仅在本平台训练的 SASRec 排序，再由 Claude Sonnet 4.6 在仅含本平台历史的条件下重排，最后冻结提案。SASRec 为 64 维嵌入、最大长度 50、两层注意力、单头、dropout 0.5，以 256 个负例的交叉熵训练；Adam 学习率 0.001，batch 256。</p>
+<p>每次评测固定 50 个候选：真实目标加 49 个按流行度采样、此前未交互的物品，目标项明确被插入。这是候选条件排序测试，不是端到端召回评测。平台先用仅在本平台训练的 SASRec 排序，再由 Claude Sonnet 4.6 在仅含本平台历史的条件下重排，最后冻结提案。SASRec 为 64 维 embedding、最大长度 50、两层注意力、单头、dropout 0.5，以 256 个负例的交叉熵训练；Adam 学习率 0.001，batch 256。</p>
 <p>PAMO 每个提示采样八个理由和列表。个人介入支持度是同一个理由在完整历史条件与遮蔽跨平台历史条件下的对数似然比，再除以理由长度。完整条件概率已由 rollout 保存，所以只需额外执行一次遮蔽历史的 teacher-forcing。作者刻意只计 FINAL 标记之前的理由，不计最终 ID 段：固定理由前缀后，ID 对遮蔽历史的敏感性可能很弱。支持度只说明模型的理由依赖那些记录，不保证记录正确，也不保证决策有价值。</p>
 <p>接下来把单目标 NDCG 拆成 top-1 到 top-K 的嵌套命中指标，权重取相邻折扣差。这使从第八位升到第三位的收益只分配给跨越的第三至第七个边界。PAMO 在平台相关的变化上重新分配组内优势，倾向更有个人历史支持的回复，但同时保留平均平台相对 NDCG 的价值下限，避免奖励“理由特别依赖个人信息但排序更差”的输出。κ=0 时退化为标准组相对优势；主实验 κ 为 0.5，支持度不反向传播。</p>
 <p>代理用 Qwen3-4B-Instruct 初始化。先用 2,000 条 Sonnet 示范做格式 SFT，Movie、Toy 各一千，不按推荐结果过滤；三轮训练，batch 64，最大长度 8,192，学习率 0.00001。RL 每次更新 64 提示、每提示八次采样，温度和 top-p 均为 1.0，学习率 0.000001，PPO minibatch 32、clip 0.2，无 KL 惩罚，理由回答最长 2,048 token。总计 400 次更新，每 50 次验证并存检查点；框架 VeRL，rollout 用 vLLM。正文没有明确列出可确认的 GPU 型号与训练墙钟时间。</p>
