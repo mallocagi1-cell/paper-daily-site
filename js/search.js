@@ -538,10 +538,14 @@
     var addHint = function () {
       var f = document.querySelector(".site-foot");
       if (!f || f.querySelector(".kb-hint")) return;
+      // compact footer: a lone "?" key chip at the end of the line (title / aria-label say what it is)
+      var w = document.createElement("span");
+      w.className = "kb-hint-w"; w.innerHTML = '<span class="sf-sep">·</span>';
       var b = document.createElement("button");
-      b.type = "button"; b.className = "kb-hint"; b.innerHTML = TR("快捷键", "Shortcuts") + " <kbd>?</kbd>";
+      b.type = "button"; b.className = "kb-hint"; b.innerHTML = "<kbd>?</kbd>";
+      b.title = TR("键盘快捷键", "Keyboard shortcuts"); b.setAttribute("aria-label", b.title);
       b.addEventListener("click", function () { helpShow(true); });
-      f.appendChild(b);
+      w.appendChild(b); f.appendChild(w);
     };
     var hintBoot = function () {
       addHint();

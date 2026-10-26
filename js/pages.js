@@ -501,10 +501,9 @@
       " · " + r.tracks.length + TR(" 个方向</div>", " tracks</div>") + renderDateNav(r) + "</div>" +
       (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
-      '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
-      '<div class="weekly-rule"><a class="open-raw" href="' + reportHtmlHref(r.date, r.track) +
-      TR('" target="_blank" rel="noopener">独立报告页 report.html &#8599;</a> · <a class="open-raw" href="deep-readings/">&#128214; 深度解读', '" target="_blank" rel="noopener">Standalone report page &#8599;</a> · <a class="open-raw" href="deep-readings/">&#128214; Deep dives') +
-      (DATA.deep_reading_entries ? " " + DATA.deep_reading_entries + TR(" 篇", "") : "") + " &#8594;</a></div>";
+      // 2026-10-26 (Felix: "存在的意义是什么"): the "独立报告页 report.html ↗ · 📖 深度解读 N 篇 →" row under the
+      // report is gone; report.html pages still exist (SEO / old links), 深度解读 is in the nav.
+      '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>';
     setMast(TR("第 ", "Issue ") + issueNo(r.idx) + TR(" 期", ""), dateLine(r.date));
     setBodyTrack(r.track);
   }
@@ -953,14 +952,7 @@
           AI = Object.assign({}, AI, DATA.ai_search);
           if (AI.desc) TRACK_DESC[AI.track] = TR(AI.desc.zh, AI.desc.en);
         }
-        const foot = document.getElementById("site-foot");
-        if (foot && DATA.latest_date) {
-          const counter = document.getElementById("busuanzi_container_site_pv"); // 不蒜子 counter: keep the live node
-          foot.innerHTML = TR("<span>Paper Daily · 静态站</span><span>·</span><span>数据最新 ", "<span>Paper Daily · English edition</span><span>·</span><span>Latest ") + escapeHtml(DATA.latest_date) +
-            TR("</span><span>·</span><span>共 ", "</span><span>·</span><span>") + escapeHtml(DATA.days.length) + TR(" 期</span><span>·</span><span>", " issues</span><span>·</span><span>") +
-            escapeHtml(DATA.deep_reading_entries || 0) + TR(" 篇深度解读</span>", " deep dives</span>");
-          if (counter) foot.appendChild(counter);
-        }
+        // footer is static now (magazine.site_footer, same on every page); nothing to rewrite here
         render();
         window.addEventListener("hashchange", renderIfMoved);
         window.addEventListener("popstate", renderIfMoved);
