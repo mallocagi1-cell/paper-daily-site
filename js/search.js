@@ -389,7 +389,7 @@
     if (dp && !dp.hidden) return true;
     return [].some.call(document.querySelectorAll(".archive-pop, .arch-pop, [data-archive-pop]"), vis);
   }
-  function isDeepPage() { return /\/papers\/[^/]+\/$/.test(location.pathname) && !!document.querySelector("a.back"); }
+  function isDeepPage() { return /\/papers\/[^/]+\/$/.test(location.pathname) && !!document.querySelector(".rhead a.k-home"); }
   function tabs() { return [].filter.call(document.querySelectorAll(".track-tabs .track-tab"), vis); }
   function cards() {
     var seen = [], out = [];
@@ -457,7 +457,7 @@
       go(KB.order);
     }).catch(function () { /* offline */ });
   }
-  // "back to the list": the last list page this tab visited (deep→deep hops via ←/→ don't count), else ← 全部深度解读
+  // "back to the list": the last list page this tab visited (deep→deep hops via ←/→ don't count), else the deep-readings index (kicker 深度解读 link)
   var LISTKEY = "pd-kb-list";
   function rememberList() { if (!isDeepPage()) try { sessionStorage.setItem(LISTKEY, location.href); } catch (e) {} }
   rememberList();
@@ -467,7 +467,7 @@
     try { last = sessionStorage.getItem(LISTKEY); } catch (e) {}
     if (ref && ref.indexOf(location.origin) === 0 && ref === last && history.length > 1) { history.back(); return; }
     if (last && last.indexOf(location.origin) === 0) { location.href = last; return; }
-    var b = document.querySelector("a.back"); if (b) location.href = b.href;
+    var b = document.querySelector(".rhead a.k-home"); if (b) location.href = b.href;
   }
   var toastT = null;
   function kbToast(msg) {
