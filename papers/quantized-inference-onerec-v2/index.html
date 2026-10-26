@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Quantized Inference for OneRec-V2 — 深度解读 | Paper Daily</title>
+  <meta name="description" content="深度解读《Quantized Inference for OneRec-V2》：本文研究了生成式推荐模型 OneRec-V2 的量化推理问题。作者发现 OneRec-V2 的权重与激活值分布特征与 LLM 高度相似，而非传统推荐系统，因此可以直接复用 LLM 领域成熟的 FP8 训练后量化（PTQ）技术…" />
+  <link rel="canonical" href="https://paper-daily.com/papers/quantized-inference-onerec-v2/" />
+  <meta property="og:site_name" content="Paper Daily" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="Quantized Inference for OneRec-V2 — 深度解读 | Paper Daily" />
+  <meta property="og:description" content="深度解读《Quantized Inference for OneRec-V2》：本文研究了生成式推荐模型 OneRec-V2 的量化推理问题。作者发现 OneRec-V2 的权重与激活值分布特征与 LLM 高度相似，而非传统推荐系统，因此可以直接复用 LLM 领域成熟的 FP8 训练后量化（PTQ）技术…" />
+  <meta property="og:url" content="https://paper-daily.com/papers/quantized-inference-onerec-v2/" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Quantized Inference for OneRec-V2 — 深度解读 | Paper Daily" />
+  <meta name="twitter:description" content="深度解读《Quantized Inference for OneRec-V2》：本文研究了生成式推荐模型 OneRec-V2 的量化推理问题。作者发现 OneRec-V2 的权重与激活值分布特征与 LLM 高度相似，而非传统推荐系统，因此可以直接复用 LLM 领域成熟的 FP8 训练后量化（PTQ）技术…" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"深度解读：Quantized Inference for OneRec-V2","description":"深度解读《Quantized Inference for OneRec-V2》：本文研究了生成式推荐模型 OneRec-V2 的量化推理问题。作者发现 OneRec-V2 的权重与激活值分布特征与 LLM 高度相似，而非传统推荐系统，因此可以直接复用 LLM 领域成熟的 FP8 训练后量化（PTQ）技术…","inLanguage":"zh-CN","datePublished":"2026-03-19","dateModified":"2026-03-19","url":"https://paper-daily.com/papers/quantized-inference-onerec-v2/","mainEntityOfPage":"https://paper-daily.com/papers/quantized-inference-onerec-v2/","articleSection":"Generative","author":{"@type":"Organization","name":"Paper Daily","url":"https://paper-daily.com/"},"publisher":{"@type":"Organization","name":"Paper Daily","url":"https://paper-daily.com/"},"isPartOf":{"@type":"WebSite","name":"Paper Daily","url":"https://paper-daily.com/"},"about":{"@type":"ScholarlyArticle","name":"Quantized Inference for OneRec-V2","url":"https://arxiv.org/abs/2603.11486","identifier":"arXiv:2603.11486","author":"Yi Su, Xinchen Luo, Hongtao Cheng, Ziteng Shu, Yunfeng Zhao et al.","datePublished":"2026-03-12"},"citation":"https://arxiv.org/abs/2603.11486"}</script>
+  <meta property="article:published_time" content="2026-03-19" />
+  <meta property="article:modified_time" content="2026-03-19" />
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-QGGC9ELS2R"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-QGGC9ELS2R',{anonymize_ip:true,send_page_view:false});gtag('event','page_view',{page_location:location.href,page_title:document.title});</script>
+  <script>(function(){try{var t=localStorage.getItem('pd-theme');if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();(function(){try{var l=location;if(/\/index\.html$/.test(l.pathname))history.replaceState(history.state,'',l.pathname.replace(/index\.html$/,'')+l.search+l.hash)}catch(e){}})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../css/pages.css?v=78593998de" />
+<link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" />
+</head>
+<body class="t-generative">
+<div class="navwrap"><div class="wrap"><nav class="nav" aria-label="主导航">
+  <a class="hb" href="../../" title="为搜索与推荐工程师挑选的每日 GenAI 论文 · 评分 · 深度解读">Paper <span>Daily</span></a>
+  <div class="hl">
+  <a id="nav-reports" href="../../">今日</a>
+  <a id="nav-weekly" href="../../weekly/">&#127942; 周榜</a>
+  <a id="nav-deep-readings" href="../../deep-readings/" class="active">&#128214; 深度解读</a>
+  <a id="nav-archive" href="../../archive/" aria-haspopup="listbox">往期</a>
+  </div>
+  <div class="hm"><span class="hm-i">深度解读</span><span class="hm-d">2026 年 03 月 19 日 周四</span>
+  <a class="kp" id="nav-search" href="../../search/" aria-label="搜索论文（⌘K）" title="搜索论文 · ⌘K"><svg class="kp-i" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.6-4.6"/></svg><span class="kp-t">搜索论文…</span><kbd class="kp-k">⌘K</kbd></a>
+  <a class="rss-tg" id="nav-rss" href="../../subscribe/" title="订阅 RSS" aria-label="订阅 RSS"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2.3" fill="currentColor"/><path d="M4 11.2a8.8 8.8 0 0 1 8.8 8.8M4 4.2A15.8 15.8 0 0 1 19.8 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></a>
+  <a class="lang-tg" href="../../en/" hreflang="en" lang="en" title="English edition">EN</a>
+  <button type="button" class="tg" id="theme-toggle" aria-pressed="false" title="切换深色 / 浅色">&#9680;<span class="tg-l"> 深色模式</span></button></div>
+</nav><div class="read-prog" aria-hidden="true"><i id="read-prog"></i></div></div></div>
+<main id="main">
+
+<div class="wrap">
+  <div class="rhead">
+    <a class="back" href="../../deep-readings/">&#8592; 全部深度解读</a>
+    <div class="k">&#128214; 深度解读 · GENERATIVE</div>
+    <h1>Quantized Inference for OneRec-V2</h1>
+    <div class="by">Yi Su, Xinchen Luo, Hongtao Cheng, Ziteng Shu, Yunfeng Zhao et al. · Kuaishou · arXiv 2603.11486 · 发表 2026-03-12</div>
+  </div>
+  <div class="rmeta">
+    <span><b>9 分钟</b>阅读时长</span>
+    <span><b>3554</b>字</span>
+    <span><b>4.45</b>综合分</span>
+    <span><b>第 1 名</b><a href="../../2026-03-19/">03-19 Generative 日报</a></span>
+  </div>
+  <div class="rbody">
+    <nav class="toc" id="toc" aria-label="目录"><h6>目录 CONTENTS</h6><a href="#s1"><i>1</i><span>问题与动机</span></a><a href="#s2"><i>2</i><span>方法详解</span></a><a href="#s3"><i>3</i><span>核心技术贡献</span></a><a href="#s4"><i>4</i><span>实验结果分析</span></a><a href="#s5"><i>5</i><span>局限与未来方向</span></a><a href="#s6"><i>6</i><span>工业实践意义</span></a></nav>
+    <article class="long deep-read-article" id="article">
+      <details class="toc-m"><summary>目录 · 6 节</summary><a href="#s1"><i>1</i><span>问题与动机</span></a><a href="#s2"><i>2</i><span>方法详解</span></a><a href="#s3"><i>3</i><span>核心技术贡献</span></a><a href="#s4"><i>4</i><span>实验结果分析</span></a><a href="#s5"><i>5</i><span>局限与未来方向</span></a><a href="#s6"><i>6</i><span>工业实践意义</span></a></details>
+      <div class="r-narrow"><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 5，Evidence 5，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 129.97,145.01 50.03,145.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 5</text><text x="41.24" y="160.12" text-anchor="middle">证据 5</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg><div class="ins-full">核心贡献在于验证了生成式推荐模型与 LLM 的统计特性对齐这一前提，使 LLM 工具链（量化、编译优化）可无缝迁移到推荐系统。对于已部署或正在建设生成式推荐系统的团队，FP8 量化是降低服务成本的高优先级工程优化：延迟减半、吞吐翻倍，且无需重新训练。这也预示着 vLLM/TensorRT-LLM 等成熟 LLM 推理框架将成为下一代推荐系统的标配基础设施。</div><div class="r-links"><div class="apps"><h6>出现于报告</h6><a href="../../2026-03-19/#dr-arxiv-2603-11486">2026-03-19 · Generative #1 (4.45)</a></div><a class="btn" href="https://arxiv.org/abs/2603.11486" target="_blank" rel="noopener">阅读原文 · arXiv &#8599;</a></div></div>
+      <h2 id="s1">1. 问题与动机</h2>
+<p>大语言模型（LLM）领域的低精度量化技术已经相当成熟：FP8 训练后量化（PTQ）可以将推理延迟降低 30–50%，同时几乎不损失模型质量，已在 GPT-4、Llama 等主流大模型上广泛部署。然而，传统推荐系统一直无缘这一红利。根本原因在于：传统推荐模型的权重方差高达 10^7，激活值方差约 10^6，远超 LLM 的 0.1 量级，动态范围过宽导致量化误差大、精度损失严重。此外，传统推荐系统的工作负载以「内存受限」为主（Memory Bound），而非计算受限（Compute Bound），使得降低计算精度的实际加速收益极为有限。</p>
+<p>一个更根本的障碍是架构差异：传统多阶段召回-粗排-精排流水线缺乏密集的矩阵乘法计算密集区，无法有效利用 TensorCore 的 FP8 低精度计算单元。因此，推荐系统的量化研究长期停滞。</p>
+<p>本文的核心出发点是：以 OneRec-V2 为代表的「生成式推荐模型」在架构上已经高度 LLM 化——基于 Transformer 的序列建模、稀疏 MoE 专家层、大规模 Dense GEMM——这使得量化可行性发生了根本性转变。但没有人验证过这一假设在生产级推荐系统上是否成立，更没有人将其推向在线 A/B 实验。本文填补了这一空白。</p>
+<h2 id="s2">2. 方法详解</h2>
+<h3>权重与激活值分布分析</h3>
+<p>作者首先对三类模型进行了系统性的数值统计对比：传统推荐模型、Qwen3-8B（代表 LLM）、OneRec-V2（代表生成式推荐）。评估指标包括：所有张量的平均方差（Mean Variance）、平均绝对最大值（AbsMax）、99 分位绝对值（AbsP99）。</p>
+<p>结果显示 OneRec-V2 的权重方差低于 0.1（与 LLM 量级一致），激活统计量也比传统推荐模型小数个数量级。这一分析是整个工作的理论基础：正是这种「LLM 化的统计特性」使 FP8 量化得以在推荐模型上首次奏效。</p>
+<h3>FP8 PTQ 量化策略</h3>
+<p>量化范围精心设计，仅覆盖计算密集型算子：Attention 中的 QKV/O 投影 Linear 层、FFN Dense 层、稀疏 MoE 的 Grouped GEMM。其余组件（LayerNorm、Embedding、残差连接）保留 FP16 精度。</p>
+<p><strong>权重量化</strong>：采用 Per-Channel 粒度，离线从 FP16 参数计算 Scale，将 (FP8 权重, FP32 Scale) 对存储在 GPU 显存中。这意味着量化后的模型显存占用几乎减半。</p>
+<p><strong>激活值量化</strong>：采用动态 Per-Token 量化，在推理时对每个 Token 实时计算 Scale。对于 MoE 层，激活值使用 1×128 的分块粒度，权重使用 128×128 粒度，平衡了量化误差与计算效率。</p>
+<p><strong>计算流水线</strong>：输入激活值先重新缩放并量化至低精度 → 执行低精度矩阵乘法（FP32 累加）→ 结果 cast 回高精度送入后续层。这一流水线完全保留了 FP8 TensorCore 的加速收益，同时通过 FP32 累加避免精度损失扩散。</p>
+<h3>RecoGEM 推理基础设施</h3>
+<p>系统层面，作者摒弃了传统的 PyTorch → ONNX → TensorRT 多阶段转换路径（该路径常因算子兼容性问题引入大量 overhead），改为直接使用统一算子库构建 TensorRT 计算图。在此基础上实施了四项算子级优化：</p>
+<ol>
+<li><strong>量化算子融合</strong>：Per-Row 激活缩放 kernel + Fused 低精度 GEMM，减少中间内存流量；</li>
+<li><strong>TopK 优化</strong>：用 RadixTopK kernel 替换默认实现，结合 kernel fusion 和 zero-copy 技术，专为大 batch 工作负载优化；</li>
+<li><strong>Attention 重设计</strong>：针对「大 batch、短 context」的推荐场景（区别于 LLM 的长上下文场景），引入 batch 级并行和软件流水线；</li>
+<li><strong>MoE 优化</strong>：基于 Hopper TMA 指令的 kernel，通过算子融合提升 TensorCore 利用率和模型 FLOPs 利用率（MFU）。</li>
+</ol>
+<h2 id="s3">3. 核心技术贡献</h2>
+<p><strong>贡献一：生成式推荐可量化性的首次系统性验证</strong><br>本文通过精确的数值统计分析（方差、AbsMax、AbsP99 三维度对比）证明了生成式推荐模型的权重/激活分布已与 LLM 对齐，从根本上解释了「为什么现在可以量化」。这一分析框架本身就具有独立价值，为后续在不同生成式推荐架构上的量化工作提供了评估方法论。</p>
+<p><strong>贡献二：推荐场景下 FP8 PTQ 的工程化完整方案</strong><br>区别于学术工作中的离线评估，本文提供了从量化粒度选择（Per-Channel 权重 + Per-Token/Block 激活）到 TensorRT 图构建的完整工程方案。特别是针对 MoE 架构的分块量化策略（1×128 激活，128×128 权重）是对标准 FP8 PTQ 方法的重要工程细节补充。</p>
+<p><strong>贡献三：通过 A/B 实验验证生产级无损部署</strong><br>量化研究最大的挑战在于将离线指标与线上业务指标的对应。本文在快手（Kuaishou）和快手极速版（Kuaishou Lite）两个平台进行了为期一周的 A/B 实验，核心业务指标（用户留存时间、视频播放时长、互动率）未出现系统性下降，为「FP8 量化在大规模推荐生产环境中零损失」提供了最强证据。</p>
+<h2 id="s4">4. 实验结果分析</h2>
+<h3>系统性能对比</h3>
+<p>实验配置：OneRec-V2 生产规模模型（Fat-MoE，总参数 4B，每 token 激活 0.5B），batch size=32，FP16 推理作为 baseline。</p>
+<div class="tbl"><table><thead><tr><th>指标</th><th>FP16 Baseline</th><th>FP8 量化后</th><th>提升</th></tr></thead><tbody><tr><td>端到端延迟</td><td>139 ms</td><td>70 ms</td><td>-49.6%</td></tr><tr><td>推理吞吐</td><td>205 req/s</td><td>394 req/s</td><td>+92.2%</td></tr></tbody></table></div>
+<h3>吞吐量增益拆解（Figure 3）</h3>
+<p>92% 的吞吐量提升来自三个组件的叠加：</p>
+<ul>
+<li><strong>基础设施升级</strong>（旧 TRT 到新统一 kernel 库）：+27%</li>
+<li><strong>FP8 量化（Linear + MoE）</strong>：额外 +42%</li>
+<li><strong>算子级优化</strong>（RadixTopK、Attention 重设计等）：进一步 +23%</li>
+</ul>
+<p>三个组件各自独立贡献显著，说明在系统层面没有单一「银弹」，需要协同优化。其中 FP8 量化贡献最大（约占总提升的 46%），但算子优化的 23% 也不容忽视——这是纯 PTQ 算法研究往往忽视的部分。</p>
+<h3>在线 A/B 实验（Table 1，一周，快手双平台）</h3>
+<p>在快手主端：用户停留时长 +0.047%、视频播放时长 +0.044%、评论 +0.805%、收藏 +0.430%、转发 +0.313%；在快手极速版：部分指标出现轻微负向波动（如关注 -0.450%）但无统计显著性差异。</p>
+<p>关键结论：不存在系统性性能下降，两个平台的核心业务指标在置信区间内与 FP16 基线持平。这是「量化在推荐系统可无损部署」最强的实证依据。</p>
+<h2 id="s5">5. 局限与未来方向</h2>
+<p>作者明确指出三个局限：</p>
+<ol>
+<li><strong>精度探索不足</strong>：本文仅研究 FP8，未探索 INT8、FP6、FP4、混合精度等方案，精度-效率 Pareto 前沿仍未被绘制。对于存储更受限的场景（端侧部署），更低精度可能更有价值但风险更高。</li>
+</ol>
+<ol>
+<li><strong>基础设施门槛高</strong>：方案依赖 FP8 TensorCore（NVIDIA Hopper 架构，A100 不支持 FP8 训练，但 H100 支持）、TensorRT 推理引擎、定制化算子库。中小公司或使用 A100 集群的团队无法直接复用。</li>
+</ol>
+<ol>
+<li><strong>模型覆盖局限</strong>：所有实验结论来自 OneRec-V2，能否泛化到 HSTU、TIGER、SIGMA 等其他生成式推荐架构尚未验证——尽管从统计特性分析角度推断应该可以。</li>
+</ol>
+<p>一个作者未提及但值得关注的限制：MoE 的稀疏激活特性（每 token 仅激活 0.5B/4B 参数）对量化误差的实际影响可能与 Dense 模型不同，需要专门的误差传播分析。</p>
+<h2 id="s6">6. 工业实践意义</h2>
+<p><strong>立即可行的优化路径</strong>：对于已经部署 OneRec、HSTU 或类似基于 Transformer 的生成式推荐模型且使用 H100 集群的团队，本文提供了一条端到端延迟减半、吞吐翻倍的低风险优化路径。关键前提是先验证目标模型的权重/激活分布统计（方差 &lt; 1）以确认量化适用性。</p>
+<p><strong>LLM 工具链迁移是大趋势</strong>：量化是 LLM 工具链向推荐系统迁移的第一步，但绝不是最后一步。Flash Attention、Continuous Batching、PagedKV、Speculative Decoding 等 LLM 推理优化技术在相同的架构前提下都有迁移可能性。本文验证了「LLM 化架构 + LLM 工具链」的完整路径是可行的。</p>
+<p><strong>FP8 量化粒度的工程细节值得深入参考</strong>：Per-Channel 权重量化 + Per-Token 动态激活量化的组合，以及 MoE 专家层的分块量化策略，是可以直接借鉴的工程 best practice，而不仅仅是一个「用量化」的高层结论。</p>
+<p><strong>A/B 实验设计的参考价值</strong>：一周双平台对照实验，覆盖 7 个核心业务指标（停留时长、播放时长、点赞、关注、评论、收藏、转发），这一评估框架本身就是工业量化实验设计的规范参考。在做类似推理优化实验时，需要监控的不仅仅是技术指标（延迟/吞吐），更重要的是核心业务指标的无损验证。</p>
+    </article>
+    <aside class="aside">
+      <div class="box"><h6>五维评分</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 5，Evidence 5，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 129.97,145.01 50.03,145.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 5</text><text x="41.24" y="160.12" text-anchor="middle">证据 5</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg></div>
+      <div class="box"><h6>一句话要点 KEY INSIGHT</h6><div class="ins-full">核心贡献在于验证了生成式推荐模型与 LLM 的统计特性对齐这一前提，使 LLM 工具链（量化、编译优化）可无缝迁移到推荐系统。对于已部署或正在建设生成式推荐系统的团队，FP8 量化是降低服务成本的高优先级工程优化：延迟减半、吞吐翻倍，且无需重新训练。这也预示着 vLLM/TensorRT-LLM 等成熟 LLM 推理框架将成为下一代推荐系统的标配基础设施。</div></div>
+      <div class="box apps"><h6>出现于报告</h6><a href="../../2026-03-19/#dr-arxiv-2603-11486">2026-03-19 · Generative #1 (4.45)</a></div>
+      <a class="btn" href="https://arxiv.org/abs/2603.11486" target="_blank" rel="noopener">阅读原文 · arXiv &#8599;</a>
+    </aside>
+  </div>
+</div>
+</main>
+<div class="wrap"><footer class="site-foot"><a class="sf-b" href="../../">Paper Daily</a><span class="sf-sep">·</span><span class="sf-i sf-upd">更新至 <time datetime="2026-10-26">10-26</time></span><span class="site-count" id="busuanzi_container_site_pv" style="display:none"><span class="sf-sep">·</span><span class="sf-i">访问 <span id="busuanzi_value_site_pv"></span></span><span class="sf-sep">·</span><span class="sf-i">访客 <span id="busuanzi_value_site_uv"></span></span></span><span class="sf-sep">·</span><a class="sf-i" href="../../subscribe/" title="RSS 订阅">RSS</a></footer></div>
+<script defer src="https://events.vercount.one/js"></script><script>(function(){var c=document.getElementById('busuanzi_container_site_pv');if(!c||!window.MutationObserver)return;function n(k){var e=document.getElementById('busuanzi_value_'+k);return e?(e.textContent||'').trim():''}new MutationObserver(function(){if(c.style.display!=='none'&&!(/^[1-9][0-9]*$/.test(n('site_pv'))&&/^[0-9]+$/.test(n('site_uv'))))c.style.display='none'}).observe(c,{attributes:true,attributeFilter:['style']})})();</script>
+<script>
+(function(){
+  var root=document.documentElement;
+  function label(){var b=document.getElementById('theme-toggle');if(!b)return;var d=root.getAttribute('data-theme')==='dark';
+    b.innerHTML=(d?'&#9681;':'&#9680;')+'<span class="tg-l"> '+(d?'浅色模式':'深色模式')+'</span>';b.setAttribute('aria-pressed',d?'true':'false');}
+  function set(t,store){root.setAttribute('data-theme',t);if(store){try{localStorage.setItem('pd-theme',t)}catch(e){}}label();}
+  document.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#theme-toggle');
+    if(b)set(root.getAttribute('data-theme')==='dark'?'light':'dark',true);});
+  try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
+    var s=null;try{s=localStorage.getItem('pd-theme')}catch(x){}if(s!=='light'&&s!=='dark')set(e.matches?'dark':'light',false);});}catch(e){}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',label);else label();
+})();
+</script>
+<script>
+(function(){
+  var links=[].slice.call(document.querySelectorAll('#toc a[href^="#s"]'));
+  var heads=links.map(function(a){return document.getElementById(a.getAttribute('href').slice(1));}).filter(Boolean);
+  var art=document.getElementById('article'), bar=document.getElementById('read-prog');
+  function onScroll(){
+    var y=window.scrollY, cur=-1;
+    for(var i=0;i<heads.length;i++){ if(heads[i].getBoundingClientRect().top<120) cur=i; }
+    links.forEach(function(a,i){a.classList.toggle('on',i===Math.max(cur,0)&&heads.length>0);});
+    if(art&&bar){
+      var top=art.getBoundingClientRect().top+y, h=art.offsetHeight-window.innerHeight;
+      var p=h>0?Math.min(1,Math.max(0,(y-top+window.innerHeight*0.15)/h)):1;
+      bar.style.width=(p*100).toFixed(1)+'%';
+    }
+  }
+  window.addEventListener('scroll',onScroll,{passive:true}); window.addEventListener('resize',onScroll); onScroll();
+})();
+</script>
+<script src="../../js/search.js?v=78593998de" defer></script>
+</body>
+</html>

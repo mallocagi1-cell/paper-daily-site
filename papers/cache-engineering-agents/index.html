@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Cache Engineering for Agents — 深度解读 | Paper Daily</title>
+  <meta name="description" content="深度解读《Cache Engineering for Agents》：智能体和搜索、网页、代码执行等工具来回几百轮时，每一轮模型都要把之前所有内容的 KV cache 重新读一遍，读这些旧缓存占了总调用费用的 82.4%。常见的省钱办法是删掉或摘要旧消息，但只要改动了前面的文字，后面所有缓存都作废…" />
+  <link rel="canonical" href="https://paper-daily.com/papers/cache-engineering-agents/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://paper-daily.com/papers/cache-engineering-agents/" />
+  <link rel="alternate" hreflang="en" href="https://paper-daily.com/en/papers/cache-engineering-agents/" />
+  <link rel="alternate" hreflang="x-default" href="https://paper-daily.com/papers/cache-engineering-agents/" />
+  <meta property="og:site_name" content="Paper Daily" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="Cache Engineering for Agents — 深度解读 | Paper Daily" />
+  <meta property="og:description" content="深度解读《Cache Engineering for Agents》：智能体和搜索、网页、代码执行等工具来回几百轮时，每一轮模型都要把之前所有内容的 KV cache 重新读一遍，读这些旧缓存占了总调用费用的 82.4%。常见的省钱办法是删掉或摘要旧消息，但只要改动了前面的文字，后面所有缓存都作废…" />
+  <meta property="og:url" content="https://paper-daily.com/papers/cache-engineering-agents/" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Cache Engineering for Agents — 深度解读 | Paper Daily" />
+  <meta name="twitter:description" content="深度解读《Cache Engineering for Agents》：智能体和搜索、网页、代码执行等工具来回几百轮时，每一轮模型都要把之前所有内容的 KV cache 重新读一遍，读这些旧缓存占了总调用费用的 82.4%。常见的省钱办法是删掉或摘要旧消息，但只要改动了前面的文字，后面所有缓存都作废…" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"深度解读：Cache Engineering for Agents","description":"深度解读《Cache Engineering for Agents》：智能体和搜索、网页、代码执行等工具来回几百轮时，每一轮模型都要把之前所有内容的 KV cache 重新读一遍，读这些旧缓存占了总调用费用的 82.4%。常见的省钱办法是删掉或摘要旧消息，但只要改动了前面的文字，后面所有缓存都作废…","inLanguage":"zh-CN","datePublished":"2026-10-25","dateModified":"2026-10-25","url":"https://paper-daily.com/papers/cache-engineering-agents/","mainEntityOfPage":"https://paper-daily.com/papers/cache-engineering-agents/","articleSection":"Infra","author":{"@type":"Organization","name":"Paper Daily","url":"https://paper-daily.com/"},"publisher":{"@type":"Organization","name":"Paper Daily","url":"https://paper-daily.com/"},"isPartOf":{"@type":"WebSite","name":"Paper Daily","url":"https://paper-daily.com/"},"about":{"@type":"ScholarlyArticle","name":"Cache Engineering for Agents","url":"https://arxiv.org/abs/2610.28577","identifier":"arXiv:2610.28577","author":"Tianyu Fu, Ruoxi Wang, Zihan Min, Zhongqi Ren, Zhihao Li, Tengxuan Liu, Shengxu Mu, Hanling Zhang, Yu Wang","datePublished":"2026-10-20"},"citation":"https://arxiv.org/abs/2610.28577"}</script>
+  <meta property="article:published_time" content="2026-10-25" />
+  <meta property="article:modified_time" content="2026-10-25" />
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-QGGC9ELS2R"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-QGGC9ELS2R',{anonymize_ip:true,send_page_view:false});gtag('event','page_view',{page_location:location.href,page_title:document.title});</script>
+  <script>(function(){try{var t=localStorage.getItem('pd-theme');if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();(function(){try{var l=location;if(/\/index\.html$/.test(l.pathname))history.replaceState(history.state,'',l.pathname.replace(/index\.html$/,'')+l.search+l.hash)}catch(e){}})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../css/pages.css?v=78593998de" />
+<link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" />
+</head>
+<body class="t-infra">
+<div class="navwrap"><div class="wrap"><nav class="nav" aria-label="主导航">
+  <a class="hb" href="../../" title="为搜索与推荐工程师挑选的每日 GenAI 论文 · 评分 · 深度解读">Paper <span>Daily</span></a>
+  <div class="hl">
+  <a id="nav-reports" href="../../">今日</a>
+  <a id="nav-weekly" href="../../weekly/">&#127942; 周榜</a>
+  <a id="nav-deep-readings" href="../../deep-readings/" class="active">&#128214; 深度解读</a>
+  <a id="nav-archive" href="../../archive/" aria-haspopup="listbox">往期</a>
+  </div>
+  <div class="hm"><span class="hm-i">深度解读</span><span class="hm-d">2026 年 10 月 25 日 周日</span>
+  <a class="kp" id="nav-search" href="../../search/" aria-label="搜索论文（⌘K）" title="搜索论文 · ⌘K"><svg class="kp-i" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.6-4.6"/></svg><span class="kp-t">搜索论文…</span><kbd class="kp-k">⌘K</kbd></a>
+  <a class="rss-tg" id="nav-rss" href="../../subscribe/" title="订阅 RSS" aria-label="订阅 RSS"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2.3" fill="currentColor"/><path d="M4 11.2a8.8 8.8 0 0 1 8.8 8.8M4 4.2A15.8 15.8 0 0 1 19.8 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></a>
+  <a class="lang-tg" href="../../en/papers/cache-engineering-agents/" hreflang="en" lang="en" title="English edition">EN</a>
+  <button type="button" class="tg" id="theme-toggle" aria-pressed="false" title="切换深色 / 浅色">&#9680;<span class="tg-l"> 深色模式</span></button></div>
+</nav><div class="read-prog" aria-hidden="true"><i id="read-prog"></i></div></div></div>
+<main id="main">
+
+<div class="wrap">
+  <div class="rhead">
+    <a class="back" href="../../deep-readings/">&#8592; 全部深度解读</a>
+    <div class="k">&#128214; 深度解读 · INFRA</div>
+    <h1>Cache Engineering for Agents</h1>
+    <div class="by">Tianyu Fu, Ruoxi Wang, Zihan Min, Zhongqi Ren, Zhihao Li, Tengxuan Liu, Shengxu Mu, Hanling Zhang, Yu Wang · arXiv 2610.28577 · 发表 2026-10-20</div>
+  </div>
+  <div class="rmeta">
+    <span><b>10 分钟</b>阅读时长</span>
+    <span><b>3902</b>字</span>
+    <span><b>4.30</b>综合分</span>
+    <span><b>第 4 名</b><a href="../../2026-10-25/infra/">10-25 Infra 日报</a></span>
+  </div>
+  <div class="rbody">
+    <nav class="toc" id="toc" aria-label="目录"><h6>目录 CONTENTS</h6><a href="#s1"><i>1</i><span>问题：重算太贵，一刀切又会丢信息</span></a><a href="#s2"><i>2</i><span>方法：对缓存的三种操作</span></a><a href="#s3"><i>3</i><span>难点：同一段文字，缓存可能不一样</span></a><a href="#s4"><i>4</i><span>AKV：怎么把它做成一个推理服务</span></a><a href="#s5"><i>5</i><span>实验结果</span></a><a href="#s6"><i>6</i><span>局限与实践意义</span></a></nav>
+    <article class="long deep-read-article" id="article">
+      <details class="toc-m"><summary>目录 · 6 节</summary><a href="#s1"><i>1</i><span>问题：重算太贵，一刀切又会丢信息</span></a><a href="#s2"><i>2</i><span>方法：对缓存的三种操作</span></a><a href="#s3"><i>3</i><span>难点：同一段文字，缓存可能不一样</span></a><a href="#s4"><i>4</i><span>AKV：怎么把它做成一个推理服务</span></a><a href="#s5"><i>5</i><span>实验结果</span></a><a href="#s6"><i>6</i><span>局限与实践意义</span></a></details>
+      <div class="r-narrow"><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 5，Novelty 4，Practical 4，Evidence 4，Timely 4"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,22.0 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><text x="90.0" y="10.04" text-anchor="middle">相关 5</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 4</text></svg><div class="r-links"><div class="apps"><h6>出现于报告</h6><a href="../../2026-10-25/infra/#dr-arxiv-2610-28577">2026-10-25 · Infra #4 (4.30)</a></div><a class="btn" href="https://arxiv.org/abs/2610.28577" target="_blank" rel="noopener">阅读原文 · arXiv &#8599;</a></div></div>
+      <p class="lede">一个智能体做一道复杂任务，往往要和搜索、网页、代码执行等工具来回几百轮。每一轮，模型都要把之前所有内容的 KV cache 重新读一遍。论文统计，读这些旧缓存占了总调用费用的 82.4%，比生成新内容贵得多。常见的省钱办法是删掉或摘要旧消息，但只要改动了前面的文字，后面所有缓存都作废，得从改动处重新算一遍。清华大学团队提出换个层面来做：<strong>文字记录一个字不动，只在缓存里把选中的部分丢掉</strong>，留下的部分原样接着用。他们为此做了一个推理服务系统 AKV。在三个模型、四个智能体测试上，一个简单的策略“只保留最近 12 次工具返回的缓存”，和常用的“到长度上限就摘要”相比，<strong class="hl">平均得分高 1.7 分，平均费用低 27.7%</strong>。</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-25/infra/2610.28577/hf1.png" alt="三种做法对比。全量做法：每轮复用全部历史缓存。改文字的做法：删掉无关文字后，保留的历史要重算一遍。改缓存的做法：文字历史不动，只丢掉选中的缓存条目，留下的不用重算。嵌套的色块表示：留下的缓存里，仍可能带着被丢掉内容的影响。" loading="lazy" decoding="async"><figcaption>三种做法对比。全量做法：每轮复用全部历史缓存。改文字的做法：删掉无关文字后，保留的历史要重算一遍。改缓存的做法：文字历史不动，只丢掉选中的缓存条目，留下的不用重算。嵌套的色块表示：留下的缓存里，仍可能带着被丢掉内容的影响。</figcaption></figure>
+<h2 id="s1">1. 问题：重算太贵，一刀切又会丢信息</h2>
+<p>智能体的对话越长，缓存带来两个问题。一是费用：缓存越积越多，每轮都要读一遍，存储和读取开销很大。二是准确率：模型一次能可靠处理的长度有限，参与计算的内容超过这个范围，效果会明显变差。</p>
+<p>现在的通行办法是改文字，也叫“上下文工程”：把旧消息删掉或换成摘要。但大模型的缓存是按顺序算出来的，每个词的缓存都依赖它前面的所有内容。改动越靠前，后面需要重算的部分就越长。所以常见的智能体框架会一直等到长度到了某个上限，再一次性把大部分历史摘要掉，只留最近几轮，这样重算的次数少一些。可这样一刀切，很容易把中间几轮的有用信息也丢了。</p>
+<p>作者先做了一个对比。用 GPT-OSS-120B 做 BrowseComp-Plus（一个需要多轮搜索才能回答的问答测试）的前 100 题，每题做 4 次、最多 100 轮。只保留最近 12 次工具返回、每轮删文字的做法，因为反复重算，费用是不做任何处理时的 1.85 倍。到 4.8 万词元才摘要一次的做法，费用只降了约 7%，准确率却掉了 5 个百分点。而直接在缓存里丢掉旧的工具返回，准确率和费用能同时变好。</p>
+<h2 id="s2">2. 方法：对缓存的三种操作</h2>
+<p>作者先区分两个长度。一个是对话记录在文字上有多长；另一个是真正参与后续计算的缓存有多长，论文叫“活跃缓存”。改文字的做法改的是前者，改缓存的做法只改后者。</p>
+<p>在这个框架下，论文定义了三种操作：</p>
+<ul>
+<li><strong>追加</strong>：这是平常的做法，读进新的词，把它的缓存接在后面，位置编号加一。</li>
+<li><strong>丢弃</strong>：把指定的缓存条目排除在之后的计算之外。留下的条目原封不动，文字记录也不变，之后新词的位置编号照常往后数。</li>
+<li><strong>重排位置</strong>：把留下的条目按原来的先后顺序，重新编号为 0、1、2……，下一个新词接着往后编。</li>
+</ul>
+<p>为什么需要第三种操作？丢弃不会让编号变小，缓存虽然少了，编号还是一路往上涨，迟早超过模型能处理的最大位置。重排位置就是把编号压回去。对用 RoPE 的模型，这一步很便宜：把一个条目从第 p 位挪到第 q 位，只要把它的 key 再旋转 q−p 对应的角度，value 不用动，也不用重新计算。</p>
+<p>丢哪些？作者看了模型的 attention 分布，发现两个规律：越旧的内容被关注得越少；距离差不多时，工具返回的内容又比模型自己的推理内容被关注得少。所以主策略是<strong>滚动丢弃旧的工具返回</strong>：保留所有推理内容和最近 12 次工具返回，更早的工具返回的缓存逐步丢掉。</p>
+<h2 id="s3">3. 难点：同一段文字，缓存可能不一样</h2>
+<p>平常的推理服务里，只要文字开头相同，缓存就相同，所以可以按“开头相同”来复用缓存。改缓存打破了这一点：<strong>同样的文字，经过不同的操作顺序，会得到不同的缓存</strong>。</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-25/infra/2610.28577/hf5.png" alt="(a) 三条操作顺序：① 先在 A、B 后面接上 C，再丢掉 A；② 先丢掉 A，再接上 C；③ 一开始只有 B，再接上 C。三条最后都只剩 B 和 C。(b) B 的缓存在 ①② 里相同，在 ③ 里不同；C 的缓存三条各不相同。(c) 改进后的缓存索引树让 ①② 共用 A–B 这一段，再按丢弃 A 的时间分叉。" loading="lazy" decoding="async"><figcaption>(a) 三条操作顺序：① 先在 A、B 后面接上 C，再丢掉 A；② 先丢掉 A，再接上 C；③ 一开始只有 B，再接上 C。三条最后都只剩 B 和 C。(b) B 的缓存在 ①② 里相同，在 ③ 里不同；C 的缓存三条各不相同。(c) 改进后的缓存索引树让 ①② 共用 A–B 这一段，再按丢弃 A 的时间分叉。</figcaption></figure>
+<p>用图里的例子说明。三条路径最后都只留下 B 和 C。但 ① 里 C 是在还能看到 A 的时候算出来的，带着 A 的影响；② 里算 C 时 A 已经被丢了；③ 里连 B 自己算出来时前面都没有 A。所以三条路径里 C 的缓存各不一样。论文因此用“从空缓存开始做过的全部操作”来描述缓存状态：对同一个模型，这串操作唯一决定了当前的缓存。推理服务必须同时记住文字历史和操作历史，才能正确复用。</p>
+<h2 id="s4">4. AKV：怎么把它做成一个推理服务</h2>
+<p>AKV 的接口和标准的对话接口几乎一样。客户端照常发送完整的消息列表，只多一个可选字段，写明“在第几条消息之后丢掉哪些、在哪里重排位置”。客户端不需要知道服务端还存着哪些缓存，每轮照常追加消息和操作就行。</p>
+<p>服务内部有三个机制。</p>
+<p>第一是<strong>复用</strong>。推理服务一般用前缀树（radix tree）做 prefix caching，前缀相同的请求共用一段缓存。AKV 在树上加了“丢弃”和“重排位置”两种节点，查找时既比文字也比操作。所以图里的 ① 和 ② 能共用 A–B 这一段，但因为丢 A 的时间不同，C 各存一份。</p>
+<p>第二是<strong>回收</strong>。一个缓存条目只有在没有任何正在进行的计算还需要它时，才能被释放。比如 ① 和 ② 都丢掉 A 之后，A 的缓存不用等请求结束就能释放。显存紧张时，先回收已经被丢弃的缓存，再回收已结束请求的缓存，因为后者下一轮更可能被用到。</p>
+<p>第三是<strong>恢复</strong>。缓存被挤出显存后，下次要用时得重新算出来。可普通的从头计算只能得到“什么都没丢过”的缓存，而一步步重放每个操作又要算很多遍。AKV 的做法是在每一层把要重算的内容按丢弃和重排的时间点切成几段，每段只看自己和前面各段在当时还保留着的缓存，所有段一次性算完。这样一次计算就能复原出经过丢弃和重排的准确状态。</p>
+<h2 id="s5">5. 实验结果</h2>
+<p>对照组是两种“到上限就摘要”的做法。“标准”做法用模型自带的较高上限（GPT-OSS-120B 和 MiniMax-M2.7 为 9.6 万词元，MiroThinker-1.7-Mini 为 19.2 万）。“改文字”做法用同样的摘要方式，但上限统一降到 4.8 万。AKV 用“保留最近 12 次工具返回”的滚动丢弃。测试集有四个：两个多轮搜索问答（BrowseComp-Plus、xbench-DeepSearch）、GAIA 的 103 道纯文字题，以及修真实代码库漏洞的 SWE-bench Verified。费用按实际读入和生成的词元计价。为了不偏袒自己，作者让重排位置涉及的每个词元也按读缓存的价格收费，有意高估了这一步的成本。</p>
+<p><strong>四个测试的平均结果（得分为通过率 %，费用为每题美分）：</strong></p>
+<div class="tbl"><table><thead><tr><th>模型</th><th>标准做法</th><th>改文字</th><th>AKV</th></tr></thead><tbody><tr><td>MiniMax-M2.7</td><td>52.4 分 / 5.0 美分</td><td>52.8 / 5.7</td><td>53.7 / 4.4</td></tr><tr><td>GPT-OSS-120B</td><td>51.0 / 11.2</td><td>48.3 / 10.2</td><td>53.1 / 7.3</td></tr><tr><td>MiroThinker-1.7-Mini</td><td>44.1 / 20.4</td><td>37.1 / 18.1</td><td>45.8 / 14.8</td></tr></tbody></table></div>
+<p>三个模型上，AKV 的平均分都最高，平均费用比标准做法低 27.7%，比改文字低 21.9%。不过不是每一项都赢：MiniMax-M2.7 上，BrowseComp-Plus 是改文字更高，SWE-bench 是标准做法略高。</p>
+<p>准确率为什么会提升？作者按对话长度拆开看。4.8 万词元以内，三种做法差不多；4.8 万到 9.6 万之间，改文字最差；9.6 万以上，标准做法最差。这正好对应两者各自触发摘要的位置，说明掉分来自“一刀切”丢掉的信息。滚动丢弃是一点点地去掉最旧的工具返回，就没有这个问题。</p>
+<p>速度上，作者用 8 张 A800 显卡，在 SWE-bench 上测服务效率。在各自能承受的最大并发下，AKV 的平均延迟快 1.36 倍，最慢那 5% 请求的延迟快 1.51 倍，输出吞吐是标准做法的 1.18 倍。并发再往上加时差别更明显：标准做法因为显存不够，频繁把缓存挤出去再重算，并发 16 时最慢那 5% 的请求要等 230 秒，AKV 只要 31 秒。</p>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-25/infra/2610.28577/hf8.png" alt="GPT-OSS-120B 在 SWE-bench Verified 上：(a) 前 100 题的累计通过率随花掉的 GPU 小时变化，AKV 用最少的 GPU 时间达到最高的通过率；(b) 500 题上累计通过率随累计读入词元的变化；(c) 服务吞吐随并发数的变化。" loading="lazy" decoding="async"><figcaption>GPT-OSS-120B 在 SWE-bench Verified 上：(a) 前 100 题的累计通过率随花掉的 GPU 小时变化，AKV 用最少的 GPU 时间达到最高的通过率；(b) 500 题上累计通过率随累计读入词元的变化；(c) 服务吞吐随并发数的变化。</figcaption></figure>
+<p>几个对比实验也有参考价值。只丢弃、不重排位置时，BrowseComp-Plus 得 55.0 分；加上重排位置升到 62.0 分，因为智能体能继续搜下去，不会撞到位置上限而被迫结束。丢掉推理内容的缓存，不管单独丢还是和工具返回一起丢，都不如只丢工具返回。作者还试了把“丢哪些”交给智能体自己决定，两个模型在 BrowseComp-Plus 的子集上分别做到 61.0% 和 64.0%，说明策略本身还有很大的探索空间。</p>
+<h2 id="s6">6. 局限与实践意义</h2>
+<p>作者列出的局限是：丢哪些、什么时候丢，还需要更多探索；还没有在这套机制下专门训练智能体；对线性注意力这类新架构的模型还不支持。另外有几点值得注意。实验用的主策略是手工定的固定规则，最佳的“保留几次”可能因任务而异。被丢掉的内容仍然会通过之后算出的缓存间接留下影响，作者把这看作优点，但这也意味着结果依赖操作顺序，调试和复现时要记下完整的操作序列。</p>
+<p>对做智能体平台和推理服务的团队，这篇论文的价值在于把“压缩上下文”从文字层挪到了缓存层。如果你的智能体有大量工具返回，比如检索结果、网页、代码运行输出，而现在靠“到上限就摘要”控制长度，可以先在自己的轨迹上看看模型对工具返回和推理内容的关注度差多少，再试“滚动丢弃旧工具返回 + 重排位置”，这是论文里最稳的组合。<strong class="hl">落地的前提是推理服务能区分操作历史</strong>：如果服务端只按“文字开头相同”复用缓存，同一段文字下不同的丢弃时间会被错误地混用。AKV 基于 SGLang 实现，代码已公开，客户端接入时只需多传一个字段。</p>
+    </article>
+    <aside class="aside">
+      <div class="box"><h6>五维评分</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 5，Novelty 4，Practical 4，Evidence 4，Timely 4"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,22.0 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><text x="90.0" y="10.04" text-anchor="middle">相关 5</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 4</text></svg></div>
+      
+      <div class="box apps"><h6>出现于报告</h6><a href="../../2026-10-25/infra/#dr-arxiv-2610-28577">2026-10-25 · Infra #4 (4.30)</a></div>
+      <a class="btn" href="https://arxiv.org/abs/2610.28577" target="_blank" rel="noopener">阅读原文 · arXiv &#8599;</a>
+    </aside>
+  </div>
+</div>
+</main>
+<div class="wrap"><footer class="site-foot"><a class="sf-b" href="../../">Paper Daily</a><span class="sf-sep">·</span><span class="sf-i sf-upd">更新至 <time datetime="2026-10-26">10-26</time></span><span class="site-count" id="busuanzi_container_site_pv" style="display:none"><span class="sf-sep">·</span><span class="sf-i">访问 <span id="busuanzi_value_site_pv"></span></span><span class="sf-sep">·</span><span class="sf-i">访客 <span id="busuanzi_value_site_uv"></span></span></span><span class="sf-sep">·</span><a class="sf-i" href="../../subscribe/" title="RSS 订阅">RSS</a></footer></div>
+<script defer src="https://events.vercount.one/js"></script><script>(function(){var c=document.getElementById('busuanzi_container_site_pv');if(!c||!window.MutationObserver)return;function n(k){var e=document.getElementById('busuanzi_value_'+k);return e?(e.textContent||'').trim():''}new MutationObserver(function(){if(c.style.display!=='none'&&!(/^[1-9][0-9]*$/.test(n('site_pv'))&&/^[0-9]+$/.test(n('site_uv'))))c.style.display='none'}).observe(c,{attributes:true,attributeFilter:['style']})})();</script>
+<script>
+(function(){
+  var root=document.documentElement;
+  function label(){var b=document.getElementById('theme-toggle');if(!b)return;var d=root.getAttribute('data-theme')==='dark';
+    b.innerHTML=(d?'&#9681;':'&#9680;')+'<span class="tg-l"> '+(d?'浅色模式':'深色模式')+'</span>';b.setAttribute('aria-pressed',d?'true':'false');}
+  function set(t,store){root.setAttribute('data-theme',t);if(store){try{localStorage.setItem('pd-theme',t)}catch(e){}}label();}
+  document.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#theme-toggle');
+    if(b)set(root.getAttribute('data-theme')==='dark'?'light':'dark',true);});
+  try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
+    var s=null;try{s=localStorage.getItem('pd-theme')}catch(x){}if(s!=='light'&&s!=='dark')set(e.matches?'dark':'light',false);});}catch(e){}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',label);else label();
+})();
+</script>
+<script>
+(function(){
+  var links=[].slice.call(document.querySelectorAll('#toc a[href^="#s"]'));
+  var heads=links.map(function(a){return document.getElementById(a.getAttribute('href').slice(1));}).filter(Boolean);
+  var art=document.getElementById('article'), bar=document.getElementById('read-prog');
+  function onScroll(){
+    var y=window.scrollY, cur=-1;
+    for(var i=0;i<heads.length;i++){ if(heads[i].getBoundingClientRect().top<120) cur=i; }
+    links.forEach(function(a,i){a.classList.toggle('on',i===Math.max(cur,0)&&heads.length>0);});
+    if(art&&bar){
+      var top=art.getBoundingClientRect().top+y, h=art.offsetHeight-window.innerHeight;
+      var p=h>0?Math.min(1,Math.max(0,(y-top+window.innerHeight*0.15)/h)):1;
+      bar.style.width=(p*100).toFixed(1)+'%';
+    }
+  }
+  window.addEventListener('scroll',onScroll,{passive:true}); window.addEventListener('resize',onScroll); onScroll();
+})();
+</script>
+<script src="../../js/lightbox.js?v=78593998de" defer></script>
+<script src="../../js/search.js?v=78593998de" defer></script>
+</body>
+</html>

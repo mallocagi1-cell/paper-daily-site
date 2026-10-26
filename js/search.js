@@ -4,7 +4,7 @@
        title hits, then date desc, score, track order; one result per paper);
    (2) the ⌘K / Ctrl+K / "/" search overlay opened from the nav pill (#nav-search) — DOM and index are only
        created/fetched on first open; a full-screen sheet on mobile;
-   (3) the full results page app (/search.html, /en/search.html; only when #sq-app exists), whose state lives
+   (3) the full results page app (/search/, /en/search/; only when #sq-app exists), whose state lives
        in URL params: q, range (7|30|90|all), from, to (YYYY-MM-DD), deep=1, track=<slug>. */
 (function () {
   "use strict";
@@ -157,8 +157,13 @@
     if (open) html += "</mark>";
     return html + (e < chars.length ? "…" : "");
   }
-  function reportHref(r) { return LROOT + "#/" + r.date + "/" + r.track + (r.id ? "?p=" + encodeURIComponent(r.id) : ""); }
-  function deepHref(r) { return r.deep ? LROOT + "deep-readings/" + encodeURIComponent(r.deep) + ".html" : ""; }
+  // clean URLs (2026-10-26): /<date>/ (default track) or /<date>/<track>/ + #paper-<id>; deep dives /papers/<slug>/
+  function reportHref(r) {
+    var first = D.man && D.man.first ? D.man.first[r.date] : null;
+    return LROOT + r.date + "/" + (first === r.track ? "" : r.track + "/") +
+      (r.id ? "#paper-" + encodeURIComponent(r.id).replace(/%3A/gi, ":") : "");
+  }
+  function deepHref(r) { return r.deep ? LROOT + "papers/" + encodeURIComponent(r.deep) + "/" : ""; }
   function srcLabel(u) {
     if (/arxiv\.org\//i.test(u)) return "arXiv";
     if (/openreview\.net\//i.test(u)) return "OpenReview";
@@ -212,7 +217,7 @@
       '<div class="pk-body"><div class="pk-g" id="pk-g"></div><ul class="pk-l" id="pk-l" role="listbox"></ul></div>' +
       '<div class="pk-f"><span class="kb"><kbd>↑</kbd><kbd>↓</kbd>' + TR("选择", "select") + '</span><span class="kb"><kbd>↵</kbd>' +
       TR("打开", "open") + '</span><span class="kb"><kbd>esc</kbd>' + TR("关闭", "close") + '</span><a class="pk-all" id="pk-all" href="' +
-      LROOT + 'search.html"></a></div></div>';
+      LROOT + 'search/"></a></div></div>';
     document.body.appendChild(el);
     OV.el = el;
     var q = $("pk-q");
@@ -277,7 +282,7 @@
     l.innerHTML = res.length ? res.slice(0, MAXROWS).map(ovRow).join("")
       : (D.pending ? "" : '<li class="pk-empty">' + TR("没有找到匹配的论文 — 试试更短的关键词或放宽时间范围。", "No matching papers — try a shorter keyword or a wider range.") + "</li>");
     var qs = params(st);
-    all.setAttribute("href", LROOT + "search.html" + (qs ? "?" + qs : ""));
+    all.setAttribute("href", LROOT + "search/" + (qs ? "?" + qs : ""));
     all.innerHTML = st.q ? TR("查看全部 " + res.length + " 条结果 →", "See all " + res.length + " results →") : TR("打开搜索页 →", "Open search page →");
     ovSel(false);
   }
@@ -379,7 +384,7 @@
     if (dp && !dp.hidden) return true;
     return [].some.call(document.querySelectorAll(".archive-pop, .arch-pop, [data-archive-pop]"), vis);
   }
-  function isDeepPage() { return /\/deep-readings\/[^/]+\.html$/.test(location.pathname) && !!document.querySelector("a.back"); }
+  function isDeepPage() { return /\/papers\/[^/]+\/$/.test(location.pathname) && !!document.querySelector("a.back"); }
   function tabs() { return [].filter.call(document.querySelectorAll(".track-tabs .track-tab"), vis); }
   function cards() {
     var seen = [], out = [];
@@ -423,24 +428,27 @@
   }
   function openCard(newTab) {
     var c = document.querySelector(".kb-focus"); if (!c || !vis(c)) return false;
-    var a = c.querySelector("a.chip.deep, a.btn.w, a.dr-read-link, a[href*='deep-readings/']") ||
+    var a = c.querySelector("a.chip.deep, a.btn.w, a.dr-read-link, a[href*='papers/']") ||
             c.querySelector("a[href*='arxiv.org/'], a[href*='openreview.net/']") || c.querySelector("h3 a, h4 a, .card-title a");
     if (!a) return false;
     if (newTab || a.target === "_blank") window.open(a.href, "_blank", "noopener"); else location.href = a.href;
     return true;
   }
   function deepStep(d) {
-    var slug = decodeURIComponent(location.pathname.replace(/^.*\//, ""));
+    var here = location.pathname, idx = LROOT + "deep-readings/";
     var go = function (list) {
-      var i = list.indexOf(slug);
+      var i = list.indexOf(here);
       if (i < 0 || !list[i + d]) { kbToast(d > 0 ? TR("已是最后一篇", "Last deep dive") : TR("已是第一篇", "First deep dive")); return; }
       location.href = list[i + d];
     };
     if (KB.order) return go(KB.order);
-    fetch("./", { cache: "no-cache" }).then(function (r) { return r.text(); }).then(function (h) {
+    fetch(idx, { cache: "no-cache" }).then(function (r) { return r.text(); }).then(function (h) {
       var re = /class="dr-read-link" href="([^"]+)"/g, m, out = [];
-      while ((m = re.exec(h))) if (out.indexOf(m[1]) < 0) out.push(m[1]);
-      KB.order = out.map(function (s) { return decodeURIComponent(s.replace(/&amp;/g, "&")); });
+      while ((m = re.exec(h))) {
+        var p = new URL(m[1].replace(/&amp;/g, "&"), new URL(idx, location.href)).pathname;
+        if (out.indexOf(p) < 0) out.push(p);
+      }
+      KB.order = out;
       go(KB.order);
     }).catch(function () { /* offline */ });
   }
@@ -506,7 +514,7 @@
     if (ev.shiftKey && k !== "?") return;
     if (KB.g && Date.now() - KB.g < 1200) {
       KB.g = 0;
-      var dest = { t: LROOT, w: LROOT + "#/weekly", d: LROOT + "deep-readings/" }[k];
+      var dest = { t: LROOT, w: LROOT + "weekly/", d: LROOT + "deep-readings/" }[k];
       if (dest) { ev.preventDefault(); location.href = dest; }
       return;
     }
@@ -523,8 +531,9 @@
     else if (k === "Escape" && document.querySelector(".kb-focus")) { document.querySelector(".kb-focus").classList.remove("kb-focus"); done = true; }
     if (done) ev.preventDefault();
   });
-  // SPA re-render (hash routes) drops the highlighted card
-  window.addEventListener("hashchange", function () { KB.sel = -1; });
+  // SPA re-render (pushState navigation, see pages.js "pd:navigate") drops the highlighted card
+  window.addEventListener("pd:navigate", function () { KB.sel = -1; });
+  window.addEventListener("popstate", function () { KB.sel = -1; });
   // subtle hint in the footer, desktop / fine pointer only
   if (window.matchMedia && matchMedia("(hover: hover) and (pointer: fine)").matches) {
     var addHint = function () {
@@ -547,7 +556,7 @@
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hintBoot); else hintBoot();
   }
 
-  // ------------------------------------------------------------------ results page (/search.html)
+  // ------------------------------------------------------------------ results page (/search/)
   if (!app) return;
   var PAGE = 20;
   var qEl = $("sq-q"), fromEl = $("sq-from"), toEl = $("sq-to"), statusEl = $("sq-status"), listEl = $("sq-results"),
@@ -574,7 +583,7 @@
       lt.setAttribute("href", lt.getAttribute("data-sq-base") + (qs ? "?" + qs : ""));
     }
     var zl = $("sq-zh-link");
-    if (zl) zl.setAttribute("href", "../search.html" + (state.q ? "?q=" + encodeURIComponent(state.q) : ""));
+    if (zl) zl.setAttribute("href", ROOT + "search/" + (state.q ? "?q=" + encodeURIComponent(state.q) : ""));
     document.title = (state.q ? state.q + " · " : "") + TR("搜索 · Paper Daily", "Search · Paper Daily");
   }
   function chips() {

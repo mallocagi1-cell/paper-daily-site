@@ -175,17 +175,30 @@
     const m = readingMinutes(dr);
     const label = TR("&#128214; 深度解读", "&#128214; Deep dive") + (m ? " · " + m + TR(" 分钟", " min") : "");
     return dr.slug
-      ? '<a class="chip deep" href="deep-readings/' + encodeURIComponent(dr.slug) + '.html">' + label + " &#8594;</a>"
+      ? '<a class="chip deep" href="' + deepPath(dr.slug) + '">' + label + " &#8594;</a>"
       : '<span class="chip deep">' + label + "</span>";
   }
 
-  // ---------- routes ----------
-  //   #/  |  #/reports  |  #/view/<date>/<track>  |  #/view/<date>  |  #/<date>/<track>
-  //   #/reports/<date>[/<track>]  (native-style alias)   |  #/archive  (往期: latest day, picker open)
-  //   #/weekly  |  #/weekly/<week-monday>  |  #/weekly/<week-monday>/<track>  |  #/weekly/<track>
-  //   optional "?p=<paper id>" on a day view scrolls to / highlights that paper card.
-  function parseRoute() {
-    const full = (location.hash || "#/").replace(/^#/, "");
+  // ---------- routes (clean URLs, 2026-10-26) ----------
+  // Real paths, relative to the shell's <base href> ("/" or "/en/"); every one is also a static page:
+  //   ""  (latest day)  |  <date>/  (default = first track)  |  <date>/<track>/  |  archive/  (latest day, picker open)
+  //   weekly/  (latest week)  |  weekly/<yyyy>-w<ww>/  |  weekly/<yyyy>-w<ww>/<track>/      (ISO week of the Monday)
+  //   "#paper-<id>" on a day view scrolls to / highlights that paper card.
+  // Legacy hash routes (#/view/<date>/<track>?p=<id>, #/<date>/<track>, #/reports/..., #/weekly[/<monday>][/<track>],
+  // #/weekly/<track>, #/archive) are still parsed and replaced by their clean URL (history.replaceState) on render.
+  const BASE = (function () { try { return new URL(document.baseURI).pathname; } catch (e) { return "/"; } })();
+  const isDate = function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || ""); };
+  function relPath() {
+    let p = location.pathname;
+    p = p.indexOf(BASE) === 0 ? p.slice(BASE.length) : p.replace(/^\//, "");
+    return p.replace(/(^|\/)index\.html$/, "$1");
+  }
+  function hashFocus() {
+    const h = location.hash || "";
+    if (h.indexOf("#paper-") !== 0) return null;
+    try { return decodeURIComponent(h.slice(7)); } catch (e) { return h.slice(7); }
+  }
+  function parseLegacyHash(full) {
     const qi = full.indexOf("?");
     const raw = (qi >= 0 ? full.slice(0, qi) : full) || "/";
     let focus = null;
@@ -198,21 +211,49 @@
       });
     }
     const parts = raw.split("/").filter(Boolean);
-    const isDate = function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || ""); };
     if (parts[0] === "weekly") {
-      return { weekly: true, week: isDate(parts[1]) ? parts[1] : null, track: (isDate(parts[1]) ? parts[2] : parts[1]) || null };
+      return { weekly: true, week: isDate(parts[1]) ? parts[1] : null, track: (isDate(parts[1]) ? parts[2] : parts[1]) || null, legacy: true };
+    }
+    if (parts[0] === "archive") return { date: null, track: null, archive: true, legacy: true };
+    if ((parts[0] === "view" || parts[0] === "reports") && isDate(parts[1])) {
+      return { date: parts[1], track: parts[2] || null, focus: focus, legacy: true };
+    }
+    if (isDate(parts[0])) return { date: parts[0], track: parts[1] || null, focus: focus, legacy: true };
+    return { date: null, track: null, legacy: true };
+  }
+  function parseRoute() {
+    if ((location.hash || "").indexOf("#/") === 0) return parseLegacyHash(location.hash.slice(1));
+    const parts = relPath().split("/").filter(Boolean);
+    if (parts[0] === "weekly") {
+      const m = /^(\d{4})-w(\d{2})$/.exec(parts[1] || "");
+      return { weekly: true, weekLabel: m ? parts[1] : null, track: (m ? parts[2] : parts[1]) || null };
     }
     if (parts[0] === "archive") return { date: null, track: null, archive: true };
-    if ((parts[0] === "view" || parts[0] === "reports") && isDate(parts[1])) {
-      return { date: parts[1], track: parts[2] || null, focus: focus };
-    }
-    if (isDate(parts[0])) return { date: parts[0], track: parts[1] || null, focus: focus };
-    return { date: null, track: null };
+    if (isDate(parts[0])) return { date: parts[0], track: parts[1] || null, focus: hashFocus() };
+    return { date: null, track: null, focus: hashFocus(), home: true };
   }
   function reportDataHref(date, track) { return "reports/" + date + "/" + track + "/report_data.json"; }
-  function reportHtmlHref(date, track) { return IS_EN ? "reports/" + date + "/" + track + ".html" : "reports/" + date + "/" + track + "/report.html"; }
-  function viewHash(date, track) { return "#/view/" + date + "/" + track; }
-
+  function deepPath(slug) { return "papers/" + encodeURIComponent(slug) + "/"; }
+  function dayPath(date, track) {
+    const i = dayIndex(date);
+    const ts = i >= 0 ? orderTracks(DATA.days[i].tracks) : [];
+    return date + "/" + (track && ts.length && track !== ts[0] ? track + "/" : "");
+  }
+  function paperFrag(id) { return id ? "#paper-" + encodeURIComponent(id).replace(/%3A/gi, ":") : ""; }
+  function weekLabel(w) { return w.iso_year + "-w" + ("0" + w.iso_week).slice(-2); }
+  function weekPath(w, track) {
+    const wt = weekTracks(w);
+    return "weekly/" + weekLabel(w) + "/" + (track && track !== wt[0] ? track + "/" : "");
+  }
+  // in-app navigation: real URL in the address bar, no reload (the target is also a static page)
+  function navigate(path, replace) {
+    try {
+      if (replace) history.replaceState(null, "", path || BASE);
+      else history.pushState(null, "", path || BASE);
+    } catch (e) { location.href = path || BASE; return; }
+    render();
+    if (!replace) window.scrollTo(0, 0);
+  }
   // ---------- day report body (lead story + cards + other tracks + 开源雷达) ----------
   function pidOf(p, i) { return String(p.id || "p" + i); }
 
@@ -231,7 +272,7 @@
     let btns = "";
     if (dr && dr.slug) {
       const m = readingMinutes(dr);
-      btns += '<a class="btn w" href="deep-readings/' + encodeURIComponent(dr.slug) + TR('.html">&#128214; 深度解读', '.html">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</a>";
+      btns += '<a class="btn w" href="' + deepPath(dr.slug) + TR('">&#128214; 深度解读', '">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</a>";
     }
     if (p.url) btns += '<a class="btn ghost" href="' + escapeHtml(p.url) + '" target="_blank" rel="noopener">' + escapeHtml(linkLabel(p)) + " &#8599;</a>";
     const adj = num(p.adjusted_score);
@@ -298,7 +339,7 @@
     return TR('<div class="secT"><h3>其他赛道今日</h3><span>点击切换</span></div><div class="other">', '<div class="secT"><h3>Other tracks today</h3><span>Click to switch</span></div><div class="other">') +
       others.map(function (t) {
         const c = meta[t] && meta[t].papers_selected != null ? meta[t].papers_selected : "-";
-        return '<a class="ot ' + trackClass(t) + '" data-track="' + escapeHtml(t) + '" href="' + viewHash(r.date, t) + '"><b>' + escapeHtml(trackLabel(t)) +
+        return '<a class="ot ' + trackClass(t) + '" data-track="' + escapeHtml(t) + '" href="' + dayPath(r.date, t) + '"><b>' + escapeHtml(trackLabel(t)) +
           "</b><div>" + escapeHtml(c) + '</div><span class="os">' + escapeHtml(TRACK_ZH[t] || "") + TR(" · 篇入选</span></a>", " papers</span></a>");
       }).join("") + "</div>";
   }
@@ -378,7 +419,6 @@
       const to = aliasTrack(route.track, day.date, tracks); // agentic -> AI Search from the cutover
       if (to !== route.track) {
         route.track = to;
-        try { history.replaceState(null, "", viewHash(day.date, to) + (route.focus ? "?p=" + encodeURIComponent(route.focus) : "")); } catch (e) { /* ignore */ }
       }
     }
     if (route.track) {
@@ -387,11 +427,7 @@
     }
     return { idx: idx, date: day.date, tracks: tracks, track: track, notice: notice };
   }
-  function go(date, track) {
-    const h = viewHash(date, track);
-    if (location.hash === h) render();
-    else location.hash = h; // pushes history entry -> hashchange -> render (no reload)
-  }
+  function go(date, track) { navigate(dayPath(date, track)); }
   function issueNo(idx) { const d = DATA.days[idx]; return d && d.issue_no ? d.issue_no : DATA.days.length - idx; } // counted from the oldest day; latest = day_count
 
   function setMast(left, right) {
@@ -440,7 +476,7 @@
     const tabs = r.tracks.map(function (t) {
       const c = meta[t] && meta[t].papers_selected != null ? meta[t].papers_selected : "-";
       return '<a class="track-tab ' + trackClass(t) + (t === r.track ? " active" : "") + '" data-track="' + escapeHtml(t) +
-        '" href="' + viewHash(r.date, t) + '"' + trackTitle(t) + (t === r.track ? ' aria-current="page"' : "") + "><b>" + escapeHtml(trackLabel(t)) +
+        '" href="' + dayPath(r.date, t) + '"' + trackTitle(t) + (t === r.track ? ' aria-current="page"' : "") + "><b>" + escapeHtml(trackLabel(t)) +
         '</b><span class="rs">' + escapeHtml(TRACK_ZH[t] || "") + " · <em>" + escapeHtml(c) + TR("</em> 篇</span></a>", "</em> papers</span></a>");
     }).join("");
     main.innerHTML =
@@ -448,8 +484,8 @@
       " · " + r.tracks.length + TR(" 个方向</div>", " tracks</div>") + renderDateNav(r) + "</div>" +
       (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
-      // 2026-10-26 (Felix: "存在的意义是什么"): the "standalone report.html ↗ · 深度解读 N 篇 →" row under the
-      // report is gone; report.html pages still exist (SEO / old links), 深度解读 is in the nav.
+      // 2026-10-26 (Felix: "存在的意义是什么"): the "standalone report ↗ · 深度解读 N 篇 →" row under the
+      // report is gone; the old standalone report pages are now redirect stubs to /<date>/<track>/, 深度解读 is in the nav.
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>';
     setMast(TR("第 ", "Issue ") + issueNo(r.idx) + TR(" 期", ""), dateLine(r.date));
     setBodyTrack(r.track);
@@ -491,45 +527,56 @@
     if (descEl) descEl.setAttribute("content", d);
   }
 
-  function syncLangToggle() {
+  // language toggle -> the same view in the other edition when it exists there, else its home
+  function syncLangToggle(path) {
     const a = document.querySelector(".lang-tg[data-base]");
-    if (a) a.setAttribute("href", a.getAttribute("data-base") + (location.hash || ""));
-  }
-  // ---------- clean home URL (2026-10-24) ----------
-  // Home is the bare directory ("/" or "/en/"): strip "index.html" and a bare "#/" from the address
-  // bar (old shared links index.html#/... and #/... keep working), and handle same-page links to
-  // the directory root ("./", the logo, 今日) with pushState instead of a reload or a "#/" hash.
-  function homePath() { return location.pathname.replace(/index\.html$/, ""); }
-  function cleanUrl() {
-    const h = location.hash, bare = h === "" || h === "#" || h === "#/";
-    const path = homePath();
-    if (path !== location.pathname || (bare && h !== "")) {
-      try { history.replaceState(history.state, "", path + location.search + (bare ? "" : h)); } catch (e) { /* ignore */ }
+    if (!a) return;
+    let p = path || "";
+    if (!IS_EN) {
+      const parts = p.split("/").filter(Boolean);
+      const ed = DATA.en_dates || [], ew = DATA.en_weeks || [];
+      if (isDate(parts[0]) && ed.indexOf(parts[0]) === -1) p = "";
+      if (parts[0] === "weekly" && parts[1] && ew.indexOf(parts[1]) === -1) p = "weekly/";
     }
+    a.setAttribute("href", a.getAttribute("data-base") + p);
   }
+  // Same-site links to app views (home, <date>/..., weekly/..., archive/) render in place via pushState;
+  // in-page "#..." anchors scroll without a reload (the <base href> would otherwise point them at the root).
+  const APP_RE = /^(|\d{4}-\d{2}-\d{2}\/([a-z_-]+\/)?|weekly\/(\d{4}-w\d{2}\/([a-z_-]+\/)?)?|archive\/)$/;
   let lastHref = null;
-  function renderIfMoved() { cleanUrl(); if (location.href !== lastHref) render(); }
+  function renderIfMoved() { if (location.href !== lastHref) render(); }
   document.addEventListener("click", function (ev) {
     if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
     const a = ev.target && ev.target.closest ? ev.target.closest("a[href]") : null;
-    if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
-    let u;
-    try { u = new URL(a.getAttribute("href"), location.href); } catch (e) { return; }
-    if (u.origin !== location.origin || u.hash || u.pathname.replace(/index\.html$/, "") !== homePath()) return;
-    ev.preventDefault();
-    if (lastHref === null) { location.href = u.pathname; return; } // data.json not rendered yet
-    if (location.hash || location.search !== u.search) {
-      try { history.pushState(null, "", homePath() + u.search); } catch (e) { location.href = u.pathname; return; }
+    if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download") || a.id === "nav-archive") return;
+    const raw = a.getAttribute("href") || "";
+    if (raw.charAt(0) === "#" && raw.indexOf("#/") !== 0) {
+      ev.preventDefault();
+      let id = raw.slice(1);
+      try { id = decodeURIComponent(id); } catch (e) { /* keep */ }
+      const el = id && document.getElementById(id);
+      if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: "smooth" });
+      return;
     }
-    render();
-    window.scrollTo(0, 0);
+    let u;
+    try { u = new URL(raw, document.baseURI); } catch (e) { return; }
+    if (u.origin !== location.origin || u.pathname.indexOf(BASE) !== 0) return;
+    const rel = u.pathname.slice(BASE.length).replace(/(^|\/)index\.html$/, "$1");
+    if (!APP_RE.test(rel)) return;
+    ev.preventDefault();
+    if (lastHref === null) { location.href = u.href; return; } // data.json not rendered yet
+    navigate(u.pathname + u.search + u.hash);
   });
+  // canonical clean URL of the resolved view (fixes legacy #/ routes, index.html, /<date>/<default track>/, aliases)
+  function canonicalize(path, focus) {
+    const want = BASE + path;
+    const frag = focus ? paperFrag(focus) : (location.hash.indexOf("#/") === 0 ? "" : location.hash);
+    if (location.pathname !== want || location.hash !== frag) {
+      try { history.replaceState(history.state, "", want + location.search + frag); } catch (e) { /* ignore */ }
+    }
+  }
   function render() {
-    cleanUrl();
-    lastHref = location.href;
-    syncLangToggle();
     const route = parseRoute();
-    try { setDocMeta(route); } catch (e) { /* never block rendering */ }
     if (route.weekly) {
       setNavActive("weekly");
       renderWeekly(route);
@@ -542,6 +589,10 @@
       return;
     }
     const r = resolve(route);
+    if (route.archive) canonicalize("archive/", null);
+    else if (route.home && !route.focus) canonicalize("", null);
+    else canonicalize(dayPath(r.date, r.track), route.focus);
+    afterRoute(route.archive ? "archive/" : relPath(), Object.assign({}, route, { date: r.date, track: r.track }));
     state.view = "daily";
     state.date = r.date;
     state.track = r.track;
@@ -561,14 +612,21 @@
         if (seq !== renderSeq) return;
         document.getElementById("report-body").innerHTML =
           '<div class="empty-state"><h3>Failed to load report</h3><p>' + escapeHtml(String(err)) +
-          '</p><p><a class="open-raw" href="' + escapeHtml(reportHtmlHref(r.date, r.track)) + '">Try standalone report.html</a></p></div>';
+          '</p><p><a class="open-raw" href="' + escapeHtml(BASE + dayPath(r.date, r.track)) + '" onclick="location.reload();return false">Reload</a></p></div>';
       });
     // Warm the cache for the neighbouring (older) day so prev-clicks feel instant.
     const older = DATA.days[r.idx + 1];
     if (older) loadReport(older.date, orderTracks(older.tracks)[0]).catch(function () {});
   }
 
-  // Scroll to (and briefly highlight) a paper card on a day view: #/view/<date>/<track>?p=<id>
+  function afterRoute(path, route) {
+    lastHref = location.href;
+    syncLangToggle(path);
+    try { setDocMeta(route); } catch (e) { /* never block rendering */ }
+    try { window.dispatchEvent(new Event("pd:navigate")); } catch (e) { /* old browsers */ }
+  }
+
+  // Scroll to (and briefly highlight) a paper card on a day view: /<date>/<track>/#paper-<id>
   function focusPaper(pid) {
     const el = document.getElementById("paper-" + pid);
     if (!el) return;
@@ -610,19 +668,20 @@
   }
   // weeks whose Sunday is on/after the AI Search cutover have no Agentic tab (weekly.py pools its info-seeking papers into AI Search)
   function weekTracks(w) { return w && Array.isArray(w.tracks) && w.tracks.length ? orderTracks(w.tracks) : TRACKS; }
-  function weeklyHash(monday, track) { return "#/weekly/" + monday + "/" + track; }
   function goWeek(i) {
     const w = (DATA.weeks || [])[i];
     if (!w) return;
     const wt = weekTracks(w), st = state.track ? aliasTrack(state.track, w.week_end, wt) : null;
-    const h = weeklyHash(w.week_start, st && wt.indexOf(st) !== -1 ? st : wt[0]);
-    if (location.hash === h) render();
-    else location.hash = h;
+    navigate(weekPath(w, st && wt.indexOf(st) !== -1 ? st : wt[0]));
   }
   function resolveWeek(route) {
     const ws = DATA.weeks || [];
     let idx = 0, notice = "";
-    if (route.week) {
+    if (route.weekLabel) {
+      idx = -1;
+      for (let i = 0; i < ws.length; i++) if (weekLabel(ws[i]) === route.weekLabel) idx = i;
+      if (idx < 0) { notice = route.weekLabel + TR(" 没有周榜，已显示最近一周", " has no ranking; showing the latest week"); idx = 0; }
+    } else if (route.week) {
       idx = weekIndex(route.week);
       if (idx < 0) {
         idx = weekIndexForDate(route.week);
@@ -676,7 +735,7 @@
     const tabs = weekTracks(r.week).map(function (t) {
       const c = counts[t] || 0;
       return '<a class="track-tab ' + trackClass(t) + (t === r.track ? " active" : "") + (c ? "" : " weekly-empty-tab") + '" data-track="' +
-        escapeHtml(t) + '" href="' + weeklyHash(r.week.week_start, t) + '"' + trackTitle(t) + '><b>' + escapeHtml(trackLabel(t)) +
+        escapeHtml(t) + '" href="' + weekPath(r.week, t) + '"' + trackTitle(t) + '><b>' + escapeHtml(trackLabel(t)) +
         TR('</b><span class="rs">本周去重 <em>', '</b><span class="rs">unique this week <em>') + escapeHtml(c) + TR("</em> 篇</span></a>", "</em> papers</span></a>");
     }).join("");
     const w = r.week;
@@ -703,7 +762,7 @@
       scoreLine += TR(" · 偏好 ", " · bonus ") + (bonus === null ? "-" : (bonus >= 0 ? "+" : "") + bonus.toFixed(2)) + " · Adjusted " + fmt2(paper.adjusted_score);
     }
     const apps = (paper.appearances || []).map(function (a) {
-      return '<a href="' + viewHash(a.date, a.track || track) + "?p=" + encodeURIComponent(a.id || pid) + '">' + escapeHtml(shortDay(a.date)) +
+      return '<a href="' + dayPath(a.date, a.track || track) + paperFrag(a.id || pid) + '">' + escapeHtml(shortDay(a.date)) +
         (a.rank != null ? TR(" · 当日 #", " · #") + escapeHtml(a.rank) : "") + "</a>";
     }).join("");
     const dr = paper.deep_reading && paper.deep_reading.status === "completed" ? paper.deep_reading : null;
@@ -762,7 +821,7 @@
       stats.textContent = (td.days || []).length + TR(" 期日报 · ", " issues · ") + trackLabel(r.track) + " " + td.raw_count + TR(" 条入选 → 去重 ", " picks → ") +
         td.unique_count + TR(" 篇 · 显示 Top ", " unique · showing top ") + papers.length + TR(" · 按偏好调整分", " · by adjusted score");
     }
-    const dayLinks = (td.days || []).map(function (d) { return '<a href="' + viewHash(d, r.track) + '">' + escapeHtml(shortDay(d)) + "</a>"; }).join(" · ");
+    const dayLinks = (td.days || []).map(function (d) { return '<a href="' + dayPath(d, r.track) + '">' + escapeHtml(shortDay(d)) + "</a>"; }).join(" · ");
     const head = dayLinks ? TR('<div class="wkhead" style="margin:12px 0 0"><div class="weekly-days">当周日报：', '<div class="wkhead" style="margin:12px 0 0"><div class="weekly-days">Issues this week: ') + dayLinks + "</div></div>" : "";
     if (!papers.length) {
       const msg = (td.days || []).length
@@ -794,6 +853,9 @@
       return;
     }
     const r = resolveWeek(route);
+    const latest = r.idx === 0 && r.track === weekTracks(r.week)[0] && !route.weekLabel && !route.week;
+    canonicalize(latest ? "weekly/" : weekPath(r.week, r.track), null);
+    afterRoute(relPath(), Object.assign({}, route, { week: r.week.week_start }));
     state.view = "weekly";
     state.week = r.week.week_start;
     state.track = r.track;
@@ -860,7 +922,7 @@
       setPicker(!state.pickerOpen);
       return;
     }
-    location.hash = "#/archive";
+    navigate("archive/");
   }
 
   // ---------- theme (light / dark, persisted; follows prefers-color-scheme until chosen) ----------
@@ -900,8 +962,8 @@
         }
         // footer is static now (magazine.site_footer, same on every page); nothing to rewrite here
         render();
-        window.addEventListener("hashchange", renderIfMoved);
         window.addEventListener("popstate", renderIfMoved);
+        window.addEventListener("hashchange", function () { if ((location.hash || "").indexOf("#/") === 0) render(); });
       })
       .catch(function (err) {
         document.getElementById("main").innerHTML = '<div class="empty-state"><h3>Failed to load data.json</h3><p>' + escapeHtml(String(err)) + "</p></div>";
@@ -923,14 +985,6 @@
       x.classList.toggle("open", o);
       xb.innerHTML = o ? TR("收起 &#9652;", "Collapse &#9652;") : TR("展开全文 &#9662;", "Read more &#9662;");
       xb.setAttribute("aria-expanded", o ? "true" : "false");
-      return;
-    }
-    const ol = t.closest('a.outline-paper[href^="#paper-"]');
-    if (ol) {
-      // In-page anchor: scroll without touching the route hash.
-      ev.preventDefault();
-      const el = document.getElementById(decodeURIComponent(ol.getAttribute("href").slice(1)));
-      if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 64, behavior: "smooth" });
       return;
     }
     if (t.closest("[data-week-prev]")) { goWeek(weekIndex(state.week) + 1); return; }
