@@ -366,6 +366,191 @@
   });
   window.addEventListener("pageshow", function (ev) { if (ev.persisted && OV.open) ovClose(true); });
 
+  // ------------------------------------------------------------------ keyboard shortcuts (2026-10-26)
+  // Felix: 在列表页的时候，按←→可以在不同track之间切换 (+ more). Only without modifiers, never while typing,
+  // never while the search overlay / a lightbox / a date picker is open; touch-only devices never send these keys.
+  var KB = { el: null, open: false, sel: -1, g: 0, order: null };
+  function vis(e) { return !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length)); }
+  function busy() {
+    if (OV.open) return true;
+    var lb = document.querySelector(".pd-lb");
+    if (lb && !lb.hidden) return true;
+    var dp = $("date-picker");
+    if (dp && !dp.hidden) return true;
+    return [].some.call(document.querySelectorAll(".archive-pop, .arch-pop, [data-archive-pop]"), vis);
+  }
+  function isDeepPage() { return /\/deep-readings\/[^/]+\.html$/.test(location.pathname) && !!document.querySelector("a.back"); }
+  function tabs() { return [].filter.call(document.querySelectorAll(".track-tabs .track-tab"), vis); }
+  function cards() {
+    var seen = [], out = [];
+    [].forEach.call(document.querySelectorAll("#main [data-card], #main .card"), function (c) {
+      if (seen.indexOf(c) >= 0 || !vis(c) || (c.parentElement && c.parentElement.closest("[data-card]"))) return;
+      seen.push(c); out.push(c);
+    });
+    return out;
+  }
+  function moveTab(d) {
+    var t = tabs(); if (t.length < 2) return false;
+    var i = -1;
+    t.forEach(function (a, k) { if (a.classList.contains("active")) i = k; });
+    var j = i < 0 ? 0 : i + d;
+    if (j < 0 || j >= t.length) return true;  // stop at the ends
+    KB.sel = -1;
+    t[j].click();
+    return true;
+  }
+  function moveDate(older) {
+    var b = document.querySelector(older ? "[data-date-prev], [data-week-prev]" : "[data-date-next], [data-week-next]");
+    if (!b || !vis(b)) return false;
+    if (!b.disabled) { KB.sel = -1; b.click(); }
+    return true;
+  }
+  function focusCard(d) {
+    var cs = cards(); if (!cs.length) return false;
+    var cur = document.querySelector(".kb-focus");
+    var i = cur ? cs.indexOf(cur) : -1;
+    if (i < 0) {  // start from the first card at/below the viewport top
+      i = -1;
+      for (var k = 0; k < cs.length; k++) { if (cs[k].getBoundingClientRect().bottom > 70) { i = d > 0 ? k - 1 : k; break; } }
+      if (i === -1 && d < 0) i = cs.length;
+    }
+    var j = Math.max(0, Math.min(cs.length - 1, i + d));
+    if (cur) cur.classList.remove("kb-focus");
+    cs[j].classList.add("kb-focus");
+    var r = cs[j].getBoundingClientRect();
+    if (r.top < 70 || r.top > innerHeight * 0.6) window.scrollTo({ top: window.scrollY + r.top - 84, behavior: "smooth" });
+    return true;
+  }
+  function openCard(newTab) {
+    var c = document.querySelector(".kb-focus"); if (!c || !vis(c)) return false;
+    var a = c.querySelector("a.deep-read-page-link, a.dr-read-link, a[href*='deep-readings/']") ||
+            c.querySelector("a[href*='arxiv.org/'], a[href*='openreview.net/']") || c.querySelector("h3 a, h4 a, .card-title a");
+    if (!a) return false;
+    if (newTab || a.target === "_blank") window.open(a.href, "_blank", "noopener"); else location.href = a.href;
+    return true;
+  }
+  function toggleDeep() {
+    var c = document.querySelector(".kb-focus"); if (!c) return false;
+    var tg = c.querySelector("[data-deep-toggle]"); if (!tg) return false;
+    var col = c.querySelector("[data-deep-collapse]");
+    if (tg.getAttribute("aria-expanded") === "true" && col) col.click(); else tg.click();
+    return true;
+  }
+  function deepStep(d) {
+    var slug = decodeURIComponent(location.pathname.replace(/^.*\//, ""));
+    var go = function (list) {
+      var i = list.indexOf(slug);
+      if (i < 0 || !list[i + d]) { kbToast(d > 0 ? TR("已是最后一篇", "Last deep dive") : TR("已是第一篇", "First deep dive")); return; }
+      location.href = list[i + d];
+    };
+    if (KB.order) return go(KB.order);
+    fetch("./", { cache: "no-cache" }).then(function (r) { return r.text(); }).then(function (h) {
+      var re = /class="dr-read-link" href="([^"]+)"/g, m, out = [];
+      while ((m = re.exec(h))) if (out.indexOf(m[1]) < 0) out.push(m[1]);
+      KB.order = out.map(function (s) { return decodeURIComponent(s.replace(/&amp;/g, "&")); });
+      go(KB.order);
+    }).catch(function () { /* offline */ });
+  }
+  // "back to the list": the last list page this tab visited (deep→deep hops via ←/→ don't count), else ← 全部深度解读
+  var LISTKEY = "pd-kb-list";
+  function rememberList() { if (!isDeepPage()) try { sessionStorage.setItem(LISTKEY, location.href); } catch (e) {} }
+  rememberList();
+  window.addEventListener("hashchange", rememberList);
+  function deepBack() {
+    var ref = document.referrer, last = null;
+    try { last = sessionStorage.getItem(LISTKEY); } catch (e) {}
+    if (ref && ref.indexOf(location.origin) === 0 && ref === last && history.length > 1) { history.back(); return; }
+    if (last && last.indexOf(location.origin) === 0) { location.href = last; return; }
+    var b = document.querySelector("a.back"); if (b) location.href = b.href;
+  }
+  var toastT = null;
+  function kbToast(msg) {
+    var t = $("kb-toast");
+    if (!t) { t = document.createElement("div"); t.id = "kb-toast"; t.className = "kb-toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, 1400);
+  }
+  var HELP = [
+    [TR("任意页面", "Anywhere"), [["⌘K / Ctrl K", TR("搜索论文", "Search papers")], ["/", TR("搜索论文", "Search papers")], ["g t", TR("今日", "Today")], ["g w", TR("周榜", "Weekly")],
+      ["g d", TR("深度解读", "Deep dives")], ["?", TR("显示 / 关闭快捷键", "Show / hide shortcuts")]]],
+    [TR("列表页（今日 · 周榜 · 往期 · 深度解读目录）", "List pages (Today · Weekly · Archive · Deep dives)"), [["← →", TR("上一个 / 下一个方向", "Previous / next track")],
+      ["[ ]", TR("更早 / 更新一天（周榜：一周）", "Older / newer day (Weekly: week)")], ["j k", TR("下一篇 / 上一篇论文", "Next / previous paper")],
+      ["↵ / o", TR("打开深度解读（没有则打开 arXiv）", "Open deep dive (else arXiv)")], ["x", TR("展开 / 收起页内深度解读", "Expand / collapse inline deep dive")]]],
+    [TR("深度解读页", "Deep-dive pages"), [["← →", TR("上一篇 / 下一篇深度解读（目录顺序）", "Previous / next deep dive (index order)")], ["u / Esc", TR("返回列表", "Back to the list")]]],
+  ];
+  function helpBuild() {
+    var el = document.createElement("div");
+    el.className = "pk kh"; el.id = "kh"; el.hidden = true;
+    var body = HELP.map(function (g) {
+      return '<div class="kh-g">' + esc(g[0]) + '</div><dl class="kh-l">' + g[1].map(function (r) {
+        return "<div><dt>" + r[0].split(" / ").map(function (k) { return k.split(" ").map(function (x) { return "<kbd>" + esc(x) + "</kbd>"; }).join(" "); }).join(" <span>/</span> ") +
+          "</dt><dd>" + esc(r[1]) + "</dd></div>";
+      }).join("") + "</dl>";
+    }).join("");
+    el.innerHTML = '<div class="pk-scrim" data-kh-close></div><div class="pk-pal kh-pal" role="dialog" aria-modal="true" aria-labelledby="kh-t">' +
+      '<div class="pk-in"><b class="kh-t" id="kh-t">' + TR("键盘快捷键", "Keyboard shortcuts") + '</b><kbd class="pk-esc">esc</kbd>' +
+      '<button type="button" class="pk-x" data-kh-close>' + TR("关闭", "Close") + "</button></div>" +
+      '<div class="pk-body kh-body">' + body + "</div>" +
+      '<div class="pk-f"><span>' + TR("在输入框里或按住 ⌘ / Ctrl / Alt 时快捷键不生效", "Shortcuts are off while typing or holding ⌘ / Ctrl / Alt") + "</span></div></div>";
+    el.addEventListener("click", function (ev) { if (ev.target.closest("[data-kh-close]")) helpShow(false); });
+    document.body.appendChild(el);
+    KB.el = el;
+  }
+  function helpShow(on) {
+    if (on && !KB.el) helpBuild();
+    if (!KB.el) return;
+    KB.open = !!on; KB.el.hidden = !on;
+    if (on) { var x = KB.el.querySelector(".pk-x"); try { KB.el.querySelector(".kh-pal").setAttribute("tabindex", "-1"); KB.el.querySelector(".kh-pal").focus(); } catch (e) { if (x) x.focus(); } }
+  }
+  document.addEventListener("keydown", function (ev) {
+    if (ev.defaultPrevented || ev.isComposing || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    var k = ev.key;
+    if (KB.open) {
+      if (k === "Escape" || k === "?") { ev.preventDefault(); helpShow(false); }
+      return;
+    }
+    if (editable(ev.target) || busy()) return;
+    if (ev.shiftKey && k !== "?") return;
+    if (KB.g && Date.now() - KB.g < 1200) {
+      KB.g = 0;
+      var dest = { t: LROOT, w: LROOT + "#/weekly", d: LROOT + "deep-readings/" }[k];
+      if (dest) { ev.preventDefault(); location.href = dest; }
+      return;
+    }
+    KB.g = 0;
+    var done = false, deep = isDeepPage();
+    if (k === "?") { helpShow(true); done = true; }
+    else if (k === "g") { KB.g = Date.now(); done = true; }
+    else if (deep && (k === "ArrowLeft" || k === "ArrowRight")) { deepStep(k === "ArrowRight" ? 1 : -1); done = true; }
+    else if (deep && (k === "Escape" || k === "u")) { deepBack(); done = true; }
+    else if (k === "ArrowLeft" || k === "ArrowRight") done = moveTab(k === "ArrowRight" ? 1 : -1);
+    else if (k === "[" || k === "]") done = moveDate(k === "[");
+    else if (k === "j" || k === "k") done = focusCard(k === "j" ? 1 : -1);
+    else if ((k === "Enter" || k === "o") && !(ev.target.closest && ev.target.closest("a, button, summary, [role=button]"))) done = openCard(false);
+    else if (k === "x") done = toggleDeep();
+    else if (k === "Escape" && document.querySelector(".kb-focus")) { document.querySelector(".kb-focus").classList.remove("kb-focus"); done = true; }
+    if (done) ev.preventDefault();
+  });
+  // SPA re-render (hash routes) drops the highlighted card
+  window.addEventListener("hashchange", function () { KB.sel = -1; });
+  // subtle hint in the footer, desktop / fine pointer only
+  if (window.matchMedia && matchMedia("(hover: hover) and (pointer: fine)").matches) {
+    var addHint = function () {
+      var f = document.querySelector(".site-foot");
+      if (!f || f.querySelector(".kb-hint")) return;
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "kb-hint"; b.innerHTML = TR("快捷键", "Shortcuts") + " <kbd>?</kbd>";
+      b.addEventListener("click", function () { helpShow(true); });
+      f.appendChild(b);
+    };
+    var hintBoot = function () {
+      addHint();
+      var f = document.querySelector(".site-foot");  // pages.js rewrites the SPA footer once data.json loads
+      if (f && window.MutationObserver) new MutationObserver(addHint).observe(f, { childList: true });
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hintBoot); else hintBoot();
+  }
+
   // ------------------------------------------------------------------ results page (/search.html)
   if (!app) return;
   var PAGE = 20;
