@@ -229,6 +229,10 @@
     el.addEventListener("click", function (ev) {
       var t = ev.target;
       if (t.closest("[data-pk-close]")) { ev.preventDefault(); ovClose(); return; }
+      // a result / "see all" link: close the dialog first. In-app targets (/<date>/[<track>/]) are rendered in place
+      // by pages.js (pushState), which used to leave the dialog open over the new view (2026-10-26 bug).
+      var ra = t.closest("a[href]");
+      if (ra && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey && ev.button === 0) { ovClose(true); return; }
       var c = t.closest(".pc");
       if (c) {
         if (c.hasAttribute("data-range")) OV.st.range = c.getAttribute("data-range");
@@ -370,6 +374,7 @@
     }
   });
   window.addEventListener("pageshow", function (ev) { if (ev.persisted && OV.open) ovClose(true); });
+  window.addEventListener("pd:navigate", function () { if (OV.open) ovClose(true); });
 
   // ------------------------------------------------------------------ keyboard shortcuts (2026-10-26)
   // Felix: 在列表页的时候，按←→可以在不同track之间切换 (+ more). Only without modifiers, never while typing,
