@@ -42,9 +42,10 @@ function wrap(ctx,text,w,max){var t=tokens(text),lines=[],cur='';
 function bigr(s){s=String(s||'').toLowerCase().replace(/[\s\u0000-\u002f\u003a-\u0040\u005b-\u0060\u007b-\u00bf\u2000-\u206f\u3000-\u303f\uff00-\uff0f\uff1a-\uff20]+/g,'');var o={};for(var i=0;i<s.length-1;i++)o[s.substr(i,2)]=1;return o}
 function dupNum(lab,take){var a=bigr(lab),b=bigr(take),n=0,h=0;for(var k in a){n++;if(b[k])h++}return n>0&&h>=0.6*n}
 function numsFor(t,take){return (t.pts||[]).filter(function(p){return !dupNum(p[1],take)})}
-/* 核心结论: the first candidate (share.takeaways: highlighted finding > poster one-liner > other highlight > summary
-   sentences) that wraps into kmax lines -- never an ellipsis; .over marks a block taller than kmax (layout rejects it) */
-function takeLines(ctx,t,w,kmax){var c=t.takes&&t.takes.length?t.takes:[t.take],best=null;
+/* 核心结论: the first candidate (share.takeaways: hand-written poster_line > highlighted finding > other highlight >
+   summary sentences; a poster_line is never passed over) that wraps into kmax lines -- never an ellipsis; .over marks a block taller than kmax (layout rejects it) */
+function cands(t){var c=t.takes&&t.takes.length?t.takes:[t.take];return t.take_src==='line'?c.slice(0,1):c}
+function takeLines(ctx,t,w,kmax){var c=cands(t),best=null;
  for(var i=0;i<c.length;i++){var l=wrap(ctx,c[i],w,99);l.s=c[i];if(l.length<=kmax)return l;if(!best||l.length<best.length)best=l}
  best.over=true;return best}
 function spaced(ctx,s,x,y,sp){for(var i=0;i<s.length;i++){ctx.fillText(s[i],x,y);x+=ctx.measureText(s[i]).width+sp}return x}
@@ -171,7 +172,7 @@ function layoutB(ctx,D,o){var d=o.draw,t=D.p,F0=o.F0,ar=F0.sw/F0.sh,g=o.gap||0,c
    within those, every header size x arrangement x figure-card width x takeaway size is laid out and the one with the
    largest figure wins, discounted for a smaller header or takeaway (B side-by-side preferred over the wide variant) */
 var HF=[1,0.86,0.74];
-function planB(ctx,D,L,limit){var t=D.p,c=t.takes&&t.takes.length?t.takes:[t.take],ar=L.F0.sw/L.F0.sh;
+function planB(ctx,D,L,limit){var t=D.p,c=cands(t),ar=L.F0.sw/L.F0.sh;
  var fws=ar<1?[560,520,470,420,380]:[620,580,540,500,460,420,380],kss=D.lang==='zh'?[32,30,28,26]:[31,29,27,25];
  for(var ci=0;ci<c.length;ci++){var cp=numsFor(t,c[ci]);for(var np=Math.min(2,cp.length);np>=0;np--){var best=null,bs=0,modes=ar>=2.2&&np>0?['side','wide']:['side'];
   for(var hl=0;hl<HDR.length;hl++)for(var mi=0;mi<modes.length;mi++)(modes[mi]==='side'?fws:[0]).forEach(function(fw){kss.forEach(function(ks){
