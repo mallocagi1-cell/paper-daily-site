@@ -63,8 +63,8 @@
     <div class="by">Jiang Wu, Yutong Song, Hongbo Wang, Guanghe Cao, Jeff Liang · Google DeepMind / Oracle / UC Irvine · arXiv 2610.24481 · 发表 2026-10-17</div>
   </div>
   <div class="rmeta pd-sh-has">
-    <span><b>7 分钟</b>阅读时长</span>
-    <span><b>2727</b>字</span>
+    <span><b>8 分钟</b>阅读时长</span>
+    <span><b>2887</b>字</span>
     <span><b>4.30</b>综合分</span>
     <span class="pd-rk"><b>第 2 名</b><a href="../../2026-10-21/personalization/">10-21 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -81,13 +81,13 @@
 <figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-21/personalization/2610.24481/framework-overview.svg" alt="按训练和服务两部分阅读：训练时编码器与排序器联合学习，上线后物品向量预计算，只有个性化排序留在请求路径。" loading="lazy" decoding="async"><figcaption>按训练和服务两部分阅读：训练时编码器与排序器联合学习，上线后物品向量预计算，只有个性化排序留在请求路径。</figcaption></figure>
 <h2 id="s2">2. 方法：哪些信息提前算，哪些在线算</h2>
 <p>物品编码器读取模板化文本，取结束位置的隐藏状态，作为一件物品的表示。排序器收到的是这个连续向量，而不是原来的整段词元。历史物品和候选物品使用同一个接口，历史条目旁边还保留用户评分等文本反馈。</p>
-<p>两个模型之间并非简单拼接。连续向量的尺度需要适配排序器原生的词向量，否则输入幅度改变可能影响已有模型的计算。论文使用归一化和可学习的尺度校准。它比较了多种读取方式，最简单的结束位置读取在所测设置中表现最好。</p>
+<p>两个模型之间并非简单拼接。连续向量的尺度需要适配排序器原生的词向量，否则输入幅度改变可能影响已有模型的计算。论文先对物品向量做 RMS（均方根）归一化，即除以各维平方均值的平方根，再乘一个固定的参考尺度和一个可学习的缩放系数。参考尺度取排序器初始词向量表中、训练物品文本里各 token 词向量 RMS 的平均值；缩放系数从 1 开始训练。它比较了多种读取方式，最简单的结束位置读取在所测设置中表现最好。</p>
 <p>训练时，编码器并没有冻结为一个通用向量服务。推荐损失的梯度通过连续接口传回编码器，使物品压缩保留有助于用户判断的信息。只有训练完成后，物品向量才被离线计算并缓存。</p>
 <p>教师模型读取物品全文，在同一个用户历史和候选组中输出分数。学生既学习真实的下一件物品标签，也学习老师在候选组里的相对偏好。老师分数预先缓存，学生训练无需每一步重新运行老师。</p>
 <p>作者区分两种反馈放置方式。一种让编码器也看到用户评分，缓存单位就变成“物品与评分的组合”；另一种把反馈留给排序器，每个物品只需要一份表示。两者质量相近，后者更利于跨用户复用，因此成为默认选择。</p>
 <figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-21/personalization/2610.24481/input-layout.svg" alt="看候选之间的隔离：每个候选都能读取同一段历史，却不能看到其他候选，合批仍保留独立评分语义。" loading="lazy" decoding="async"><figcaption>看候选之间的隔离：每个候选都能读取同一段历史，却不能看到其他候选，合批仍保留独立评分语义。</figcaption></figure>
 <p>在线路径采用虚拟词元 ID。请求只发送物品标识和反馈，服务端再从显存中的表取出向量，减少向量传输与输入准备。这里的 ID 是访问连续表示的接口，不是让模型生成商品语义编码。</p>
-<p>多物品评分把同一用户的候选放进一个请求。历史只预填充一次，得到的键值缓存由各候选分支共享。注意力掩码禁止候选互相读取，避免把独立打分悄悄改成依赖候选排列的联合判断。</p>
+<p>多物品评分把同一用户的候选放进一个请求。历史只预填充一次，得到的 KV cache 由各候选分支共享。注意力掩码禁止候选互相读取，避免把独立打分悄悄改成依赖候选排列的联合判断。</p>
 <figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-21/personalization/2610.24481/scoring-example-single-column-compact.svg" alt="看中央共享的历史缓存：候选分支共用前缀，但分别走到自己的评分头；复用的是计算，候选判断仍保持隔离。" loading="lazy" decoding="async"><figcaption>看中央共享的历史缓存：候选分支共用前缀，但分别走到自己的评分头；复用的是计算，候选判断仍保持隔离。</figcaption></figure>
 <p>作者还把这一评分路径接入 CUDA Graph，即预先记录一段 GPU 操作并重复执行，减少调度和内核启动开销。物品表示复用、历史缓存共享和执行图重放，分别节省不同位置的成本，不能把总收益全部归给某一个技巧。</p>
 <h2 id="s3">3. 核心贡献：表示和运行时一起设计</h2>
@@ -95,7 +95,7 @@
 <p>运行时也遵循同样的边界。固定物品内容在用户之间共享，用户历史在候选之间共享，候选评分保持独立。这样，哪些结果能复用、复用到什么范围，都有清楚定义。</p>
 <p>论文没有只拿模型计算量说明效率。它比较端到端请求吞吐和完整请求尾延迟，也拆分多物品评分与执行图带来的增益。这让“结构上更省”与“服务实际上更快”之间的因果链更容易检查。</p>
 <h2 id="s4">4. 实验：质量接近老师，吞吐明显提高</h2>
-<p>推荐质量主要在 Amazon Books 和 Video Games 上评估。下面分别列出两个任务中的 NDCG@10；它奖励相关物品出现在更靠前的位置。不同数据集的绝对值不适合直接横比。</p>
+<p>推荐质量主要在 Amazon Books 和 Video Games 上评估。下面分别列出两个任务中的 NDCG@10；它奖励相关物品出现在更靠前的位置。不同数据集的绝对值不适合直接横比。对照的 HLLM（一个已有的 LLM 推荐基线）分别编码物品内容和用户历史，再按用户表示和物品表示的相似度给候选排序。</p>
 <div class="tbl"><table><thead><tr><th>模型</th><th>Books</th><th>Video Games</th></tr></thead><tbody><tr><td>HLLM</td><td>0.5508</td><td>0.5025</td></tr><tr><td>DuoLM</td><td>0.5586</td><td>0.5298</td></tr><tr><td>全文教师</td><td>0.5440</td><td>0.5313</td></tr></tbody></table></div>
 <p>学生在 Books 上超过老师，在 Video Games 上接近老师。这支持单向量压缩可以保留较多推荐信息，但没有证明任何领域、任何文本长度都能无损压缩。</p>
 <p>在相同 H100 和相同请求轨迹上，每次请求有一百个候选。高并发时，DuoLM 约每秒输出 2.64 万个候选分数。这里的单位是候选分数，不是用户请求；两者不能混用。</p>
@@ -109,7 +109,7 @@
 <h2 id="s6">6. 实践意义：适合从哪里试起</h2>
 <p>内容丰富、用户历史可用的排序环节，可以检验这种拆分。选一批稳定物品，把文本压缩成可缓存向量，再加入原有历史和反馈。重点比较长尾物品和偏好细分，查看压缩是否抹掉对少数用户有价值的细节。</p>
 <p>服务实验要分别计量编码缓存命中、历史预填充、输入准备和 GPU 执行。以候选数和用户请求数分别报告吞吐，同时保留尾延迟；这样才能知道收益来自减少计算，还是批量调度改变了负载。</p>
-<p>对 UGC 搜索，还应加入新帖和编辑帖的刷新测试。记录内容改变到新向量生效的时间，并让排序日志携带向量版本。可复用表示只有与内容新鲜度一起管理，才会成为可依赖的线上接口。</p>
+<p>对 UGC（用户发布的内容）搜索，还应加入新帖和编辑帖的刷新测试。记录内容改变到新向量生效的时间，并让排序日志携带向量版本。可复用表示只有与内容新鲜度一起管理，才会成为可依赖的线上接口。</p>
 <p>来源：原文第 2–4 节与附录 A、C、D；三个机制图均来自作者的 arXiv HTML。</p>
     <aside class="pd-shB" aria-label="分享这篇深度解读"><div class="pd-shB-t">分享这篇深度解读<small>复制链接、分享到 X 或微信，或生成一张分享图</small></div><div class="pd-sh-acts"><button type="button" class="pd-sh-btn" data-pd-share="copy"><svg class="pd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>复制链接</button><a class="pd-sh-btn" data-pd-share="x" href="https://x.com/intent/post?text=DuoLM%3A%20Fast%20and%20Effective%20Personalized%20Recommendation%20with%20Language%20Models&amp;url=https%3A%2F%2Fpaper-daily.com%2Fpapers%2Fduolm-fast-effective-personalized-recommendation-language%2F" target="_blank" rel="noopener"><svg class="pd-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.75 3h3.07l-6.7 7.66L22 21h-6.17l-4.83-6.32L5.47 21H2.4l7.17-8.2L2 3h6.33l4.37 5.77L17.75 3Zm-1.08 16.2h1.7L7.4 4.73H5.58L16.67 19.2Z"/></svg>分享到 X</a><button type="button" class="pd-sh-btn" data-pd-share="wechat" aria-haspopup="dialog" aria-expanded="false"><svg class="pd-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.1 4C5.2 4 2 6.6 2 9.9c0 1.9 1.1 3.6 2.8 4.7l-.7 2.1 2.5-1.3c.8.2 1.6.3 2.5.3h.5a5.3 5.3 0 0 1-.2-1.4c0-3.2 3.1-5.8 6.9-5.8h.5C16 5.7 12.9 4 9.1 4Zm-2.4 3.2a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm4.8 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/><path d="M22 14.3c0-2.7-2.7-4.9-6-4.9s-6 2.2-6 4.9 2.7 4.9 6 4.9c.7 0 1.4-.1 2-.3l2 1.1-.5-1.8c1.5-.9 2.5-2.3 2.5-3.9Zm-8-.9a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Zm4 0a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"/></svg>微信</button><button type="button" class="pd-sh-btn" data-pd-share="poster"><svg class="pd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.8"/><path d="m21 15-4.5-4.5L7 20"/></svg>生成分享图</button></div></aside>
 
