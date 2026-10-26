@@ -423,7 +423,7 @@
   }
   function openCard(newTab) {
     var c = document.querySelector(".kb-focus"); if (!c || !vis(c)) return false;
-    var a = c.querySelector("a.deep-read-page-link, a.dr-read-link, a[href*='deep-readings/']") ||
+    var a = c.querySelector("a.chip.deep, a.btn.w, a.dr-read-link, a[href*='deep-readings/']") ||
             c.querySelector("a[href*='arxiv.org/'], a[href*='openreview.net/']") || c.querySelector("h3 a, h4 a, .card-title a");
     if (!a) return false;
     if (newTab || a.target === "_blank") window.open(a.href, "_blank", "noopener"); else location.href = a.href;

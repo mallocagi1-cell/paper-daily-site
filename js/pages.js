@@ -172,12 +172,21 @@
     return t.length ? Math.ceil(t.length / 400) : 0;
   }
 
-  // ---------- inline deep reading (expand / collapse + 独立页面阅读) ----------
+  // ---------- inline deep reading (expand / collapse; the standalone page is linked from the card's 📖 chip) ----------
 
   function fixFigs(html) {
     const root = (document.documentElement.getAttribute("data-root") || "");
     if (!root) return html;
     return String(html).replace(/(<img data-fig="1" src=")(figs\/)/g, "$1" + root + "$2");
+  }
+
+  // 📖 chip on cards / weekly rows: a link to the standalone deep-dive page when it exists (else a plain badge)
+  function deepChip(dr) {
+    const m = readingMinutes(dr);
+    const label = TR("&#128214; 深度解读", "&#128214; Deep dive") + (m ? " · " + m + TR(" 分钟", " min") : "");
+    return dr.slug
+      ? '<a class="chip deep" href="deep-readings/' + encodeURIComponent(dr.slug) + '.html">' + label + " &#8594;</a>"
+      : '<span class="chip deep">' + label + "</span>";
   }
 
   function renderDeepRead(paper) {
@@ -187,9 +196,7 @@
     if (!htmlBody) return "";
     const rawPid = paper.id || dr.paper_id || "";
     const domId = String(rawPid).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "x";
-    const pageLink = dr.slug
-      ? '<a class="deep-read-page-link" href="deep-readings/' + encodeURIComponent(dr.slug) + TR('.html">独立页面阅读 &#8599;</a>', '.html">Open as page &#8599;</a>')
-      : "";
+    // 2026-10-26 (Felix): no separate per-card "open as standalone page" link — the 📖 chip / lead button links the standalone page
     const mins = readingMinutes(dr);
     return (
       '<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="' + escapeHtml(rawPid) +
@@ -197,10 +204,10 @@
       '<div class="deep-read-toggle-row">' +
       '<button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">' +
       TR('<span class="deep-read-trigger-icon">&#9660;</span><span>&#128214; 展开深度解读', '<span class="deep-read-trigger-icon">&#9660;</span><span>&#128214; Expand deep dive') + (mins ? " · " + mins + TR(" 分钟", " min") : "") + "</span>" +
-      "</button>" + pageLink + "</div>" +
+      "</button></div>" +
       '<div class="deep-read-section" hidden><div class="deep-read-header-bar">' +
       '<button type="button" class="deep-read-trigger expanded" data-deep-collapse>' +
-      TR('<span class="deep-read-trigger-icon">&#9650;</span><span>收起深度解读</span></button>', '<span class="deep-read-trigger-icon">&#9650;</span><span>Collapse deep dive</span></button>') + pageLink + "</div>" +
+      TR('<span class="deep-read-trigger-icon">&#9650;</span><span>收起深度解读</span></button>', '<span class="deep-read-trigger-icon">&#9650;</span><span>Collapse deep dive</span></button>') + "</div>" +
       '<div class="deep-read-content">' + htmlBody + "</div></div></div>"
     );
   }
@@ -312,7 +319,7 @@
     const pid = pidOf(p, i);
     const dr = p.deep_reading && p.deep_reading.status === "completed" ? p.deep_reading : null;
     let chips = venueHtml(p) + subareaHtml(p, track) + compHtml(p).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
-    if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
+    if (dr) chips += deepChip(dr);
     const ins = insightInner(p);
     let foot = "<span>" + escapeHtml(sourceLabel(p.source, p.url)) + "</span>";
     if (p.published) foot += "<span>·</span><span>" + escapeHtml(p.published) + "</span>";
@@ -501,7 +508,7 @@
       " · " + r.tracks.length + TR(" 个方向</div>", " tracks</div>") + renderDateNav(r) + "</div>" +
       (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
-      // 2026-10-26 (Felix: "存在的意义是什么"): the "独立报告页 report.html ↗ · 📖 深度解读 N 篇 →" row under the
+      // 2026-10-26 (Felix: "存在的意义是什么"): the "standalone report.html ↗ · 深度解读 N 篇 →" row under the
       // report is gone; report.html pages still exist (SEO / old links), 深度解读 is in the nav.
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>';
     setMast(TR("第 ", "Issue ") + issueNo(r.idx) + TR(" 期", ""), dateLine(r.date));
@@ -740,9 +747,8 @@
       '<p id="wk-stats">' + escapeHtml(w.day_count) + TR(" 期日报 · ", " issues · ") + escapeHtml(trackLabel(r.track)) + TR(" 本周去重 ", " unique this week: ") + escapeHtml(counts[r.track] || 0) + TR(" 篇 · 按偏好调整分</p></div>", " · by adjusted score</p></div>") +
       (r.notice ? '<div class="pages-notice">' + escapeHtml(r.notice) + "</div>" : "") +
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
-      '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>' +
-      TR('<div class="weekly-rule">排序：adjusted_score（含偏好加分）降序，其次 total_score；按 arXiv id / URL / 标题去重 · ', '<div class="weekly-rule">Order: adjusted_score (with preference bonus) desc, then total_score; deduped by arXiv id / URL / title · ') +
-      TR('<a class="open-raw" href="./">今日 &#8594;</a> · <a class="open-raw" href="deep-readings/">&#128214; 深度解读 &#8594;</a></div>', '<a class="open-raw" href="./">Today &#8594;</a> · <a class="open-raw" href="deep-readings/">&#128214; Deep dives &#8594;</a></div>');
+      '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>';
+      // 2026-10-26 (Felix): the weekly sort-rule row (adjusted_score … · 今日 → · 深度解读 →) is gone
     setMast(TR("第 ", "Issue ") + (DATA.days.length || DATA.day_count || "") + TR(" 期", ""), dateLine(DATA.latest_date || ""));
     setBodyTrack(r.track);
   }
@@ -762,7 +768,7 @@
     }).join("");
     const dr = paper.deep_reading && paper.deep_reading.status === "completed" ? paper.deep_reading : null;
     let chips = venueHtml(paper) + subareaHtml(paper, track) + compHtml(paper, 3).map(function (c) { return '<span class="chip">' + c + "</span>"; }).join("");
-    if (dr) { const m = readingMinutes(dr); chips += TR('<span class="chip deep">&#128214; 有深读', '<span class="chip deep">&#128214; Deep dive') + (m ? " · " + m + TR(" 分钟", " min") : "") + "</span>"; }
+    if (dr) chips += deepChip(dr);
     const dl = dimLine(paper.scores);
     const first = paper.best_date ? TR("首见 ", "First seen ") + escapeHtml(shortDay(paper.best_date)) : "";
     return {
