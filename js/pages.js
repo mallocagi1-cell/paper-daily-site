@@ -515,13 +515,13 @@
   function setDocMeta(route) {
     let t = HOME_TITLE, d = HOME_DESC;
     if (route.weekly) {
-      t = TR("周榜 Weekly Top ", "Weekly Top ") + (DATA.weekly_top_n || 10) + (route.week ? " · " + route.week + TR(" 周", " week") : "") + " | Paper Daily";
+      t = TR("周榜 Weekly Top ", "Weekly Top ") + (DATA.weekly_top_n || 10) + (route.week ? " · " + route.week + TR(" 周", " week") : "") + " · Paper Daily";
       d = TR("Paper Daily 周榜：按周汇总搜索、推荐与 GenAI 各方向日报入选论文，按偏好调整分排序、去重后的每周 Top ", "Paper Daily weekly ranking: deduplicated top ") +
         (DATA.weekly_top_n || 10) + TR("，附深度解读链接。", " papers per track each week, with deep-dive links.");
     } else if (route.archive) {
-      t = TR("往期日报 · ", "Archive · ") + (DATA.days || []).length + TR(" 期 | Paper Daily", " issues | Paper Daily");
+      t = TR("往期日报 · ", "Archive · ") + (DATA.days || []).length + TR(" 期 · Paper Daily", " issues · Paper Daily");
     } else if (route.date) {
-      t = route.date + (route.track ? " " + trackLabel(route.track) : "") + TR(" 论文日报 | Paper Daily", " papers | Paper Daily");
+      t = route.date + (route.track ? " " + trackLabel(route.track) : "") + TR(" 论文日报 · Paper Daily", " papers · Paper Daily");
     }
     document.title = t;
     if (descEl) descEl.setAttribute("content", d);
