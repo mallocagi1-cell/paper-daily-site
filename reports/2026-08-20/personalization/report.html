@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,54 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对社区推荐或广告排序，最值得复用的是“候选目标驱动的兴趣读取”与特征缺失显式建模，而不是盲目堆大模型。消融显示绝对时间特征移除会让Test AUC下降0.002043，InfoNCE下降0.000336；上线前应优先验证时间、padding与高基数映射，并保留校准指标LogLoss。</div>
     <div class="foot">Yimeng Xu, Ruihao Zhang, Yingqi Song, Ying Jiang, Lan Ma · 2026-08-19 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2608.12986" id="dr-arxiv-oai-arXiv-org-2608-12986">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 13 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>1. 问题与动机</h1>
-<p>STAR针对的是工业推荐里很典型、但经常被“更大的Transformer”掩盖的问题：PCVR（用户点击之后完成转化的概率）既要利用非序列特征，又要读懂多条行为序列，还要让用户兴趣表示随着候选商品变化。作者指出，正式基线在实际PCVR场景仍有四个缺口。第一，超高基数字段的完整Embedding表过于昂贵，很多字段被直接跳过，长尾用户或商品信号因此丢失；第二，用户历史如果不以候选商品为条件，读出来的兴趣向量可能只是“用户总体喜欢什么”，而不是“用户为什么会对当前商品感兴趣”；第三，原始值0、缺失值和序列padding 0可能混在一起，训练阶段与推理阶段会产生不同语义；第四，特征频率重映射、哈希表和字段结构如果没有和checkpoint一起保存，模型上线后可能出现静默的特征错位。</p>
-<p>这不是纯粹的离线精度问题。PCVR是排序漏斗中的后段信号，正样本稀疏、类别不平衡，而且一个候选商品的价值取决于用户最近行为、长期偏好、时间上下文和商品本身。STAR在KDD Cup 2026 Tencent UniRec PCVR数据集上验证，训练集有2000万样本，每个样本包含匿名用户/商品ID、非序列整数与稠密特征、四个行为序列、目标时间戳和二值转化标签。作者明确把AUC作为主要排名指标，把LogLoss作为校准诊断，这种“排序收益和概率可靠性分开看”的设定对社区搜索CTR/转化联合优化很有参考价值。</p>
-<h1>2. 方法详解</h1>
-<p>STAR把框架拆成结构化特征token化、目标感知兴趣表示、用户–商品交互增强、辅助对比学习四部分，并在HyFormer式多序列骨干上统一处理。给定用户u、候选商品i、非序列特征x和多条行为序列S，模型预测转化概率ŷ=fθ(x,S)，主损失可以是BCE；为了应对极端类别不平衡，默认使用focal loss：L_focal=-α_t(1-p_t)^γ log(p_t)，其中γ=2.0，正类权重α=0.366。这个选择在后文体现出明确取舍：focal loss带来小幅AUC优势，但会让LogLoss升高。</p>
-<p>结构化token化首先处理稀疏字段。对超高基数用户整数域，STAR保留高频ID的独立Embedding行，把长尾ID折叠到共享unknown桶；对选择出的长序列字段，频繁ID做频率重映射，稀有或未见ID进入unknown桶，过高基数的序列还可以走固定大小的hash embedding分支。这样做的核心不是让每个长尾ID都拥有独立参数，而是让高频信号保留辨识度，同时给长尾信号一个可训练的共享表示。</p>
-<p>缺失值处理是另一处工程重点。稠密特征附加non-zero mask，以区分真实数值0和padding；整数ID在需要时整体平移，让index 0只表示padding。对数据集内零方差字段，作者不再把原始ID当作有效语义，而是丢掉原始值、保留missing indicator，再投影成残差稠密信号。模型还加入目标时间、是否周末、序列长度、截断比例、最近行为跨度和sentinel值统计等元信息，并把它们注入后段预测路径和query生成路径。</p>
-<p>在兴趣表示上，非序列特征先被拆成用户、商品、稠密和辅助token，每个行为域形成自己的序列token矩阵。query generator根据非序列token和序列汇总向量生成序列特定query。对序列token ht、商品锚点hi和query q，STAR先用MLP计算目标query：q_tgt=MLP_target([q,hi,q-hi,q⊙hi])；再以[h_t,q_tgt,h_t-q_tgt,h_t⊙q_tgt]为输入计算注意力权重αt=softmax(MLP_score(...))，兴趣向量为z=Σt αt h_t，最后通过残差MLP更新query：q_out=q+MLP_update([q,z,hi,q⊙z,hi⊙z])。这相当于把DIN式目标注意力放进统一的多序列骨干，而不是先产生一个和候选无关的固定用户向量。</p>
-<p>交互增强包含两条支路。其一，对齐稀疏–稠密pair pooling，把稠密值作为匹配稀疏Embedding的权重，避免相同信号在两个分支里重复建模；其二，把用户和商品非序列token做逐元素乘积投影，形成显式user-item interaction token。STAR还对每个行为域的原始序列用候选商品做DIN激活，得到域内兴趣向量，再跨域融合成额外token。</p>
-<p>辅助目标把池化用户token和商品token投影到共享对比空间。在一个mini-batch中，匹配的用户–商品对作为正例，其他配对作为in-batch负例，使用对称InfoNCE：L_nce=1/2[CE(UV^T/τ,t)+CE(VU^T/τ,t)]。转化和未转化样本采用不同pair权重，最终目标是L=L_main+λ(t)L_nce，且λ会从0.1衰减到0.01并受主损失比例约束，避免对比目标压过PCVR主任务。</p>
-<p>训练配置是可复现的：d_model=128，稀疏Embedding维度64，HyFormer block数2，全局batch size 5880，InfoNCE温度0.07，四个序列的截断长度为seq_a/seq_b 256、seq_c/seq_d 512。作者使用bf16自动混合精度、梯度累积、稠密参数EMA、固定global-batch manifest，以及两级buffer shuffle。最关键的部署设计是训练期间把数据集和模型结构写入sidecar配置；推理时重新构造字段schema，恢复cardinality cap表和频率映射表，让Embedding布局和训练checkpoint严格一致。</p>
-<h1>3. 核心技术贡献</h1>
-<p>第一，STAR把“特征可用性”本身作为模型设计对象。高基数恢复、频率重映射、序列hash、缺失/零值区分让原本被跳过或语义不稳定的字段重新进入模型。实验中去掉padding-zero disambiguation后Test AUC从0.836546降到0.835219，下降0.001327，说明这不是单纯的数据清洗技巧。</p>
-<p>第二，目标感知兴趣读取与统一序列–特征骨干结合。DIN式query decoder会根据当前候选商品动态选择历史行为，而不是把用户历史压缩成静态画像；去掉DIN decoder后Test AUC下降0.000193，去掉sequence hash/frequency remapping下降0.000124，收益小于时间特征但方向稳定。</p>
-<p>第三，用户–商品InfoNCE把排序目标和表示空间对齐。去掉加权InfoNCE后Test AUC下降0.000336，是主建模消融中除时间外最大的损失，表明用户与商品表示的全局对齐能补充PCVR的局部监督。它不一定改善概率校准，因此不能只看AUC决定是否上线。</p>
-<p>第四，训练–推理一致性被显式纳入方法贡献。作者没有把重映射表、hash allowlist和字段顺序当成脚本细节，而是将其视为checkpoint的推理契约；这使模型更适合推荐平台的多机训练、模型导出与回滚流程。对于大量离散字段的社区搜索系统，这一思路比增加一层Attention更能降低线上不可解释的特征漂移。</p>
-<h1>4. 实验结果分析</h1>
-<p>完整系统相对官方基线的结果如下：</p>
-<table><thead><tr><th>模型</th><th>Val AUC</th><th>Test AUC</th><th>Test AUC增量</th></tr></thead><tbody><tr><td>Official baseline</td><td>0.829582</td><td>0.819961</td><td>0</td></tr><tr><td>STAR full optimized</td><td>0.844503</td><td>0.836546</td><td>+0.016585</td></tr></tbody></table>
-<p>在容量扩展中，默认模型有333.97M稀疏参数和37.28M稠密参数；把d_model从128增到256，Test AUC只再增加0.000219，四层HyFormer比两层增加0.000199，而单独扩大Embedding维度的收益不单调。换句话说，STAR的主要收益来自有针对性的特征与目标建模，不是简单扩大参数。去掉绝对目标时间特征时Test AUC为0.834503，下降0.002043，是最重要的建模信号；去掉padding-zero区分下降0.001327；去掉InfoNCE下降0.000336；把DIN decoder换成cross-attention下降0.000193；去掉序列hash和频率映射下降0.000124；去掉显式user-item pair-product token仅下降0.000032。</p>
-<p>作者还报告了一组很重要的反例。当前单次实验里，去掉fused DIN token、pair pooling、某些字段drop策略或meta context，Test AUC反而分别增加+0.000041、+0.000105、+0.000116和+0.000104，所以这些组件被移到附录，未被宣传为核心贡献。这种处理比把所有模块都包装成有效更可信。训练协议方面，去掉EMA使Test AUC下降0.002143，去掉shuffle下降0.000697；用BCE替换focal loss时Test AUC下降0.000135，但Val LogLoss从0.296215降到0.212041，说明线上如果需要可校准概率，可能要用AUC、LogLoss和后续校准共同决策。</p>
-<p>还有一个与规模相关的观察：预赛数据规模约为最终数据的1/19时，Transformer序列编码器更好；最终大数据阶段，无attention的SwiGLU编码器更好。作者把它解释为数据规模驱动的架构转换：小数据更需要Transformer的序列归纳偏置，大数据下SwiGLU更高效，也更容易把职责交给后面的目标感知交互模块。这提醒我们不要把小样本离线实验的最佳架构直接复制到生产全量数据。</p>
-<h1>5. 局限与未来方向</h1>
-<p>作者明确说明，STAR的证据来自离线挑战设置，而不是线上A/B实验；匿名数据、固定数据协议和排行榜式验证不能直接推出真实业务CTR、CVR或GMV收益。论文的主消融是single-run，作者要求对边际很小的pair-product等组件做多随机种子确认；一些混合消融甚至在移除后变好，说明结论可能受数据切分和配置影响。论文还指出focal loss的AUC–LogLoss冲突，以及词表、频率表、hash allowlist等sidecar artifact带来的维护复杂度。伦理声明提醒，正式部署前还要监控公平性和反馈回路。</p>
-<p>作者的未来方向包括更通用的UniFormer、OneTrans式统一架构和更有效的扩展策略，使更多特征真正被容量利用。本文没有解决的明显问题还包括：不同用户/商品分桶下的收益是否一致、漂移条件下映射表多久重建、长尾用户的概率校准是否恶化，以及匿名挑战数据与真实UGC短文本行为的域差异。后几项是基于论文实验边界的工程审慎，不应被解读为作者已经验证的结论。</p>
-<h1>6. 工业实践意义</h1>
-<p>对社区搜索或推荐排序，STAR最值得拆解成四个可逐步上线的实验。第一，先做候选感知的兴趣读取：把query或候选帖子表示作为attention query，对用户最近互动、停留、点赞、评论和关注序列分别取兴趣，而不是只拼接一个用户ID向量。第二，建立离散特征的数据契约：频率截断、unknown桶、hash表、padding语义和缺失mask都要和模型checkpoint一起版本化，并在离线重放与线上请求上做字段级校验。</p>
-<p>第三，时间特征不能只作为普通数值输入。STAR的消融显示绝对目标时间是最大单项贡献；社区内容有明显的时段、工作日、事件周期和新鲜度效应，应将时间上下文与序列截断跨度、最近一次行为距离一起评估。第四，可以把InfoNCE作为辅助目标，拉近真实用户–内容对、区分未转化或随机负例，但要用校准曲线和分层LogLoss验证它不会把排序分数变成过度自信的概率。</p>
-<p>部署时不要只看0.016585的AUC增益。完整系统的稀疏参数约334M，若全部Embedding常驻内存，需要评估分片、量化、热冷分层和特征表同步成本；固定global batch、EMA和多种sidecar表也会增加训练流水线复杂度。推荐的落地顺序是：先复现padding/missing与时间特征消融，再逐步加入目标感知decoder和InfoNCE，最后才尝试高基数恢复。线上验收应同时看nDCG/CTR、PCVR、LogLoss、校准误差、长尾用户、冷启动用户、延迟、回滚一致性和反馈回路，避免把单一离线AUC收益误当成可直接上线的业务结果。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2608-12986"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>7 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2608.17316" data-paper-id="arxiv:oai:arXiv.org:2608.17316" data-card>
@@ -122,54 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>这是一条适合推荐精排的“动态计算深度”路径：短、规则的行为序列少用exit，复杂用户再融合更多层。target-k hinge、负载均衡和Z-loss共同避免路由塌缩；相比E4SRec，额外延迟小于1毫秒。实践中可把路由预算绑定用户分层或请求时延，把小模型的中间层表示变成可控的质量–成本旋钮。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Xurong Liang, Tong Chen, Quoc Viet Hung Nguyen, Jianxin Li, Xiangliang Zhang, Hongzhi Yin</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-08-19</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2608.17316" id="dr-arxiv-oai-arXiv-org-2608-17316">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 12 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>1. 问题与动机</h1>
-<p>FLEXRec处理的是“LLM推荐很强，但不能按推荐系统的规模和时延运行”的矛盾。现有LLM推荐大致有生成式和判别式两条路线：生成式模型通过自回归生成物品文本或语义ID，能够表达复杂偏好，但每个候选都要经历序列解码，难以对全量商品做Top-N；判别式模型把用户和商品映射到LLM语义空间，用Embedding相似度直接对全库打分，速度更可控，却通常只使用最后一层输出。对7B或13B模型来说，后者的容量很大；但当骨干缩到Qwen 3 1.7B或Llama 3.2 3B时，最后一层单点表示容易丢失复杂的短期转移和长期兴趣。</p>
-<p>论文具体指出，紧凑LLM的补救方法也有代价。知识蒸馏需要训练和托管一个更大的教师模型，推理增强需要额外的思维或行为解释步骤；两者都会增加工程成本和时延。更重要的是，传统判别式架构对每个用户序列都使用完全相同的层深，不会因为一个用户的历史很简单就减少计算，也不会为复杂用户分配更多表示能力。FLEXRec的动机因此不是再造一个生成式推荐器，而是保留判别式“全库打分”路径，把LLM每一层的中间输出变成可组合、可按输入路由的推荐信号。</p>
-<h1>2. 方法详解</h1>
-<p>FLEXRec先沿用E4SRec的判别式设置。它预训练SASRec得到所有商品的协同Embedding，维度为64，再用单层MLP投影到LLM隐藏空间。用户历史序列中的每个商品ID被替换成对应的注入Embedding，与任务指令和response token拼接成LLM输入E0。经过L层Transformer后，每个层l都有响应token表示e^l；传统E4SRec只用e^L，通过预测头h_L得到全商品logit并softmax为O^L。</p>
-<p>FLEXRec在每一层插入一个预测head h_l，得到O^l=Softmax(h_l(e^l))。这些层不是简单地平均，而是由Adaptive Continuous Router（AC-Router）按用户序列动态选择。路由器从第一层响应token e^1出发，用可学习矩阵W_z生成L个原始logit：z=e^1 W_z。与固定Top-k不同，FLEXRec对z做向量级ReLU，得到w=ReLU(z)，让每个样本可以选择不同的层集合和不同数量的层。为防止所有z都为负导致一个exit也不激活，作者先计算s=min(max(z)-ε,0)，再用停止梯度的shift得到z_hat=z-sg(s)，最后w=ReLU(z_hat)，并用归一化权重融合多个O^l。</p>
-<p>ReLU路由的好处是组合空间从固定的C(L,k)扩展到2^L-1，可以让简单行为序列使用少数层、复杂序列使用更多层；坏处是如果没有正则化，路由可能选择过多层或塌缩到少数层。为此作者提出target-k hinge loss。用sigmoid近似激活层数量C=Σ_l σ(τ z_hat_l)，然后计算L_Hinge=max(0,C-k)+γ max(0,1-C)。第一项惩罚超过k的计算，第二项防止C小于1；实验中τ=10、γ=2，设定目标k=3。这个损失是软约束，不会像硬Top-k那样切断梯度，也不会强制所有用户都用恰好3层。</p>
-<p>路由训练还包括连续load-balancing loss和Z-loss。对batch中每个样本的router logits做softmax，计算各exit的平均使用概率P̄_l，再用L_LB=LΣ_l P̄_l^2鼓励所有层都有机会被使用。Z-loss是L_Z=mean(z^2)，用于把原始logit拉回有限范围；它既防止混合精度下指数溢出，也避免sigmoid surrogate饱和后target-k hinge失去梯度。</p>
-<p>训练分三阶段。Stage 1只训练ID projection、LoRA参数和最终exit，采用E4SRec的交叉熵；Stage 2冻结骨干并训练中间exits，最多5个epoch，选择所有层平均效果最好的checkpoint；Stage 3冻结前两阶段组件，训练AC-Router及其L_LB、L_Hinge、L_Z损失，训练2个epoch并每500步验证。全局batch size 128，Toys/Yelp的micro-batch 32，Beauty为64，AdamW、cosine learning rate、初始学习率3e-4，单张NVIDIA H100 80GB完成实验。默认target k=3，超参搜索覆盖α、β、λ和k多个取值。</p>
-<h1>3. 核心技术贡献</h1>
-<p>第一，论文把“LLM的不同深度代表不同层次用户偏好”转成了可用的排序集成：浅层更接近短期物品转移，深层更接近抽象和长期意图。它不要求把最后一层做得更大，而是利用被传统判别式推荐丢弃的中间状态。</p>
-<p>第二，AC-Router把MoE的动态路由从“选择专家宽度”改成“选择Transformer深度的输出”。它同时决定选择哪些层以及选择几层，使计算预算可以随用户序列复杂度变化。target-k hinge不增加额外大模型参数，却通过连续梯度把路由数量控制在可部署区间。</p>
-<p>第三，FLEXRec保持判别式Embedding全库打分，不走自回归生成，因此可以复用向量索引、批量打分或商品分片服务。作者报告相对E4SRec的额外延迟小于1毫秒，这使“质量–成本自适应”比生成式重排更接近现有推荐平台。</p>
-<p>第四，三阶段训练把路由器从主推荐优化中隔离出来，避免早期层head和路由器同时随机学习导致不稳定。消融中，移除load-balance、hinge或Z-loss都会在三套数据、两种骨干上降低准确率，说明路由正则不是装饰项，而是实现动态exit的必要条件。</p>
-<h1>4. 实验结果分析</h1>
-<p>实验使用Amazon Toys、Beauty和Yelp三个公开数据集。用户/商品/行为统计如下：</p>
-<table><thead><tr><th>数据集</th><th>用户数</th><th>商品数</th><th>行为数</th><th>稀疏度</th></tr></thead><tbody><tr><td>Toys</td><td>19,412</td><td>11,924</td><td>167,597</td><td>99.93%</td></tr><tr><td>Beauty</td><td>22,363</td><td>12,101</td><td>198,502</td><td>99.93%</td></tr><tr><td>Yelp</td><td>30,431</td><td>20,033</td><td>316,354</td><td>99.95%</td></tr></tbody></table>
-<p>评估使用NDCG@10、Recall@10、NDCG@20、Recall@20和单用户推理时间。Qwen 3 1.7B下，FLEXRec在Toys上的NDCG@10/Recall@10为0.0521/0.0830，Beauty为0.0451/0.0775，Yelp为0.0207/0.0407，推理时间分别为7.53、7.10和7.49毫秒。Llama 3.2 3B下对应NDCG@10/Recall@10为0.0524/0.0848、0.0498/0.0818、0.0188/0.0376，推理时间为7.43、8.12和7.31毫秒。FLEXRec在紧凑骨干的可比较方法中都取得最好或接近最好结果，并在部分Beauty和Yelp设置超过更大骨干的E4SRec Skyline。</p>
-<p>与静态E4SRec相比，Qwen/Toys的NDCG@10从0.0452升到0.0521，Recall@10从0.0742升到0.0830；Qwen/Beauty从0.0391/0.0694升到0.0451/0.0775；Qwen/Yelp从0.0188/0.0383升到0.0207/0.0407。与其他路由器相比，SparseToken和DynamicMoE在稀疏的Yelp上明显变差，说明固定Top-k或不稳定的动态阈值可能会过度适配密集用户，无法处理长尾行为。</p>
-<p>路由正则的消融也很有信息量。在Qwen/Toys上，完整模型NDCG@10为0.0521；移除load-balance降到0.0476，移除target-k hinge降到0.0504，移除Z-loss降到0.0471。在Llama/Yelp上，完整模型为0.0188，去掉三项后分别为0.0170、0.0166和0.0169。尤其移除hinge会造成路由数量失控，Beauty-Qwen中最多激活16个exit，证明“动态”不等于无约束地扩大计算。</p>
-<p>超参分析显示，λ大致取1时三套数据较稳定；β=1e-3在多数场景最优或接近最优；target k=3在两种骨干、三套数据上总体最好。案例分析显示Llama平均激活约3个exit，Qwen约2个，而且相同长度区间内的用户也会得到不同的路由决策，说明路由器确实读取了序列内容，而不是只用历史长度做硬规则。</p>
-<h1>5. 局限与未来方向</h1>
-<p>论文没有单独列出传统意义上的Limitations小节，但作者的实验范围本身构成明确边界：只在三个公开、经过5-core过滤的数据集上做leave-one-out离线评估，骨干是Qwen 3 1.7B和Llama 3.2 3B，训练在单张H100 80GB上完成；没有线上A/B、真实全量商品库或生产流量实验。作者还把更大Qwen 3 4B和Llama 3.1 8B作为Skyline，并承认更大的骨干仍然可能带来更高上限。target k、loss权重和路由结构需要按设备和业务调参；论文报告的是毫秒级单用户实验延迟，不等于包括向量索引、网络、批处理和缓存后的端到端服务延迟。</p>
-<p>一个明显但未充分展开的问题是退出层的商品预测头如何在百万级商品规模下共享或分片，以及层级exit的分布校准是否一致。另一个问题是训练期的多exit head和线上动态路由版本如何灰度、回滚和监控。论文也没有展示冷启动用户、极短序列和行为分布突变下的收益分层，虽然AC-Router的设计目标正是适应不同复杂度用户。未来工作可以补充在线实验、路由稳定性、用户分层公平性和计算成本的Pareto曲线。</p>
-<h1>6. 工业实践意义</h1>
-<p>FLEXRec给推荐精排提供了一个相对清晰的落地模板。第一步不是直接把7B模型搬进线上，而是训练一个SASRec或其他ID序列模型，把协同商品Embedding投影进一个紧凑LLM；这样保留ID共现信号，也避免依赖商品文本质量。第二步在若干Transformer层挂轻量预测头，离线检查每层对短期转移、长期兴趣、冷启动和长序列的互补性。如果中间层独立效果没有差异，动态融合就没有必要。</p>
-<p>第三步把AC-Router理解成可学习的延迟预算。可以按请求类型设置不同target k：首页高QPS请求偏向1–2个exit，深度个性化页或高价值用户允许3–4个exit；但不要只用用户历史长度作为路由特征，应检查内容、行为间隔和商品类别切换。target-k hinge、load-balance和Z-loss应一起保留，尤其混合精度下不能省略Z-loss。</p>
-<p>第四步用线上指标验证路由是否真的有价值。离线需要同时报告NDCG、Recall和各层使用率，线上要按用户活跃度、序列长度、候选库规模、设备和流量分层看CTR、停留、转化、p95延迟、GPU利用率和成本。论文的“额外延迟小于1毫秒”是在E4SRec基础上的模型侧结果，接入社区搜索时还要测embedding缓存、召回、重排和网络开销。</p>
-<p>对于社区短文本搜索，这个方法尤其适合把“理解用户最近在看什么”和“理解用户长期主题”拆成不同深度的表示；但它并不直接解决文本语义、query理解或安全约束。更稳妥的工程路线是：先在现有两塔/序列精排模型中验证中间层exit，再把紧凑LLM作为一条可开关的重排支路，利用AC-Router控制高峰期成本，并设置静态E4SRec兜底。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2608-17316"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2603.19626" data-paper-id="arxiv:oai:arXiv.org:2603.19626" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.20</span></div>
@@ -263,60 +169,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

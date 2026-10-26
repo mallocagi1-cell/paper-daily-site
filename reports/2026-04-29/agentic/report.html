@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -64,130 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对于多步骤 Agent 任务，单纯沿用「数学推理 PRM」会把试错惩罚混入训练信号，是当前 search/rec Agent 落地的核心痛点。论文给出两条可借鉴的工程做法：一是让 PRM 像 Agent 一样主动调用工具回放执行环境去判分，而不是只看文本轨迹；二是用「正确/中性/负」的三元奖励对探索性 trial-and-error 留出空间。这套思路可直接迁移到搜索 Agent 的 query 改写、检索回退等多轮决策的过程级奖励训练。</div>
     <div class="foot">Zhisong Qiu, Shuofei Qiao, Kewei Xu, Yuqi Zhu, Lun Du · 2026-04-26 · HuggingFace</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.24198" id="dr-arxiv-2604-24198">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>深度解读：DataPRM — 面向 Agentic 数据分析的过程级奖励模型</h1>
-<h2>1. 问题与动机</h2>
-<p>当前 LLM 数据分析 Agent 几乎全部采用「结果级监督」（只看最终答案对不对），这会让中间出现的逻辑漏洞（hallucinated logic）一路传到最终输出且不被发现。Process Reward Model（PRM）在数学推理这种「静态」领域已经被验证有效，但作者指出，把数学 PRM 直接搬到数据分析这种「动态、需与环境交互」的任务上会失败。论文具体识别出两个失效模式：</p>
-<ul>
-<li><strong>Silent Errors（静默错误）</strong>：代码可执行成功但结果在逻辑上是错的。一般 PRM 只做静态代码审查，不能感知执行环境，因而这类错误一律滑过去。</li>
-<li><strong>Grounding Errors（试错型错误）</strong>：数据分析 Agent 在熟悉数据 schema/路径时必然会产生小错误（语法、文件名拼错等），这是「正常的探索」。但通用 PRM 会把这些步骤一律打低分，导致最终能成功的轨迹被剪枝。</li>
-</ul>
-<p>Figure 2b 给出了具体证据：通用 PRM 对含 grounding error 但最终答案正确的轨迹给出整体低分。这两个失效模式的本质是「现有 PRM 无法区分致命错误和可恢复的探索性步骤」，正是论文要解决的问题。</p>
-<h2>2. 方法详解</h2>
-<p>DataPRM 的核心设计：把 PRM 本身做成一个会主动调用代码环境的 Agent，并使用三元奖励替代二元奖励。</p>
-<p><strong>架构（Equation 3-6）</strong>：DataPRM 采用「生成式 ReAct 范式」对每一步打分，输入是：完整轨迹历史 + 当前步骤 + 之前步骤的 verification feedback；输出是内部三元组（reasoning, code action, observation），这些 action 可以是任意可执行代码或工具调用。这意味着评判一步是否正确时，DataPRM 可以自己执行 SQL、读文件、跑 python 来验证，而不只是基于文本判断。</p>
-<p><strong>工具调用能力</strong>：集成两种工具——<code>query_document</code>（读文档）与 <code>query_image</code>（解读图）——使 PRM 同时拥有多模态与长上下文能力，可以查询专家模型来理解超出代码本身范围的内容。</p>
-<p><strong>三元奖励（替代 0/1 二元奖励）</strong>：</p>
-<ul>
-<li><strong>1.0 (Strictly Correct)</strong>：步骤逻辑正确，朝着解题方向推进；</li>
-<li><strong>0.5 (Correctable Error)</strong>：syntax 错误、文件路径错误等会触发环境反馈、可恢复的错误；</li>
-<li><strong>0.0 (Irrecoverable Error)</strong>：根本性逻辑错误或幻觉，无法恢复。</li>
-</ul>
-<p>这是 DataPRM 的关键创新——0.5 这一档明确区分「探索性试错」和「真正错误」，让 RL 训练不会一刀切地惩罚试错。</p>
-<p><strong>训练数据构造（约 7K 高质量样本）</strong>：</p>
-<ol>
-<li>从 GitHub 与人工专家收集真实数据文件；</li>
-<li>用 Qwen3-235B-A22B-Instruct 对每条已验证 query 生成 K=4 条多样轨迹；</li>
-<li>只保留「最终答案不一致」的 case（最大化信息增益、聚焦边界 case）；</li>
-<li>用 LLM 做初始 step-level 评分与错误归因；</li>
-<li>把已识别错误整理成 few-shot examples 作为外部知识；</li>
-<li>DeepSeek-V3.2 作为专家 annotator，用错误知识做 ternary reward 标注。</li>
-</ol>
-<p><strong>训练设置</strong>：基模型 Qwen3-4B-Instruct；SFT，learning rate=1e-5，batch size=32，epoch=3，硬件 8×H20。</p>
-<p><strong>端到端 RL 集成</strong>：使用 GRPO 算法，奖励组合 r_total = (1-β)·r_outcome + β·(1/T·Σ r_prm)；并引入一致性约束（Equation 10）：要求 PRM 给最后一步的奖励与最终结果是否正确保持一致。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>环境感知验证（Environment-Aware Verification）</strong>：首个让 PRM 主动与执行环境交互的工作。本质机制：当评判某步骤时，PRM 自己跑一段验证代码（例如查询表 schema、跑 sanity check）从而捕获「执行无异常但结果错」的 silent error；这是任何静态 PRM 都做不到的。</li>
-</ol>
-<ol>
-<li><strong>三元奖励设计（Ternary Reward）</strong>：附录 A 给出了理论推导，把奖励分成「任务推进 G」与「信息增益 I」两部分；0.5 这一档对应高 I 但低 G 的步骤，恰好对应探索性 trial-and-error。这一设计对应实验里 entropy 不坍塌的训练动力学。</li>
-</ol>
-<ol>
-<li><strong>可扩展数据 pipeline</strong>：diversity-driven 生成 + knowledge-augmented annotation 让 7K 样本就能训出强 PRM，且无需 reference correctness（不需要标准答案）。</li>
-</ol>
-<ol>
-<li><strong>参数效率（58× 优势）</strong>：4B 模型在 ScienceAgentBench 上击败 72B 通用数学 PRM（详见实验）。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<h3>4.1 测试时扩展（Best-of-N）</h3>
-<p><strong>ScienceAgentBench</strong>（Qwen3-235B 做 policy，N=16）：</p>
-<table><thead><tr><th>验证器</th><th>Easy</th><th>Hard</th></tr></thead><tbody><tr><td>DataPRM (4B)</td><td><strong>40.89%</strong></td><td><strong>25.64%</strong></td></tr><tr><td>Qwen2.5-Math-PRM-72B</td><td>20.51%</td><td>23.08%</td></tr></tbody></table>
-<p>DataPRM 用 1/18 的参数取得 Easy 上 +20% 的绝对提升。</p>
-<p><strong>DABStep</strong>（N=16）：DataPRM 在 Hard 上 33.86%，Easy 上 32.80%；Majority Voting 仅 30.69%；ScienceAgentBench 上相对 +7.21%，DABStep 上 +11.28%。</p>
-<p><strong>Scaling 行为</strong>：DataPRM 随 N（4→8→16）持续改进；Qwen2.5-Math-PRM-72B 反而从 33.33% 退化到 31.33%——典型的 reward hacking 表现，规模越大越被攻击。这是 PRM 鲁棒性的硬证据。</p>
-<p><strong>跨搜索策略泛化</strong>（Figure 4）：</p>
-<ul>
-<li>Beam Search：DataPRM 38.89% vs 72B PRM 32.44%；</li>
-<li>Diverse Verifier Tree Search：DataPRM 持续领先且未发生 entropy collapse；</li>
-<li>这说明 DataPRM 的优势不依赖特定搜索算法。</li>
-</ul>
-<h3>4.2 强化学习训练</h3>
-<ul>
-<li><strong>DABench pass@1</strong>：78.73%（process-supervised RL）</li>
-<li><strong>TableBench pass@1</strong>：64.84%</li>
-</ul>
-<p><strong>训练动力学</strong>（Figure 5）是最重要的结果之一：process-supervised RL 整个训练过程 entropy 维持在 ~0.18；outcome-only baseline 在 200 步后 entropy 坍缩到 0.12。这直接证明 ternary reward 中 0.5 这一档保留了探索性，避免了过早收敛。pass@3 也因此显著提升。</p>
-<h3>4.3 关键消融</h3>
-<p><strong>Table 3 组件分析</strong>（Hard, N=16）：</p>
-<ul>
-<li>CoT baseline（无代码环境）：35.71%</li>
-<li>单轮 code + 环境：36.51%（+0.80）</li>
-<li>多轮 code 但无环境：36.67%（边际改进）</li>
-<li>多轮 code + 环境：36.77%（+1.06）</li>
-<li><strong>完整 DataPRM</strong>：37.57%（绝对 +1.86，相对 +5.2%）</li>
-</ul>
-<p>结论：环境感知和多轮交互单独都只带来 +1% 左右收益，但联合使用才能解锁 silent error 检测，这是 DataPRM 的核心技术机制。</p>
-<p><strong>Table 4 数据纯度 vs 多样性</strong>：</p>
-<ul>
-<li>不过滤（保留全部多样轨迹）：<strong>40.89%</strong>（最佳）</li>
-<li>Meta-Critic 过滤：40.00%</li>
-<li>Process-Consistency 过滤：39.34%</li>
-</ul>
-<p>这是一个反直觉的发现：在数据分析 PRM 训练中，数据多样性比纯度更重要；激进过滤会扔掉「带噪声但提供有效监督」的多样化样本。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出三点局限：</p>
-<ol>
-<li><strong>任务范围</strong>：仅覆盖含推理与可视化的数据分析，不包含复杂工程任务（模型训练、预测部署）；</li>
-<li><strong>数据依赖</strong>：依赖高质量轨迹数据 + SFT，未来需探索 less-supervised 路径（RL、skill learning）；</li>
-<li><strong>标注规模</strong>：7K 样本对 frontier 模型或全新分析范式可能不够。</li>
-</ol>
-<p>未明示但可识别的局限：（a）使用 DeepSeek-V3.2 做专家 annotator 时该模型本身的偏置会传到 DataPRM；（b）三元奖励分档（0/0.5/1.0）的边界由人工启发式定义，不一定是连续奖励意义下的最优 quantization。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>对搜索/推荐 Agent 训练的直接启示</strong>：</p>
-<ol>
-<li><strong>过程奖励是 Agent 训练的关键差异化</strong>：仅做 outcome reward 训练的 search Agent 会出现 entropy collapse、过早收敛——DataPRM 在 200 步训练时的 entropy 0.18 vs 0.12 直接量化了这一差异。落地时，搜索 Agent 的 RL 训练应该考虑 process reward。</li>
-</ol>
-<ol>
-<li><strong>PRM 必须能调用真实环境</strong>：把 PRM 设计成「只读文本」的 Agent 是常见错误。社区搜索 Agent 的训练中，PRM 应该能调用真实搜索引擎执行查询、查看返回结果，否则也会出现 search 任务里的 silent error（query 看似合理但实际召回离题）。</li>
-</ol>
-<ol>
-<li><strong>三元奖励比二元更稳</strong>：query 改写、tool selection 等多步任务里，把「合理但非最优的尝试」直接判 0 是大多数 RLHF 失败的根源。建议把这一档明确建模成 0.5 而非 0/1 切换。</li>
-</ol>
-<ol>
-<li><strong>小模型 PRM 完全可行</strong>：4B 模型胜 72B PRM 是工程上巨大利好。生产环境完全可以用 7B 量级 PRM 给 70B 量级 policy 提供监督，serving 成本接近 1/10。</li>
-</ol>
-<ol>
-<li><strong>训练数据：多样性 &gt; 纯度</strong>：很多团队过度清洗 RL 训练轨迹，本论文反向给出了证据——保留多样性带噪轨迹比激进过滤更好。这一点对处于「数据冷启动」的 search Agent 团队尤为重要。</li>
-</ol>
-<p><strong>部署考虑</strong>：DataPRM 4B 在 8×H20 上 SFT 完成；推理时作为 verifier 与 policy 联合 serving，KV cache 与多轮工具调用会显著影响延迟，建议在异步打分模式（不阻塞主推理）下使用。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2604-24198"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-arxiv:2604.24003" data-paper-id="arxiv:2604.24003" data-card>
@@ -311,60 +188,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

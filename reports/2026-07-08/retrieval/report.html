@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -105,106 +105,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>搜索系统通常在召回和重排之间做硬取舍：双塔便宜但弱，cross-encoder 强但贵。MICE 的启示是可以从交互矩阵本身裁剪，而不是只做蒸馏或量化；对 UGC 搜索，可优先在高流量 query、长尾歧义 query 的二阶段重排中试验 minimal-interaction reranker，观察 nDCG 与延迟曲线。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Mathias Vast, Victor Morand, Basile van Cooten, Laure Soulier, Josiane Mothe, Benjamin Piwowarski</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>Tue, 07 Jul 2026 00:00:00 -0400</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 4 · Timely 4</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2602.16299" id="dr-arxiv-oai-arXiv-org-2602-16299">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>MICE: Minimal Interaction Cross-Encoders for Efficient Re-ranking — 深度解读</h1>
-<h2>问题与动机</h2>
-<p>Cross-encoder 是信息检索中排序效果最好的模型，但其推理成本极高——每次排序都需要将 query 和 document 拼接后做完整的 Transformer 前向传播，无法预计算文档表示，导致在大规模重排序场景中计算量爆炸。</p>
-<p>现有的解决路径形成了一个效果-效率的频谱：</p>
-<ul>
-<li><strong>Bi-encoder</strong>（如 DPR）：query 和 document 独立编码，效率高但效果差，尤其在 OOD（域外泛化）场景</li>
-<li><strong>Late-interaction</strong>（如 ColBERT）：保留 token 级表示并用 MaxSim 做延迟交互，效率和效果折中，但仍然达不到 cross-encoder 的排序效果</li>
-<li><strong>Cross-encoder</strong>：效果最好，但推理成本最高</li>
-</ul>
-<p>核心问题是：<strong>能否从 cross-encoder 出发，通过移除不必要的 token 交互，在几乎不损失排序效果的前提下大幅降低推理成本？</strong> 这本质上是在寻找一个&quot;甜蜜点&quot;——比 late-interaction 更强，比 cross-encoder 更快。</p>
-<h2>方法概述</h2>
-<p>MICE 的核心思路是<strong>通过实验性地分析 cross-encoder 内部的注意力交互机制，识别出哪些 token 间的信息传递对排序结果有贡献、哪些是冗余的，然后系统性地移除冗余交互</strong>。</p>
-<p>具体分为两个阶段：</p>
-<p><strong>第一阶段：渐进式 Masking 实验</strong>（回答&quot;哪些交互可以去掉&quot;）</p>
-<p>用 <code>Y←X</code> 表示从 X 到 Y 的注意力信息传递，定义了 4 个递进的 masking 步骤：</p>
-<ul>
-<li><strong>Mask 0</strong>：屏蔽 [SEP] 的接收和 [CLS] 的发送（让 [SEP] 作为 attention sink）</li>
-<li><strong>Mask 1</strong>：屏蔽文档到 [CLS] 的信息流（<code>[CLS]↚D</code>），即相关性信号通过 query token 中转</li>
-<li><strong>Mask 2</strong>：屏蔽 query 到 document 的信息流（<code>D↚Q</code>），即文档不需要&quot;看到&quot;query</li>
-<li><strong>Mask 3</strong>：在前 ℓ* 层屏蔽 document 到 query 的信息流（<code>Q↚D</code>），实现低层 query-document 完全分离</li>
-</ul>
-<p><strong>第二阶段：MICE 架构设计</strong>（将 masking 发现转化为高效架构）</p>
-<p>结合三个架构设计：</p>
-<ol>
-<li><strong>Mid-fusion</strong>：前 ℓ* 层 query 和 document 独立编码，文档可预计算</li>
-<li><strong>Light Cross-Attention</strong>：交互层中用单向跨注意力（document→query）替代全自注意力，文档表示冻结不更新</li>
-<li><strong>Layer Dropping</strong>：Transformer 高层主要为 MLM 预训练任务特化，可安全剪裁（MiniLM 从 12 层降到 7 层，仅用 3 层做交互）</li>
-</ol>
-<h2>核心技术贡献</h2>
-<p><strong>1. 对 cross-encoder 内部机制的系统性分析</strong></p>
-<p>论文不是直接提出一个新架构，而是从&quot;理解 cross-encoder 为什么有效&quot;出发，揭示了几个关键发现：</p>
-<ul>
-<li>Cross-encoder 中相关性信号主要通过 <strong>query token</strong> 聚合后传递给 [CLS]，document 到 [CLS] 的直接通路并非必要</li>
-<li>Document 不需要接收 query 的信息（<code>D↚Q</code> 可安全移除），这与 Sparse CE 的做法（屏蔽 <code>Q↚D</code>）恰好相反</li>
-<li>Query-document 交互只需要在 Transformer 的高层进行，低层的独立编码不影响排序质量</li>
-</ul>
-<p><strong>2. Mask 1 带来的 OOD 正则化效应</strong></p>
-<p>一个出人意料的发现：屏蔽 document→[CLS] 的路径后，OOD 泛化能力反而显著提升（MiniLM 上 BEIR 平均 nDCG@10 从 44.7 提升到 50.2）。这暗示 cross-encoder 的部分交互可能导致了对训练域的过拟合。</p>
-<p><strong>3. 与现有方法的关键区别</strong></p>
-<table><thead><tr><th>方面</th><th>ColBERT</th><th>PreTTR</th><th>Sparse CE</th><th>MICE</th></tr></thead><tbody><tr><td>交互方式</td><td>MaxSim</td><td>高层 self-attn</td><td>屏蔽 Q↚D</td><td>单向 cross-attn (D→Q)</td></tr><tr><td>文档更新</td><td>无</td><td>有</td><td>有</td><td>冻结</td></tr><tr><td>交互方向</td><td>对称</td><td>对称</td><td>单向(D→Q)</td><td>单向(D→Q)</td></tr><tr><td>层剪裁</td><td>无</td><td>无</td><td>无</td><td>有</td></tr></tbody></table>
-<p>MICE 的独特之处在于：（a）基于 masking 实验的系统性设计而非启发式设计；（b）发现了与 Sparse CE 相反的最优 masking 方向；（c）结合了 mid-fusion、cross-attention、layer dropping 三个维度的优化。</p>
-<h2>实验结果分析</h2>
-<p><strong>ID（域内）效果：接近 cross-encoder</strong></p>
-<p>以 MiniLM 为 backbone，MICE-ℓ4+3 的 ID 平均 nDCG@10 为 61.3，仅比 cross-encoder baseline（63.8）低 2.5 个点，远超 ColBERT（57.2）。</p>
-<p><strong>OOD（域外）泛化：超越 cross-encoder</strong></p>
-<p>MICE-ℓ4+3 在 BEIR 13 个数据集上的平均 OOD nDCG@10 达到 50.4，比 cross-encoder baseline（44.7）高出 5.7 个点，比 ColBERT（42.6）高出 7.8 个点。在 BM25-hard 子集上，MICE 比 ColBERT 高出 11.3 个点，说明 MICE 在困难查询上有更强的区分能力。</p>
-<p><strong>推理效率：4 倍加速</strong></p>
-<table><thead><tr><th>模型</th><th>延迟 (ms)</th><th>吞吐 (docs/s)</th><th>峰值显存</th></tr></thead><tbody><tr><td>Cross-Encoder</td><td>470</td><td>267</td><td>1194 MB</td></tr><tr><td>MICE（预计算）</td><td>113</td><td>1130</td><td>598 MB</td></tr><tr><td>ColBERT</td><td>130</td><td>982</td><td>332 MB</td></tr></tbody></table>
-<p>MICE 在预计算文档表示后实现了 4 倍加速，吞吐量与 ColBERT 接近（1130 vs 982 docs/s）。</p>
-<p><strong>架构差异的影响</strong></p>
-<p>一个重要的 negative result：基于 ModernBERT 的 Ettin 模型对 MICE 的响应与 MiniLM（BERT-based）差异显著。Ettin-32M 上 MICE 的 OOD 效果反而下降（46.4 vs 48.2），说明论文从 MiniLM 得出的内部机制洞察不完全泛化到其他架构。</p>
-<h2>局限与未来方向</h2>
-<p><strong>论文承认的局限：</strong></p>
-<ol>
-<li><strong>架构依赖性</strong>：从 MiniLM 推导的 masking 策略不能直接迁移到 ModernBERT 架构，说明方法的普适性有待验证</li>
-<li><strong>显存开销</strong>：预计算模式下显存是 ColBERT 的 1.8 倍，因为需要存储完整的中间层表示而非压缩后的 token embedding</li>
-<li><strong>未实现完整检索管线</strong>：论文只验证了重排序场景，没有实现端到端的 indexing + retrieval pipeline</li>
-<li><strong>交互层压缩受限</strong>：尝试缩小交互层隐藏维度效果不佳，随机初始化破坏了预训练权重的优势</li>
-</ol>
-<p><strong>未来改进方向：</strong></p>
-<ul>
-<li>将 MICE 的分析框架推广到更多 Transformer 架构（如 ModernBERT），理解不同架构的注意力机制差异</li>
-<li>探索更高效的文档表示压缩方案，缩小与 ColBERT 的存储差距</li>
-<li>结合更大规模模型（如 BERT-large 级别）验证 scaling 特性</li>
-<li>将 MICE 扩展到一阶段检索（而非仅重排序），构建完整的端到端检索系统</li>
-</ul>
-<h2>工业实践意义</h2>
-<p><strong>1. 重排序系统的效率优化</strong></p>
-<p>对于在线搜索/推荐系统中使用 cross-encoder 做精排的场景，MICE 提供了一个有吸引力的替代方案：在保持接近 cross-encoder 排序质量的同时，将延迟从 ~470ms 降到 ~113ms（4x），使精排在更大候选集（如 top-1000 而非 top-100）上变得可行。</p>
-<p><strong>2. 文档预计算的工业价值</strong></p>
-<p>MICE 的 mid-fusion 设计使文档可以离线预计算前 ℓ* 层的表示，这对工业系统意义重大：</p>
-<ul>
-<li>文档库通常是静态或低频更新的，预计算可以大幅降低在线推理成本</li>
-<li>与 ColBERT 类似的预计算范式，但保留了更丰富的文档表示（完整的隐藏层向量而非单层 token embedding）</li>
-</ul>
-<p><strong>3. OOD 泛化能力的实际价值</strong></p>
-<p>在搜索和推荐系统中，用户查询的分布经常偏离训练数据。MICE 在 OOD 场景上超越 cross-encoder 的特性（+5.7 nDCG@10）意味着它在面对长尾查询、新领域内容时更鲁棒，这在实际系统中非常有价值。</p>
-<p><strong>4. 架构选择的实践启示</strong></p>
-<p>论文揭示了不同 backbone（BERT vs ModernBERT）对 attention masking 的响应截然不同，提醒工业实践者：<strong>不要盲目迁移在一种模型上验证的优化策略</strong>。在部署前需要针对具体 backbone 重新验证 masking 策略和最优交互层位置。</p>
-<p><strong>5. 介于 bi-encoder 和 cross-encoder 之间的新选择</strong></p>
-<p>对于搜索/推荐系统的多阶段 ranking pipeline，MICE 填补了 ColBERT 和 cross-encoder 之间的空白，为系统架构师提供了一个新的效果-效率权衡点。特别适合作为二阶段重排器（在 ColBERT 召回后做精排），或替代现有 cross-encoder 精排以降低延迟。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2602-16299"></span>
 </article>
 <article class="card t-retrieval" id="paper-arxiv:oai:arXiv.org:2607.03456" data-paper-id="arxiv:oai:arXiv.org:2607.03456" data-card>
   <div class="top"><span class="n">06</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.00</span></div>
@@ -288,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

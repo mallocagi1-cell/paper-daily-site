@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -64,69 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>rank-1 近似 + 近线性增长揭示 RLVR 增益的低维本质，外推成功源于一种&quot;去噪&quot;效应：投影到主子空间过滤掉高秩噪声方向。消融显示提高子空间秩或改用非线性建模都无额外收益，印证极简充分性。对训练搜索/推荐 reasoning 模型有直接价值——可用前 50 步轨迹预测 1000 步 checkpoint，把昂贵的 RL rollout 预算压到 ~15%，为 RLVR 训练 agent/排序策略提供低成本 scaling 手段。</div>
     <div class="foot">Zhepei Wei, Xinyu Zhu, Wei-Lin Chen, Chengsong Huang, Jiaxin Huang, Yu Meng · 2026-05-19 · HuggingFace</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="hf:2605.21468" id="dr-hf-2605-21468">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>RLVR (可验证奖励强化学习) 已成为提升 LLM 推理能力的主流范式 (DeepSeek-R1 等)，但典型 RLVR 流程要用 GRPO 跑海量优化步、动辄数天 GPU 时，成本随训练步数线性增长。论文从一个被忽视的角度切入：RLVR 训练得到的<strong>参数轨迹 (weight trajectory) 的几何结构</strong>。</p>
-<p>先前工作已暗示 RLVR 更新是高度结构化的——它更像&quot;激发并放大预训练模型中已潜在的推理行为&quot;而非从零学新能力，且有研究指出更新的&quot;方向比幅度更重要&quot;、RLVR 可能只改动稀疏/低维的参数子集。由此作者提出核心假设：能否从训练早期动态 (例如前 15% 步) 预测 RLVR 训练的走向，并达到完整训练的性能？这把一个&quot;省算力&quot;的工程问题，转化为&quot;RLVR 轨迹是否可预测&quot;的科学问题。</p>
-<h2>2. 方法详解</h2>
-<p>论文先做两项实证发现，再据此设计方法。</p>
-<p><strong>发现 1（低秩）</strong>：记 θ₀ 为基座权重、θ_t 为训练 t 步后的权重，计算参数增量 Δθ_t = θ_t − θ₀，对每个权重张量把各步增量 flatten 后堆叠成轨迹矩阵 M ∈ R^(T×mn)，做 SVD。结果显示<strong>每个张量仅用 rank-1 (单一主方向) 重构，就能保留几乎全部 MATH 下游准确率增益</strong>。即虽然张量身处高维空间、原则上可沿很多独立分量移动，但单一分量已捕获绝大部分任务相关变化。</p>
-<p><strong>发现 2（线性）</strong>：把每步增量投影到主奇异向量 v₁ 上得到标量系数 c_t，用最小二乘拟合 c(t)=at+b，<strong>绝大多数张量 R²&gt;0.98</strong>，即 rank-1 系数随训练步近似线性增长。</p>
-<p><strong>RELEX 算法</strong>（训练无关、闭式解、无可学习参数）三步：</p>
-<ol>
-<li><strong>rank-1 子空间估计</strong>：对前 T_cut 个 checkpoint 的轨迹矩阵做截断 SVD，取 top-1 右奇异向量 v₁ 作为参数变化主方向（注意是对整段观测窗口做&quot;轨迹级&quot; SVD，得到一个共享 basis）。</li>
-<li><strong>线性系数外推</strong>：把观测到的各步增量投影到 v₁ 得标量序列 C₁，用 OLS 拟合斜率 a=Cov(t,c_t)/Var(t)、截距 b，外推目标步 T 的系数 ĉ_T = aT+b。</li>
-<li><strong>预测未来权重</strong>：Ŵ_T = W₀ + ĉ_T·v₁，逐张量组装成完整 checkpoint θ̂_T。</li>
-</ol>
-<p><strong>训练设置</strong>：3 个模型 (Qwen2.5-Math-1.5B、Qwen3-4B-Base、Qwen3-8B-Base) 用 GRPO 在 MATH 上训练至 plateau，共 500 步、每步存 checkpoint。整个 RELEX 只需每张量一次截断 SVD + 两参数最小二乘，相对 RLVR 训练成本可忽略。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>揭示 RLVR 轨迹的&quot;极低秩 + 近线性&quot;双重规律</strong>：rank-1 重构在各训练步、各模型族都贴合 oracle RLVR checkpoint；rank-1 系数 R²&gt;0.98 的线性度，比同期 Weight Extrapolation 在原始权重上观察到的 R²&gt;0.7 (80% 权重) 信号更强、更规整——这正是 rank-1 投影优于裸权重外推的根源。</li>
-</ol>
-<ol>
-<li><strong>提出 RELEX——参数无关的 checkpoint 外推法</strong>：区别于 AlphaRL (在每个 checkpoint 各自做 SVD，basis 会随步旋转) 和 NExt (训练一个预测器做非线性外推)，RELEX 用&quot;轨迹级&quot;单一 SVD + 闭式线性拟合，无需训练任何预测模块，对每步噪声更鲁棒。</li>
-</ol>
-<ol>
-<li><strong>&quot;谱去噪 (spectral denoiser)&quot;机制解释</strong>：rank-1 投影相当于低通滤波，保留平滑单调的任务相关信号、丢弃高频随机优化噪声；外推甚至能改进原始 checkpoint。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p><strong>主结果（in-domain MATH，仅用 15–20% 训练成本）</strong>：RELEX vs 完整 RLVR——Qwen2.5-Math-1.5B 71.6% vs 71.5%（持平略超）、Qwen3-4B-Base 85.6% vs 85.5%（持平略超）、Qwen3-8B-Base 87.4% vs 88.5%（差 1.1% 内）。</p>
-<p><strong>OOD 泛化</strong>（AIME2025/2026、HMMT2025、OlympiadBench、AMC2023 五个竞赛集）：RELEX 在 Qwen2.5 上 5 个里赢 4 个、Qwen3-4B 上赢 3 个，Qwen3-8B 平均差 0.9% 内但仍赢 OlympBench。说明外推 checkpoint 捕获的是可迁移推理增益，而非死记 MATH 训练分布。</p>
-<p><strong>对比同算力外推基线</strong>（均用 15–20% 成本，以 Qwen2.5 为例）：RELEX 比 Weight Extrapolation +1.2、比 Logits Extrapolation +6.7、比 ExPO +3.9、比 AlphaRL +4.3。与 Weight Extrap 的差距最有信息量：两者都靠轨迹线性，但后者在原始权重上拿 2 个点拟合，RELEX 先投影到 rank-1 SVD 子空间——SVD 这步起到低通滤波、抑制被 2 点拟合误当信号的噪声方向。</p>
-<p><strong>消融</strong>（Qwen2.5, T_cut=75）：(a) 用原始权重空间代替 SVD 空间，每步都掉点；(b) rank-5/rank-10 全面落后 rank-1——Figure 5 显示 layer 14 gate_proj 的第 1 分量占 rank-5 子空间方差的 <strong>81.4%</strong> 且近线性，分量 2–5 合计仅 18.6% 且噪声大、非单调；(c) 线性外推优于多项式 (窗口外灾难性崩溃) 和神经网络 (无一致优势，step 200 时 69.5% vs 70.0%，却带来大量超参与拟合成本)。</p>
-<p><strong>长程稳定性</strong>：在合适 T_cut 下可外推到 step 1000（约观测窗口 8 倍、原 500 步 RLVR 的 2 倍）仍接近峰值——Qwen2.5 T_cut=125 在 step 750 达峰、step 1000 仍 71.6%（超 RLVR step-500 的 71.5%）。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出的局限：(1) <strong>只研究了 GRPO + 数学推理 + Qwen 系列三个模型</strong>；是否对 PPO 等其他 RL 算法、代码生成等其他任务形态、Llama 等其他模型族成立尚未知。(2) <strong>rank-1 设计虽在所配 T_cut 下充分，但未必普适</strong>，需要自适应秩选择。(3) <strong>观测窗口 T_cut 的选择很关键且模型依赖</strong>：Qwen2.5 偏好更长前缀，Qwen3-4B 反而是小窗口 (T_cut=75) 更稳、大窗口在 step 1000 崩到 50–61%，Qwen3-8B 则要中大窗口 (100–125)——说明 rank-1 主方向的&quot;平稳性&quot;在不同模型族并不一致。作者建议在线监控子空间漂移/奇异值间隙来自适应选 T_cut。</p>
-<p>一个论文未充分展开的隐忧：rank-1 充分性可能与 MATH 这类&quot;奖励信号清晰&quot;的任务强相关，奖励更稀疏/含噪的检索类任务上线性度可能下降。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜索/推荐从业者训练 reasoning 类模型（如多步检索-推理 agent、生成式排序策略）有直接价值：</p>
-<ol>
-<li><strong>把昂贵的 RL rollout 预算压到约 15–20%</strong>：先正常 GRPO 跑前 ~75–125 步，再用 RELEX 闭式外推到等效 500–1000 步 checkpoint，省下 80%+ GPU 时。对算力受限团队是低门槛的提效手段（代码已开源 github.com/weizhepei/RELEX）。</li>
-</ol>
-<ol>
-<li><strong>零成本后处理增益</strong>：即使已有完整 RLVR run，对其做一次 rank-1 SVD 投影本身就能当谱正则器，可能小幅改进现成 checkpoint——几乎零成本，值得作为常规后处理尝试。</li>
-</ol>
-<ol>
-<li><strong>落地注意事项</strong>：T_cut 必须按模型族实测验证，不能照搬；rank-1 与线性外推默认配置在数学推理验证过，迁移到检索/推荐任务前应先验证 rank-1 系数的线性度 (查 R² 与第 1 分量方差占比) 再决定是否外推。部署上 RELEX 无额外推理开销——产物就是一个标准 checkpoint，不改变 serving 路径。</li>
-</ol></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-hf-2605-21468"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-blog_rss:microsoft_research_blog:https://www.microsoft.com/en-us/research/blog/magenticlite-magenticbrain-fara1-5-an-agentic-experience-optimized-for-small-models" data-paper-id="blog_rss:microsoft_research_blog:https://www.microsoft.com/en-us/research/blog/magenticlite-magenticbrain-fara1-5-an-agentic-experience-optimized-for-small-models" data-card>
@@ -251,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

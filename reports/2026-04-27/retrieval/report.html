@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,39 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把稀疏检索的基底从词替换为概念，是稀疏召回的范式升级：UGC 短文本里同义、错别字、缩写极多，词级 SPLADE 容易膨胀到上万个非零维度，概念维度天然合并这些变体。落地启示：可在生产 SPLADE 之上叠加 SAE 投影头复用倒排索引，几乎零额外推理开销，是社区搜索召回端的优良候选方案。</div>
     <div class="foot">Yuxuan Zong, Mathias Vast, Basile Van Cooten, Laure Soulier, Benjamin Piwowarski · 2026-04-23 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.21511" id="dr-arxiv-2604-21511">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>SPLADE 等学习稀疏检索 (LSR) 模型把文档/查询投影到 BERT 词表（约 30K 维），用 sparse 激活作为倒排索引基底。这一设计在效率与效果上虽然双优，但作者指出三个核心痛点：(1) 词表维度同时承担&quot;词形对齐&quot;与&quot;语义对齐&quot;，导致 polysemy（一个 token 多义，&quot;bank&quot;既指银行又指河岸）和 synonymy（多个 token 同义，&quot;fry/boil/roast&quot;应共享相同信号）无法充分建模；(2) BERT 词表规模固定，无法灵活扩展到更细的语义单元；(3) 多语种场景下不同语言激活的 token 完全不重叠，难以做跨语言对齐。论文实证显示，单纯的 SPLADE 在 mMARCO 多语种任务上不同语言的 latent overlap 仅 8.6/163，远低于人类语义直觉。该工作借鉴 LLM 可解释性领域的稀疏自编码器 (Sparse Autoencoder, SAE) 思想，把&quot;概念维度&quot;（而非 BERT 词）当作 SPLADE 的稀疏基底，希望同时解决多义/同义/多语种三个问题，并降低倒排成本。</p>
-<h2>2. 方法详解</h2>
-<p>整体两阶段：第一阶段 SAE 预训练：在 frozen DistilBERT 上对 contextualized token embeddings 训练一个 TopK-SAE 编码器，把 768 维隐层映射到 M=2^16 的稀疏 latent 空间，其中只保留 top-k=8 个非零激活；损失为重构损失 + sparsity 损失 (L_SAE = L_rsct + α_sp · L_sparsity)。第二阶段 IR 微调：把 SPLADE 的 MLM head 替换为已训练好的 SAE encoder，输出公式为 z(h)=φ(W_enc·h + b_enc) 取 top-k 后做 logSaturation 得到稀疏向量；再用 SPLADE 标准的对比学习+ FLOPs 正则联合训练，最终 loss 为 L_SAE-SPLADE = λ_KL·L_KL + λ_MSE·L_MSE + λ_flops-d·L_flops-d + λ_flops-q·L_flops-q (λ值分别 1, 0.05, 0.04, 0.06)。训练设置：base encoder 选 DistilBERT (推理速度比 BERT 快 2x)；训练数据 MS MARCO v1 (8.8M passages)；文档/查询截断 256/32；优化器 AdamW；SAE 阶段 lr 5e-5、batch 768、160k steps；IR 阶段 lr 2e-5、batch 32、240k steps、每 query 8 hard negatives；硬件单张 A100，全流程约 2.5 天。关键设计选择：作者通过 ablation 选了 layer 6 的 contextualized embedding 作为 SAE 输入（earlier 层语义不充分、deeper 层过度任务化）；SAE 与 SPLADE 不能联合端到端训练——他们尝试过 joint，但发现重构损失与 IR loss 目标冲突，效果反而下降。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) 首次把 SAE 概念基底引入 LSR 端到端 pipeline。技术机制：SAE 训练在大规模无监督文本上学到的稀疏概念维度本身就是 polysemy/synonymy 解耦的——qualitative 分析显示同一个 latent 会聚合 fry/boil/roast 等同义动词，&quot;bank&quot; 这种多义 token 会激活两个不同 latent。这是单一词表方案无法做到的。(2) 提出 SAE+TopK 取代 FLOPs 正则的稀疏控制思路。原 SPLADE 主要靠 FLOPs 正则压稀疏；作者实证：reducing k 比 increasing FLOPs reg 在 effectiveness/efficiency 权衡上更优——k=4 时 QD-FLOPs 仅 0.33 vs SPLADE 1.47，效果近似。(3) 多语种 latent overlap 显著提升。SAE-SPLADE 在 7 语种 mMARCO 上 latent overlap 11.5/163 vs SPLADE 8.6/163（+34%），证明概念基底天然跨语言。(4) 提出 E² (Efficiency-Effectiveness) 联合指标：E² = MRR - μ₁·QD-FLOPs - μ₂·softplus_β(QD-FLOPs-τ)，把 effectiveness 与索引代价合并打分，便于在工业上做模型选型。</p>
-<h2>4. 实验结果分析</h2>
-<p>主结果（Table 3，DistilBERT base）：</p>
-<table><thead><tr><th>Model</th><th>MS MARCO MRR@10</th><th>TREC-DL nDCG@10</th><th>LoTTE Success@5</th><th>QD-FLOPs</th><th>Avg Doc Len</th></tr></thead><tbody><tr><td>SPLADE</td><td>37.7</td><td>72.0</td><td>68.9</td><td>1.47</td><td>118</td></tr><tr><td>SAE-SPLADE k=4</td><td>37.1</td><td>71.5</td><td>68.2</td><td><strong>0.33</strong></td><td>66</td></tr><tr><td>SAE-SPLADE k=8</td><td>37.6</td><td>72.1</td><td>68.8</td><td>0.67</td><td>109</td></tr><tr><td>SAE-SPLADE k=16</td><td><strong>38.2</strong></td><td><strong>72.3</strong></td><td><strong>69.4</strong></td><td>1.37</td><td>191</td></tr></tbody></table>
-<p>核心发现：在同等 QD-FLOPs 下 SAE-SPLADE 优于 SPLADE，最显著的是 k=4 时仅花原版 22% 的索引代价仍保住 98% 效果。多语种结果（mMARCO 7 语言平均）：SAE-SPLADE k=8 MRR 24.4 vs SPLADE 24.2，QD-FLOPs 2.49 vs 3.38（-26%）。MIRACL nDCG@10：47.5 vs 47.2。Ablation 揭示：(a) 词表来源对比 MLM/SAE/Random：SAE QD-FLOPs 0.66 vs Random 1.16 vs MLM 0.67，SAE 拿到了 MLM 的 effectiveness 与最优 efficiency；(b) SAE 层选择：layer 6 最优；(c) SAE 变体（TopK / Hierarchical TopK / Matryoshka TopK）效果差异微弱，说明基本 TopK 已够用；(d) vocabulary size M=2^15/2^16/2^17 几乎无差，2^16 性价比最高。值得注意的失败/惊讶结果：joint training (SAE 与 SPLADE 一起端到端) 反而比 two-stage 差，作者归因于 reconstruction loss 与 IR loss 的目标冲突；scaling DistilBERT→BERT 时 SPLADE 提升 1.2+ NDCG，而 SAE-SPLADE 只提升 0.5——这是 SAE 表达力的天花板。与 SPLADEv3 比较：SAE-SPLADE k=16 QD-FLOPs 1.37 vs SPLADEv3 1.40 持平，但 TREC-DL 落后 2.5 个点 (72.3 vs 74.8)。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确列出的局限：(1) 多语种仍落后专门优化的多语种模型（如 MILCO）；(2) SAE 训练目标本身不针对 IR，与 IR 任务存在 misalignment；(3) latent 之间存在语义冗余——qualitative 分析显示部分 latent 覆盖相同语义；(4) SAE 与 SPLADE 不能 joint 端到端训练，限制了进一步优化；(5) 部分高级 SAE 变体（如 Hierarchical/Matryoshka TopK）对 IR 没有带来明显增益，说明 SAE 设计本身需要为 IR 重新调整。隐含但未细说的局限：依赖 layer 6 这种经验选层；M=2^16 是粗粒度调优；对长文档（&gt;256 token）的处理仍是简单截断。未来方向：把 SAE 训练目标改造为 IR-aware（如把 contrastive signal 引入 SAE 预训练）、设计可联合训练的统一 loss、对多语种场景做语言自适应的 latent 共享。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区/UGC 搜索的具体启示：(1) 倒排索引存储与查询代价显著下降。Index 大小 3 GiB (MS MARCO v1) vs ColBERT dense 20 GiB，BMP 索引下查询延迟 &lt;10ms（PLAID 58ms），意味着同等机器可以承载 5-7x 的 corpus 规模——对帖子库这种十亿级文档非常有吸引力。(2) k 值是一个清晰的延迟旋钮：线上可部署 k=4 (低延迟模式) 与 k=16 (高质量模式) 两套索引，按 query 难度路由。(3) 多义/同义场景显著受益：UGC 场景充斥着同义口语、错别字、缩写，BERT 词表 SPLADE 容易爆出几万维稀疏激活，SAE 概念基底可以把这些聚合到几十个 latent，倒排 posting list 大幅瘦身。(4) 多语种支持：对中英混写、表情符号、缩写社区帖天然友好，SAE-SPLADE 多语种 latent overlap +34% 意味着用一个模型同时跑多语种语义召回是可行的。(5) 部署建议：先在 frozen 现有 BERT/DistilBERT 上预训练 SAE（约 35 小时），再 hot-swap SPLADE 的 vocabulary head（不改主干），可在不重训练 backbone 的前提下完成迁移；线上推理只需替换稀疏头，不增加 GPU 推理预算。(6) 风险点：joint training 不可行意味着 SAE 训练数据应贴近实际 corpus 分布，否则 latent 与业务语义脱节；线上要监控 latent 激活分布，做长尾激活的退化告警。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2604-21511"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>6 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:2604.20860" data-paper-id="arxiv:2604.20860" data-card>
@@ -190,60 +158,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

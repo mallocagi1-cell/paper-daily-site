@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,49 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>FBNL 的关键是把 passage 编码与 query 计算分离（passage 可离线预编码、复用），同时用 cross-attention 替代 late-interaction 的逐 token MaxSim，在效率与相关性之间取了一个新折中点——对社区搜索这类候选量大、需要离线缓存 doc 表征再线上重排的场景有直接参考价值。Matryoshka 池化允许按延迟预算截断维度，0.27B 档即可上线，为小模型重排提供了可落地的尺寸选择。</div>
     <div class="foot">Xinping Zhao, Jiaxin Xu, Ziqi Dai, Xin Zhang, Shouzheng Huang · 2026-06-22 · HuggingFace</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.22807" id="dr-arxiv-2606-22807">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>KaLM-Reranker-V1 深度解读</h2>
-<h3>1. 问题与动机</h3>
-<p>随着检索系统规模扩大，高质量重排（reranking）越来越关键。但现有 reranker——无论 encoder-based 还是 decoder-based——普遍把 query 与 passage 拼接做联合编码，使两者计算紧耦合：每来一个 query 就要对所有候选 passage 重算一遍，部署效率与灵活性受限。ColBERT 式 late interaction 通过 query/document 分离编码 + 多向量 MaxSim 提升效率，但把交互推迟到编码之后，无法在编码阶段捕捉深层 query–document 交互。本文要解决的核心问题是：能否既复用 passage 表征（像 late interaction 那样高效，passage 可离线预编码），又保留 cross-encoder 式的丰富 query–passage 交互（不退化为后置的浅交互）。作者把这一目标命名为 FBNL（fast but not late-interaction）。</p>
-<h3>2. 方法详解</h3>
-<p>KaLM-Reranker-V1 基于 T5Gemma2 的 encoder-decoder 架构，给出三档：Nano 270M-270M（0.27B 激活）、Small 1B-1B、Large 4B-4B。</p>
-<ul>
-<li><strong>Passage 预编码</strong>：encoder 把 passage p 映射为可复用表征 H_p = Enc(p) ∈ R^{n×d}（n 为文档长度，d 为隐藏维），离线计算、线上复用。为压缩存储引入 Matryoshka Embedding Pooling（MEP）：把连续 r 个 token 分组做 mean pooling，H_p^{(r)}[j]=MeanPool(H_p[(j-1)r+1 : min(jr,n)])，j=1..⌈n/r⌉。训练用压缩比 R={2,4,8,16}，评测默认 r=4。</li>
-<li><strong>Decoder 编码 query 侧</strong>：decoder 输入 X 包含 system instruction、task instruction 与 user query；decoder 以 X 形成 query，以 X 与 encoder 输出 H_p 的拼接形成 key/value，通过 cross-attention 让 query 上下文与 passage 表征交互。</li>
-<li><strong>打分</strong>：score(q,p)=exp(z_yes)/(exp(z_yes)+exp(z_no))，即用词表中 “yes”/“no” 两个 token 的 logit 算相关概率。</li>
-<li><strong>训练数据与流程</strong>：约 3.7M 样本（KaLM embedding fine-tuning 检索子集 + BGE-M3 训练数据子集），hard negative 用 KaLM-Embedding-V2.5 从 top10–50 挖掘。三阶段：① 无 task instruction 的通用重排；② 带 instruction 的任务适配；③ 以 KaLM-Reranker-V1-Large 为 teacher 的细粒度蒸馏。SFT loss 为 yes/no 上的交叉熵 ℒ_sft=-log[exp(z_l)/(exp(z_yes)+exp(z_no))]，蒸馏 loss ℒ_kd=-y·logŷ-(1-y)·log(1-ŷ)。</li>
-<li><strong>优化超参</strong>：Adam(β1=0.9, β2=0.999)，weight decay 1e-5，三阶段 lr 分别 1e-4 / 2e-4 / 5e-5，每阶段 1 epoch，per-GPU batch 2（Nano/Small）、1（Large），梯度累积 4，有效 batch 128，硬件 16 张（Nano/Small）/ 32 张（Large）RTX 5090，约 29k step/epoch。</li>
-</ul>
-<h3>3. 核心技术贡献</h3>
-<ol>
-<li><strong>FBNL 范式</strong>：不同于联合编码（复用不了 passage 表征），它解耦 passage 编码与 query 计算、passage 离线预编码可复用；不同于 late interaction（把交互后置为多向量 MaxSim），它用 decoder cross-attention 在解码阶段保留深层 query–passage 交互。这是效率–表达力之间的一个新折中点：复用表征 + 不后置交互。</li>
-<li><strong>Matryoshka Embedding Pooling</strong>：按 r 分组池化压缩 passage 表征，存储从 O(N·n·d) 降到 O(N·⌈n/r⌉·d)，并可按延迟/存储预算选 r；r=2/4 几乎无损，更大模型对压缩更鲁棒。</li>
-<li><strong>三阶段训练（通用→任务适配→蒸馏）</strong>：仅用 3.7M 样本（远少于 Qwen3-Reranker 的 19M）即达可比性能，蒸馏把 Large 的能力下放到 Nano，使 0.27B 小模型也具竞争力。</li>
-</ol>
-<h3>4. 实验结果分析</h3>
-<p><strong>BEIR（13 个英文检索任务，avg nDCG@10）</strong>：Nano 0.27B 得 57.41、cost 1.0x，超过 gte-reranker-base（0.3B，56.77，11.9x）与 jina-reranker-v2（56.26，11.9x）；Small 1B 得 60.01（6.9x），高于 Qwen3-Reranker-0.6B（59.36，42.4x）与 mxbai-rerank-base-v2（58.18，29.8x）；Large 4B 得 62.87（43.7x），接近 Qwen3-Reranker-4B（63.50，236.8x）但成本约 1/5；Qwen3-Reranker-8B 最高 65.11（539.7x）。Nano/Small/Large 分别在 9/13、8/13、11/13 任务取得最优或次优。<br><strong>MIRACL（18 语言，avg nDCG@10）</strong>：Nano 62.08（1.0x）远超 bge-reranker-large（0.6B，52.52，36.3x）；Small 66.89（6.9x）高于 mxbai-rerank-large-v2（1.5B，63.26，79.2x）；Large 70.07（43.7x）略高于 bge-reranker-v2-gemma（2.5B，69.82，81.3x）——未专门做多语训练仍有竞争力。<br><strong>LMEB（6 个对话记忆检索任务，avg nDCG@10）</strong>：Nano 61.39、Small 63.15、Large 64.16，Large 超过 Qwen3-Reranker-4B（62.86）；0.27B 的 Nano 即可与 7–12B embedding 模型竞争。<br><strong>消融</strong>：MEP 压缩比 r=2/4 几乎无损，r=8 轻微下降，r=16/32 明显退化；FiQA 上随 r 从 2→32，Nano 的 ROC-AUC 从 0.871 降到 0.832，而 Large 仅从 0.952 降到 0.948，说明大模型更耐压缩。<br><strong>效率</strong>：相对传统联合编码 reranker，n=256 时约 16.6× 提速，n=1024 时 18.5–33.3×（取决于 r），n=4096 时高达 203.4×；即便 r=2 也有近 10× 提速。空间上 MEP 把 O(N·n·d) 压到 O(N·⌈n/r⌉·d)。</p>
-<h3>5. 局限与未来方向</h3>
-<p>作者明确自陈：① <strong>中文偏弱</strong>——尽管用了大量中文数据训练，MIRACL 中文子集上仍相对弱，基座模型的中文能力是瓶颈，后续会继续改进；② <strong>高压缩退化</strong>——r≥16 的激进压缩带来较大 AUC 下降，尤其小模型，需要更好的压缩方法；③ <strong>训练数据有限</strong>——仅 3.7M 样本 vs Qwen3-Reranker 的 19M，加数据仍有提升空间；④ 整体受限于基座模型能力。这些是作者在 limitations 中点名的具体问题，而非泛泛而谈。</p>
-<h3>6. 工业实践意义</h3>
-<p>对社区搜索/UGC 检索的重排环节，FBNL 给出一条把 cross-encoder 质量与 late-interaction 效率结合的路线：passage 表征离线预编码并缓存，线上每个 query 只与缓存表征做 cross-attention——n=1024 时提速 18.5–33.3×、n=4096 时 200× 以上，对长帖/长文档场景收益尤其大。Matryoshka 池化提供按延迟/存储预算选 r 的旋钮（r=4 近无损可作稳妥默认），可按维度截断适配不同档位机器。0.27B 的 Nano 即能与 7–12B embedding 竞争，意味着可在成本极低的小模型上线高质量重排；若延迟预算充裕，Large 4B 以 Qwen3-Reranker-4B 约 1/5 的成本拿到接近精度。落地注意点：① 中文场景须自行评测（论文中文子集偏弱），可在中文数据上继续训练/蒸馏；② 缓存 passage 表征会增加存储，用 MEP 压缩到 O(N·⌈n/r⌉·d) 可控；③ 三阶段训练 + hard negative 挖掘是复刻关键，instruction 适配阶段对任务感知重排很重要。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2606-22807"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:2606.21553" data-paper-id="arxiv:2606.21553" data-card>
@@ -231,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

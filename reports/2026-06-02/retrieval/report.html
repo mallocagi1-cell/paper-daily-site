@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,56 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把推理链信用分配从序列级细化到依赖图级，是 process-reward 的一个可落地改进：电商/社区搜索相关性本就是 query 理解+内容理解+facet 匹配的多步判断，依赖图能定位&quot;哪一步推错导致最终判错&quot;。对自研 LLM 相关性模型有借鉴——用 GRPO 训练时引入步骤依赖结构 + 图节点蒸馏，可在不堆 reward 标注的前提下提升 nDCG。</div>
     <div class="foot">Jiarui Che, Yifei Chen, Zhixing Tian, Chenyang Wang, Ziguang Cheng · 2026-06-01 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.31003" id="dr-arxiv-2605-31003">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>Graph-GRPO 深度解读：用&quot;推理依赖图&quot;重做电商搜索相关性的强化学习信用分配</h2>
-<h3>1. 问题与动机</h3>
-<p>电商搜索相关性建模（判断 query 与候选商品是否匹配）正越来越多地被表述为 LLM 的链式思维（CoT）推理 + 强化学习优化。但作者指出现有 RL 范式有一个结构性缺陷：<strong>只用稀疏的结果级（outcome-level）奖励，把整条推理链当成单一优化单元</strong>。这导致&quot;无法区分出错的推理步骤与正确的中间步骤&quot;，信用分配（credit assignment）错位——模型答错了，却不知道是 query 理解错、商品理解错、还是匹配判断错。</p>
-<p>论文给出了量化证据来说明问题严重性：未经训练的 vanilla LLM 基线（Qwen3-14B）在相关性分类上 Macro-F1 仅 56.39%；更要命的是对&quot;不相关&quot;类的召回只有 29.70%、F1 仅 43.97%，即&quot;只能识别出一小部分明显不相关的 case，缺乏任务特定的可靠校准&quot;。对一个要靠相关性把控搜索结果质量的系统，漏判不相关商品是直接伤害体验的。已有的过程奖励（process-reward）方法虽提供更密集监督，却&quot;把推理步骤当作相互独立的，忽略了依赖驱动的错误传播&quot;，无法刻画&quot;上游 query 理解错 → 下游匹配必然错&quot;这种责任链。</p>
-<h3>2. 方法详解</h3>
-<p><strong>(a) 相关性推理依赖图。</strong> 作者把相关性推理显式分解为结构：<code>(q,p) → (qs,qa,ps,pa) → (ms,ma) → y</code>，即 query 和 product 各自拆成 subject（主体 s）与 attribute（属性 a）两个维度，产生 subject 匹配分 ms 和 attribute 匹配分 ma，再决定最终标签 y。对应的依赖图 𝒢=(𝒩,ℰ) 有 7 个节点（最终标签 y、ms/ma 两个匹配分、qs/qa/ps/pa 四个证据节点），边分三类：ℰdec（决策传播，y→ms/ma）、ℰevid（分数到证据，ms→qs/ps）、ℰcons（跨维度一致性，query 证据与 product 证据互校）。</p>
-<p><strong>(b) 结果奖励沿图传播为步骤级信用。</strong> 奖励用二值精确匹配信号：<code>ry = 2·𝕀[y=y*] − 1</code>（对 +1、错 −1），维度匹配分同理。这些结果级奖励通过可学习系数 φ 沿图传播：全局决策奖励传到匹配分 <code>Rms = rs + φ1·ry</code>；匹配分奖励再传到证据节点 <code>R̂qs = φ3·Rms</code>；并在 query/product 证据间做跨维度一致性交换。这样把&quot;最终标签 + 维度匹配分&quot;的稀疏正确性信号，转换成&quot;依赖感知&quot;的细粒度节点级奖励。</p>
-<p><strong>(c) 主损失驱动的边系数控制器。</strong> 关键创新：传播系数 φ 不是手工固定，而是在竞争分支组内用 softmax 归一化 <code>w(u→v)=exp(φ)/Σexp(φ)</code>，并且&quot;直接通过主策略损失优化&quot;——总目标 <code>𝒥(θ,φ)=ℒ_Graph-GRPO(θ,φ)+λ_reg·ℛ(φ)</code>。即让主策略损失的梯度去强化有效的信用路径、抑制噪声路径，实现自适应的跨路径信用分配。</p>
-<p><strong>(d) CoT 随机掩码做 SFT 冷启动。</strong> 两阶段：先在模型标注数据上做 label-only SFT，再做 masked CoT 训练（采用&quot;先给标签、再推理、最后决策&quot;的顺序）。对推理 token，只有随机子集（Bernoulli(1−ρ) 掩码）参与 loss——既保留稳定的决策学习与部分结构化推理监督，又减少对模板化解释的过拟合。消融显示该掩码把 Macro-F1 从 79.55% 提到 80.33%（+0.78pp）。</p>
-<p><strong>(e) 基于图节点的多头蒸馏。</strong> 线上无法直接部署 14B LLM，于是用轻量 BERT cross-encoder 学生模型，配三个预测头分别输出 ms、ma、y，并加第四个一致性损失：让 <code>y_union=g(ms,ma)</code> 与直接预测的 y 通过 KL 散度对齐。总蒸馏损失 <code>λs·ℒs+λa·ℒa+ℒy+λc·ℒc</code>，把 LLM 教师的结构化推理信号转成可学习的多任务监督。</p>
-<p><strong>训练配置：</strong> 基座 Qwen3-14B；GRPO 每样本采样 16 个回复、temperature 0.95；学习率分别为 label SFT 1e-5、masked CoT 7e-6、Graph-GRPO 1e-6；图系数学习率 6e-4、正则权重 6e-5；训练 batch 512、PPO mini-batch 256。</p>
-<h3>3. 核心技术贡献</h3>
-<ol>
-<li><strong>图结构化信用分配</strong>：把相关性推理建成显式依赖图，使奖励能&quot;从全局决策细化到局部证据&quot;，解决整链单一奖励无法定位错误步骤的问题。这比独立处理各步的 process-reward 更贴合&quot;上游错→下游错&quot;的真实错误传播。</li>
-<li><strong>可学习边系数</strong>：用主策略损失联合优化传播系数 φ，而非固定权重，实现不同推理路径上的自适应信用分配；这是相对普通 GRPO/PRM 的机制性改进。</li>
-<li><strong>可训练且可部署的统一框架</strong>：渐进式 SFT+掩码、依赖感知 GRPO、图节点多头蒸馏三者拼成一条&quot;教师用图做强 RL、学生用 BERT 上线&quot;的工业落地链路。</li>
-</ol>
-<h3>4. 实验结果分析</h3>
-<p><strong>离线（测试集 92,419 条）Macro-F1 / Weighted-F1 / Accuracy / 不相关类 F1：</strong></p>
-<ul>
-<li>LLM-Base：56.39% / 61.34% / 61.54% / 43.97%</li>
-<li>LLM-SFT：80.33% / 83.13% / 83.84% / 83.94%</li>
-<li>LLM-GRPO：80.91% / 83.57% / 84.21% / 84.53%</li>
-<li><strong>Graph-GRPO：81.26% / 83.84% / 84.44% / 84.75%</strong></li>
-</ul>
-<p>可以看到三点：① SFT 相对 base 是质变（Macro-F1 56→80，不相关类 F1 44→84），说明任务对齐是第一收益源；② 在 SFT 已经很强的基础上，GRPO（+0.58pp）与 Graph-GRPO（再 +0.35pp）属于&quot;高位精修&quot;，提升幅度小但方向一致，且不相关类 F1 持续走高（最关心的指标）；③ 去掉可学习系数的 Graph-GRPO 为 81.22%，即系数机制本身只贡献约 0.04pp——这是一个诚实但偏弱的消融，说明依赖图的主要价值来自结构化奖励传播，而非系数自适应。可学习系数对&quot;不相关召回&quot;有更明显作用（89.57%→89.95%）。</p>
-<p><strong>线上 A/B（10,000 条代表性 query）：</strong> 用 Graph-GRPO 蒸馏后的 BERT 上线，Bad Case Rate（top-10 结果中至少含一个被标为不相关商品的 query 占比）从两个对照槽 11.99%/11.95% 降到 11.65%，相对降低约 2.67%。指标设计直接对应用户可感知的&quot;搜出不相关商品&quot;问题。</p>
-<h3>5. 局限与未来方向</h3>
-<p>论文未给出显式的定量局限陈述。从方法看几处隐含约束：① 依赖图假设了 subject/attribute 二元分解，对其他任务结构（如多facet、数值/规格匹配）的可迁移性未讨论；② 边系数需要在奖励计算上反向传播，稀疏奖励下可能不稳定；③ 多头蒸馏效果依赖中间监督（ms/ma 伪标签）的质量，若教师维度判断本身噪声大，学生会继承偏差。此外，系数机制仅 +0.04pp 的离线增益，是否值得引入额外训练复杂度，作者没有进一步成本-收益讨论。</p>
-<h3>6. 工业实践意义</h3>
-<p>对做 LLM 搜索相关性判别的团队，最值得借鉴的是<strong>&quot;训练用推理图、上线用蒸馏头&quot;的双轨设计</strong>：14B LLM 推理成本&quot;难以直接在线上搜索系统部署&quot;，但把它当教师、用图节点多头蒸馏把结构化推理灌进 BERT cross-encoder，就能满足线上延迟/吞吐，已在 JD 电商搜索&quot;服务数亿用户&quot;。具体可落地的点：① 把相关性拆成 query 理解 / 商品理解 / facet 匹配并按依赖关系归因错误，比整链单一奖励更能定位&quot;哪一步推错&quot;，社区 UGC 短文本搜索同样适用（如把&quot;query 意图 / 帖子主题 / 语义匹配&quot;建成依赖图）；② CoT 随机掩码 + label-first 顺序的 SFT 冷启动是低成本、稳定收益（+0.78pp）的技巧，优先于复杂 RL；③ 评估上直接用 Bad Case Rate（top-k 含不相关项占比）这种与体验强相关的业务指标，比单纯看 F1 更能驱动线上决策。需要注意：本文核心收益来自 SFT 对齐与结构化奖励传播，可学习系数的边际收益很小，资源有限时可先复现&quot;依赖图 + 掩码 SFT + 蒸馏&quot;，把系数自适应作为后续可选项。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-31003"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>7 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:2605.30917" data-paper-id="arxiv:2605.30917" data-card>
@@ -218,60 +169,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

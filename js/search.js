@@ -429,13 +429,6 @@
     if (newTab || a.target === "_blank") window.open(a.href, "_blank", "noopener"); else location.href = a.href;
     return true;
   }
-  function toggleDeep() {
-    var c = document.querySelector(".kb-focus"); if (!c) return false;
-    var tg = c.querySelector("[data-deep-toggle]"); if (!tg) return false;
-    var col = c.querySelector("[data-deep-collapse]");
-    if (tg.getAttribute("aria-expanded") === "true" && col) col.click(); else tg.click();
-    return true;
-  }
   function deepStep(d) {
     var slug = decodeURIComponent(location.pathname.replace(/^.*\//, ""));
     var go = function (list) {
@@ -475,7 +468,7 @@
       ["g d", TR("深度解读", "Deep dives")], ["?", TR("显示 / 关闭快捷键", "Show / hide shortcuts")]]],
     [TR("列表页（今日 · 周榜 · 往期 · 深度解读目录）", "List pages (Today · Weekly · Archive · Deep dives)"), [["← →", TR("上一个 / 下一个方向", "Previous / next track")],
       ["[ ]", TR("更早 / 更新一天（周榜：一周）", "Older / newer day (Weekly: week)")], ["j k", TR("下一篇 / 上一篇论文", "Next / previous paper")],
-      ["↵ / o", TR("打开深度解读（没有则打开 arXiv）", "Open deep dive (else arXiv)")], ["x", TR("展开 / 收起页内深度解读", "Expand / collapse inline deep dive")]]],
+      ["↵ / o", TR("打开深度解读（没有则打开 arXiv）", "Open deep dive (else arXiv)")]]],
     [TR("深度解读页", "Deep-dive pages"), [["← →", TR("上一篇 / 下一篇深度解读（目录顺序）", "Previous / next deep dive (index order)")], ["u / Esc", TR("返回列表", "Back to the list")]]],
   ];
   function helpBuild() {
@@ -527,7 +520,6 @@
     else if (k === "[" || k === "]") done = moveDate(k === "[");
     else if (k === "j" || k === "k") done = focusCard(k === "j" ? 1 : -1);
     else if ((k === "Enter" || k === "o") && !(ev.target.closest && ev.target.closest("a, button, summary, [role=button]"))) done = openCard(false);
-    else if (k === "x") done = toggleDeep();
     else if (k === "Escape" && document.querySelector(".kb-focus")) { document.querySelector(".kb-focus").classList.remove("kb-focus"); done = true; }
     if (done) ev.preventDefault();
   });

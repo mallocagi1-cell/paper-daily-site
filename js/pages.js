@@ -167,17 +167,7 @@
     });
   }
   function readingMinutes(dr) {
-    if (dr.minutes) return dr.minutes;
-    const t = String(dr.content_html || "").replace(/<[^>]+>/g, "").replace(/\s+/g, "");
-    return t.length ? Math.ceil(t.length / 400) : 0;
-  }
-
-  // ---------- inline deep reading (expand / collapse; the standalone page is linked from the card's 📖 chip) ----------
-
-  function fixFigs(html) {
-    const root = (document.documentElement.getAttribute("data-root") || "");
-    if (!root) return html;
-    return String(html).replace(/(<img data-fig="1" src=")(figs\/)/g, "$1" + root + "$2");
+    return dr.minutes || (dr.chars ? Math.ceil(dr.chars / 400) : 0);
   }
 
   // 📖 chip on cards / weekly rows: a link to the standalone deep-dive page when it exists (else a plain badge)
@@ -187,53 +177,6 @@
     return dr.slug
       ? '<a class="chip deep" href="deep-readings/' + encodeURIComponent(dr.slug) + '.html">' + label + " &#8594;</a>"
       : '<span class="chip deep">' + label + "</span>";
-  }
-
-  function renderDeepRead(paper) {
-    const dr = paper && paper.deep_reading;
-    if (!dr || dr.status !== "completed") return "";
-    const htmlBody = fixFigs(dr.content_html || "");
-    if (!htmlBody) return "";
-    const rawPid = paper.id || dr.paper_id || "";
-    const domId = String(rawPid).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "x";
-    // 2026-10-26 (Felix): no separate per-card "open as standalone page" link — the 📖 chip / lead button links the standalone page
-    const mins = readingMinutes(dr);
-    return (
-      '<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="' + escapeHtml(rawPid) +
-      '" id="dr-' + escapeHtml(domId) + '">' +
-      '<div class="deep-read-toggle-row">' +
-      '<button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">' +
-      TR('<span class="deep-read-trigger-icon">&#9660;</span><span>&#128214; 展开深度解读', '<span class="deep-read-trigger-icon">&#9660;</span><span>&#128214; Expand deep dive') + (mins ? " · " + mins + TR(" 分钟", " min") : "") + "</span>" +
-      "</button></div>" +
-      '<div class="deep-read-section" hidden><div class="deep-read-header-bar">' +
-      '<button type="button" class="deep-read-trigger expanded" data-deep-collapse>' +
-      TR('<span class="deep-read-trigger-icon">&#9650;</span><span>收起深度解读</span></button>', '<span class="deep-read-trigger-icon">&#9650;</span><span>Collapse deep dive</span></button>') + "</div>" +
-      '<div class="deep-read-content">' + htmlBody + "</div></div></div>"
-    );
-  }
-
-  function setDeepReadExpanded(root, open) {
-    if (!root) return;
-    const btn = root.querySelector("[data-deep-toggle]");
-    const section = root.querySelector(".deep-read-section");
-    if (!btn || !section) return;
-    const row = btn.closest(".deep-read-toggle-row") || btn;
-    const card = root.closest("[data-card]");
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute("aria-expanded", "true");
-      if (card) card.classList.add("dr-open");
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute("aria-expanded", "false");
-      if (card) {
-        card.classList.remove("dr-open");
-        const rect = card.getBoundingClientRect();
-        if (rect.top < 60) window.scrollTo(0, window.scrollY + rect.top - 64);
-      }
-    }
   }
 
   // ---------- routes ----------
@@ -298,7 +241,6 @@
     const pq = p.key_insight || more
       ? TR('<div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>', '<div class="pq"><small>KEY INSIGHT · What it means for the business</small>') + hlText(escapeHtml(p.key_insight || "")) + more + "</div>" : "";
     const foot = [truncate(p.authors, 90), p.published, sourceLabel(p.source, p.url)].filter(Boolean).map(escapeHtml).join(" · ");
-    const deep = dr ? renderDeepRead(p) : "";
     return (
       '<section class="lead ' + trackClass(track) + '" id="paper-' + escapeHtml(pid) + '" data-paper-id="' + escapeHtml(pid) + '" data-card>' +
       '<div class="art" data-n="' + pad2(p.rank || i + 1) + '"><div>' +
@@ -310,7 +252,6 @@
       '<div class="side"><div class="ring">' + radarSvg(p.scores, 170) +
       '<div><div class="big">' + fmt2(p.total_score) + TR('</div><div class="lbl">综合分 / 5', '</div><div class="lbl">Score / 5') + (adj !== null ? TR("<br>偏好调整 ", "<br>Adjusted ") + fmt2(adj) : "") + "</div></div></div>" +
       pq + '<div class="foot">' + foot + "</div></div>" +
-      (deep ? '<div class="lead-dr">' + deep + "</div>" : "") +
       "</section>"
     );
   }
@@ -334,7 +275,6 @@
       (ins ? '<div class="ins">' + xpBlock(ins) + "</div>" : "") +
       (p.authors ? '<div class="foot">' + escapeHtml(truncate(p.authors, 100)) + "</div>" : "") +
       '<div class="foot">' + foot + "</div>" +
-      renderDeepRead(p) +
       "</article>"
     );
   }
@@ -795,7 +735,7 @@
       (k.chips ? "<div>" + k.chips + "</div>" : "") +
       '<div class="paper-body">' + sum + "</div>" +
       (ins ? '<div class="ins">' + xpBlock(ins) + "</div>" : "") +
-      k.scoreLine + k.meta + k.apps + renderDeepRead(paper) + "</div>"
+      k.scoreLine + k.meta + k.apps + "</div>"
     );
   }
 
@@ -809,7 +749,7 @@
       '<div class="rr-body"><h5 class="card-title">' + k.title + "</h5>" +
       (k.chips ? "<div>" + k.chips + "</div>" : "") + k.meta +
       (body ? '<div class="paper-body">' + xpBlock(body, "sum") + "</div>" : "") +
-      k.scoreLine + k.apps + renderDeepRead(paper) + "</div>" +
+      k.scoreLine + k.apps + "</div>" +
       TR('<span class="s badge" title="周榜排序分">', '<span class="s badge" title="Weekly rank score">') + fmt2(paper.rank_score) + "</span></div>"
     );
   }
@@ -985,10 +925,6 @@
       xb.setAttribute("aria-expanded", o ? "true" : "false");
       return;
     }
-    const toggle = t.closest("[data-deep-toggle]");
-    if (toggle) { setDeepReadExpanded(toggle.closest("[data-deep-read]"), true); return; }
-    const collapse = t.closest("[data-deep-collapse]");
-    if (collapse) { setDeepReadExpanded(collapse.closest("[data-deep-read]"), false); return; }
     const ol = t.closest('a.outline-paper[href^="#paper-"]');
     if (ol) {
       // In-page anchor: scroll without touching the route hash.

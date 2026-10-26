@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,44 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对社区 UGC 短文本推荐与搜索，可借鉴“先接入一路召回、再逐步替换”的迁移方式，并把生成候选与排序质量放在同一评测面板。其止梯度排序头和带参考边际的 mGRPO 让奖励优化不明显牺牲召回；但短视频目录快速更新，论文指出冻结模型的精确物品召回会在数日内衰退，需要持续训练与异步映射更新。</div>
     <div class="foot">Wenfeng Zhuo, Vincent Xue, Charles Wei, Cong Ni, Ruiming Lu, Jiwen Ren, Mo Li, Peng Yang, ... · 2026-09-29 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2609.36688" id="dr-arxiv-oai-arXiv-org-2609-36688">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>GRP v0.1 Technical Report 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>Snap 的短视频推荐仍依赖多路召回、预排、精排和业务规则串联。论文明确说，团队曾尝试让单一生成模型直接替换成熟漏斗，但线上结果为负：旧系统积累的候选资格、内容新鲜度、校准和多样性控制无法在一次替换中复制。生成式模型只会给出语义 ID 的概率顺序，却不天然具备最终排序质量；一个语义 ID 还可能映射多个实际视频。更棘手的是目录几乎每天换新，训练截止后数日，冻结模型对具体视频的召回迅速衰退，虽然粗粒度语义簇召回仍稳定。因而论文的目标不是宣布漏斗已消失，而是设计能逐步上线、逐项衡量替代程度的统一模型：先成为一路召回源，再撤掉较弱来源，最后让部分候选绕过预排。对社区 UGC 系统，这一动机尤其贴近新帖持续进入、老帖快速过时的场景；是否能迁移仍需在本站目录更新速度和点击目标下验证。</p>
-<h2>2. 方法详解</h2>
-<p>模型由编码器、解码器和多头预测模块 MHP 组成。物品先经 Qwen3-VL 内容表征和协同参与信号构造多模态层级语义 ID；用户上下文及历史行为进入编码器。每个历史物品的多个 ID 码融合为一个 token，使相同编码长度容纳四倍历史。显式动作如收藏、分享与大量被动观看共用序列，但显式组获保护预算：各动作类型分配量近似为“预算乘以该类型计数的 p 次幂占所有类型幂次和的比例”，另设下限，p 在 0 与 1 之间，剩余位置由观看填充。该设计避免稀有却强意图的行为被观看淹没。编码器自注意力使用 RoPE，变长 FlashAttention 与打包输入避免对长短不一的用户历史计算填充位。</p>
-<p>解码器按候选物品分块，每块内部自回归生成层级 ID，块之间禁止互看，因此同一请求可独立产生多个候选。生成目标是对目标码位置的逐 token 交叉熵，分隔符和填充位不计入损失。模型把总深度更多分给短序列解码器，而非昂贵的长历史编码器。MHP 将候选 ID 嵌入汇聚为查询，与编码历史做交叉注意力；再把候选查询、候选感知用户向量与用户上下文一同送入 DCNv2 交叉网络，分别预测观看、完成、跳过、分享、收藏等。所有送入 MHP 的编码器状态、候选嵌入和上下文均止梯度，故排序损失不会扭曲生成主干；分类头使用 BCE，观看时长回归头使用 MSE，和生成损失相加仅是一次前向计算中的目标汇总。</p>
-<p>预训练采用权重矩阵 Muon、偏置与归一化参数 Lamb、稀疏嵌入行式自适应优化，并使用 bf16、预热后余弦退火。论文给出批量学习率按全局 batch 平方根缩放，但没有公开可复现的绝对样本量、batch、硬件节点总配置与训练步数，不能据此杜撰。后训练冻结编码器、嵌入、归一化和 MHP，只训练解码器。每位用户按温度抽样一组语义 ID，冻结 MHP 的各头经固定权重合成奖励，组内标准化得到优势，再用 PPO 裁剪和相对冻结参考解码器的 KL 约束优化。mGRPO 另外比较真实日志目标相对最优抽样候选的对数概率差：只有当前策略把真实目标的竞争位置降到参考策略以下时，单侧边际才惩罚。线上服务则以 KV cache 和 CUDA graph 生成候选，异步维护 ID 到当前有效内容的反向映射，按配置决定哪些候选绕过已有预排。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，生成与排序同模训练却以止梯度隔离目标。相较只输出语义 ID 的 TIGER 类召回模型，它可在同一次服务调用中对生成候选输出多种互动分数；相较外置奖励模型，冻结的 MHP 可直接充当强化学习奖励。关键前提是候选信号必须能真正穿过排序头。团队发现原交叉注意力几乎只看用户不看物品，组内奖励变化仅为其量级的 0.005% 至 0.16%；把候选查询沿残差路径直接送进交叉网络后，奖励中位离散度超过 200%。</p>
-<p>第二，mGRPO 明确保护日志正样本的相对位置。普通 GRPO 会追逐高预测奖励但丢失真实互动物品；参考锚定边际使奖励召回改善的同时保住原始召回。第三，论文把可部署的渐进迁移本身当成方法：每个阶段沿同一用户和线上指标比较 GRP 与原召回源，从替换弱源到预排旁路均有独立开关。第四，服务优化覆盖模型外链路，消息体裁剪、事件展开重写、批量反向查表、缓存和 CUDA 图使端到端召回 p95 延迟下降 69.0%，展示算法收益需要连同系统预算评估。</p>
-<h2>4. 实验结果分析</h2>
-<p>离线评估采用生产短视频场景的未来留出用户会话，主要指标为 HR@K、Recall@K 和按奖励加权的 Recall@K。历史融合在训练速度基本不变时，把可用历史增为四倍：HR@10 从 0.1734 到 0.1764；再将历史加倍仅到 0.1751，吞吐从每秒 0.57 步降到 0.32 步。固定总层数把编码器:解码器从 2:1 调至 1:2，HR@20 从 0.2293 到 0.2332，吞吐从 0.57 升至 0.69 步/秒。高分辨率语义 ID 相较旧 MM-SID 的 Recall@20 为 0.0592 对 0.0529，增 11.9%。显式行为保护预算相较无保护的方案，Recall@20 相对增加 20.0%，奖励召回增加 7.0%。</p>
-<table><thead><tr><th>对照设置</th><th>Reward Recall@10 相对基座</th><th>Recall@10 相对基座</th></tr></thead><tbody><tr><td>仅 GRPO</td><td>−0.1%</td><td>−1.25%</td></tr><tr><td>仅边际保护</td><td>+0.5%</td><td>+0.4%</td></tr><tr><td>mGRPO，单节点</td><td>+1.6%</td><td>+0.3%</td></tr><tr><td>mGRPO，双节点</td><td>+3.1%</td><td>+0.9%</td></tr></tbody></table>
-<p>排序头重设计后，看满 10 秒 AUROC 从 0.6628 到 0.7759，分享 AUPRC 从 0.0213 到 0.0457；但跳过 AUROC 从 0.6281 降到 0.6102，提示优化不是所有标签同向。线上把 GRP 作为召回源时，相对生产基线观看时长 +0.46%、分享 +0.77%；在旁路预排并替换较弱来源的另一组实验中，浏览量 +0.47%、观看时长 +0.82%、分享 +2.56%，平台守护指标中性。两组实验配置不同，不能把数字当成同一模型逐步累加。仅监督训练加旁路使观看时长显著下降 0.45%，说明强化学习的价值还包括消除旁路带来的损失。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确承认，系统尚未完全端到端：MHP 尚未证明足以绕过末级精排，部分单路来源在平均观看时长和跳过率上仍优于 GRP，辅助召回源仍必需。冻结模型对新物品的精确召回在数日内衰退，必须持续增量训练；异步 ID 映射只能把已生成的码解析到新目录，并不能替模型学习新的具体兴趣。论文也指出奖励头校准与候选区分度会直接决定强化学习方向。对外部复现而言，绝对训练规模、硬件与数据细节披露有限；短视频实验不能直接外推到社区搜索的 nDCG、CTR 或问答内容质量。</p>
-<h2>6. 工业实践意义</h2>
-<p>社区平台可先将生成式语义 ID 模型接成一路候选源，保持现有资格过滤、去重和精排，按同一请求比较来源通过率、点击率、长停留、分享与新帖覆盖。若 GRP 类模型要服务 UGC 搜索，语义 ID 应结合帖子文本和互动信号训练；历史序列既保留浏览，也为收藏、评论、关注等显式行为保留动态预算。实验顺序应先验证四倍历史融合和解码器侧容量配置，再比较生成候选与传统召回的覆盖，最后才试预排旁路与弱源替换。</p>
-<p>上线前要单独监控新帖与长尾帖的精确物品召回，设置增量训练节奏和 ID 到现役帖子的异步映射。奖励头需按用户内候选检验分数离散度与校准，避免一个几乎只看用户的头产生虚假强化学习信号。mGRPO 的参考边际可用来防止追求点击或停留时丢失日志正样本，但线上仍应同时看 nDCG、CTR、内容质量和时延，不能以单个奖励指标替代整体评测。论文 p95 召回延迟降低 69% 的经验说明，预处理、请求体、反向查表与 GPU 解码应一起剖析；其具体收益不能直接照搬到另一套基础设施。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2609-36688"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>2 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:2609.29973" data-paper-id="arxiv:2609.29973" data-card>
@@ -156,60 +119,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

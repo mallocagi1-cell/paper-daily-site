@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,53 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>生成式推荐的瓶颈不只是主干模型，而是物品 tokenizer 是否保留协同信息并适合自回归解码。对社区 UGC，可将帖子类别、作者、主题及交互字段直接纳入掩码预训练，再用全局一致的层级码替代纯文本 embedding 量化；这条路线兼顾短文本语义、协同信号与大规模候选解码效率。</div>
     <div class="foot">Yu Liang, Zhongjin Zhang, Yuxuan Zhu, Kerui Zhang, Zhiluohan Guo, Wenhang Zhou, Zonqi Yang... · 2026-01-01 · Conference</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="dblp:journals/corr/abs-2602-02338" id="dr-dblp-journals-corr-abs-2602-02338">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 12 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>ReSID 聚焦生成式推荐里一个常被主干模型规模掩盖的问题：物品如何被编码成可生成的 Semantic ID（SID）。现有流程通常先用 Sentence-T5 或多模态大模型得到语义 embedding，再用 RQ-VAE、层级 K-Means 等通用量化器离散化，最后让 T5 类模型逐 token 生成 SID。作者指出这条“语义优先”流水线存在两处错位。第一，内容语义与协同关系不等价：零食、气球、餐具在文本空间里类别很远，却可能因为聚会场景高频共购；强行把协同损失叠加到大语义编码器上，又会形成相互竞争的几何约束。第二，通用量化器只关注重构误差或局部树结构，没有显式降低自回归解码面对的前缀条件不确定性；同一个第二层代码在不同父节点下可能表示完全不同的方向，生成器很难复用 token 语义。</p>
-<p>论文因此把目标从“让 SID 看起来有语义”改为“让 SID 保留推荐所需信息，并且按顺序可预测”。这也回应了此前评测中的混杂因素：SID 方法往往使用丰富侧信息，而 SASRec 等 item-ID 基线只用 ID，所谓生成式收益可能只是多看了特征。作者在所有基线中对齐侧信息后重新比较，并要求编码、量化、生成三个阶段分别服务同一个推荐目标。这个问题对超大候选库尤其重要，因为 SID 的价值正是用短代码和 beam search 替代巨型 embedding 表与全库相似度扫描。</p>
-<h2>2. 方法详解</h2>
-<p>ReSID 保留三阶段架构，但重新设计前两阶段。E-stage 的 Field-Aware Masked Auto-Encoding（FAMAE）接收用户历史与目标物品的结构化字段。每个位置将 item ID、店铺 ID、一级至三级类别等字段 embedding 求和，再送入双向 Transformer；目标物品采用两级随机掩码，先采样要遮蔽的字段数，再随机选择具体字段，并为每种字段使用独立的 mask token。模型通过 scaled cosine similarity 预测被遮蔽字段。其损失可以解释为提高隐藏表示与目标字段之间互信息下界：最小化各字段加权交叉熵，相当于最大化对下游预测有用的信息，而不要求依赖大型语言模型。</p>
-<p>FAMAE 输出并不直接使用混入用户历史的上下文向量，而是拼接目标物品各字段的已学习 embedding，形成用户无关、可稳定量化的物品表示。作者还给出两个轻量诊断指标：全字段遮蔽时预测目标物品，测试协同建模能力；只遮蔽 item ID 时预测物品，测试结构化语义和区分能力。两项指标随训练提高时，固定量化器和生成器下的 Recall@10 也同步提高，因此团队可以在不反复端到端训练的情况下筛选 E-stage checkpoint。</p>
-<p>Q-stage 的 Globally Aligned Orthogonal Quantization（GAOQ）先做平衡层级聚类，让每一层逐步缩小条件方差；关键改动是全局对齐索引。每个父簇的子簇质心先减去父质心，统一平移到原点，再与一组跨父节点共享、近似正交的参考方向计算余弦相似度，使用 Hungarian Matching 分配代码。这样，同层同编号 token 在不同前缀下尽量表示一致方向，既降低重构不确定性，也降低 <code>H(C_l | C_&lt;l)</code> 与索引的前缀歧义。平衡 K-Means 还约束各代码的边际熵，避免 code collapse。</p>
-<p>G-stage 对所有 SID 方法使用相同的 T5-style encoder-decoder：4 层编码器、4 层解码器，hidden size 128、FFN 512、4 个注意力头、每头 key/value 32、dropout 0.1。AdamW 学习率 0.005、weight decay 1e-5、cosine scheduler，batch 2048，最多 500 epoch；推理时每步 beam size 50。FAMAE 与顺序基线同样控制为 hidden 128、2 层 Transformer、4 头、FFN 512、dropout 0.1，AdamW 学习率 0.001、batch 2048、最多 500 epoch、early-stopping patience 3，并在大词表采样分类中取 128 个负例。</p>
-<p>数据来自 Amazon Reviews 2023 的 10 个子集，采用 5-core 过滤、最大历史长度 32 和 leave-one-out；规模从 Musical Instruments 的 57,359 用户、23,742 物品、490,522 次交互，到 Books 的 775,503 用户、485,218 物品、8,680,494 次交互。论文未给出明确 GPU 型号、卡数或总训练时长，这是复现成本评估中的缺口。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，FAMAE 把“语义—协同融合”从向大模型追加辅助损失，改成直接预测推荐系统已有的结构化字段。它以用户历史提供协同上下文，以字段级监督保留类别与属性身份；相比纯 Sentence-T5 只形成语义簇、BERT4Rec 只形成行为簇，FAMAE 在 t-SNE 中同时保持类别和行为社区结构。其作用不是制造更漂亮的 embedding，而是为后续有损量化提供推荐充分统计量。</p>
-<p>第二，GAOQ 把 SID token 本身的跨前缀一致性纳入量化。普通层级 K-Means 只保证父节点内部的局部编号，GAOQ 则通过共享正交方向和 Hungarian 匹配，让同一编号尽量复用含义。论文测得，GAOQ 第二层同码物品的平均余弦相似度是层级 K-Means 的 3–10 倍，说明索引歧义显著降低。</p>
-<p>第三，论文强调受控公平比较。所有生成式方法共享同一 T5 主干，传统顺序基线也增加相同结构化侧信息；结果显示 SASRec<em>、BERT4Rec</em> 常能追平或超过旧 SID 方法，揭示过去部分收益来自侧信息不对称。ReSID 在这种更严格设置下仍全面领先，才更能说明 tokenizer 设计有效。</p>
-<p>第四，ReSID 用非参数 GAOQ 替代昂贵训练型 tokenizer。大型数据集上 LETTER 量化需要 3,356–7,380 分钟，ReSID 仅需 27–96 分钟；在 Beauty &amp; Personal Care 上为 95.96 对 7,379.83 分钟，约 77 倍，论文报告最高达到 122 倍。这使频繁重建 SID、纳入新内容的工程路线更现实。</p>
-<h2>4. 实验结果分析</h2>
-<p>主实验覆盖 10 个 Amazon 子集，指标为 Recall@5/10 与 NDCG@5/10。下面是论文报告的宏平均相对提升：</p>
-<table><thead><tr><th>对比方法</th><th>R@5</th><th>R@10</th><th>NDCG@5</th><th>NDCG@10</th></tr></thead><tbody><tr><td>SASRec*</td><td>+13.05%</td><td>+3.75%</td><td>+29.24%</td><td>+18.38%</td></tr><tr><td>LETTER（最强 SID 基线）</td><td>+16.03%</td><td>+13.81%</td><td>+16.17%</td><td>+14.86%</td></tr><tr><td>ETEGRec</td><td>+47.07%</td><td>+40.30%</td><td>+50.94%</td><td>+45.86%</td></tr><tr><td>TIGER</td><td>+22.21%</td><td>+19.47%</td><td>+23.66%</td><td>+21.50%</td></tr></tbody></table>
-<p>ReSID 是论文中唯一在所有数据集和指标上都超过带侧信息 item-ID 基线的 SID 方法。相对 LETTER，Recall@5/10 分别提升 16.0%/13.8%，NDCG@5/10 提升 16.2%/14.9%。ETEGRec 虽然端到端联合训练 tokenizer 与生成器，反而明显落后；作者的解释是 SID 同时作为中间表示和训练目标，代码持续变化会使生成器输入与监督非平稳，阶段解耦更稳定。</p>
-<p>消融将 FAMAE 替换为 LLM、SASRec、BERT4Rec 表征（E1–E3），或将 GAOQ 替换成 RQ-VAE、层级 K-Means（Q1–Q2）。完整 ReSID 相对 E1 的 R@5/R@10 提升 5.40%/4.60%；相对 E2、E3 的 NDCG@10 分别提升 9.22% 和 9.61%，表明单纯语义或单纯协同表征都不足。量化侧相对 Q1 的 R@5/NDCG@5 提升 5.64%/4.88%，相对 Q2 提升 5.15%/4.72%；全局对齐的贡献并非只体现在重构，而是确实传递到下游排序。</p>
-<p>具体数据上，Musical Instruments 的 ReSID R@10 为 0.0645，高于 E1 的 0.0629、E2 的 0.0621 和 Q1 的 0.0609；Baby Products 的 R@10 为 0.0441，高于 E2/E3 的 0.0373。敏感性实验显示分支因子并非越大越好：Musical Instruments 在 <code>(b1,b2)=(32,40)</code> 时 R@10 为 6.4465，扩到 <code>(48,56)</code> 反而降至 5.9941，说明代码容量需要按数据密度调优。附录的 scaling 实验还发现低数据区间末端可能过拟合，不能把更大 SID 空间等同于必然收益。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者在独立局限章节明确承认两点。其一，FAMAE 已有任务感知诊断指标，但 GAOQ 缺少同样原则化、可在下游训练前计算的质量诊断；当前主要依赖重构歧义、条件不确定性与最终推荐实验。其二，即使 ReSID 大幅降低了 SID 构建成本，SID 生成模型的收敛速度仍比 SASRec 等 item-ID 方法慢数十倍，训练主干而非 tokenizer 会成为新的瓶颈。</p>
-<p>论文没有充分讨论的边界还包括：实验全部基于 Amazon 离线公开数据，没有在线 A/B、动态新品或持续更新测试；结构化字段包含店铺和三级类别，字段质量较差或 UGC 元数据稀疏时效果可能下降；leave-one-out 与固定 beam 50 没有覆盖高 QPS 服务的 P95 延迟、内存和索引刷新成本。GAOQ 是离线层级量化，新物品加入后是否局部插入、怎样避免大规模重编码也未说明。FAMAE 假设结构化字段与历史足以作为预测统计量，对纯文本细粒度内容、跨域冷启动和多模态信号的边界仍需验证。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索/推荐团队，最直接的启示是先审计 tokenizer，再扩主干。可以建立三组对照：纯文本 embedding+RQ-VAE、协同序列 embedding+量化、字段感知 FAMAE+全局对齐量化；所有组共享生成器和侧信息，避免把收益错误归因于 SID。UGC 字段可包含作者、话题、内容类型、语言、发布时间桶、质量等级与行为社区，但需控制泄漏，不能把未来统计写进训练目标。</p>
-<p>FAMAE 的两项诊断很适合工程门禁：全字段遮蔽测试“只看历史能否猜中目标”，只遮 item ID 测试“其他字段能否区分具体帖子”。只有两项同时提升的 checkpoint 才进入昂贵的量化和生成训练。GAOQ 则可通过跨父节点同码余弦相似度、代码利用率、前缀条件熵和每层冲突率监控；若同编号在不同主题下含义漂移，应优先修量化，而不是盲目加大解码模型。</p>
-<p>部署上可先把 SID 作为现有召回的旁路候选源。用 beam search 生成几十到几百个候选，与双塔、图召回合并后交给现有精排；观测候选覆盖、长尾率、nDCG、CTR、重复率和 P95。论文的量化速度优势支持按天或小时重建部分代码，但主模型收敛仍慢，因此实际系统应把 tokenizer 刷新与生成器重训解耦，并准备旧码到新码的版本映射。</p>
-<p>最需要避免的是三种误区：只用通用 LLM embedding 便认为获得了“语义推荐”；给传统基线更少侧信息后夸大生成收益；以及端到端让持续变化的代码与生成目标相互追逐。ReSID 的核心价值不是又一种更复杂的模型，而是把信息保留、代码可预测性和公平评测拆开验证。对资源有限的团队，先复用结构化推荐字段与非参数量化，比直接训练超大生成式推荐主干更可能在六个月内形成可控试点。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-dblp-journals-corr-abs-2602-02338"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-acl:2026.findings-acl.2134" data-paper-id="acl:2026.findings-acl.2134" data-card>
@@ -121,51 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>工业系统不必在每次请求中运行昂贵的多智能体链路，可以离线让强教师探索并把轨迹内化到轻量学生。对社区搜推，可把用户点击序列先翻译成可读兴趣证据，再蒸馏规划与反思逻辑；线上只保留单模型推理，在维持延迟预算的同时获得更强的意图解释和候选选择能力。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Yang Wu, Haoze Wang, Qian Li, Jun Zhang, Huan Yu, Jie Jiang</div>
   <div class="foot"><span>网页来源</span><span>·</span><span>2026-07-01</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 5 · Practical 5 · Evidence 4 · Timely 3</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="acl:2026.findings-acl.2134" id="dr-acl-2026-findings-acl-2134">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 6 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>深度解读：Internalizing Multi-Agent Reasoning for Accurate and Efficient LLM-based Recommendation</h2>
-<h3>1. 问题与动机</h3>
-<p>LLM 在推荐系统中的应用面临一个核心矛盾：语义推理能力强但缺乏协同过滤信号。现有方法要么将协同信号压缩为不可解释的向量（如 ID embedding），丧失了 LLM 的推理优势；要么使用多智能体系统进行多轮推理，但推理延迟高达数百秒，无法满足在线推荐的实时性要求。例如，基于多智能体的 MARS 系统在 Amazon 数据集上需要 461 秒完成一次推理。这种推理质量与推理效率的矛盾是 LLM 推荐系统落地的关键障碍。本文的动机是：能否将复杂的多智能体推理能力「内化」到单一高效模型中，同时保持甚至超越多智能体系统的推理质量？</p>
-<h3>2. 方法详解</h3>
-<p><strong>多智能体教师系统 MARS：</strong> 采用 Plan-Execute-Reflect 架构。规划阶段将用户意图分解为可执行子任务；执行阶段由专门的 Agent（用户画像分析、历史兴趣分析、近期兴趣分析、兴趣分歧分析）并行执行；反思阶段整合各 Agent 输出进行自我修正。</p>
-<p><strong>协同信号翻译机制（CST）：</strong> 这是本文最关键的创新。CST 在用户-物品二部图上执行图遍历：Item-CF 工具通过 Item→User→Item 路径发现共现物品，User-CF 工具通过 User→Item→User 路径聚合相似用户偏好。关键设计是将遍历结果转化为自然语言摘要并离线预计算，使在线推理时可即时调用。</p>
-<p><strong>轨迹驱动内化管线：</strong> 分两阶段训练学生模型（Qwen3-8B）。阶段一 SFT：从 MARS 教师（DeepSeek-V3）生成推理轨迹，仅保留成功案例进行监督微调，序列化格式保留工具调用 token 以教会模型何时及如何访问协同信号。阶段二 GRPO：使用复合奖励函数进行策略优化，包括格式一致性奖励（±1）和分层结果奖励（排名第1得1分，前3得2/3分，前5得1/3分）。</p>
-<p><strong>训练设置：</strong> 教师 DeepSeek-V3 在 16 张 H20 GPU 上运行；学生 SFT 阶段 8 张 GPU 训练 3 个 epoch，GRPO 阶段 16 张 GPU 训练 8 组样本。推理使用 BF16 精度，temperature=0.7。</p>
-<h3>3. 核心技术贡献</h3>
-<p><strong>贡献一：协同信号的语言化翻译。</strong> CST 机制将传统推荐中不可解释的协同过滤信号（共现矩阵、用户相似度）转化为 LLM 可理解的自然语言证据。这不仅提升了推理质量，还使推荐过程具备了可解释性。相比直接将 ID embedding 注入 LLM 的方法（如 TALLRec、P5），CST 保持了 LLM 的原生推理能力。</p>
-<p><strong>贡献二：学生超越教师的蒸馏方法。</strong> 通过基于结果的轨迹过滤（仅保留成功案例）和统一策略训练（消除多智能体间的错误传播），STAR 模型在多数场景下性能超越教师系统 8.7%–39.5%。这证明了多智能体系统中的冗余和错误传播反而限制了推理质量。</p>
-<p><strong>贡献三：推理效率的量级提升。</strong> STAR 将推理延迟从 MARS 的 461 秒降至 89 秒（约 5 倍加速），且学生模型仅需单张 H20 GPU 即可运行。</p>
-<p><strong>贡献四：从 1.7B 到 32B 的一致性缩放行为。</strong> 实验验证了 STAR 框架在不同模型规模上的单调性能提升（1.7B: 70.1% → 32B: 84.5%），表明该方法具有良好的 scaling 特性。</p>
-<h3>4. 实验结果分析</h3>
-<p>实验在 Amazon、Goodreads、Yelp 三个数据集上进行，覆盖经典推荐、冷启动（用户/物品）和兴趣漂移（长期/短期）五种场景。</p>
-<table><thead><tr><th>模型</th><th>Amazon经典</th><th>Goodreads冷启动用户</th><th>Yelp兴趣漂移(长期)</th></tr></thead><tbody><tr><td>RecHacker</td><td>51.5</td><td>49.3</td><td>47.6</td></tr><tr><td>MARS(教师)</td><td>68.4</td><td>66.3</td><td>74.1</td></tr><tr><td><strong>STAR(学生)</strong></td><td><strong>79.0</strong></td><td><strong>76.3</strong></td><td><strong>87.3</strong></td></tr></tbody></table>
-<p>消融实验揭示了各组件的重要性：移除 Reflector（自我修正）导致最大性能下降（6.5 个点），表明自我修正对推理质量至关重要；移除 Tool（协同信号工具）导致第二大下降（5.6 个点），验证了 CST 机制的有效性。</p>
-<p>Best-of-k 缩放分析显示，增加推理时采样数（k=1→16）带来单调性能提升，这意味着可以通过增加推理计算来进一步提升推荐质量。</p>
-<p>值得注意的是，学生模型在所有场景下均超越教师，这一反直觉结果归因于：(1) 基于结果的过滤去除了教师的失败案例噪声；(2) 统一模型消除了多智能体系统中的级联错误传播。</p>
-<h3>5. 局限与未来方向</h3>
-<p><strong>作者明确指出的局限：</strong> (1) 当前 89 秒的推理延迟仍无法满足亚秒级在线推荐需求，需要进一步的推理加速（如量化、推测解码）；(2) 离线语言化摘要需要为所有用户和物品预计算，在十亿级规模下存在存储开销；(3) 实验评估基于 20 个候选物品的集合，全库排序效果未验证。</p>
-<p><strong>未涉及但值得关注的局限：</strong> 实验仅在电商、图书、本地服务三个领域验证，在短视频推荐、新闻推荐等高频交互场景的效果有待检验。此外，CST 机制依赖预构建的用户-物品二部图，在图稀疏或用户交互极少的场景下效果可能受限。</p>
-<h3>6. 工业实践意义</h3>
-<p><strong>可借鉴的设计思路：</strong> CST 机制将隐式行为信号翻译为自然语言的方法，可直接应用于搜索排序场景——将用户点击历史、停留时长等行为信号转化为 LLM 可理解的文本描述，作为 LLM 排序模型的输入特征。这比直接拼接 ID embedding 更符合 LLM 的原生能力。</p>
-<p><strong>蒸馏落地路径：</strong> STAR 的两阶段蒸馏方案（SFT + GRPO）为从大模型蒸馏到可部署的小模型提供了成熟的训练范式。对于搜索场景，可以先用大模型（如 DeepSeek-V3）做离线打标和推理链生成，再蒸馏到 8B 级别模型进行在线服务。</p>
-<p><strong>部署注意事项：</strong> 89 秒的推理延迟意味着该方法目前更适合作为离线重排序或异步推荐的方案，而非实时在线推荐。建议的落地路径是：离线使用 STAR 生成高质量排序列表或推荐理由，在线通过缓存或近实时更新提供服务。单张 H20 GPU 的学生模型资源需求相对可控。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-acl-2026-findings-acl-2134"></span>
 </article>
 <article class="card t-generative" id="paper-acl:2026.acl-industry.130" data-paper-id="acl:2026.acl-industry.130" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></span> 4.55</span></div>
@@ -279,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

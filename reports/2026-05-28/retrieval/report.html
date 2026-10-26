@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,55 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对社区 UGC 搜索的最大启示是：通用嵌入模型已具备同时承接文本搜索、跨模态搜索（图+文帖子）和代码片段检索的能力，无需再为每种模态单独训练 encoder。原生多模态对比学习 + 多任务多阶段的训练范式值得直接借鉴用于 UGC 短文本+图像帖子的统一召回。Google 给出的具体 benchmark 数字（MTEB 69.9、Code 84.0）也提供了选型替换 BGE/E5 等开源模型时的明确性能锚点。</div>
     <div class="foot">Madhuri Shanbhogue, Zhe Li, Shanfeng Zhang, Gustavo Hernández Ábrego, Shih-Cheng Huang, et... · 2026-05-25 · HuggingFace</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="hf:2605.27295" id="dr-hf-2605-27295">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 11 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Gemini Embedding 2 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>现有多模态嵌入模型（CLIP、ALIGN、SigLIP 等）走的是「后融合 (late-fusion)」范式：每个模态有独立编码器，再通过成对的跨模态对比学习对齐两个空间。这一设计带来两个核心缺陷：第一，对「交错输入」（一段对话里既有图、又有文字、还有音频片段）支持差，因为单模态编码器无法吸收其它模态的语境；第二，跨模态交互只发生在向量空间最后一步，损失了模态间深层语义关联。论文指出，目前已经成熟的多模态 LLM（MLLM）通过在生成阶段就做深度跨模态融合，给出了一条新路径——直接用 MLLM 主干生成嵌入，跳过 ASR、image captioning 这类中间转换，能保留模态原生的全部信息。在企业场景下（视频推荐、跨模态 RAG、文档搜索），统一表示空间也意味着可以省掉「先 ASR 再向量化」这种级联管道，从根本上消除误差传播。论文给出的实证支撑是：在 MSEB 音频 benchmark 上，原生音频 retrieval 比「ASR→文本检索」高 3.6–5.0 点 mrr@10，验证 cascade 范式真的会丢信息。</p>
-<h2>2. 方法详解</h2>
-<p>整体架构以 Gemini 主干为初始化，分三阶段训练。</p>
-<p><strong>编码器结构。</strong> 原始图像/视频/音频/文本由 Gemini 原生 tokenizer 转成 token 序列，过双向 attention transformer 得到 <code>T_embed ∈ ℝ^(L×d_M)</code>。这里把 Gemini 的因果 attention 换成双向 attention 是关键设计——causal LLM 只能看到前文，不适合做 encoding。再做 mean pooling 得到 <code>P_embed</code>，最后一个线性投影层产出 d=3072 维向量。模型同时通过 Matryoshka Representation Learning（MRL）在 768、1536、3072 三个截断维度上同时优化损失，使一个模型在线就能根据 cost 灵活降维。</p>
-<p><strong>损失函数。</strong> 标准的 NCE 对比损失，每个 batch 中查询 <code>q_i</code> 与正样本 <code>p_i+</code> 配对，分母同时包含：(a) 该查询的难负样本 <code>p_i-</code>，(b) batch 内其它样本的正样本 <code>p_j+</code>（mask 后），公式为 <code>L = -log(exp(sim(q_i,p_i+)/τ) / (exp(sim(q_i,p_i+)/τ) + exp(sim(q_i,p_i-)/τ) + Σ_j mask(i,j)·exp(sim(q_i,p_j+)/τ)))</code>，相似度走 cosine。论文额外加了「task string random drop」——训练时随机丢掉任务前缀，使模型对模态输入鲁棒。</p>
-<p><strong>三阶段训练。</strong> Stage 1 Pre-Fine-Tuning（PFT）只在文本、图像、代码三类高量噪声 pair 上跑大 batch，目的是把 Gemini 的自回归参数迁移到 encoding 模式；Stage 2 Fine-Tuning（FT）引入完整模态集（文本/代码/文档/图像/音频/视频），每个任务调 batch size，并用 (query, target, hard negative) 三元组训练，强调跨模态对齐；Stage 3 Model Soup 把多次 FT run 的参数做加权平均（论文表 6 显示 base:ft 2:1 加权平均使 Vatex 从 79.5 降到 74.5 但综合更稳）。</p>
-<p><strong>训练数据。</strong> 大规模合成 + 真实数据混合，其中合成代码数据由 Gemini 本身生成；表 5 ablation 显示去掉合成数据后代码任务平均掉 13.3 分（86.3→73.0），CodeFeedbackMT 任务直接掉 34.4 分。这点反过来证明 self-bootstrap 合成数据是这一代多模态嵌入的关键养料。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一个，把 MLLM 主干「转身」为 encoder：双向 attention + mean pooling + 线性投影，让原本生成式的模型直接产出能用 cosine 相似度比较的向量，这条范式可以直接复用到任何带 MLLM 主干（Qwen-VL、InternVL、Llava）的开源体系。其工作原理是 bidirectional attention 让每个 token 都能看到双向上下文，避免 causal mask 下后向信息丢失，从而产出真正「上下文敏感」的嵌入。</p>
-<p>第二个，原生音频嵌入证伪 ASR cascade：MSEB 上 Native vs. ASR 比较显示 PassageCrossLang 高 5.01 点 mrr@10，作者解释为「ASR 误识别会改变下游 query 语义」，而向量编码保留了声学层面的歧义。这对当前主流的「先 ASR 后检索」管道是颠覆性结论，意味着语音搜索/语音 RAG 的工程路线需要重新评估。</p>
-<p>第三个，多任务 multi-stage 训练+Model Soup 的稳定化手段。FT 中加入 MSR-VTT、Vatex 视频 pair 让 MSR-VTT 涨 7.9 点 NDCG@10，但 YouCook2 掉 0.6——这种「按下葫芦浮起瓢」是多任务学习的经典痛点。论文用 1:1 base/ft 参数平均 (model soup) 拉回平衡：MSR-VTT 73.7、Vatex 76.8。Model soup 在嵌入模型上有效是个新的实证发现。</p>
-<p>第四个，跨域零样本泛化能力。表 4 中显微镜 MicroVQA R@5 79.3 比 ALIGN 48.1 高 31 个点，天文 AstroLLaVA 64.4 比 CLIP-Giant 31.6 翻倍。说明「大底座 + 多任务 contrastive 训练」能涌现出垂直域泛化能力。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>多模态 retrieval 主表（Table 1）：</strong> 总分 77.2，全面超越 Voyage-3.5-multimodal 与 Amazon Nova MME。具体来说 MSCOCO 文搜图 R@1 62.9 vs Voyage 58.1；MSCOCO 图搜文 R@1 78.8 vs 74.5；Vatex 文搜视频 NDCG@10 68.8 vs 55.2（+13.6 点是巨大差距）。长描述基准 DOCCI 上 93.4 vs 83.8（+9.6）—显示模型对复杂语义描述的对齐能力。</p>
-<p><strong>MTEB 文本/代码（Table 2）：</strong> MTEB Multilingual Mean Task 69.9，比 Voyage-3.5 的 58.5 高 11.4 点，是当前公开模型最高。代码任务 MTEB Code 84.0、CoIR 82.3，超过专门做代码的 voyage-code-3 的 78.5（CoIR），意味着不再需要专门的代码 embedding 模型。</p>
-<p><strong>音频（Table 3 MSEB）：</strong> Native 平均 mrr@10 73.99 vs ASR 70.40，PassageCrossLang 任务 native 72.56 vs ASR 67.55——跨语言场景下 ASR 误差被放大。</p>
-<p><strong>消融实验关键发现：</strong></p>
-<ul>
-<li>合成数据对代码任务平均贡献 +13.3 分（CodeFeedbackMT 单任务 +34.4）。</li>
-<li>PFT 到 FT 阶段文本/图像任务收益「适度」，视频收益最大——因为视频在 PFT 阶段被排除。</li>
-<li>Model Soup：单纯加视频数据让 YouCook2 略降 (55.9→55.3)，1:1 souping 后恢复到 56.7 且其它视频任务也提升。</li>
-</ul>
-<p><strong>特化领域（Table 4）：</strong> 显微镜 +64%、天文 +2x、餐饮 Recipe1M Ingredients R@5 90.2 vs SigLIP2-Giant 81.2 (+11%)。竞品在垂直域出现剧烈波动而 Gemini Embedding 2 保持稳定。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出的局限：(a) 长文档处理没有专门设计，document retrieval 64.9 略低于 Voyage 的 65.5，仅依赖 chunking；(b) 多模态多任务训练对采样率、batch size 等超参数敏感，平衡难调；(c) 论文没披露推理延迟、显存占用等部署关键数据；(d) 「交错输入」评测主要还是图+文 pair，真正的 video-audio-text 三模态交错评测缺位。</p>
-<p>未提及但显而易见的限制：3072 维 + 双向 attention + 多模态 token 化的推理成本可能远高于 BGE/E5 等纯文本模型，工业部署成本未量化；闭源 weights，无法私有部署；论文未给 OOD 鲁棒性的细致分析（如对抗样本、长尾域）。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区 UGC 搜索（帖子+图+音频/视频）的直接借鉴：第一，<strong>抛弃 ASR cascade</strong>。当前大部分公司语音帖检索还在走「ASR 转文本 + 文本 embedding」管道，论文证明这条路径在跨语言/口音场景下系统性丢分。如果资源允许，应实验直接用原生音频嵌入；最低限度，对 ASR 置信度低的 case 做兜底向量召回。第二，<strong>统一 encoder 替代多个专用 encoder</strong>。当前业界做法是文字用 BGE/E5、图像用 CLIP、代码用 voyage-code-3——三套独立 index，跨模态融合靠 score 加权。Gemini Embedding 2 证明一个 encoder 就能同时拿下 MTEB 69.9、MTEB Code 84.0、MSCOCO 62.9，意味着工程上可以收敛成一个 index（同维度同空间），架构大幅简化。第三，<strong>Matryoshka 维度切换</strong>是工业部署的福音：召回阶段用 768 维降低 ANN 内存与延迟，精排阶段切到 3072 维拿全分。第四，<strong>Model Soup 作为多任务稳定化手段</strong>。社区搜索通常有多种 query intent（话题/商家/人/POI），多任务训练时一个任务涨另一个掉是常态，Model Soup 参数平均提供了一条比 loss balancing 简单得多的解法。<strong>部署考量</strong>：3072 维向量内存占用大（FP16 单条 6KB），需要配套 PQ/SQ 量化；论文未披露 latency，企业评估时需自行 benchmark；目前只通过 API 提供，私有部署需等价用开源替代（如 Qwen3-Embedding、bge-m3）做能力对齐。<strong>最值得抢先借鉴的：合成数据 self-bootstrap</strong>——表 5 显示合成数据对代码 embedding 涨 13 分以上，社区搜索同样有大量长尾 query 缺乏标注，可以用 LLM 生成 (query, positive, hard-negative) 三元组扩充训练集。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-hf-2605-27295"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:oai:arXiv.org:2605.26385" data-paper-id="arxiv:oai:arXiv.org:2605.26385" data-card>
@@ -123,58 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>CA-PG 提供了一个真正可工业落地的 ESR 端到端 RL 训练方案：核心改动只在策略梯度的归因公式，不需要改变现有 two-stage 架构。对社区搜索的直接价值是把目前主要用 distillation/CTR 标签训练的召回侧升级为以下游 nDCG/CTR 为目标的强化学习训练，且不会因候选集动辄 1000+ 而方差崩溃。论文里 marginal probability 重写技巧也可以迁移到推荐多目标排序中的候选集级 reward 分解问题。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Haruka Kiyohara, Mihaela Curmei, Ariel Evnine, Shankar Kalyanaraman, Israel Nir, Ana-Roxana Pop, Nit...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-27</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2605.26385" id="dr-arxiv-oai-arXiv-org-2605-26385">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>工业级搜索/推荐/RAG 系统普遍采用两阶段架构：early-stage ranker (ESR) 从十亿级 item 池中筛出几千到上万的候选集，late-stage ranker (LSR) 再在候选集内精排。LSR 训练已有大量 RL 方法，但 ESR 的端到端 RL 训练一直是空白——根本原因是把 vanilla policy gradient (V-PG) 直接套到 ESR 时方差呈 𝒪(|𝒜|^K) 指数级爆炸（|𝒜| 是动作空间，K 是候选集大小）。论文指出 V-PG 的两个症结：(1) 方差爆炸——V-PG 对整个候选集 𝒜^K 的联合概率求梯度，每次只采样一个候选集组合却要估计在 𝒜^K 组合空间上的期望；(2) credit-assignment 失败——V-PG 把候选集中所有 item 同等对待，无法把单个 item 对最终 reward 的贡献区分出来。例子：候选集 {A,B,C} 进入 LSR，A 被选中且 reward 正，B 被选中且 reward 负，V-PG 会把整体概率上调，无法识别 C 是否相关。前序工作 (Ma et al. 2020) 也讨论 V-PG 的两阶段训练，但只用启发式（对非目标 item 加 discount）压方差，缺乏严格分析。本工作要回答：能否找到一个 PG 形式，让 ESR 在大候选集场景下也能稳定收敛？</p>
-<h2>2. 方法详解</h2>
-<p>CA-PG 的核心是<strong>策略分解</strong>：把 ESR 的策略写成 π(a_l | x) = π_ESR(𝒮^K(a_l) | x) · π(l)(a_l | x, 𝒮^K(a_l))，其中 𝒮^K(a_l) := {𝒜^K | a_l ∈ 𝒜^K} 是所有包含 a_l 的候选集的集合，π_ESR(𝒮^K(a_l) | x) := Σ_{𝒜^K} 𝟙{a_l ∈ 𝒜^K} π_ESR(𝒜^K | x) 是 ESR 选中 a_l 的<strong>边际概率</strong>。关键 trick：CA-PG 只对第一项（边际概率）求梯度、忽略第二项（条件概率）：</p>
-<p>∇v_l(π) = 𝔼_𝒟 [∇log π_ESR(𝒮^K(a_l) | x) · r_l]</p>
-<p>这一步把动作空间从 |𝒜|^K 降到 |𝒜|，方差和样本复杂度都大幅下降。Theorem 3.1 证明 CA-PG 就是 V-PG 的一个组成部分，剩余项 ∇C(π) 包含一个 LSR 与 ESR 条件分布之比的因子，作者证明该因子在 LSR 与 ESR 合理对齐时贡献小。Theorem 3.3 给出 CA-PG 能学到正确排序的充分条件：reward 为正、LSR 相对 ESR 合理对齐（不必最优）。</p>
-<p>具体落地用 Plackett-Luce (PL) 双塔 MoE 模型：每个专家 m(k) 输出 10 维用户/item embedding，logit = ⟨μ̂_{m(k)}(x), ν̂_{m(k)}(a)⟩，整体 PL 策略 π_ESR(𝒜^K | x) = ∏ exp(logit) / Σ。当 K 大、|𝒜| 大时直接求 PL marginal 不可行，作者引入 Sampling with Replacement (SwR) 近似——把不放回采样近似为放回，得到 CA-PG-SwR (论文也称 TOP1-PG，因为 M=1 时退化为 top-1 sampling 形式)。训练用标准 Adam，learning rate 网格搜索；代码开源于 facebookresearch/early_stage_retrieval。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>(1) 边际化变量替换</strong>：把策略分解中 ESR 的随机变量从&quot;具体候选集 𝒜^K&quot;换成&quot;包含 a_l 的所有候选集 𝒮^K(a_l)&quot;——这是 variance reduction 的根本机制。前序工作只在 single-stage 上做 PL 近似，没人意识到 two-stage 下边际概率才是统计上更稳的优化目标。<strong>(2) 与 V-PG 的精确关系定理</strong>（Theorem 3.1）：CA-PG = V-PG − 残差项，且残差项可解释为&quot;每个具体候选集组合的归一化重要度&quot;。这给出从 V-PG 移除噪声项的清晰理论解读。<strong>(3) 学习等价性证明</strong>（Theorem 3.3）：在 LSR-ESR 合理对齐 + reward 正性条件下，CA-PG 与 V-PG 学到相同最优 ESR。<strong>(4) SwR 实用近似</strong>：把 sampling-without-replacement 替换为 with-replacement，让 CA-PG 在 K=200 这种工业级候选集上仍可计算。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>合成实验</strong> (1000 users × 1000 items，K=5/10/20)：</p>
-<ul>
-<li>V-PG: K=5/10/20 时 policy value 收敛到 7.22/7.17/6.86（500K 步）；</li>
-<li>V-PG-SwR: 8.33/8.54/8.74；</li>
-<li>CA-PG: 8.19/8.44/8.70；</li>
-<li>CA-PG-SwR: 性能最优。</li>
-</ul>
-<p>V-PG 在 K=20 时已出现 gradient overflow 提前中止；CA-PG 系列在 K=20 仍稳定收敛。</p>
-<p><strong>LSR 对齐扫描</strong> (K=10)：四种 LSR (optimal/noisy/uniform/anti-opt)：</p>
-<ul>
-<li>V-PG 在 noisy 下 7.25，uniform 下骤降到 3.27，anti-opt 仅 1.07；</li>
-<li>CA-PG 在 uniform LSR 下仍能学到 5.64（更稳）。这验证 Theorem 3.3 关于&quot;对齐宽容度&quot;的预测。</li>
-</ul>
-<p><strong>真实数据 KuaiRec</strong> (1411 users × 3326 items，K=50/100/200，只能跑 SwR 版本)：</p>
-<ul>
-<li>V-PG-SwR @50K 步: 5.05/5.39/5.92；@500K 步: 7.91/8.22/8.26；</li>
-<li>CA-PG-SwR @50K 步: 5.61/6.37/7.10；@500K 步: 7.19/7.82/8.32。</li>
-</ul>
-<p>CA-PG 在 @50K 早期收敛优势随 K 增大而扩大（K=200 时 7.10 vs 5.92），最终收敛值在 K=200 时也反超 V-PG-SwR。<strong>关键观察</strong>：CA-PG 的早期收敛优势在大候选集下最显著，这正是工业场景需要的（候选集越大 V-PG 越无法用）。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确列出两个方向：(1) <strong>off-policy learning (OPL)</strong>——本文是 on-policy，工业级 ESR 训练通常依赖 logged data，需要给 CA-PG 配套 importance sampling 策略；(2) <strong>reward 交互</strong>——本文假设 position-wise reward 只与对应 action 有关，但实际排序中存在 diversity 等 item-item 交互，CA-PG 在多样性场景下的扩展尚未解决。论文未明显讨论的局限：CA-PG-SwR 的 sampling 近似在极小 K 时与精确 CA-PG 有差距；MoE 多专家的 expert imbalance 问题未做专门处理；reward function 的正性要求（Theorem 3.3）在带 KL 罚的工业 reward 下可能违反。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜索/推荐工程团队的最具体启示：<strong>召回侧 RL 训练长期被认为&quot;不可能用 vanilla PG&quot;，CA-PG 把行动空间从 |𝒜|^K 降到 |𝒜|，让 ESR 可以与 LSR 联合优化业务 reward（CTR、CVR、播放时长）而非只优化 retrieval-only nDCG</strong>。落地路径：(1) 已有双塔召回 + 排序 pipeline 的团队，可以把召回侧 loss 从 in-batch negative softmax 切到 CA-PG-SwR，reward 用线上 LSR 输出 + 后验业务指标；(2) MoE 召回（业界常见的多通道融合）天然适配 CA-PG 的两阶段 PL 公式；(3) 候选集 K=200~1000 是工业典型量级，论文证明这正是 CA-PG 收益最大的区间。对社区搜索而言，UGC 帖子的召回长期靠 BM25 + 双塔召回融合，CA-PG 提供了&quot;用线上点击/转化直接训召回模型&quot;的可行通路，不再需要先用代理标签（如曝光-点击对）训召回再用 RL 训排序。需要注意的工程约束：CA-PG 需要 LSR 是固定/可查询的（或异步更新），不能 LSR/ESR 同时变化；梯度计算需要对 𝒮^K 边际概率做归一化，框架需支持 PL 的 logsumexp 稳定实现；reward 必须正（建议加 baseline）。Meta 的 facebookresearch/early_stage_retrieval 仓库提供了参考实现，可直接 fork 适配业务 PL 头。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2605-26385"></span>
 </article>
 <article class="card t-retrieval" id="paper-arxiv:oai:arXiv.org:2605.26578" data-paper-id="arxiv:oai:arXiv.org:2605.26578" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.40</span></div>
@@ -288,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

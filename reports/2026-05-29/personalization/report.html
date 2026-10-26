@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,45 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>核心是“恒等等价”——分解不改变任何一条预测，因此无需重训、没有离线指标回退风险，可直接替换上线，对推荐/搜索精排服务很有吸引力。节省量随上下文特征数量平方增长，上下文特征越多收益越大。恒等分解只在 cross network 与 self-attention 的首层成立（每层会混合 rank），要跨深度获益须改用 rDCN 这类保持秩纪律的结构。</div>
     <div class="foot">— · 2026-05-28 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.27450" id="dr-arxiv-2605-27450">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Context Features Are Cheap: Rank-Aware Decomposition for Efficient Feature Interaction 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>现代工业推荐排序对同一次请求里的 N 个候选，复用同一份用户/上下文特征逐一打分。主流实现（DLRM、DeepFM、DCNv2）在前向早期就把上下文特征广播开来，使 context-only 运算每请求重复 N 次。作者给出量化浪费：对 K 个上下文字段、M 个目标字段、嵌入维 D，仅 context-context 的 FM 交互每请求就白白消耗 (N−1)·C(K,2)·D FLOPs，且随上下文特征数 K 平方增长。随着系统引入更长用户历史、会话、页面特征，K 越来越大，这笔浪费随之扩大。对每天服务数十亿请求的生产系统（Taboola 的 CPU 推理基建），这直接换算成机器规模与成本。</p>
-<h2>2. 方法详解</h2>
-<p>核心是一条代数原理：任何作用在&quot;按 rank 划分输入&quot;上的线性/双线性运算，都存在精确块分解，可把 context-only 计算从 per-candidate（rank 3，[B,N,D]）下放到 per-request（rank 2，[B,D]），且与原模型输出逐位等价。</p>
-<ul>
-<li>线性层（FC、attention 投影）：Wx = W_c·x_c + W_t·x_t，上下文项 W_c·x_c 算一次再广播，目标项按候选算。RankSplitDense 把首个 FC 层这样拆，节省 ΔFC=(N−1)·|x_c|·U；当上游 FM_ctx 输出（大小 C(K,2)）喂进来时，节省进一步变成 (N−1)·C(K,2)·U，对 K 平方、跨阶段叠加。</li>
-<li>双线性（FM 内积、attention 打分）：x^T·W·y 拆成 cc/ct/tc/tt 四块，只有 context-context 块算一次；FM 拆成 FM_ctx（一次）与 FM_tgt（按候选）。</li>
-<li>DCNv2 cross 层：x_{l+1}=x_0⊙(W_l·x_l+b_l)+x_l，第 0 层的 W_cc·x_0^c、W_tc·x_0^c 是 rank 2 可预计算，节省比例 d_c²/(d_c+d_t)²。</li>
-<li>self-attention：Q/K/V 投影按线性拆；注意力矩阵 Q_c·K_c^T 块是 rank 2，softmax 的混合用 block-wise log-sum-exp 把预计算的上下文部分与按候选的目标部分以 O(1) 合并。</li>
-</ul>
-<p>为何只在首层成立：cross network 与 attention 每层输出都会&quot;混 rank&quot;（如 cross 的上下文输出行含 W_ct·x_l^t，把目标耦合进本该是上下文的维度），经非线性后上下文与目标在每个神经元混合，后续层在纯目标依赖张量 [N,U] 上运算，秩分离被破坏。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) 把&quot;上下文特征冗余计算&quot;形式化为 rank-partitioned 输入上的精确块分解，统一覆盖 FM/DCNv2/self-attention/FC 四类主流交互算子，且数学上恒等等价——不改预测、不需重训。<br>(2) 闭式分析证明节省随上下文特征数平方增长，并用受控实验验证。<br>(3) 提出 rDCN 架构变体：把 context×target 交互只加载到 target 流，context 流仅靠 context×context 演化（结构性删去 W_ct 块），从而跨深度保持秩纪律。target 流 T_{l+1}=T_0⊙(W_l^ct·c_l + W_l^t·T_l + b_l^t)+T_l 把一次性的上下文交叉项广播给按候选的目标项；rDCN 消去 baseline 中的 N·D_c² 项，使上下文驱动的扩展从平方降为线性（N·D_c·D_t），每层省 D_c·D_t 参数。</p>
-<h2>4. 实验结果分析</h2>
-<p>生产部署（DLRM 排序器，Table 4）：仅 FM rank-aware 即 +25% RPS/pod、p50 −17%、p99 −26%；FM+FC 组合达 +87.5% RPS/pod、p50 −30%、p99 −33%，峰值 pod 数减少 47%，且预测逐位不变。FM 与 FC 收益相互叠加，说明 FC 拆解并非可有可无。<br>合成 DLRM 吞吐刻画：固定 M=4 变 K，vanilla RPS 从 K=8 的 1.00 退化到 K=24 的 0.34，rank-aware 从 1.13 退到 0.69，优势从 +13%(K=8) 扩大到 +105%(K=24)，印证平方级 scaling；固定 K=8 变 M，两条曲线同步退化，rank-aware 优势稳定在 +7~+21%，说明节省以上下文为中心、对目标数不敏感。<br>精度（Table 3）：DLRM(K=27,M=4) vanilla LogLoss 0.3875，FM 与 FM+FC rank-aware 均 0.3875（恒等等价，±0.0001 内），FM+FC 省 73% 总 FLOPs；DCN(K=26,M=16) DCNv2 0.3876，rDCN 0.3877（+0.05%）省 67% 总 FLOPs（交互层省 72%）。消融：rDCN 去掉并行 context 流后 LogLoss 退化约 0.001（到 0.3886），比恒等分解的扰动大一个量级，证明并行 context 流对捕捉高阶 ctx×ctx 动态必要。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确：(1) 恒等分解在 cross network 与 attention 只在首层成立，跨深度不叠加，须靠 rDCN 这类架构改动；(2) target-attention 模型（DIN、ETA、TWIN）用户表征按设计依赖目标，没有 context-only 路径，无法套用；TransAct 的 target-token 注入在第 0 层即破坏秩纪律；(3) 如何扩展到通过共享 self-attention 把目标早融到用户侧表征的架构，列为开放问题；(4) rDCN 牺牲严格恒等等价换取跨深度叠加节省，离线精度损失在训练噪声内；(5) rDCN 仅离线验证、尚未上线，因生产中 DLRM 的 FM+FC 变体已能以更低算力达到同等离线精度。</p>
-<h2>6. 工业实践意义</h2>
-<p>最直接的价值：这是&quot;零精度损失、零重训、可直接替换&quot;的推理优化，对推荐/搜索精排服务（一次请求打分成百上千候选）几乎是免费的吞吐红利。落地建议：(1) 先在 FM 与首个 FC 层套恒等分解，按 Taboola 经验单 pod 吞吐可近翻倍、峰值机器数砍掉约一半；(2) 上下文特征越多（长历史、会话、页面特征）收益越大，正契合特征不断膨胀的趋势；(3) 若用 DCNv2 且想跨深度获益，可评估 rDCN，但它非恒等等价、需离线验证精度；(4) 注意适用边界——DIN/TWIN 这类 target-attention 模型、以及把目标早融到用户侧的架构无法直接套用。部署上 Taboola 在 CPU(Intel Xeon Sapphire Rapids)+K8s 自动扩缩+TF Serving oneDNN 环境验证，说明对 CPU 推理同样有效。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-27450"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>7 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2605.27704" data-paper-id="arxiv:2605.27704" data-card>
@@ -113,44 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>对“相关性(nDCG)+CTR 双目标”的社区搜索场景高度对口。ordinal head 用累积概率建模有序标签，比多分类更契合相关性等级语义；用轻量 LLM 产 1 亿级相关性标签解决了相关性标注稀缺，是把 LLM 当离线标注器而非在线打分器的实用路线，在线无额外推理成本。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Luming Chen, Sudeep Das, 等</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-28</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 4 · Evidence 3 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.27704" id="dr-arxiv-2605-27704">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 6 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Joint Optimization of Relevance and Engagement in Multi-Task Ranking 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>工业搜索排序若只用参与度信号（CTR / ATCR 加购率 / CVR）优化，会引入系统性偏差：因热门、价格锚定或词面重叠而获得点击的商品会被上排，即便语义上并不满足用户意图。难点在于高质量语义相关性监督在生产规模下稀缺——人工标注昂贵、缓慢，且对含数百万商品与长尾 query 的动态目录难以维护。于是形成根本张力：行为信号丰富但有偏，人工相关性判断可靠但稀疏。DoorDash 的目标是把语义相关性提升为首要优化目标，同时可控地平衡参与度。</p>
-<h2>2. 方法详解</h2>
-<p>三大件：序数相关性头 + 统一 value model + LLM 大规模产标。</p>
-<ul>
-<li>Ordinal relevance head：不做二分类或 softmax，而是预测两个累积概率 p(r≥1)、p(r≥2)（相关性分级 0 不相关 / 1 中等 / 2 高度相关），标量相关性分 ŝ_rel = p̂(r≥1)+p̂(r≥2) 即期望相关性等级（式 3），天然保序。</li>
-<li>统一 value model 打分（式 1）：S(q,i)=α·ŷ_CTR+β·ŷ_ATCR+γ·ŷ_CVR+(1−α−β−γ)·ŝ_rel，α/β/γ∈[0,1] 可调，显式控制相关性-参与度权衡。</li>
-<li>LLM 大规模产标流水线：①收集约 60 万人工标注作基线；②审计步骤——对&quot;人工标 irrelevant 但参与度排进前 50%&quot;的样本，用 GPT-4o 或 o3 配更细粒度 prompt 复评；③用 Query-to-Taxonomy(Q2T) transformer 预测相关类目做&quot;标签调和&quot;：类目命中则取人工/审计 LLM 的较高分，否则取较低分；④在审计后标签上微调 gpt-4o-mini，再推到 1 亿+ query-item 对。微调 LLM 在 10.5 万 hold-out 上三分类准确率 89%、within-1 准确率（|人工−LLM|≤1）98%。</li>
-<li>多任务架构：共享底层处理 query / item / consumer / interaction（BM25、历史率、字符串相似度）/ user-item / user-taxonomy 等特征，任务塔分别预测 CTR/ATCR/CVR 与序数相关性头；因共享底层与特征复用，加相关性头几乎不增计算成本。</li>
-</ul>
-<h2>3. 核心技术贡献</h2>
-<p>(1) 把 LLM 从&quot;外部裁判&quot;升级为&quot;一等训练信号&quot;：用多阶段审计 + Q2T 调和 + 微调小模型，把可靠相关性标签从 60 万人工扩到 1 亿级，解决相关性监督稀缺的根因，且 within-1 98% 的标注质量足以支撑训练。<br>(2) 序数累积概率头：相比 softmax 多分类或 MSE 回归，更契合相关性&quot;有序等级&quot;语义，并可直接转成能加进 value model 的标量分。<br>(3) 统一 value model 用可调权重显式建模相关性-参与度权衡，给出可操作的 trade-off 前沿，而非隐式融合。</p>
-<h2>4. 实验结果分析</h2>
-<p>离线（Table 1，200 万 query-item 对）：参与度-only 基线用 CTR 当相关性代理，Relevance NDCG@10 仅 0.812；本文序数法把 Relevance NDCG@10 提到 0.962（+0.150），同时 Click/ATCR/CVR 的 AUC（0.838/0.851/0.855）与基线持平。softmax(0.961)、regression(0.959) 也能拉高相关性 NDCG，但 trade-off 前沿（图 2）显示序数法在相同转化 NDCG 下相关性 NDCG 更高，且&quot;适度的相关性权重即可大幅提升相关性、几乎不损参与度&quot;。<br>在线 A/B（Table 2，三周）：ATCR +1.16%(p=0.01)、CVR +1.10%(p=0.01)、GOV 总订单额 +0.50%(p=0.03)，均显著。关键发现：提升语义相关性不仅没牺牲参与度，反而拉高了参与度与成交。<br>消融：仅把序数头当辅助任务、不把相关性并入最终打分（Auxiliary Only），相关性 NDCG 仅比基线微升——证明把相关性整合进统一 value model（式 1）才是收益关键，而非单纯多一个监督任务。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者未单列局限，但指向：探索更丰富语义信号（query 意图分解、属性级相关性）；用 query 自适应权重替代全局 value model 权重；纳入长期用户满意度指标。隐含局限：序数仅取 0/1/2 三级以平衡，未试更细粒度；微调 gpt-4o-mini 受标签分布敏感性约束，且未量化推理成本/延迟；在线实验仅三周，对低方差指标统计功效有限。</p>
-<h2>6. 工业实践意义</h2>
-<p>这篇与&quot;社区搜索（相关性 nDCG + CTR 双目标）&quot;场景几乎逐项对口，落地启示：(1) 别让 LLM 在线打分，而把它当离线/近线的相关性标注器，用&quot;人工种子→审计可疑样本→类目调和→微调小模型批量推全量&quot;的流水线，把相关性监督扩到亿级，within-1 98% 质量即可用；(2) 相关性头用序数累积概率而非多分类，保序且能转标量；(3) 用统一 value model 的可调权重显式做相关性-参与度权衡，并据 trade-off 前沿选&quot;适度相关性权重&quot;——可能同时涨相关性和 CTR/转化；(4) 关键是把相关性分真正并入线上排序打分，仅当辅助任务收益甚微。DoorDash 三周 A/B 的 ATCR/CVR/GOV 同向正收益，是双目标可兼得的有力证据。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-27704"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2605.27856" data-paper-id="arxiv:2605.27856" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.00</span></div>
@@ -244,60 +169,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

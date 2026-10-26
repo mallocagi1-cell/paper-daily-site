@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,41 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>UAME 的关键不是在推理后用不确定性调分，而是在训练时提高高冲突样本对的权重；线上只保留均值分支，因此不增加排序阶段延迟。7 天、两组各占主 Feed 5% 流量的 A/B 测试中，长播提升 1.126%–1.614%，转发提升 1.325%–1.598%，适合迁移到 UGC 搜索中 CTR、停留、互动多目标冲突的精排融合。</div>
     <div class="foot">Zonghe Shao, Tiantian He, Xiaoxiao Xu, Jiaqi Yu, Minzhi Xie, Jinfang Gu, Yongqi Liu, Kaiqi... · 2026-07-19 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2607.17092" id="dr-arxiv-oai-arXiv-org-2607-17092">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>深度解读：UAME</h1>
-<h2>1. 问题与动机</h2>
-<p>短视频推荐真正想优化的是用户的综合满意度，但这个变量无法直接观测。工业系统通常先用多任务模型估计点击、观看时长、长播、完播、点赞、关注、评论、分享等多个 pxtr，再把这些分数融合成最终排序分。问题在于这些行为只覆盖满意度的不同侧面，且经常给出互相矛盾的顺序：某视频可能更容易被点开，却不一定带来长播或正向互动。EMER、Pantheon、HarmonRank 等端到端融合方法虽然去掉了手工公式，训练时仍默认每个样本对、每个代理标签同样可信；一致样本容易主导梯度，真正决定满意度边界的高冲突样本反而学习不足。已有不确定性推荐方法大多在推理后以置信上界或分数校正做探索，没有把不确定性用于修正训练标签偏差。论文因此把核心问题改写为：能否从多目标冲突中学习样本级不确定性，并用它重新分配训练注意力，使代理风险更接近真实满意度风险？作者还利用问卷满意度作为近似真值，验证这种不确定性并非任意噪声：在 300 万样本上，它与代理标签偏差的 Pearson、Spearman 相关系数分别为 0.65 和 0.67。</p>
-<h2>2. 方法详解</h2>
-<p>UAME 接收用户、上下文、物料特征以及预训练 MTL 产生的多维 pxtr。任意 EMER 或 EASQ 主干先生成共享表示，顶部接两个轻量两层 MLP：均值分支输出满意度分数 μ，方差分支输出 log σ²，再通过指数函数保证 σ² 非负。于是每个候选不再是确定标量，而是高斯随机变量 N(μ,σ²)。对候选 i、j，假设二者条件独立，则分差仍为高斯；“i 排在 j 前”的概率等于标准高斯 CDF 作用于 <code>(μ_i-μ_j)/sqrt(σ_i²+σ_j²)</code>。论文对每一个 pxtr 构造二元成对标签，以该概率计算交叉熵式 probabilistic pairwise ranking loss。预测顺序正确时，优化会拉大均值差并缩小方差；标签冲突时，模型可增加方差表达不确定，而不是被迫输出折中分数。</p>
-<p>单靠概率损失存在把所有方差无限放大的捷径，因此作者加入方差正则项。为让方差明确对应多目标冲突，又按某物料在不同 pxtr 排名中的标准差构造不确定性辅助成对标签，以 logistic loss 约束高冲突物料应有更大方差。随后把一对物料的综合不确定性定义为 σ_i+σ_j，在当前候选集合内做 min-max 归一化，并以缩放因子 γ 放大高不确定样本对的权重。最终损失由加权的多 pxtr 概率排序损失、方差正则和辅助约束共同组成。实现中用户/物料 embedding 为 32 维，pxtr embedding 为 8 维，Adagrad 学习率 0.001；正则系数 α=0.02、辅助损失系数 β=0.1、权重缩放 γ=2。线上服务只用 μ 排序，σ 分支及所有成对计算仅在训练期存在，因此不改变原在线排序链路，也不增加排序阶段推理延迟。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，论文把多目标冲突从“要消除的噪声”转化为可学习信号：方差不是泛化意义上的模型置信度，而是同一用户—物料在多个行为代理下排序冲突的量化。第二，它推导出解析的高斯成对胜率，把均值排序与不确定性联合训练；相较 RankDist、EBRank 只在推理阶段调分，UAME 直接作用于优化过程。第三，样本级自适应权重专门强调高冲突物料对，区别于 ANSL 按损失大小衡量一般“困难样本”，理论上通过代理风险分解把这种权重与真实满意度偏差联系起来。第四，方法是主干无关的插件：在 EMER 与 EASQ 两种结构上均取得增益，且上线时裁掉方差支路，实现训练复杂、服务简单。相对 EMER，关注预测 GAUC 从 0.684 提至 0.724，最高相对增益 5.8%；相对 EASQ，长播 GAUC 从 0.668 提至 0.763，增益 14.2%，点击 GAUC 从 0.672 提至 0.734，增益 9.2%。</p>
-<h2>4. 实验结果分析</h2>
-<p>离线数据来自拥有数亿 DAU 的工业短视频平台，指标覆盖八个核心 pxtr，并以更符合个性化排序的 GAUC 为主。关键结果如下：</p>
-<table><thead><tr><th>主干/指标</th><th>基线</th><th>UAME</th><th>相对变化</th></tr></thead><tbody><tr><td>EMER-pCTR</td><td>0.706</td><td>0.715</td><td>+1.3%</td></tr><tr><td>EMER-关注</td><td>0.684</td><td>0.724</td><td>+5.8%</td></tr><tr><td>EASQ-pCTR</td><td>0.672</td><td>0.734</td><td>+9.2%</td></tr><tr><td>EASQ-长播</td><td>0.668</td><td>0.763</td><td>+14.2%</td></tr><tr><td>问卷满意度 NDCG@5</td><td>0.3753</td><td>0.4080</td><td>+8.71%</td></tr><tr><td>问卷满意度 HR@5</td><td>0.8192</td><td>0.9063</td><td>+10.63%</td></tr></tbody></table>
-<p>在线实验持续 7 天，EMER 与 EASQ 两组各分配主 Feed 5% 流量，所有报告指标 p&lt;0.005。对 EMER/EASQ，长播分别提升 1.614%/1.126%，点赞提升 0.939%/1.349%，关注提升 0.641%/1.299%，转发提升 1.325%/1.598%；留存 LT7 仅提升 0.009%/0.015%，说明短期满意度与长期留存之间仍有明显信号衰减。问卷真值评估中 NDCG@10 提升 7.44%、MRR 提升 8.62%，支持模型确实更贴近综合满意度，而不只是重新分配某个代理指标。消融结果表明去掉不确定性正则、辅助约束或自适应加权都会退化；超参呈倒 U 型，α=0.02、β=0.1、γ=2 最优，过大的 γ 会制造极端权重并使训练不稳。论文未公开曲线中的逐点消融数值，这是结果可复核性上的缺口。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文没有独立的 Limitations 章节，也没有在结论中系统陈述限制。正文可以确认的边界包括：实验只来自单一大型短视频平台；数据规模、样本构成、特征集合及问卷采样策略未公开；训练硬件、batch size、训练时长也未给出，因此外部团队无法完整复现。理论分析依赖“pxtr 冲突与预测不确定性正相关”的经验假设，虽然 300 万样本的相关性提供支持，但相关并不证明方差只由满意度偏差造成，曝光偏差、分布漂移与偶发行为也可能贡献方差。线上长期指标提升远小于互动指标，尚不能证明该方法会改善数周或数月留存。未来应在不同内容形态、不同代理标签数量和跨域冷启动下验证，并比较问卷、主动负反馈、重复消费等多种满意度真值。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索与推荐，最值得采用的是“冲突诊断—训练加权—服务裁枝”三段式。先统计点击、长停留、收藏、评论、关注等目标对同一候选对的排序冲突，再以双头模型学习均值与 log 方差；训练时用方差找出代理偏差最大的样本对，服务时仍输出单一排序分。这样能保留现有精排主干、特征平台和 serving 接口，工程风险低于重写多目标架构。上线前应建立三层验收：离线看各目标 GAUC 与问卷/人工满意度 NDCG，灰度看互动指标是否一致改善，长期看留存与内容生态是否被高互动目标透支。需要避免把方差直接当作“坏内容”惩罚，否则会再次退化为后处理调分；它在本文中的价值是告诉优化器哪些样本更值得学习。还应监控方差分布漂移、min-max 归一化的极值敏感性和成对样本数量带来的训练成本，并复用作者的 log-variance、分母小常数和训练期分支裁剪做数值与延迟保护。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2607-17092"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>5 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2607.17017" data-paper-id="arxiv:oai:arXiv.org:2607.17017" data-card>
@@ -109,41 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>可借鉴点是把用户、物料、上下文交叉与长序列证据做逐层交换，而不是只在网络末端拼接；平均池化替代注意力会造成 0.23% NE 回退，浅层融合回退 0.25%。共享门控将 FFN 矩阵乘从 3 次降到 2 次，配合 Triton 内核使训练吞吐提升 30%，为 UGC 搜索排序同时利用实时交叉特征与长期行为提供了可部署路线。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Renqin Cai, Dawei Sun, Yuanjun Yao, Zhiyong Wang, Velvin Fu, Maggie Zhuang, Yu Shi, Zhongnan Fang, X...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-07-19</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 5 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2607.17017" id="dr-arxiv-oai-arXiv-org-2607-17017">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>深度解读：WHALE</h1>
-<h2>1. 问题与动机</h2>
-<p>大规模推荐排序依赖两类互补信号：一类是用户、物料、上下文及显式交叉等非序列特征，另一类是数千到上万步的用户行为历史。Wukong 通过可堆叠的高阶交互模块扩展前一类信号，HSTU 则以序列注意力扩展后一类信号，但生产模型通常沿两条独立路线演进，或在末端做一次浅层拼接。浅耦合的缺陷是：静态交叉无法在每一层有针对性地从长历史中寻找证据，序列分支也不能持续接收当前候选和上下文形成的交互查询。单独加宽或加深任一主干还会快速增加 FLOPs、内存带宽与延迟，难以满足大流量排序的 QPS 预算。WHALE 的动机因此不是简单把两个强模型拼起来，而是在每个递归层保留 Wukong 和 HSTU 的完整能力，并让二者逐层交换信息。论文用 Meta 大型短视频平台的 800 亿训练样本和 40 亿评测样本验证：在同等复杂度下，统一架构优于单一路线；线上主指标超过 0.03% 即被视为显著，而 WHALE 达到 0.113%。</p>
-<h2>2. 方法详解</h2>
-<p>每个 WHALE 层包含 Wukong 模块、HSTU 模块和注意力融合模块。Wukong 接收用户、物料、上下文与交叉字段，产生高阶 interaction representation；HSTU 对长行为序列建模，产生逐位置的 behavior representation。融合时，Wukong 表征经线性投影成为 query，HSTU 表征成为 key/value，点积注意力让当前候选—上下文交互主动检索历史中最相关的细粒度行为证据。注意力输出再经过 fusion MLP 与 SwiGLU FFN，回注到下一层，因此第 ℓ 层的交叉特征会影响后续序列证据选择，而不是只在顶部进行一次信息混合。作者以 2、4、6、8 层，64、128、256、512 宽度，以及 3k、6k、10k、15k 序列长度分别做 scaling，证明三个方向在测试范围内均持续带来 NE 改善。</p>
-<p>系统侧针对注意力中的不规则长度和高吞吐矩阵运算编写 Triton kernel，并沿 query 维切分反向计算，减少中间张量与同步。SwiGLU 原本上投影、门控投影和下投影需要三次主要矩阵乘；WHALE 共享门控相关投影，将其从三次降到两次，即减少 33%。密集主干与 FFN 使用 BF16，损失与任务头等数值敏感部分保留 FP32；再用 torch.compile/TorchInductor 做算子融合、内存规划与图级优化。训练使用 NVIDIA B200、全局 batch 与优化器配置在各基线间保持一致，每个模型训练一轮。论文没有给出优化器名称、确切 batch size 或 B200 数量，这些并非摘要遗漏，而是正文也未披露的复现边界。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，WHALE 提出逐层 progressive fusion：Wukong 的候选交互表征不是被动拼接，而是作为 query 重复检索 HSTU 的长历史，使静态高阶交叉与动态行为证据形成闭环。第二，论文证明“统一两个 scaling 轴”比只扩大一个轴更有效；在 8、14、32 GFLOPs 三档，WHALE 的 NE 增益分别为 0.40%、0.83%、1.39%，而匹配复杂度的 HSTU 仅为 0%、0.04%、0.06%。第三，模型—系统协同把研究结构变成可上线系统：定制内核、共享门控、混合精度和编译优化共同使训练吞吐提升 30%，并把额外 serving 成本压到 5% QPS。第四，消融把收益定位到具体结构：浅层混合相对完整 WHALE 回退 0.25% NE，平均池化替代注意力回退 0.23%，移除 fusion MLP 和 SwiGLU 分别回退 0.11% 和 0.08%，说明候选条件检索与融合后的非线性变换都不可省略。</p>
-<h2>4. 实验结果分析</h2>
-<p>离线指标是 normalized entropy（NE），越低越好；平台上 0.05% NE 改善即视为明显收益。关键比较如下：</p>
-<table><thead><tr><th>配置/指标</th><th>基线或对照</th><th>WHALE 结果</th><th>变化</th></tr></thead><tbody><tr><td>8 GFLOPs NE gain</td><td>Wukong 0.00% / HSTU 0.00%</td><td>0.40%</td><td>明显超过阈值</td></tr><tr><td>14 GFLOPs NE gain</td><td>Wukong 0.54% / HSTU 0.04%</td><td>0.83%</td><td>统一结构更优</td></tr><tr><td>32 GFLOPs NE gain</td><td>Wukong 0.73% / HSTU 0.06%</td><td>1.39%</td><td>随规模差距扩大</td></tr><tr><td>14 天线上主指标</td><td>线上基线</td><td>+0.113%</td><td>阈值 0.03%</td></tr><tr><td>线上辅助指标 1/2</td><td>线上基线</td><td>+0.824% / +1.820%</td><td>同向支持</td></tr><tr><td>推理 QPS</td><td>线上基线</td><td>-5%</td><td>预算内回退</td></tr></tbody></table>
-<p>序列长度从 3k 增至 6k、10k、15k 时 NE 分别改善 0.32%、0.65%、0.95%；深度从 2 层增至 4、6、8 层时改善 0.12%、0.21%、0.28%；宽度从 64 增至 128、256、512 时改善 0.18%、0.31%、0.40%。三条曲线均未在测试上限前饱和，支持架构能实际吸收更多历史与容量。线上 A/B 持续 14 天，候选生成、延迟约束和服务栈与对照一致；主指标 0.113% 虽绝对值小，却是内部显著阈值的 3.77 倍。代价是 QPS 降低 5%，论文认为仍在预算内。需要注意，主指标和两个辅助指标被匿名化，读者无法判断它们对应点击、时长、互动还是留存，也无法分析业务权衡。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文没有专门的局限章节。作者明确给出的实验范围是单一大型短视频社交平台、单一主 engagement 预测任务和受匿名化约束的线上指标；因此跨电商、搜索或长内容场景的外推尚未验证。正文未披露数据字段、正负样本比例、优化器、batch size、硬件规模及线上流量比例，外部复现只能重建结构，不能复刻训练经济性。Scaling 曲线在 15k 序列、8 层、512 宽度处仍上升，但这不等于继续扩大一定划算，因为 FLOPs 从序列基线的 9 增至 38、宽度实验最高达 141 GFLOPs。论文也没有比较更简单的 late-fusion 加蒸馏、缓存或多阶段路由在相同 QPS 下的收益。未来应报告质量—延迟—成本 Pareto 曲线，公开至少一个可复现实验配置，并研究对新用户、稀疏历史和分布漂移的分组效果。</p>
-<h2>6. 工业实践意义</h2>
-<p>对于 UGC 搜索/推荐，WHALE 最直接的启示是让“当前 query/候选/场景交叉”成为读取长行为历史的查询，而不是对所有历史先做固定池化。可以从低风险版本开始：保留现有 DCN/Wukong 类精排分支和序列 Transformer，只增加一到两层候选条件 cross-attention，离线比较 nDCG、CTR 校准与 NE，再逐步增加层数和历史长度。系统侧应同步建立 FLOPs、显存、训练 QPS、推理 QPS、P99 延迟五维预算；若仅复制模型结构而忽视定制 kernel，5% QPS 回退可能被放大到不可上线。共享门控、BF16/FP32 分区及编译图融合属于相对通用的优化，可先于完整模型落地。还应复现四个消融：浅融合、平均池化、去 MLP、去 SwiGLU，以确认本业务的收益究竟来自候选条件检索还是单纯增参。对于搜索场景，query 表征还可与候选帖子交叉后共同查询用户历史，从而把“这个用户过去喜欢什么”收紧为“这个用户在当前 query 下的哪些历史行为最有证据价值”。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2607-17017"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2607.17184" data-paper-id="arxiv:oai:arXiv.org:2607.17184" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.40</span></div>
@@ -217,60 +149,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

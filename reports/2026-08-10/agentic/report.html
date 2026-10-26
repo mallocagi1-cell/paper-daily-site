@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -64,62 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对社区搜索而言，关键不是直接让大模型反复调用线上检索，而是先建设可验证的查询—证据—答案轨迹环境。可借鉴其知识图谱与文档对齐、难度递进和 sim-to-real 评测，把多跳召回、证据核验、停止决策作为可训练的策略问题，同时用离线环境控制成本和奖励噪声。</div>
     <div class="foot">Xichen Zhang, Ziyi He, Yinghao Zhu, Sitong Wu, Shaozuo Yu, Meng Chu, Wenhu Zhang, Haoru Ta... · 2026-07-01 · 网页来源</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="conference:2026.acl-long.848" id="dr-conference-2026-acl-long-848">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 13 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>SearchGym 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>SearchGym 针对的不是“模型会不会调用搜索工具”这一表层问题，而是搜索 Agent 强化学习中的训练环境与奖励是否可信。论文指出，直接使用商业 Web API 虽然最接近真实世界，但大规模 RL 训练的成本很快失控：一个包含 30,000 个问题、每题 8 条 rollout、每条平均 3 次搜索动作的训练 epoch，大约需要 720,000 次 API 调用，按商业接口价格计算单次运行费用超过 500 美元。这样的成本会阻止研究者进行充分的探索、超参搜索和失败重跑。</p>
-<p>另一条常见路线是使用静态 Wikipedia 快照或离线 QA 数据。作者的分析发现，这些数据存在过时信息、问题与语料错配、事实不一致等问题。结果是训练信号被污染：正确的推理轨迹可能因为检索不到目标文档而被惩罚，模型偶然生成的幻觉答案却可能因为碰巧匹配标签得到奖励。论文在训练曲线中观察到 Search-R1 在约 160 步后出现明显波动并最终策略崩溃。对需要多跳证据的社区 UGC 搜索来说，这个问题尤其关键：如果训练环境无法区分“模型没搜到”和“模型推理错了”，RL 只会把召回噪声放大成不稳定的搜索策略。</p>
-<h2>2. 方法详解</h2>
-<h3>2.1 可验证的合成世界</h3>
-<p>作者把 SearchGym 的世界形式化为 W = &lt;G, D&gt;，其中 G 是结构化知识图谱，D 是与图谱对齐的可搜索文档集合。首先，系统按照预定义 schema 生成 Country、City、Person、Organization 等实体类型及其属性和关系，关系具有 1-1、1-n、n-1 等基数约束。然后使用生成模型为每个实体生成 Wikipedia 风格文档，文档包含该实体的属性和局部邻居信息，并分配唯一 URL，让 Agent 通过不同的 URL 模拟真实网页访问。</p>
-<p>关键点是“可检索性验证”，而不是只验证图谱逻辑。对于每条边 e=(u,v)，系统生成 15 个自然语言搜索查询，并用检索引擎 R 检查目标文档 dv 是否出现在 Top-K 结果中；只有至少 5 个查询能把 dv 召回时，该边才进入验证子图 G*：|{q∈Qe : dv∈Top-K(R(q,D))}| ≥ 5。这一步把“推理路径存在”与“搜索器确实能找到它”绑定起来，避免 Agent 因检索器的随机失败收到错误奖励。</p>
-<p>从 G* 中采样无环推理路径，再将路径语言化为 QA。数据分为三类：Simple QA 是 1–6 跳的线性链；Parallel QA 需要同时解决两条独立路径，再做比较、求和或差值；Combo QA 则让第一问的答案成为第二问的实体或查询参数，形成嵌套依赖。整个环境约有 3,600 个节点和超过 41,000 个可验证 QA，评测集 SearchGymBench 单独留出 642 题，包括 462 道 Simple、134 道 Parallel 和 46 道 Combo，路径长度覆盖 1–12 跳。</p>
-<h3>2.2 搜索与阅读的双动作空间</h3>
-<p>Agent 只有两个原子工具：Search(q) 返回搜索摘要和 URL，Access(u) 获取完整文档。作者刻意不让搜索动作直接返回全文，而是先让模型根据 snippet 判断相关性，再决定是否打开页面。这个设计把“搜什么”和“读哪篇”拆开，逼迫策略学习证据筛选，而不是把所有候选文档无差别塞进上下文。每条轨迹 T 以最终答案结束，终端奖励使用答案与标准答案之间的 token-level F1。</p>
-<h3>2.3 GRPO 与两阶段课程学习</h3>
-<p>策略优化使用 GRPO。每个问题采样 N=8 条轨迹，对组内终端 F1 做标准化得到优势 A-hat，再以重要性采样比率 rho_i(theta)=pi_theta(T_i)/pi_theta_old(T_i) 计算 clipped surrogate objective，并加入相对参考策略的 KL 惩罚。论文的训练配置为学习率 5×10^-6、AdamW、全局 batch size 128、每张 GPU micro-batch 16、GRPO clip epsilon 0.4；训练 5 个 epoch，单次训练 rollout 最多 16 个交互回合，响应上限 1,024 tokens。实验使用 1 台、8 张 NVIDIA H800 80GB GPU，基于 AReal 0.3.4 异步 RL 框架。</p>
-<p>课程被分成两个阶段。Stage 1 只使用 1–6 跳的 Simple QA，让模型先掌握 query formulation、文档解析和顺序证据收集。达到基础能力后，Stage 2 引入 Parallel 与 Combo QA，并把难度推到 6–12 跳，训练问题分解、跨路径合并和依赖式综合。训练数据与 SearchGymBench 严格隔离，目的是让测试成绩体现工具使用和推理，而不是记忆合成语料。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，论文把“奖励纯度”提升为搜索 Agent 训练的基础设施问题。它没有简单用一个 LLM 模拟搜索返回，而是从受约束的知识图谱生成文档，再以多查询检索验证每条边，最后从可发现路径生成问题。这样既保证逻辑可解，又保证检索动作有机会找到证据，解决了离线数据中“正确答案不可检索”的负奖励来源。</p>
-<p>第二，SearchGym-RL 用显式难度梯度替代混合采样。实验显示，去掉 Stage 2 后 GAIA 从完整方法的 42.72% 降到 28.16%，四个指标平均分从 52.09 降到 43.10；把所有任务混合训练的平均分为 47.04，也低于分阶段训练。说明长程 Agent 能力并非只靠增加样本量，组合式和并行式结构本身需要在合适阶段出现。</p>
-<p>第三，Search/Access 双动作让 Agent 学习“先看摘要、再决定阅读”。去掉 Page Access、让搜索自动返回全文后，平均分从 52.09 降到 46.97，GAIA 从 42.72 降到 35.92，相对下降约 19%。这说明更丰富的动作空间虽然提高训练难度，却能培养对证据效用的主动判断。</p>
-<p>第四，作者证明了合成训练与真实 Web 任务之间的迁移。Qwen2.5-7B-Base 只在 SearchGym 中训练、不使用商业 Web API，却在 GAIA 达到 42.72%、xbench-DeepSearch 达到 49.00%，比 Web 训练的 ASearcher 分别高 3.89 和 17.00 个百分点，同时平均 Search 动作从 5.92 降到 3.71，减少 37.3%。</p>
-<h2>4. 实验结果分析</h2>
-<h3>4.1 主结果</h3>
-<p>在 Qwen2.5-7B-Base 上，SearchGym-RL 的 NQ、TriviaQA、PopQA、HotpotQA、2Wiki、Musique、Bamboogle 分数分别为 53.70、65.60、50.60、66.50、74.40、34.30、64.80，平均 58.56；Search-R1-base-PPO 平均 52.63，ASearcher-base-web 平均 54.64。Qwen-3-8B 的多跳任务也达到 HotpotQA 67.60、2Wiki 78.50、Bamboogle 64.80，平均 59.26。</p>
-<table><thead><tr><th>模型/设置</th><th>GAIA Pass@4</th><th>xbench Pass@4</th><th>平均搜索次数</th><th>Web API 成本</th></tr></thead><tbody><tr><td>ASearcher-base-web</td><td>38.83</td><td>32.00</td><td>5.92</td><td>&gt;500 美元/次运行</td></tr><tr><td>SearchGym Ours-base</td><td>42.72</td><td>49.00</td><td>3.71</td><td>0</td></tr><tr><td>SearchGym Qwen-3-8B</td><td>50.49</td><td>56.00</td><td>5.13</td><td>0</td></tr></tbody></table>
-<p>SearchGymBench 进一步隔离了工具使用能力。在 Simple QA / Complex QA 上，Qwen2.5-7B 分别为 71.6% / 41.1%，Qwen3-8B 为 75.0% / 40.6%；相比之下 ASearcher-Web-QwQ 为 37.7% / 17.8%，ASearcher-Web-7B 为 24.5% / 7.2%。商业 DeepSeek-V3.2 在 Complex QA 达到 47.6%，表明合成环境训练能显著缩小开源 Agent 与强商业模型的差距，但还没有完全超过最强通用模型。</p>
-<h3>4.2 消融与稳定性</h3>
-<p>消融结果直接支持两项设计。完整 SearchGym 两阶段训练平均 52.09；去掉 Page Access 为 46.97，去掉课程、混合训练为 47.04，只保留 Stage 1 为 43.10。训练动态上，SearchGym 的平均终端奖励、合法工具调用数和响应长度都呈稳定、单调的收敛趋势，而 Search-R1 在大约 160 步后出现奖励波动和策略崩溃。作者将差异归因于 SearchGym 能保证每条生成问题在环境内有正确证据，从而不把检索失败误当作推理失败。</p>
-<p>深度分析还显示，最大推理深度从 6 增到 12 跳，会明显提升 GAIA 与 xbench 等挑战任务，6–9 跳的收益有限；把训练语料覆盖率从 0% 增加到 100% 时，性能持续上升，没有明显饱和。数据生成成本约 50 美元，其中文档约 15 美元、QA 约 35 美元。SearchGym 后端使用 Meilisearch，报告的交互延迟低于 50ms，适合做高吞吐的离线 RL 环境。</p>
-<p>值得注意的失败边界是：SearchGymBench 的 Complex QA 上 Qwen3-8B 只有 40.6%，低于 DeepSeek-V3.2 的 47.6%；而 Qwen3-4B 只有 20.0%。这说明环境可以提供干净的学习信号，却不能替代模型本身的长程推理能力，也不能保证合成世界中的规划自动迁移到所有开放域任务。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确写出的局限是：当前实验只使用 outcome-based 的稀疏奖励，没有利用 SearchGym 中已经存在的逐步、可验证轨迹做 dense process supervision。因此论文结果很可能只是下界，若进一步监督每个中间查询、打开文档和证据选择步骤，仍有提升空间。作者还在伦理部分承认，合成流程可能继承种子模型的社会偏见，强化学习本身有计算和环境成本，并且 Agent 技术存在大规模数据抓取和虚假信息自动化等双重用途风险。</p>
-<p>从系统角度看，论文没有把 CTR、用户点击、短文本歧义、中文 UGC 噪声或在线延迟预算作为核心评测对象；这些是面向社区搜索落地时需要额外补上的维度。这一点属于基于实验范围的工程判断，不是作者在局限章节中明确声称的结论。另一个需要验证的问题是，合成实体和 Wikipedia 风格文档虽然可控，却与真实帖子、评论和问答的语言风格仍有差异，最好用真实但脱敏的 query—点击—证据轨迹做第二阶段校准。</p>
-<h2>6. 工业实践意义</h2>
-<p>第一，先建设可验证的离线 Agent 环境，再谈在线 RL。对社区搜索，可以从脱敏 UGC、实体关系和用户意图 schema 生成小规模“搜索训练场”，但必须像论文一样用多组查询检查目标证据能否被当前召回器找回。若某个 query 的答案存在但没有任何召回路径，应标为不可训练样本，而不是直接当成负例。这样可以把 nDCG 低、证据缺失和推理错误分开。</p>
-<p>第二，工具接口建议采用“Search → Inspect → Access → Verify”的细粒度动作，而不是一次返回一大段全文。首轮 Search 只返回标题、摘要、作者和轻量特征，Agent 只有在证据价值足够高时才 Access 完整内容；随后用规则或轻量模型检查引用是否覆盖用户问题。这个结构不仅节省上下文，也让线上日志能回答“Agent 为什么打开这篇帖子”。</p>
-<p>第三，采用分阶段课程。第一阶段可训练 query 改写、召回和单跳证据抽取；第二阶段加入多帖子对比、时间线拼接、观点冲突消解和跨主题组合。不要把所有难例直接混入训练，否则模型可能在稀疏奖励下学到“多搜几次”而不是形成稳定的子问题分解策略。线上触发深搜也应依赖不确定性或证据覆盖阈值，简单短 query 继续走低延迟的常规召回链路。</p>
-<p>第四，把成本作为一等指标。SearchGym 的结果表明，Qwen2.5-7B 在 GAIA 上比 ASearcher-Web 少约 37.3% 的搜索动作，并避免单次训练超过 500 美元的商业 API 费用。实际部署应同时记录每次 query 的搜索轮数、Access 次数、输入输出 Token、检索延迟、失败重试次数和用户点击收益；只有在相关性提升能覆盖额外成本时，才放宽 Agent 的动作预算。</p>
-<p>第五，把安全边界放进环境和评测。WebAgent 可能被页面或 UGC 内嵌指令诱导，故搜索结果只能提供证据，不能改变系统提示、扩大工具权限或触发外部写操作。建议对每个工具设置步数、Token、域名、时间和数据范围上限，并把提示注入、恶意长文本、内容下架、召回为空、工具超时和相互矛盾证据加入回归集。总体上，SearchGym 最值得借鉴的不是“用合成数据替代真实数据”，而是用可验证的环境把检索、推理、成本和安全拆成可观测、可训练、可复现的系统变量。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-conference-2026-acl-long-848"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-conference:2026.acl-industry.56" data-paper-id="conference:2026.acl-industry.56" data-card>
@@ -244,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

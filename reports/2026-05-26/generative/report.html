@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -85,38 +85,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>用“用户故事”把多场景行为统一成语言序列，是 LLM-as-recommender 做多任务统一建模的可落地范式。对搜推平台的启示：搜索 query（即便无点击命中）也能作为意图 token 注入用户序列，帮助区分重看、续看与新发现；1B 级 Llama 即可承载统一排序，避免为每个场景维护独立模型。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Alexandre Salle, Chenglei Niu, Suchismit Mahapatra, Xiaoxiao Chen, Suvash Sedhain, Yaqi Wang, Shervi...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-25</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 3 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.23702" id="dr-arxiv-2605-23702">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>流媒体发现系统通常为 item 排序、carousel(横滑卡片) 排序、搜索分别训练独立模型，无法共享同一用户旅程中的互补信号。作者指出三类信号天然互补：观看行为塑造 carousel 与 item 排序；搜索 query 即使没命中目录也暴露用户意图；观看历史帮助把一次搜索解读为重看(rewatching)、续看(continuation) 还是新发现(new discovery)。数据规模为约 2000 万观众、约 8 亿次观看、约 6600 万次搜索，覆盖 Home/Search/Browse/Autoplay 四个主要 surface。多模型并存导致跨任务信号割裂、维护成本高、且无法把搜索意图与观看历史互相印证，这是统一建模的动机。</p>
-<h2>2. 方法详解</h2>
-<p>核心是 user story 序列化：把单个用户在观察窗口内的行为写成有序的 session+event 序列，分三层：(1) 用户属性层——粗粒度国家、设备上下文、类别/数值字段，按普通文本序列化；(2) session 结构层——以 &gt;1 小时不活跃切分 session（最长 12 小时），每个 session 用 <code>&lt;|session|&gt;</code> token 加 elapsed time 与星期标注；(3) 事件数据层——watch 事件记录 item id、观看时长、surface、carousel 名、时间戳，search 事件记录 query 文本与时间戳（含失败搜索，as-you-type 中间 query 单独记录）。词表把 Llama 预训练 BPE subword 与领域原子 token（<code>&lt;|watch|&gt;</code>、<code>&lt;|search|&gt;</code>、字段、surface、carousel、item id）交错。一个关键取舍是 item 用单个原子 token 表示（而非多 token 语义 ID），从而一次前向就能用 logits 直接对全目录打分，比自回归语义 ID 解码便宜得多。</p>
-<p>模型基于 Llama 3.2 1B 公开 checkpoint。训练语料约 2000 万 user story（平均 560 token，约 110 亿 serialized token），辅以目录文本映射语料（如 <code>&lt;|id|&gt; has title {title}</code>）按 1:20 混入；序列长截到 1024。训练 120k macro-step，8×H100，per-device batch 4、梯度累积 4，约 22 小时，bf16，梯度裁剪 1.0，weight decay 0.033，Adam，lr 1e-5（1000 步 warmup）。训练时做两种 masking：surface/carousel 对以 0.1 概率替换为 <code>&lt;|carousel(MASK)|&gt;</code>（教模型学容器无关打分），content id 以 0.001 概率替换为 unknown token（应对目录刷新间的变化）。任务通过 prompt 后缀表达：item 排序追加 watch-event head（masked carousel 做容器无关排序，或具体 surface/carousel 做上下文排序）；carousel 排序追加 surface 上下文预测下一个 carousel token；search 排序追加 query token + search-surface watch head，预测从结果中被选中的 item。损失为标准自回归 next-token 预测，无定制 loss——靠 prompt 上下文决定预测 item id、carousel 还是 search 结果。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) 分层 prompting 框架：单一生产模型经 user story 共享接口同时服务 item/carousel/search 三类排序，复用预训练 LLM 的语言 token + 领域事件 token，仅靠改 prompt 后缀切换任务（同一 story 改 prompt 即产出不同排序列表）。(2) 把稀疏文本与时间特征纳入生成式推荐，user story schema 可扩展接入更多有序用户事件信号。(3) item 用原子单 token、一次前向对全目录打分，省去独立召回阶段——这是相对语义 ID 自回归解码的关键工程取舍，直接决定了线上延迟可控。</p>
-<h2>4. 实验结果分析</h2>
-<p>离线 (Table 2)：item 排序 TubiFM unified HR@8 0.5817，相对 HSTU(0.4121) +41.2%、NDCG@8 +48.1%；carousel HR@8 0.8343 vs HSTU 0.7724 +8.0%；search HR@8 0.5673 vs BM25 0.4637 +22.3%、HR@50 +47.0%（语义向量基线 Qwen3-4B Emb、Sentence-Transformer 在搜索任务上远低于 BM25）。unified 模型还优于 task-specific TubiFM：item +16.9%、carousel +2.5%、search +12.1% (HR@8)，说明跨任务联合训练存在正迁移。消融：随机初始化使 item HR@8 0.5817→0.5670（Llama 预训练有用）；去掉用户属性仅微降(0.5817→0.5773，属性是弱先验，去掉位置有时还略升)；去掉 session 切分与时间字段明显掉点(item→0.5569、search→0.5410)，说明 session 结构提供有用的时间上下文。在线 A/B (Table 6)：search TVT +3.9%（长尾/长 query 高达 +20%），carousel +0.30%，item +0.14%(不显著)；三个 surface p99 延迟从 ~500ms 降到 ~200ms。item 中性被作者定位为系统性胜利——以更简架构匹配成熟生产基线。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确三点：(1) 离线标签仅来自隐式互动、并非穷尽的相关性判断，继承了曝光偏置与正反馈-only 的偏差；(2) 在线对照是专有生产系统（含内部召回/过滤/排序组件），只报相对提升而非原始流量或完整 serving 细节；(3) user story 虽设计为通用 schema，但本文只在流媒体视频域做了实验验证，跨域泛化未证。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜推统一架构有直接借鉴：用一个 1B 小 LLM + prompt 服务多场景排序，item 排序端到端替代了生产中「十几个召回器 + transformer-DCN 排序器」，搜索/carousel 也同样压平多阶段流水线，p99 延迟 500→200ms（部署在 L40S GPU + 动态 batching）。item 用原子单 token、全目录一次前向打分，是规避语义 ID 自回归解码延迟的可落地方案。收益最大处在搜索长尾 query（行为上下文补偿了词面证据稀疏），非常契合社区搜索这类短文本、意图模糊、长尾多的场景：query 与点击/浏览行为可统一进同一用户序列建模。部署节奏可参考：模型每日重训跟踪行为漂移、目录 token 每月刷新、新 item 先映射到保留 UNK token。落地需注意离线指标受正反馈偏置影响，需自建在线评测来判断真实收益。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-23702"></span>
 </article>
 <article class="card t-generative" id="paper-arxiv:2510.12369" data-paper-id="arxiv:2510.12369" data-card>
   <div class="top"><span class="n">04</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class="e"></i><i class="e"></i></span> 3.05</span></div>
@@ -160,60 +129,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

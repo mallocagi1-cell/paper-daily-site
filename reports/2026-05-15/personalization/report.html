@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,70 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>传统时间窗口过滤是“一刀切”，而“语义过期”才是搜索时效性的本质：同一篇 2 年前的帖子对一个 query 仍然有效，对另一个 query 已经过期。论文用 LLM 把“过期”建模为 query 相关的语义判断而非时间硬阈值，对社区 UGC 搜索（帖子/问答的有效期长短差异巨大）非常有借鉴价值——可以把 freshness 信号从规则改造成可学习的 query-document 二元判断特征接入排序。</div>
     <div class="foot">Tingting Wang et al. · 2026-05-14 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.13052" id="dr-arxiv-2605-13052">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>商业 Web 搜索的&quot;时效性 vs 相关性&quot;对齐长期是工业难题。传统方法依赖静态的时间窗口过滤（如&quot;过去 30 天&quot;），把时效性当作 metadata 属性而非语义关系，结果是&quot;一刀切&quot;——既会把语义已失效的近期内容硬推上来，也会无差别地压制权威但年代较老的内容。论文用两个对比例子刻画&quot;信息生命周期&quot;的极端差异：突发性的&quot;香港大火&quot;事件中，两天前的文档可能已经语义过期；而&quot;交通法规&quot;类政策文档则保持有效期长达数年。</p>
-<p>核心动机是 reformulate timeliness：不再把&quot;新鲜度&quot;看作时间戳属性，而是把它建模为 query 意图与文档时间线的<strong>语义动态关系</strong>。论文进一步指出，普适的&quot;过期阈值&quot;并不存在——expiration 必须 query-aware、context-aware。</p>
-<h2>2. 方法详解</h2>
-<p>整体框架由四个流水线模块组成：</p>
-<p><strong>时间信息抽取模块</strong>：把原始文档转成&quot;以时间锚为中心的语义片段&quot;。具体两步：(a) anchor parsing 从文档中抽取查询关键词与时间实体，构建 Document Temporal Index 把时间表达式映射到句子位置；(b) time-anchored context refinement 用 5 句滑窗围绕时间锚做上下文聚合，结合 cosine 语义相似度 + 时间对齐分计算 relevance；对于无显式时间约束的查询，模块自动切换到 exponential recency decay 加权。最终通过 threshold 过滤得到&quot;focused semantic chunks&quot;喂给 LLM。</p>
-<p><strong>结构化时间推理 prompt</strong>：不让 LLM 自由发挥，而是用严格模板锚定绝对时间。Prompt 同时输入 (用户 query, 抽取的时间上下文, 搜索时间戳)，配合 few-shot 周期性事件（如&quot;双十一&quot;）的领域适配示例，并加入负向约束防止 LLM 抽取无关日期。Prompt 引导逐步推理把 query 意图与时间证据综合成 query-specific validity horizon。</p>
-<p><strong>Temporal Consistency Verification（幻觉抑制）</strong>：双重机制。第一重是 contrastive forward-backward CoT：LLM 先正向生成一个候选 expiration 时间，再反向 stress-test 验证逻辑自洽，用 consistency penalty 量化两个方向推理的吻合度；同时加 granularity penalty 防止&quot;年级别 vs 日级别&quot;的粒度错配。第二重是 authority-weighted evidence fusion：当多个文档源给出冲突时间证据时，系统按&quot;领域权威度 × 语义相关度&quot;加权融合，选择得到最强权威背书的时间锚。</p>
-<p><strong>线上特征落地</strong>：把昂贵的 LLM 推理&quot;蒸馏&quot;成轻量级二元信号——文档要么通过 expiration 检验（flag=1）要么不通过（flag=0）。线上有三种执行路径：离线缓存（dictionary lookup of 高频 query 阈值）、distilled student LLM 调用、或直接 teacher LLM 调用。系统配备 circuit-breaking：若推理超时或检测到分布漂移，flag 默认为 0，gracefully 退回到 baseline 排序而非注入不可靠信号。最终该 binary 信号作为 learnable soft constraint 通过多阶特征交互融入 Baidu 的 freshness sub-network。</p>
-<p>训练侧的优化目标是三项 loss 之和：predicted timestamp 与 ground-truth 的归一化时间距离、temporal granularity penalty、logical consistency penalty。框架不微调 LLM 权重，全部依赖 prompt engineering，以最小化部署复杂度。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) <strong>可扩展的 query-aware dynamic expiration</strong>：把&quot;时效性&quot;从硬阈值规则改造成 query-specific 语义推断，解决了 one-size-fits-all 的根本问题。</p>
-<p>(2) <strong>专门面向时间推理的幻觉抑制</strong>：contrastive forward-backward CoT + authority-weighted evidence fusion 这套组合明确为&quot;LLM 给出错误日期&quot;这种高代价错误兜底，比通用 self-consistency 多了 granularity 维度，是工业部署的关键。</p>
-<p>(3) <strong>从昂贵推理到二元特征的产线化路径</strong>：通过 offline cache + student LLM + teacher LLM 三级回退 + circuit breaker，把 LLM 推理变成一个可降级、可观测的 ranking 特征。这套架构是其他 LLM-as-feature 工作可直接借鉴的模板。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>离线评测</strong>（1M queries × 10M docs，3 个月数据）：Aurora-Expiry vs Aurora-Baseline。</p>
-<ul>
-<li>Satisfaction Score: +0.52%</li>
-<li>Positive Navigation Rate (Tier-2 ≤1 月): <strong>+5.21%</strong>；Tier-3 (≤1 周): <strong>+7.36%</strong></li>
-<li>median time-away@4: -2.44%；@10: -3.19%（结果越新越好）</li>
-<li>关键：general relevance 指标保持稳定——证明 freshness 收益没有牺牲语义相关性。</li>
-</ul>
-<p><strong>线上 A/B</strong>（14 天，5% 流量/组）：</p>
-<ul>
-<li>Satisfactory Consumption: +0.78%, CTR: +0.41%, Search Activity: +0.12%, Search Retention: +0.06%</li>
-<li>整体 median day-away@4: <strong>-6.87%</strong>，@10: -6.24%</li>
-<li>高时效性 query 子集 day-away@4: <strong>-12.81%</strong>，@10: -11.46%</li>
-</ul>
-<p><strong>人工 GSB（Good/Same/Bad）评测</strong>：</p>
-<ul>
-<li>Long-Tail/Cold Demand: +5.00% advantage ratio, Good:Bad = 12:2</li>
-<li>Time-Sensitive: +2.50%, Good:Bad = 6:1</li>
-<li>Random Demand: +1.50%, Good:Bad = 5:2</li>
-</ul>
-<p>时效敏感与长尾冷需求增益最大，且通用 query 上没有伤害，证明系统精准地只在该作用的地方作用——典型的工业系统理想形态。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文未单列 limitations 章节，从方法本身看几个隐含约束：(a) 时间表达式的隐式/歧义引用（如&quot;前段时间&quot;&quot;上次&quot;）抽取仍困难；(b) few-shot prompt 的领域适配在新内容形态（如直播片段、AIGC 帖子）下需要重新调优；(c) 即便有双重验证，长尾 query 上的幻觉残余风险仍存在，circuit breaker 是兜底而非根治；(d) authority-weighted fusion 依赖 source credibility，对新涌现的发布者存在冷启动；(e) &quot;每个 query 一个 expiration 阈值&quot;对多意图复合 query 仍属粗粒度。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区 UGC 搜索（帖子、问答、评论）非常直接：</p>
-<ul>
-<li><strong>可借鉴的工程模式</strong>：把&quot;内容新鲜度&quot;从规则评分（&quot;7 日内 +0.3，30 日内 +0.1&quot;）改造成 query-aware 二元特征接入排序模型，是高 ROI 的方向。社区 UGC 中&quot;经验型帖子（如装修攻略）有效期长，事件型帖子（如演唱会抢票）有效期短&quot;的差异比通用网页更明显，收益空间应该比 Baidu 的 +0.41% CTR 还大。</li>
-<li><strong>LLM as offline feature engineer 的范式</strong>：论文的三级回退（cache/student/teacher）+ circuit breaker 是把 LLM 接入工业排序系统的标准化做法，可直接复用到其他特征（如 query 意图、内容质量分、用户满意度预测）。</li>
-<li><strong>要避坑的点</strong>：必须设 fallback 路径（不能让 LLM 失败把整体相关性拖下水）、必须做 grain-level 验证（避免&quot;年级别&quot;判断错配到&quot;日级别&quot; query）。</li>
-<li><strong>部署成本估算</strong>：offline cache 覆盖率是关键，论文未披露具体 cache hit rate，但从可行性看 long-tail query 必须有 student LLM 兜底——这是接入前要先准备好的 infra。</li>
-</ul></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-13052"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>7 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2605.12617" data-paper-id="arxiv:2605.12617" data-card>
@@ -138,97 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>本文对生成式推荐落地的关键瓶颈（推理延迟）给出了简单且工程友好的解法。核心洞察是：SID 的层次性意味着大部分注意力计算冗余，可以用 position-specific MLP head + 知识蒸馏来取代。对正在尝试落地 HSTU/TIGER 类生成式推荐的团队是直接可借鉴的“轻量化”方案——可以保持生成式范式的召回质量，同时把 latency 拉回到 DLRM 量级。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Zitao Liu et al.</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-14</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 3 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.12617" id="dr-arxiv-2605-12617">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 13 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>生成式推荐（Generative Recommendation, GR）把 item 表示为 Semantic ID（SID）——一个由共享词表 token 组成的有序序列——通过自回归预测下一个 item。但工业部署有一个致命瓶颈：autoregressive 解码的延迟。论文用具体数字说明：典型配置下 beam size B=50、SID 长度 4 token，每次用户请求需要约 200 次模型 forward pass，相比 conventional ranker 单次 forward 出 top-K，代价惊人。</p>
-<p>作者通过实证给出三个关键观察作为方法 motivation：</p>
-<p><strong>(i) 难度集中在第一个 token</strong>：在 Amazon Instruments 数据集上，有效的下一 token 候选数从 256 → ~38 → 2.2 → ~1.2 跨四个位置依次坍缩——第一个 SID digit 之后预测难度急剧下降，意味着&quot;在每个位置都用同一套重型 Transformer decoder&quot;是结构性 over-kill。</p>
-<p><strong>(ii) decoder 深度多数冗余</strong>：把 frozen 4-layer TIGER teacher 蒸馏到 1-layer student，只预测最后一位（m=3 模式）NDCG@10 几乎不变（±0.0%），从头预测 4 位（m=0 模式）也只损失 1.5%。这强烈暗示一旦有 teacher 的 encoder 表示和蒸馏信号，decoder 多数 attention 层就是冗余的。</p>
-<p><strong>(iii) 但 user-history context 不能丢</strong>：Table 2 ablation 显示如果完全去掉 cross-attention，NDCG@10 直接掉 60%——&quot;context-free MLP decoder is insufficient&quot;。结论：context 是必须的，但每个 digit 都重复算一次 cross-attention 是浪费，因为 encoded user history 在整个 beam expansion 期间是静态的。</p>
-<h2>2. 方法详解</h2>
-<p>SID-MLP 围绕三个核心 idea：(1) encoder-conditioned context 算一次缓存复用；(2) 用 position-specific MLP 串行预测 digit；(3) beam search 内消除重复 attention。</p>
-<p><strong>架构总体</strong>：frozen teacher encoder 负责处理用户行为序列；一个可训练的 one-shot multi-head attention 模块把 encoder states 聚合成 reusable context vector；级联的 1-hidden-layer MLP head 顺序生成各位 digit，同时 conditioned 在缓存的 context 与已生成 prefix token embedding 上。</p>
-<p><strong>Global Context Encoding</strong>：不在每个 digit step 做 cross-attention，而是 mean-pool encoder states → project to query → multi-head attention → FFN，得到 context vector z 缓存在 beam search 外。复杂度从 standard decoder 的 O(LBNS_u) 降到 O(S_u)——直接把 cross-attention 从 beam search 循环中拿掉。</p>
-<p><strong>Per-Digit MLP Head</strong>：每个位置 t ∈ {1,...,L} 维持独立的 MLP head f_t。第 t 步的输入是 [z; e(c_1); ...; e(c_{t-1})] 即缓存 context 与已 frozen 的 prefix token embedding 拼接。设计动机：SID 在不同位置的输出分布差异很大（残差量化的层次性使然），位置专属 head 比共享 head 更合适。每个 MLP 输出 C=256 logit（codebook 大小）。</p>
-<p>复杂度对比：标准 decoder 的 self-attention 即便用 KV-cache 仍需 O(BNL²)；SID-MLP 用 batched dense MLP 对所有 active beam 一次性打分，消除 KV-cache 管理和 sequential attention 开销。</p>
-<p><strong>知识蒸馏训练</strong>：从 frozen teacher 离线蒸馏。teacher-forcing 训练时 ground-truth prefix 已知，可以并行训练所有位置。Loss 形式：</p>
-<p>L_t = α·τ²·KL(σ(ℓ̃_t/τ) ∥ σ(ℓ_t/τ)) + (1-α)·CE(ℓ_t, c_t*)</p>
-<p>α 平衡 teacher mimicry 与 task grounding，τ 是蒸馏温度。论文指出：&quot;架构越轻，越要依赖 teacher 的 soft label&quot;——这是 distillation-only 训练好于 from-scratch 的关键证据。</p>
-<p><strong>Inference</strong>：context 算一次缓存，对每个 digit 位置用对应 MLP head batch 打分所有 active beam；用 valid-prefix mask（item→SID 映射构造）过滤无效续段后做 beam expansion。</p>
-<p><strong>SID-MLP++（encoder 端蒸馏扩展）</strong>：两阶段。Stage 1 预训练 student encoder——每个 token 与 mean-pool 后的状态拼接、过 role-specific MLP，用 MSE 匹配 teacher encoder states。Stage 2 freeze student encoder，再训 decoder 部分。换来更高加速比但有 0.5-1% 精度损失。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) <strong>结构性洞察</strong>：定量证明 decoder 深度与重复 cross-attention 对层次化 SID 生成是冗余的（仅训练时需要、推理时可压缩），这套实证分析比单纯&quot;换 MLP&quot;的方法论价值更大。</p>
-<p>(2) <strong>蒸馏框架</strong>：MLP-based decoder 替换 + KD 维持精度，最关键是用 soft label 弥补 MLP 的容量不足，证明 sparse valid-SID 空间下 KD 信号特别有效（消融 KL 损失精度掉 2.7-6.6%）。</p>
-<p>(3) <strong>Plug-and-play</strong>：与 speculative decoding 不同，不需要修改 target model 或 tokenizer，对已部署的 TIGER/HSTU 类系统是 drop-in 加速器。</p>
-<p>(4) <strong>Encoder 蒸馏扩展</strong>：两阶段方案保证训练稳定，给出延迟-精度可调的工程旋钮。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>数据集 &amp; baseline</strong>：3 个 Amazon Reviews 2023 类目（Musical Instruments, Industrial &amp; Scientific, Video Games），24K-26K items 量级。Teacher 为 TIGER（T5-based 4-layer encoder + 4-layer decoder）。</p>
-<p><strong>Baseline 三类</strong>：</p>
-<ul>
-<li>Speculative：AtSpeed（紧凑 draft + teacher 验证）</li>
-<li>高效架构：EARN（压 encoder states）、NEZHA（self-drafting heads）</li>
-<li>State-space：Mamba2、GatedDeltaNet</li>
-</ul>
-<p><strong>主结果</strong>：SID-MLP 相对 TIGER-kv 取得 <strong>8.74× 吞吐加速</strong>，同时精度匹配或超过 teacher。Instruments 数据集 NDCG@10 = <strong>0.0332 vs teacher 0.0323</strong>（+2.8%），Recall@10 = 0.0620 vs 0.0606。<strong>GPU peak memory 减少 95.7%</strong>——几乎全部存储压力被去掉。</p>
-<p><strong>对手对比</strong>：</p>
-<ul>
-<li>AtSpeed-Strict 0.68×、AtSpeed-Relaxed 0.22×（在 TIGER 这种小模型上反而拖慢，因 draft 与 verify mismatch）</li>
-<li>EARN 1.94×（仍是 autoregressive decoding，吞吐被锁死）</li>
-<li>NEZHA 7.27× 但 NDCG@10 掉 15%（精度换吞吐）</li>
-<li>Mamba2 1.22×、GatedDeltaNet 1.20×（state movement 主导成本，beam 间状态 fork/gather 开销可与 attention 等价）</li>
-</ul>
-<p>SID-MLP 是 Pareto 改进：唯一同时实现高加速与无精度损失的方法。</p>
-<p><strong>消融（Group 分类）</strong>：</p>
-<ul>
-<li>Group 1 head 结构：去 prefix 条件掉 64-72% NDCG@10（致命）；sum 替代 concat 掉 1.8-2.8%；共享 head 跨位置掉 6-10%（验证 position-specific head 的必要性）</li>
-<li>Group 2 context 模块：去 multi-head attention 掉 3-6%（token 级历史对齐重要）；per-digit context readout vs one-shot 几乎相同（±0.7%，支持 one-shot 设计）</li>
-<li>Group 3 蒸馏：去 KL 掉 2.7-6.6%（soft label 补偿 MLP 容量）；teacher embedding frozen vs trainable 只差 0.8%</li>
-</ul>
-<p><strong>鲁棒性</strong>：Tokenizer 敏感性——在 RQ-KMeans、RQ-VAE、PSID 三种 tokenizer 上 NDCG@10 维持 teacher 的 99.6-102.9%。Batch size 扩展性：batch 256 内 SID-MLP 吞吐近恒定，达到 <strong>16.6× 加速</strong>，而 TIGER-kv 早早饱和。Beam size 扩展性：beam 10→50 时 TIGER 吞吐掉 37%，SID-MLP 保持稳定（更大 beam 只是 MLP projection 拓宽，没有额外 sequential step）。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文明确承认的限制：(a) 评估只覆盖 TIGER 与 4-token SID，对变长 SID 或差异较大的 tokenizer 未验证；(b) SID-MLP++ 取得 10.25× 加速但有 0.5-1% 精度损失，对延迟敏感场景需权衡；(c) 框架要求 teacher encoder frozen——只能 plug-in 替换已部署模型，没法 online 适应分布漂移。</p>
-<p>作者明确点出未来方向：&quot;plan to apply Sid-Mlp to industrial-scale systems with millions of items&quot;——目前 24K item 量级的实验离工业 100M item 还有距离，搜索空间在大 item set 下的行为是开放问题。</p>
-<h2>6. 工业实践意义</h2>
-<p>对正在评估或落地 generative recommendation 的团队（HSTU、TIGER、KUNLUN 类）这是非常实用的&quot;轻量化&quot;答案。</p>
-<p><strong>可直接采纳</strong>：</p>
-<ul>
-<li>已部署 TIGER 类系统的团队：SID-MLP 是 plug-in 加速器，不动 tokenizer、不动 teacher 训练管线，离线蒸馏 ~1 小时即可上线 8.74× 加速 + 95.7% 显存节省。这意味着同样的 serving 资源可以承载 8-9 倍的 QPS，或者把生成式召回从离线触发改造为在线触发。</li>
-<li>KV-cache 管理是 LLM serving 的工程负担，SID-MLP 直接把这块代码删掉——运维复杂度也降。</li>
-</ul>
-<p><strong>值得尝试</strong>：</p>
-<ul>
-<li>用 SID-MLP 的 architecture 思路改造非 SID 的生成式 ranker。论文的核心机制（&quot;context 算一次、per-position 浅层 head、KD 蒸馏&quot;）并不绑定 SID，可扩展到任意 hierarchical generation。</li>
-<li>把 SID-MLP++ 当作&quot;工程上限&quot;做 A/B：0.5-1% 精度损失换 10.25× 吞吐，业务上接不接受需要看 NDCG sensitivity。</li>
-</ul>
-<p><strong>应避免</strong>：</p>
-<ul>
-<li>不要试图 from-scratch 训 MLP——论文消融明确显示 KD 不可或缺。MLP 容量本身偏弱，需要 soft label 补偿。</li>
-<li>不要共享跨位置的 MLP head——会丢 6-10% 精度。SID 不同位置分布差异大，head 必须分开。</li>
-</ul>
-<p><strong>部署考虑</strong>：</p>
-<ul>
-<li>离线蒸馏 ~1 小时/数据集（实验级）；工业级 100M item 估计要几小时到一天，仍属&quot;上线前一次性成本&quot;。</li>
-<li>单请求 latency = 1× encoder forward + L 次 MLP projection；MLP 的 GEMM 是 GPU 高度优化原语，应可压到 ms 级。</li>
-<li>多租户 serving：95.7% 显存节省允许同 GPU 跑更多并发 model instance，特别适合中小规模业务用大模型 teacher 蒸馏出多个领域专属轻量模型。</li>
-</ul></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-12617"></span>
 </article>
 <article class="card t-personalization" id="paper-hf:2605.12995" data-paper-id="hf:2605.12995" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.75</span></div>
@@ -322,60 +169,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

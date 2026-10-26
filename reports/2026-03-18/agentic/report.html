@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -64,57 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>APEX-Searcher 的核心创新在于将检索过程从被动单次变为主动多轮规划，LLM 充当「搜索协调器」根据当前检索结果动态规划后续搜索策略。对于 UGC 搜索场景，该思路可用于处理复杂意图查询：当用户的问题需要多条知识链联合推理时，系统可自动分解问题并迭代检索，最终合并结果给出更准确的答案。工程实践中，该框架的规划开销可通过小模型担任「搜索规划者」来优化延迟。</div>
     <div class="foot">Kun Chen, Qingchao Kong, Zhao Feifei, Wenji Mao · 2026-03-17 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2603.13853" id="dr-arxiv-2603-13853">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>现有检索增强生成（RAG）系统在处理需要多跳推理的复杂问题时存在根本性缺陷。单轮 RAG 无法应对需要从多个相互依赖信息源中综合信息的问题，虽然迭代式 RAG（如 Search-o1、IRCoT）通过增加检索轮次在一定程度上缓解了问题，但这些方法本质上是「反应式」的——每次搜索都是对上一步结果的局部响应，缺乏对整个任务的全局规划。</p>
-<p>论文作者明确指出，现有研究「忽视了 LLM 内在任务规划能力的关键重要性」。以 HotpotQA 中的典型题目「奥运金牌得主 X 的出生地的市长是谁？」为例：传统迭代 RAG 会先随机搜索 X 的相关信息，再根据检索结果决定下一步；而 APEX-Searcher 会先规划出完整解题路径「→找 X 的出生地 → 找该城市现任市长」，再按序检索执行。这种区别在 MuSiQue 等复杂多跳基准上的差距约为 7-8 个百分点 EM（精确匹配率）。</p>
-<h2>2. 方法详解</h2>
-<p>APEX-Searcher 采用两阶段层级框架，将「规划」与「执行」显式分离。</p>
-<p><strong>第一阶段：基于 RL 的智能规划（Agentic Planning）</strong></p>
-<p>规划器接受原始多跳问题，输出带显式依赖关系的子问题序列（如「#1: X 的出生地是哪里？#2: #1 结果所在城市的市长是谁？」）。使用占位符 、 引用前序子问题结果，形成可执行的依赖图。</p>
-<p>训练使用 GRPO（Group Relative Policy Optimization）算法，而非传统的 actor-critic 方法。GRPO 直接对同批次多个生成结果进行相对优势估算，避免了额外 critic 网络带来的内存开销。关键超参数：学习率 5×10^-6，全局 batch size 512，KL 散度惩罚系数 0.01，训练 3 个 epoch，数据来自 MuSiQue 训练集 10,473 个样本。</p>
-<p><strong>奖励函数设计（核心创新）</strong>：不直接使用字符串匹配而采用语义对齐奖励——将生成的子问题与黄金分解结果编码为 sentence embedding，通过余弦相似度（阈值 τ=0.8）构建相似度矩阵，再使用匈牙利算法求最优二分图匹配，计算精确率与召回率的调和平均作为最终奖励。这一设计使奖励函数对语言表达的多样性具有鲁棒性，能够正确评价语义等价但表达不同的分解方案。</p>
-<p><strong>第二阶段：基于 SFT 的自适应探索（Agentic Exploration）</strong></p>
-<p>执行器针对每个子问题进行动态多轮检索：首先判断当前累积知识是否足以回答该子问题；若不足，则生成新的检索查询（避免与已尝试查询重复）；检索后更新知识库；重复直至置信度足够或达到最大跳数限制（最优为 5 跳）。</p>
-<p>SFT 训练数据由模型自生成后经严格自动过滤获得：丢弃推理有缺陷、答案错误或格式不符的样本，最终保留 14,604 条高质量多轮检索指令样本（来源：2WikiMultiHopQA、HotpotQA、MuSiQue）。SFT 使用全参数微调，借助 DeepSpeed ZeRO Stage 3 和 Flash Attention 2，支持最大 32,768 token 的上下文窗口。</p>
-<p><strong>整体流程</strong>：原始问题 → Planning Agent（GRPO训练）→ 子问题序列 → Exploration Agent（SFT训练，逐子问题迭代检索）→ 答案综合。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>贡献1：规划优先的两阶段范式</strong><br>明确将任务分解（Planning）与执行（Exploration）训练分离，每个阶段专注各自目标。对比消融实验显示，在 7B 模型上，添加 RL 训练的规划模块将组合指标从 30.39 提升到 33.82（+3.43），进一步加入 SFT 探索训练提升至 37.64（+3.82）。两阶段协同的增益超过任意单阶段。</p>
-<p><strong>贡献2：基于语义对齐的奖励函数</strong><br>传统字符串匹配奖励对「语义正确但表达不同」的分解方案评分偏低，误导 RL 优化方向。APEX-Searcher 使用匈牙利算法的语义匹配奖励，使规划训练奖励和验证奖励均呈持续上升趋势，模型回复长度随训练进程下降（过度分解减少），证明模型在学习更精炼的规划。</p>
-<p><strong>贡献3：自适应探索的查询多样性约束</strong><br>执行阶段引入「查询新颖性约束」，在生成新的检索查询时显式参考历史查询列表，避免重复检索相似文档。实验表明，检索文档数从 1 增加至 3 时性能显著提升，超过 3 后因噪声增加而下降，最优检索文档数为 3。</p>
-<p><strong>贡献4：小模型的 SFT 关键作用</strong><br>消融实验揭示一个重要发现：对于 3B 小模型，规划模块单独引入反而会降低性能（EM 从 13.42 降至 12.63），因为规划任务本身超出了小模型的能力上限；而加入 SFT 探索训练后，3B 模型 EM 从 12.63 飞跃至 23.52，说明 SFT 对弱模型的能力激活至关重要。</p>
-<h2>4. 实验结果分析</h2>
-<p>在四个多跳 QA 基准（HotpotQA、2WikiMultiHopQA、MuSiQue、Bamboogle）上，以 Qwen2.5 系列作为基础模型进行评测：</p>
-<table><thead><tr><th>基准</th><th>APEX-Searcher 7B</th><th>StepSearch-7B（最强基线）</th><th>提升</th></tr></thead><tbody><tr><td>HotpotQA</td><td>40.2%</td><td>约 29%</td><td>+11%</td></tr><tr><td>2WikiMultiHopQA</td><td>54.0%</td><td>约 31%</td><td>+23%</td></tr><tr><td>MuSiQue</td><td>16.4%</td><td>约 10%</td><td>+6%</td></tr><tr><td>Bamboogle</td><td>40.0%</td><td>约 36%</td><td>+4%</td></tr><tr><td><strong>平均 EM</strong></td><td><strong>37.6%</strong></td><td><strong>29.4%</strong></td><td><strong>+8.2%</strong></td></tr></tbody></table>
-<p>最大提升出现在 2WikiMultiHopQA（+22.8%），该数据集需要最严格的多步骤顺序推理，与论文关于「规划对复杂多跳推理的价值」的核心主张完全一致。MuSiQue 提升最小（+7.8%），该数据集包含刻意设计的干扰跳（需要识别无关中间证据），规划层面仍有改进空间。</p>
-<p>消融分析重要发现：规划单独使用（无 RL 训练）并不带来稳定收益；RL 训练规划至关重要，GRPO 的相对比较机制比 REINFORCE 更稳定；文档检索数量有最优值（约 3 篇）；最大推理跳数在 5 跳时最优。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出的局限：(1) 当前 Exploration 阶段仅使用 SFT 训练，作者提出未来可探索多轮 RL 持续优化执行策略；(2) 规划模块对小模型（3B）反而有害，需要额外 SFT 对齐才能发挥正向作用；(3) 当前实验基于本地检索数据库，尚未扩展到真实 Web 搜索场景；(4) 目前仅针对多跳问答任务，尚未验证在其他 agentic 任务上的泛化性。</p>
-<p>作者未明确提及但值得关注的限制：两阶段串行设计带来额外推理延迟（Planning 阶段先完成，再进入 Exploration），对实时查询场景不够友好；SFT 数据的自生成质量依赖基础模型能力，存在质量上限。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>对搜索系统的直接启示</strong>：APEX-Searcher 提供了一套将 LLM 从「反应型检索器」升级为「主动规划型搜索 agent」的完整技术路径。具体落地建议：</p>
-<p>首先，<strong>查询理解层</strong>：对于社区搜索中的复杂意图（如「适合带孩子周末去的活动，距离北京两小时内，有户外体验」），引入轻量规划模块（3B 小模型或 prompt-based 分解）将查询分解为多个子意图，分别召回后综合排序。</p>
-<p>其次，<strong>训练数据策略</strong>：论文的 SFT 数据自动生成+过滤范式可直接复用——用生产环境的复杂查询日志生成多跳检索轨迹，再经自动质量过滤（答案 EM 阈值）保留高质量样本。这是构建搜索 agent 微调数据集的低成本方案。</p>
-<p>第三，<strong>部署成本控制</strong>：论文中 3B 模型搭配完整训练方案达到接近 7B 的效果，对于需要在成本和效果间平衡的搜索系统，可优先在规划器上部署 7B，执行器使用 3B 配合 SFT 微调，形成「大规划+小执行」的经济型架构。</p>
-<p><strong>延迟考量</strong>：两阶段串行带来额外延迟（规划约 0.5-1s），适合对准确率要求高的搜索场景（如专业问答、知识密集型搜索），不建议在 P99 延迟敏感的通用 UGC 搜索首链路部署，可作为第二阶段精细化搜索的补充模块。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2603-13853"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-arxiv:2603.13348" data-paper-id="arxiv:2603.13348" data-card>
@@ -238,60 +188,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

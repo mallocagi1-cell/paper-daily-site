@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,83 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把广告生成从「图像生成 + CTR 排序」的两段式 pipeline 收敛到统一自回归生成是一个重要范式转变：单模型即可同时处理图文，避免模态间不一致，并通过用户行为序列直接条件化生成内容。对社区/电商场景的启示是，generative recommendation 的下一站可能不再是「推荐候选 item」，而是「生成定制化的展示内容（图、文、卡片）」，把推荐和创意素材生成统一在 token-level 自回归建模里。</div>
     <div class="foot">Anonymous · 2026-05-13 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.12138" id="dr-arxiv-2605-12138">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 12 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Design Your Ad: Personalized Advertising Image and Text Generation with Unified Autoregressive Models — 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>电商广告生成在工业界一直面临三重痛点：(1) <strong>流水线割裂</strong>：现有方案用独立模型分别生成图像 (e.g. Pigeon、Flux-Kontext) 和文本 (e.g. Qwen3、DeepSeek-R1)，再用 CTR 模型做筛选打分，整个系统串联多个模型导致部署复杂、跨模态难以一致；(2) <strong>个性化信号单一</strong>：上游主要依赖 CTR 反馈来「调」候选广告，但 CTR 信号本质反映的是「平均偏好」(average preference)，无法表达个体用户在风格、构图、卖点上的差异化偏好；(3) <strong>历史行为里的双重噪声</strong>：作者明确区分了 sample-level noise (用户历史里很多商品与当前广告完全不相关) 和 modal-level noise (不同用户偏好的模态权重不同，有的看图、有的看文案)。现有 LLM4Rec 类工作把全部多模态历史 dump 给模型，对这两种噪声都没有显式处理，效果上无法精细到「为某个用户专门设计这一条广告」。</p>
-<p>本文是 JD-GenX 团队（京东生成式电商方向）提出的解法，核心命题是：把广告图文生成统一进一个自回归框架，并通过显式的多阶段噪声抑制去做用户偏好驱动的个性化。</p>
-<h2>2. 方法详解</h2>
-<p><strong>整体架构：Uni-AdGen 单一自回归骨干</strong>。基础模型选用 Janus-Pro 7B 这一统一图文理解+生成的开源 MLLM，采用 next-token prediction 同时输出文本 token 与离散图像 token (VQ-GAN tokenizer)。这意味着图、文在同一序列里、用同一组 loss 优化：<code>L = λ_text · L_text + λ_img · L_img</code> (两个 λ 均设为 1)。这是「广告生成 = 多模态 sequence-to-sequence」这一范式的具体落地。</p>
-<p><strong>Foreground Perception 模块</strong>。商品广告图通常是「商品前景 + 背景设计 + 文案叠加」的合成结构，单纯把整图丢给生成器会导致前景偏移、细节失真。Uni-AdGen 把商品前景作为额外的 control 信号：把透明前景图经 patchify + projector 离散化，再用 DINOv2 编码为视觉 embedding <code>C</code>。注入策略不是 cross-attention 那样代价高昂，而是 <strong>element-wise addition every 4 decoder layers</strong>，公式 <code>[H_l]_t = [DL_l(H_{l-1})]_t + 1{l mod 4 == 0} · [C]_t</code>。这种「每 4 层 inject 一次」是一个经过权衡的设计 — 既保证前景信号贯穿全网络，又避免逐层注入带来的训练不稳定与开销。</p>
-<p><strong>Coarse-to-Fine 偏好理解</strong>。这是论文最有意思的工程贡献，分两阶段对抗历史行为的两类噪声：</p>
-<ul>
-<li><em>Coarse 阶段（抗 sample-level noise）</em>：基于商品相似度对历史行为做重要性采样。给定目标商品的特征 <code>s_i</code>，从用户历史里按概率 <code>p_i = max(s_i + ε, 0) / Σ_j max(s_j + ε, 0)</code> (ε=1e-6) 选 top-N 个最相关历史（论文 N=10）。直觉是「无关历史就不该参与本次生成的条件」。</li>
-<li><em>Fine 阶段（抗 modal-level noise）</em>：对入选的 N 条历史，再用 Transformer encoder 做 token-level 筛选 — Gumbel-Softmax 学习 mask + top-K 选择（论文 K = 40% tokens 保留），让模型自己决定每条历史里哪些 token（图的哪些 patch、文的哪些短语）更值得作为本次条件。这相当于把「该看图还是看文案」的决定权交给模型，不再依赖人工规则。</li>
-</ul>
-<p><strong>训练设置</strong>。Janus-Pro 7B + LoRA (rank=12, factor=32)，AdamW lr=5e-5，batch_size=4，单卡 NVIDIA B200。透明前景图 384×384，历史商品图 128×128 (大幅压缩历史模态以控显存)。数据集 PAd1M：114.5 万用户、1892 万条多模态点击行为、人均 16+ 条历史、覆盖 850 万商品 — 这是篇有真实电商数据规模背书的论文，而不是 toy benchmark。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>统一自回归 = 跨模态一致性的天然保证</strong>。把图文生成放进一个 next-token 序列，避免两个独立模型间「图说的卖点」和「文案说的卖点」对不上的老问题。比较有借鉴价值的是 loss 的对称权重 (λ_img = λ_text = 1)：作者不需要做模态间复杂的 balance，统一 token space 让 gradient 自然均衡。</li>
-</ol>
-<ol>
-<li><strong>Foreground Perception 的「每 4 层注入」策略</strong>。相比 ControlNet 系列把控制信号通过额外 conditioning network 注入，Uni-AdGen 的 element-wise addition 更轻量、对 backbone 改动小，便于在已有 LLM 上做 LoRA 适配。这是当前生成式控制信号注入的一种实用范式 — 用少量层的 hidden state 加法换前景保真度。</li>
-</ol>
-<ol>
-<li><strong>Coarse-to-Fine 双阶段噪声抑制</strong>。比纯靠 attention 自动学要更可靠：coarse 阶段强制做行为相关性过滤，fine 阶段再细到 token-level 选择性参与。对比纯 LLM4Rec 的「把历史塞进 context 等模型自己消化」，这是更工程化的做法。Ablation 上 BLEU 从 baseline 0.225 → 加 history 0.427 → 加 PSS 0.430 → 完整版 0.435，验证每个模块都贡献了边际收益（虽然 fine 阶段的边际效益较小，0.005）。</li>
-</ol>
-<ol>
-<li><strong>真实工业数据集 PAd1M 的开放贡献</strong>。在生成式推荐/广告领域，公开的多模态电商数据集稀缺，PAd1M 的规模（1145K 用户 × 18.9M 行为 × 8.5M 商品）对学术界继续推进这一方向是重要资产。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p><strong>通用广告生成（Table 1，500 商品）</strong>：</p>
-<ul>
-<li>图像质量 — ImageReward: <strong>Uni-AdGen -1.244</strong>（最佳，baselines -1.281 至 -1.516）；PickScore 21.002（仅次于 PosterMaker 20.977）；Aesthetic Score (ASE) 5.25（中游）。</li>
-<li>Human Eval Image: 92.60%（多数 baseline 在 86.80–95.20% 区间内可比，未稳定 SOTA）。</li>
-<li>文本质量 — m-BLEU 0.551（Qwen3 0.562 略胜），m-ROUGE 0.654（接近 baseline 上限 0.653）。</li>
-</ul>
-<p>这一组结果说明：在「不需要个性化」的通用广告生成上，Uni-AdGen 与单独的 SOTA 图模/文模相比 <strong>打平</strong>，没有牺牲质量。</p>
-<p><strong>个性化广告生成（Table 2，500 用户）</strong> —— 这是论文真正的卖点：</p>
-<ul>
-<li>PBS (Preference-Based Score): <strong>Uni-AdGen 0.634</strong>，baselines 0.514–0.624，绝对优势 ≥0.01；</li>
-<li>BLEU <strong>0.435</strong>，baselines 0.225–0.373，显著领先；</li>
-<li>ROUGE <strong>0.662</strong>，baselines 0.525–0.622，显著领先。</li>
-</ul>
-<p>个性化指标上 BLEU 几乎翻倍（0.225 → 0.435），说明 coarse-to-fine 历史建模真的捕捉到了「这个用户偏好的文案风格」。这是一个少见的「个性化生成」量化结果。</p>
-<p><strong>Ablation</strong>：BLEU 0.225 (baseline) → 0.427 (+history naive 塞入) → 0.430 (+PSS coarse 过滤) → 0.435 (+fine token mask)。最大收益来自「让模型看到历史」(+0.202)，PSS 与 fine mask 各加约 0.003–0.005 — 提示 sample-level 噪声其实没那么严重，关键是要把历史塞进去；fine 阶段的边际贡献偏小，可能存在 over-engineering 的可能。</p>
-<p><strong>未公开</strong>：论文没有报告线上 A/B 结果，也没有公布 inference 延迟与吞吐 — 这是工业界落地最关心的数字。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确列出 Limitation 但内容相对克制。结合方法和实验，我看到的真实局限：</p>
-<ol>
-<li><strong>没有 online A/B</strong>。所有指标都是 offline (ImageReward / PBS / BLEU)，与真实点击/转化挂钩程度未知。在广告场景，offline 与 online 差距经常 30%+ 起。</li>
-<li><strong>Inference 成本</strong>。Janus-Pro 7B + 自回归生成 384×384 图像，单次推理大概率秒级，对实时广告 (几百 ms 预算) 不可行 —— 论文也未给出具体延迟数字。可能只能做 offline 广告素材生产 + 离线召回，而不是 real-time 个性化。</li>
-<li><strong>PAd1M 是京东自家数据</strong>，是否在其他电商（淘宝、拼多多、海外亚马逊）泛化未知。</li>
-<li><strong>PBS 是论文自定义的偏好评分指标</strong>，其与人类偏好的一致性、与真实 CTR 的相关性都未验证。</li>
-<li><strong>Fine 阶段贡献小</strong>：BLEU 0.430 → 0.435 的 0.005 提升可能淹没在评估噪声里，建议复现时优先实现 PSS + history，不必上 fine token mask。</li>
-</ol>
-<h2>6. 工业实践意义</h2>
-<p>对搜索 / 推荐 / 广告工程团队，这篇论文有几条值得直接借鉴：</p>
-<p><strong>应该尝试</strong>：(a) 把图文生成统一进单个自回归模型是大趋势，建议以 Janus-Pro / Qwen-VL / InternVL 等开源统一 MLLM 为起点搭建 baseline，loss 权重直接对称即可；(b) <strong>Foreground perception 的「每 4 层注入」</strong>是一个轻量、易实现的控制信号注入范式，可以推广到「商品图 + 设计模板」「品牌 logo + 文案」等任何「主体 + 风格」的生成任务；(c) <strong>Coarse 行为采样 (PSS)</strong> 简单有效，比把全部历史 dump 给模型更可控 — 工业界用现有的 i2i 相似度模型就能直接做这一步。</p>
-<p><strong>应该谨慎</strong>：(a) 这套模型适合 <strong>offline 广告素材生产</strong> (T+1、T+0 离线生成大量候选)，而不是 <strong>online 实时个性化</strong>。即便 LoRA + 7B + 单 B200，自回归生成 384×384 图像延迟仍在秒级；(b) PBS 这类自定义评分需要先做 human eval 对齐才有意义，不要直接拿来当线上指标。</p>
-<p><strong>部署路径建议</strong>：把 Uni-AdGen 作为 <strong>离线素材工厂</strong>插入到广告创意生产链路，对每个商品 × 高价值用户簇离线生成 N 条候选广告，再由现有 online ranker + CTR 模型做最终选择。这样既享受了个性化生成的红利，又不破坏现有 online serving 延迟预算。社区搜索 (UGC) 场景下，类似思路可以用在「为搜索 query 生成定制化首屏卡片」「为不同人群生成不同的搜索结果落地页摘要」等场景，把生成模型从 ranking 后端搬到内容生产前端。</p>
-<p><strong>Repo</strong>: https://github.com/JD-GenX/Uni-AdGen 已开源，可以作为生成式电商的 starter kit。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-12138"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>7 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:2605.12419" data-paper-id="arxiv:2605.12419" data-card>
@@ -245,60 +169,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,101 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把“特征上下线”从“必须配套模型重训”解耦为“serving 时弹性控制覆盖率 + 模型在常规重训中自适应”，是大型排序系统降本增效的关键工程范式。社区搜索/推荐排序团队可以借鉴 elastic fading 的渐进灰度、可逆回滚、与监控闭环组合，把多周训练 → 同周上线的瓶颈打开，把 GPU 节省下来用于探索新特征与模型架构升级，而非反复对齐旧特征空间。</div>
     <div class="foot">Jieming Di, Xiaoyu Chen, Ying She, Siyu Wang, Lizzie Liu, Fenggang Wu, Jiaoying Mu, Tony T... · 2026-05-04 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.00324" id="dr-arxiv-2605-00324">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Intelligent Elastic Feature Fading (IEFF)：大型 ranking 系统特征效率上线的工业级范式</h1>
-<h2>1. 问题与动机</h2>
-<p>现代广告/推荐排序模型依赖几千个由用户行为派生的特征，跨多种时间窗口（短期 + 长期）。任何特征的下线、修剪或替换，传统流程都要走一次完整模型重训：从灰度训练、对比指标、上线 review 到实际接入，端到端 3–6 个月，伴随大量 GPU、长批次训练样本与团队工程时间。论文 §2.3 给出了核心反思：「显式重训其实并不是必要的——只要变化在 serving 端被分步、有界、平滑地施加，模型就可以通过周期性重训自适应」。这等于把问题从「先重训才能上线」翻转为「serving 端先弹性收缩、模型在常规节奏里跟上」，把工业 ranking 团队最痛苦的迭代瓶颈拿掉。</p>
-<p>论文还提供了量化的反例支撑动机：在 abrupt zero-out（直接置零）模式下，下掉 top 50 sparse features 会带来 0.83% 在线性能回归，且模型需要 7–10 billion 额外样本才能收敛恢复；这一对比直接说明「分步 vs. 一次性」不是哲学之争，而是真金白银的差距。</p>
-<h2>2. 方法详解</h2>
-<p>IEFF 系统由两个核心组件构成：</p>
-<ol>
-<li><strong>Centralized Control Plane（中心化控制平面）</strong>：维护所有 rollout 策略、fading 配置、安全约束；它是声明式的，特征产出 pipeline 不需要任何修改。</li>
-<li><strong>Serving-Time Feature Adapter（serving 端特征适配器）</strong>：在每次请求处理时按当前配置对特征进行 coverage（是否暴露给模型）与 distribution（值变换）的弹性控制，并把调整后的特征值同时记录到训练日志，保持 train/serve 一致性。</li>
-</ol>
-<p><strong>Fading 控制机制（§3.3）</strong>：rollout 由一个 schedule 描述（start time + fading rate）。系统区分两种弱化方式：</p>
-<ul>
-<li><em>Coverage control</em>：决定该特征是否对当前请求生效（开关型）。</li>
-<li><em>Distribution control</em>：在不下线特征的前提下平移/缩放特征值。</li>
-</ul>
-<p>经 pre-rollout A/B（论文称 QRT）验证，常用 fading 速率为每天 1–10%，保守生产部署多用 1–2%/天。整个过程中，调整后的特征值会同步用于推理与训练样本日志，从而让常规重训自动消化这个分布漂移。</p>
-<p><strong>安全机制（§3.4）</strong>：</p>
-<ul>
-<li>Pre-rollout 通过 QRT 试投做 schedule 校验；</li>
-<li>限制只有「白名单 + 预定义 policy」之内的特征才允许 IEFF 调整；</li>
-<li>持续监控 NE（normalized entropy）与业务指标的变化曲线；</li>
-<li>触发阈值时自动暂停 / 回滚；</li>
-<li>全程提供「无重训」一键回滚通道。</li>
-</ul>
-<p>论文没有给出严格数学公式，强调系统层面的工程合约：fading 算子 + 配置元数据 + 监控/回滚闭环；并且声明 serving 路径的 latency 开销「无可测量增加」，控制平面更新与请求路径异步。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>「先 serving 弹性，再常规重训跟随」的工程范式</strong>：把过去强耦合的「特征变更 ↔ 显式重训」拆解，让模型在持续训练中自然适配，把多周训练 → 同周上线变成现实，是论文最关键的范式贡献。</li>
-</ol>
-<ol>
-<li><strong>统一的 Coverage/Distribution 控制原语</strong>：把所有特征效率 rollout 抽象成两类原子动作（开关 + 值变换），使得任何下线、降维、范围裁剪、值压缩都可以用 schedule 表达。这点决定了 IEFF 是「一个平台 + 一套合约」，而不是一类临时脚本。</li>
-</ol>
-<ol>
-<li><strong>可逆 + 渐进 + 训练同步</strong>：日志一致性（fading 后的值同时入训练）保证模型在常规节奏中持续校正，使「无重训」并非一次性技巧而是稳态操作。这一点也是过往 ablation 风格 rollout 普遍欠缺的。</li>
-</ol>
-<ol>
-<li><strong>生产级安全护栏</strong>：QRT 验证、policy 白名单、NE 监控、自动暂停/回滚共同构成一个工业级 SRE 套件——把它落到一个共享平台，比每个团队自己写脚本要稳得多。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p>论文最有说服力的结果都是工业 A/B：</p>
-<ul>
-<li><strong>Rollout 速度</strong>：IEFF 把效率类上线提速约 5×（§5.4）。</li>
-<li><strong>性能保护</strong>：相对 abrupt zero-out，gradual fading 把在线性能损失减少 50–55%。</li>
-</ul>
-<p>  - Top-50 sparse features 下线：abrupt 0.83% 回归 vs. fading 0.37% 回归（55% 改善）。</p>
-<ul>
-<li><strong>训练成本</strong>：abrupt zero-out 需要额外 7–10B 训练样本恢复，gradual fading 顺滑收敛。</li>
-<li><strong>总成本</strong>：估算累计避免约 140 次重训，年度基础设施成本下降 ~15%（Table 1）。</li>
-<li><strong>批处理规模</strong>：截至 2026 年，IEFF 已经在 14 个批次中处理 275 个特征；fading 速率从早期验证的 10%/天逐步收敛到生产稳态的 1–5%/天，每个 batch 平均节省约 10 次重训。</li>
-</ul>
-<p><strong>Table 3 阶段化对照</strong>（normalized 性能，相对 fading baseline = 100%）：</p>
-<table><thead><tr><th>阶段（覆盖率区间）</th><th>abrupt zero-out</th><th>IEFF fading</th></tr></thead><tbody><tr><td>早期 90→70%</td><td>99.8%</td><td>100%</td></tr><tr><td>中期 70→40%</td><td>99.4%（最大差距 0.6%）</td><td>100%</td></tr><tr><td>后期 40→10%</td><td>99.6%</td><td>100%</td></tr><tr><td>终段 10→0%</td><td>99.7%</td><td>100%</td></tr></tbody></table>
-<p>中期是最大风险段——模型尚未通过常规训练「补回」，但变化幅度也最大；fading 在该段保住 0.6% 的关键性能差距。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者在 §7 明确列出了局限：</p>
-<ul>
-<li><strong>强非线性 / 高敏感度特征</strong>：少数特征改动哪怕很小也会带来不成比例的模型反应，仍需显式重训；IEFF 不是万能。</li>
-<li><strong>Fading 速率选择</strong>：当前依赖 pre-rollout QRT 经验值，缺少自适应、数据驱动的速率策略。</li>
-<li><strong>适用边界</strong>：IEFF 假设变更可被分解为「分步、有界、可叠加」的小步骤；对一次性重大特征架构变化不适用。</li>
-</ul>
-<p>未来方向论文称为「test-time scaling with feature fading」，包括：基于实时特征新鲜度的自适应速率；多 fading 配置的预测集成（提升鲁棒性）；用 fading 幅度作为不确定性信号触发更昂贵的推理路径。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索/推荐排序团队，IEFF 给出了三个可立即落地的启示：</p>
-<ol>
-<li><strong>把「特征下线」从研发节奏里解耦</strong>。我们也面临短文本搜索/排序里大量行为窗口特征的实验与回收：与其每次都拉重训，不如建一个「特征滚动平台」用 coverage/distribution 两类原语描述所有变更，把上线节奏从季度切到周。</li>
-</ol>
-<ol>
-<li><strong>复用 IEFF 的 SRE 合约</strong>。policy 白名单 + NE 监控 + 自动暂停 + 一键回滚是工业可复用的合约模板，不一定要照搬全套，但「灰度 + 监控 + 回滚」三件套必须配齐。</li>
-</ol>
-<ol>
-<li><strong>训练日志与 serving 行为对齐</strong>。论文的隐藏前提是「调整后的特征值同时入训练样本」，这是「常规重训自适应」能成立的基础。我们如果照搬，必须先确保自家训练数据流支持把 serving 适配后的值反向写入训练样本——否则 IEFF 反而会引入 train/serve skew，得不偿失。</li>
-</ol>
-<ol>
-<li><strong>A/B 风险预算</strong>。IEFF 在 0–10%/天速率区间里 trade-off 速度与稳定；即便我们没有 100B-sample 级别的训练，也可以借鉴这种「先以保守速率上 10–30 个特征，再逐步放大」的滚动方法，把效率改进的迭代周期一周拿一次结果，而不是一次大改。</li>
-</ol>
-<p>部署侧，论文强调 serving 路径无可测量延迟开销，这意味着改造成本主要在「控制平面 + 训练日志一致性」两个工程模块——对于已经有特征平台与训练管线的中型团队，是非常划算的一次性投入。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-00324"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>8 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2605.00327" data-paper-id="arxiv:2605.00327" data-card>
@@ -169,103 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>把 DPO 的“多负样本”看成排序里的“困难负样本挖掘”问题，是 LLM-Rec 训练范式与传统 ranking 训练经验对齐的关键洞察。社区搜索的相关性精排、CTR 预估与对齐微调都可以照此思路：识别每个 batch 中真正贴近决策边界的负样本，给予动态权重，避免简单负样本“偷走”梯度。这个改造代价低、无需新数据，是最容易迁移到现有 LLM-Rec 与 reranker 训练管线的优化点。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Xingyu Hu, Kai Zhang, Jiancan Wu, Shuli Wang, Chi Wang, Wenshuai Chen, Yinhua Zhu, Haitao Wang, Xing...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-04</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 3 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.00327" id="dr-arxiv-2605-00327">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>DynamicPO：用「边界负样本」破解 LLM-Rec 偏好优化坍塌</h1>
-<h2>1. 问题与动机</h2>
-<p>在 LLM-based 推荐里，DPO（Direct Preference Optimization）已经成为把 LLM 与用户隐式反馈对齐的主力方案。它的多负样本变体（DMPO）通过同时引入大量隐式负样本来加宽偏好边界。但论文发现一个反直觉现象——<strong>preference optimization collapse</strong>：随着负样本数 k 增大到一个临界值后，训练 loss 仍稳步下降，但 HitRatio@1 等推荐指标反而变差。论文 Figure 1b 给出量化证据：loss 曲线持续走低，但 HR@1 在 k 超阈值后陡降，意味着优化目标和评估目标渐行渐远。</p>
-<p>这个失败模式的重要性在于：当下大多数 LLM-Rec 训练管线都默认「负样本越多越好」，论文证明这是错误的——盲目堆负样本会让模型把梯度预算花在「轻松能区分的样本」上，反而让真正定义偏好边界的「难负样本」被忽视。这与传统 ranking 里「困难负样本挖掘」的经验完全打通，是把 DPO 范式重新接回 ranking 工程经验的关键诊断。</p>
-<h2>2. 方法详解</h2>
-<p>论文先做了一次关键的理论拆解：把每个 prompt 下的 k 个负样本分成两类——</p>
-<ul>
-<li><strong>Model-Discriminative Negatives 𝒮</strong>：与正样本 likelihood 差距大、模型已经能轻松区分；</li>
-<li><strong>Boundary-Critical Negatives ℬ</strong>：likelihood 差距小、贴近决策边界、决定边界形状的关键样本。</li>
-</ul>
-<p>经验上 |𝒮| ≫ |ℬ|（Figure 3 显示 ℬ 占比仅约 6.3% → 7.6%）。论文 Eq.(3) 给出梯度分解：</p>
-<pre><code>(1/k) Σ ∇log π(y_l^i) = (|𝒮|/k) · ḡ_𝒮 + (|ℬ|/k) · ḡ_ℬ</code></pre>
-<p>由于 |𝒮|/k 远大于 |ℬ|/k，聚合梯度被简单负样本主导，loss 下降是「捷径式」的——loss 减小靠的是把 𝒮 推得更远，但 ℬ 几乎没在动，决策边界因此被弱化。</p>
-<p><strong>DynamicPO 设计为两阶段 + 动态 β 三件套</strong>：</p>
-<p><strong>Stage 1 - Preference Dominance Identification</strong></p>
-<pre><code>𝒩_vio = { n ∈ 𝒩 | L(n) &gt; L_p }</code></pre>
-<p>如果出现「负样本得分高于正样本」的违例，立即把这些违例样本提到首位作为 ℬ。</p>
-<p><strong>Stage 2 - Likelihood Clustering</strong><br>如果没有违例，则对负样本的 log-likelihood 做 k-means（k=3），把它们分成 𝒞_top / 𝒞_mid / 𝒞_bot，取 likelihood 最高的一簇 𝒞_top 作为 ℬ——直觉是「最难区分的那一簇就是边界」。</p>
-<p><strong>Stage 3 - Dynamic β Adjustment（dual-margin）</strong><br>对每个 boundary 负样本，按下式计算自适应的 β：</p>
-<pre><code>β = β₀ · (1 + α · tanh( (δ_p − δ_n − γ) / (|δ_p| + |δ_n|) ))</code></pre>
-<p>其中：</p>
-<ul>
-<li><strong>δ_p = L⁺ − L^b</strong>：正样本到边界的 margin（衡量歧义度）；</li>
-<li><strong>δ_n = L^b − L^e</strong>：边界到 easy 负样本的 margin（衡量信息差）；</li>
-<li><strong>γ</strong>：内禀 margin 超参；</li>
-<li><strong>α</strong>：调整强度。</li>
-</ul>
-<p>直觉上，δ_p 大、δ_n 小意味着该负样本既难区分又信息量高，需要更小的 β（更大可塑性）；反之则 β 增大保持稳定。整套策略只在原 DPO loss 之上加一层每样本 β 调整，几乎零侵入。</p>
-<p>训练设置：base = Llama2-7b-hf / Llama3-8B-Instruct / Qwen2.5-7B-Instruct，每 prompt 15 个负样本，β₀=1, α=0.5, γ=6。多数实验在单机 8 卡 A100 训练规模。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>诊断了 preference optimization collapse</strong>：明确指出「loss ↓ 但指标 ↓」的根因是梯度被简单负样本主导，把传统 ranking 「困难负样本挖掘」的直觉迁移回 DPO 训练。</li>
-</ol>
-<ol>
-<li><strong>梯度分解证明</strong>（Eq.3）：以可读的数学形式说明为什么单纯增加 k 反而会稀释 ℬ 的梯度信号——这是后续所有改进方案的统一框架。</li>
-</ol>
-<ol>
-<li><strong>两阶段 boundary 识别</strong>：用「违例优先 + likelihood 聚类」两个简单规则识别 ℬ，避免引入新的可学习模块；既轻量又稳定，是其他基于难负样本挖掘的方法没能解决的工程化痛点。</li>
-</ol>
-<ol>
-<li><strong>Dual-margin 动态 β</strong>：把 β-DPO 的样本级 β 思想拓展到多负样本场景，结合「正-边界 + 边界-easy」两个 margin 给出可解释的强度公式，避免硬阈值。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p><strong>Table 2 主表（HitRatio@1，从 21 候选中重排）</strong>：</p>
-<table><thead><tr><th>方法</th><th>LastFM</th><th>Goodreads</th><th>Steam</th></tr></thead><tbody><tr><td>GRU4Rec / Caser / SASRec / MoRec</td><td>较低</td><td>较低</td><td>较低</td></tr><tr><td>TALLRec / LLaRA</td><td>中等</td><td>中等</td><td>中等</td></tr><tr><td>DMPO</td><td>0.5848</td><td>0.5349</td><td>0.6383</td></tr><tr><td>MPPO</td><td>0.6597</td><td>—</td><td>—</td></tr><tr><td>S-DPO</td><td>0.6617</td><td>—</td><td>—</td></tr><tr><td><strong>DynamicPO</strong></td><td><strong>0.6661</strong></td><td><strong>0.6728</strong></td><td><strong>0.6990</strong></td></tr></tbody></table>
-<p>相比 DMPO，DynamicPO 在 LastFM/Goodreads/Steam 上分别 +13.9% / +25.8% / +9.5%；其中 Goodreads 上的 +25.8% 表明：在用户兴趣广、负样本噪声大的场景下，boundary 识别带来的好处最大。</p>
-<p><strong>Table 3（不同 backbone）</strong>：Llama3-8B 上 LastFM +17.6% / Goodreads +15.0%；Qwen2.5-7B 上 LastFM +9.2% / Goodreads +11.2%。说明方法对底座模型不敏感。</p>
-<p><strong>Table 4（套到其他偏好优化目标）</strong>：把 DynamicPO 的 boundary 选择 + 动态 β 套到 MPPO 上，LastFM 0.6597→0.6906（+4.7%）；套到 S-DPO 上 0.6617→0.6666（+0.7%），证明这是一个目标无关的 wrapper。</p>
-<p><strong>Figure 4b（reward accuracy 演化）</strong>：训练末期模型对偏好对的判别准确率从 42.8% → 70.5%，提升 27.7 个百分点，说明边界确实变锐了。</p>
-<p><strong>Table 5（计算开销）</strong>：Llama2-7b-hf 上训练 16h38min → 16h41min，仅 0.85% 额外耗时。</p>
-<p><strong>Table 6（Ablation, LastFM）</strong>：</p>
-<table><thead><tr><th>变体</th><th>HitRatio@1</th></tr></thead><tbody><tr><td>DMPO baseline</td><td>0.5848</td></tr><tr><td>去掉 Stage I（违例优先）</td><td>0.6621</td></tr><tr><td>去掉 Stage II（聚类）</td><td>0.6549</td></tr><tr><td>两阶段都去</td><td>0.5884</td></tr><tr><td>去掉动态 β</td><td>0.6593</td></tr><tr><td><strong>完整 DynamicPO</strong></td><td><strong>0.6661</strong></td></tr></tbody></table>
-<p>几个观察：</p>
-<ul>
-<li>Stage II（聚类挑边界负样本）单项贡献最大；</li>
-<li>两阶段都去几乎退化为 DMPO 基线，说明边界识别才是第一性收益；</li>
-<li>动态 β 是锦上添花（+0.6 个百分点），但在难场景里能帮助稳定收敛。</li>
-</ul>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确点出：现有 dynamic-β 方法（如 β-DPO）「未考虑推荐场景的多负样本与隐式反馈特性」，这正是 DynamicPO 设计 dual-margin 的动机；论文承认这一公式还未泛化到通用 RLHF。</p>
-<p>未来方向：把用户社交关系网络等结构信号引入边界识别，让动态 β 同时考虑用户群体先验，提升可解释性与跨用户泛化。</p>
-<h2>6. 工业实践意义</h2>
-<p>社区搜索 / 推荐场景对这套方法的可借鉴度极高：</p>
-<ol>
-<li><strong>直接迁移到 reranker / LLM 精排</strong>。我们的相关性精排和 CTR 训练里已经有大量隐式反馈负样本（曝光未点击、跳出等），完全可以把 DynamicPO 的 boundary 选择 + 动态 β 当成一层 wrapper 套上去——0.85% 的训练开销几乎免费，但能解决「负样本越多越糟」的常见痛点。</li>
-</ol>
-<ol>
-<li><strong>「违例优先」要先落地</strong>。Stage I 把负样本得分高于正样本的违例样本提到首位，这一规则不仅适用于 DPO，对所有 listwise/pairwise 排序训练都成立；属于 0 成本的工程化改造，应该作为 ranker 训练的默认 pre-processing。</li>
-</ol>
-<ol>
-<li><strong>聚类挑边界负样本是实用替代方案</strong>。在没有线上「真实困难负样本日志」时，用 k-means(k=3) 在 batch 内对负样本做聚类挑出最 likelihood 高的一簇，是一个简单稳健的 hard-negative mining 替代方案；不依赖额外的检索/标注 pipeline，特别适合中小团队。</li>
-</ol>
-<ol>
-<li><strong>可作为离线诊断工具</strong>。Figure 1b/3 的「loss 与指标背离 + 边界负样本占比上升」可以直接作为我们 reranker / LLM-Rec 训练的健康度检查：发现这一信号时，应当怀疑负样本采样而不是模型容量。</li>
-</ol>
-<ol>
-<li><strong>延迟与部署</strong>：方法只改训练，不改推理路径，没有任何 serving 端代价；落地路径短，是值得在下一次精排迭代里直接试的优化。</li>
-</ol></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-00327"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2605.00499" data-paper-id="arxiv:2605.00499" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.95</span></div>
@@ -369,60 +179,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

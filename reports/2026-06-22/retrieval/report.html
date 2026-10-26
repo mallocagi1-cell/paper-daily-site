@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,38 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>多向量/late interaction（ColBERT 系）召回质量强但内存吃不消，Stellar 的解法是稀疏粗筛 + 磁盘 late interaction 两段式——先用 LRF 的 lexical 表示砍候选，再用成本模型决定哪些 token embedding 值得从磁盘读。对社区搜索做语义匹配/精排时，这套 disk-backed 方案给出了在不牺牲多向量精度的前提下控内存的可借鉴设计；LRF 把 MLLM 当稀疏编码器用，也提示了一个模型同时产出稠密+稀疏表示的统一路线。</div>
     <div class="foot">Yuxiang Guo, Zhonghao Hu, Yuren Mao, Yuhang Liu, Congcong Ge, Xiaolu Zhang, Jun Zhou, Yunj... · 2026-06-18 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.19960" id="dr-arxiv-2606-19960">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>Stellar 深度解读</h2>
-<h3>1. 问题与动机</h3>
-<p>多模态文档检索（给定自然语言 query，从同时含文本和图表的文档页语料里选出相关页）是 RAG 的关键一环。当前 SOTA 走 vision-centric 多向量路线（ColPali、M3DocRAG）：把每个文档页渲染成图、用 MLLM 编码成一组 token 级 embedding，query 端也是多向量，靠 late interaction（MaxSim，Eq.1 score_mul = Σ_i max_j e_i^q·e_j^d）算细粒度相关性。效果好，但内存爆炸——论文估算 ColPali 给 240 万文档语料存 token embedding 要 &gt;800GB 内存、AWS r7iz.32xlarge 上每月 &gt;$8,500。量化（QColPali/PLAID）治标不治本：离线压缩阶段仍要把原始 token embedding 全 load 进内存，检索期内存随语料线性涨。Stellar 换范式：token embedding 落到便宜的磁盘，检索时只把少量候选调进内存做 late interaction。这带来两个新挑战：(I) 怎么设计轻量又高召回的一阶段过滤器把候选从全库砍到 top-k₁；(II) 候选定位后怎么压低 disk-to-memory 的 I/O 延迟（随机 I/O 是瓶颈）。</p>
-<h3>2. 方法详解</h3>
-<p>Stellar = LRF（一阶段稀疏过滤）+ DLI（二阶段磁盘 late interaction）。<br><strong>LRF（Lexical Representation-based Filtering）</strong>：搭一个 siamese 稀疏双编码器，复用 MLLM 预训练的 next-token 预测头 f_head 当 lexical 投影层，把每个 token 的 last-layer hidden h_i 投到 |V|=151,936 维词表空间 w_i = f_head(h_i)（Eq.2）；对 w_i 做 ReLU 去负值，再跨 token 做 max-pooling：z_j = max_i log(1+ReLU(w_ij))（Eq.3），得到文档/query 的稀疏向量。训练用 in-batch InfoNCE（Eq.4）+ FLOPs 正则（Eq.5，λ₁=9e-5 文档 / λ₂=6e-5 query）逼稀疏。这套表示平均只有约 200 个非零维（151,936 维里），稀疏率约 99.87%，于是能建倒排索引，在线对 query 只遍历其非零维对应的 posting list 累加分数（Eq.7），过滤出 top-k₁=100 候选。<br><strong>DLI（Disk-backed Late Interaction）</strong>：文档另存一份多向量 e_i = Wh_i + b（线性投影），用 pairwise contrastive loss（Eq.8，L_pw = 1/N Σ log(1+exp(s_i⁻ − s_i⁺))）微调。落盘布局靠 Balanced Clustering Algorithm（Algorithm 1）：先 k-means 出 K=⌈|D|/s_exp⌉ 簇，超过 s_exp=50 的递归拆分、小于 s_min=3 的解散重分配，同簇 token embedding 连续存成一个 block，配文档级 + block 级两级索引。在线读盘用 cost-aware loading 在 FBL（整块顺序读）和 SVL（按需随机读）间按代价模型（Eq.9/10，用顺序吞吐 R_seq 和随机吞吐 R_rand 估时）选更快的那个。最后 score 融合：score_fus = α·Z(score_spa) + Z(score_mul)（Eq.11，Z 是 z-normalization，α=0.3）。backbone 用 Qwen2-VL-2B（ViT + Qwen2-1.5B），LoRA r=32 单 epoch，τ=1，在线检索全程跑在 CPU（Intel Xeon Silver 4316 / 256GB RAM）。</p>
-<h3>3. 核心技术贡献</h3>
-<p>(1) <strong>把 MLLM 的 LM head 复用成稀疏 lexical 编码器</strong>：不是新训一个稀疏模型，而是用预训练 f_head 初始化投影层再微调，把多模态页投到词表空间产生可建倒排的稀疏表示——99.87% 稀疏让一阶段过滤又快又省内存，且天然兼容词项倒排。<br>(2) <strong>表示-存储协同设计（representation-storage co-design）</strong>：token embedding 存盘而非压缩进内存，根治了量化路线&quot;离线压缩仍要全量 load&quot;的内存上限问题。<br>(3) <strong>Balanced Clustering Algorithm</strong>：解决朴素聚类块大小不均导致的随机 I/O 抖动，保证每次 block 读不会因超大簇 stall。<br>(4) <strong>cost-aware loading</strong>：用一个轻量代价模型在 FBL/SVL 间动态选路，避免一刀切。消融显示这些都不是摆设：去掉 BCA（用 NCA）latency 全面变高，FBL/SVL 单用都更慢。</p>
-<h3>4. 实验结果分析</h3>
-<p>4 个公开基准（DocVQA/InfoVQA/ArXivQA/PlotQA）+ 自建 LargeDoc（40 万文档、94 query，基于 Docmatix 的 240 万 PDF 采样 + gte-Qwen2/DSE/ColPali 召回并集 + GPT-4o 清假负 + 3 名研究生人工校验）。<br><strong>效果（Table II，R@1/R@10/M@10）</strong>：Stellar 在 DocVQA 84.43/97.29/89.05、InfoVQA 86.91/99.16/92.10、LargeDoc 75.53/87.23/79.47，R@1 全面拿第一，相比 SOTA 多向量 ColPali（DocVQA 82.74、LargeDoc 74.47）持平或更优；single-vector 方法（DSE/VisRet/Bi-Qwen）平均落后多向量约 15 个 R@1 点。<br><strong>内存/延迟（Table III）是核心卖点</strong>：LargeDoc 上 ColPali 要 147,355MB / 42,115ms，Stellar 只要 988MB（0.96GB）/ 110ms——内存约 150× 降、延迟约 383× 降；对 QColPali（13,699MB/613ms）也是 14× 内存、5.6× 延迟。中等规模 ArXivQA/PlotQA 上 ColPali/QColPali 分别要 74.5×/9.3× 于 Stellar 的内存。注意小规模 DocVQA 上 Stellar 延迟 50.16ms 反略高于 QColPali 45.81ms，优势要到大语料才拉开。<br><strong>消融</strong>：去 score fusion（Table V）LargeDoc R@1 从 75.53 掉到 70.21（−5.32）、DocVQA 84.43→82.91，证明 sparse+dense 互补；α 敏感性（Fig 8）在 0.3 处 R@10/M@10 见顶。DLI 加载策略消融（Table IV）：Stellar 的 cost-aware loading 在 DocVQA 50.16ms，优于 FBL 178.11ms、SVL 63.20ms、NCA 朴素聚类 60.33ms。LRF vs 用 DSE 做稠密一阶段过滤：DSE 在 40 万规模一阶段就要 2.3GB 内存，是 Stellar 端到端（0.96GB）的两倍多——稠密过滤本身会成内存瓶颈。</p>
-<h3>5. 局限与未来方向</h3>
-<p>论文无独立 Limitations 节，结论里点了两个方向：(1) 进一步加速 disk-to-memory loading，靠 hardware-aware prefetching 或轻量 embedding caching；(2) 把单文档检索扩展到 multi-document retrieval（答案分散在多页）。从实验也能看出几处隐含局限：小语料（DocVQA/InfoVQA）下磁盘方案的延迟优势不明显、甚至略逊量化方案，方法定位在大语料；DocVQA 高分辨率图产生更多 visual token，late interaction 延迟更高，说明 DLI 延迟仍受单文档 token 数牵制；LargeDoc 只有 94 个 query，评测规模偏小，统计稳定性存疑。</p>
-<h3>6. 工业实践意义</h3>
-<p>对做大规模检索的搜推团队，Stellar 最直接的借鉴是&quot;多向量 late interaction 不必把 embedding 全压进内存&quot;这条路线：当向量库大到内存放不下时，与其堆量化牺牲精度，不如把 token embedding 落盘 + 一阶段稀疏过滤 + cost-aware 读盘，在保住 ColPali 级精度的同时把内存打到 1/150。具体可拆三块复用：(1) 复用 LM head 当稀疏编码器、配 FLOPs 正则做到 ~200 非零维，直接接现有倒排基建，适合 UGC 短文本/文档的一阶段召回；(2) BCA 的&quot;按簇连续落盘 + 限制块大小&quot;对任何 disk-based ANN 都通用，能稳住随机 I/O；(3) sparse+dense 的 z-normalization 融合（α=0.3）是低成本提点项，LargeDoc 上 +5.32 R@1。部署上 Stellar 全程 CPU 推理、0.96GB 内存撑 40 万文档，对成本敏感、无 GPU 常驻的检索服务很友好；但甜区是大语料，小库直接用内存多向量反而更省事。代码：https://github.com/ZJU-DAILY/Stellar</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2606-19960"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>5 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:2606.20280" data-paper-id="arxiv:2606.20280" data-card>
@@ -180,60 +149,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

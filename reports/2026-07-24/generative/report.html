@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,55 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>“索引即模型”消除了微服务边界对候选规模和模型复杂度的限制，也为把 LLM 的意图理解与内容语义直接嵌入召回层提供接口。UGC 搜推团队可先把资格过滤、相似检索与轻量重排模块化为同一训练图，再用统一离线指标验证延迟与成本收益。</div>
     <div class="foot">Lei Chen, Yiyi Pan, Ivy Sun, Sha Meng, Cornelia Carapcea, Shilin Ding, Ram Ramanathan, Nip... · 2026-05-26 · 技术博客</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="web:meta-silvertorch-2026-05-26" id="dr-web-meta-silvertorch-2026-05-26">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 13 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>深度解读：SilverTorch 将推荐索引变成可组合模型</h1>
-<h2>1. 问题与动机</h2>
-<p>工业推荐召回通常把用户塔、ANN 索引、资格过滤和后续打分拆成多个服务：模型在 PyTorch/TensorFlow 中开发，向量索引由 Faiss、Milvus 或专有 CPU 服务维护，语言、地区、可见性等过滤再由倒排索引执行。论文指出这种分层并非只是工程风格差异，而会形成三个系统上限。其一，各组件拥有独立版本、调度、批处理和发布逻辑，端到端实验需要跨团队协调；其二，客户端必须扇出请求并搬运中间结果，无法联合优化搜索与过滤；其三，CPU 服务靠横向扩容支撑更大候选和复杂相似度，成本近似线性增长，难以承接多任务召回及深层交互。</p>
-<p>版本一致性是作者给出的直接生产证据。服务化方案中，用户塔几分钟即可发布，但数亿物品的 KNN 索引构建超过 4 小时；2022 年一次错误版本切换曾让生产性能指标下降 30%。与此同时，Faiss-GPU 的推荐用法受 Top-K/Probe 规模限制，而资格过滤仍主要停留在 CPU。推荐模型正从简单点积走向 HSTU 长序列、Mixture of Logits 和多任务价值建模，传统索引服务无法随训练图一起演化。SilverTorch 因而提出 Index as Model：把 ANN、过滤、缓存、重排和价值聚合全部定义为模型层，发布成一个可由纯 C++ Predictor 执行的快照。</p>
-<h2>2. 方法详解</h2>
-<p>SilverTorch 的发布链路先加载训练完成的用户塔和物品塔，在 GPU 上计算物品向量，并用 KMeans++ 构建 IVF 聚类。ANN 向量被全局 min/max 缩放到 Int8 的 [-128,127] 区间；用户塔、OverArch 和 Value Model 采用 BFloat16。资格特征不再写入倒排服务，而是编码为 GPU Bloom Index：每个物品用 M 位签名表示，k 个哈希函数把特征写入相应位；查询也生成签名，匹配等价于检查查询置 1 的位是否都在物品签名中为 1。实现把矩阵转置后只访问查询为 1 的行，并用一条 64 位 AND 指令同时处理 64 个物品，避免逐物品不规则访存。</p>
-<p>ANN 层采用 IVF，但把索引选择、Embedding Gather、点积和 Top-K 融成 Int8 Kernel。标准实现会先物化巨大的临时向量张量，SilverTorch 则让 Warp 连续读取物品块，边读边做乘加，不生成中间 Gather 结果。Int8 将向量内存约减半，节省的显存用于让 OverArch 打分更多候选。作者报告在 64 probes、top-2048 时没有可测的 Recall 损失；系统实际支持 O(10,000) 的预筛候选，再由 OverArch 降到 O(1,000) 交给精排。</p>
-<p>关键的联合优化是 Probe-then-Filter。传统 Filter-then-Probe 先对全库过滤，但 ANN 最终只会访问少数被探测的聚类，其他过滤计算全部浪费。SilverTorch 先找出 IVF 的目标聚类，只对其中物品生成 Bloom 位掩码，然后在同一遍 Kernel 中完成过滤与相似度计算。由于 ANN 探测与资格过滤是合取条件，交换顺序不改变给定 probes 下的结果。论文给出的 8100 万物品、9000 个聚类、256 probes 案例只处理 230 万物品，约占 2.8%，过滤计算与临时显存均减少约 30 倍。</p>
-<p>扩展层包含两部分。OverArch 在 ANN 后读取预先缓存于 GPU 的物品向量，可使用 MLP、Self-Attention 或 Mixture of Logits 建模点积无法表达的用户—物品交互。多任务召回为点赞、分享、评论等目标生成任务专属用户向量，但共享物品索引；Value Model 再解析 JSON 风格业务公式，把各任务预测合成统一期望价值。多 GPU 时 ANN/Bloom 索引按物品分片，OverArch 和 Value Model 在各卡复制，局部结果汇总后统一打分；Embedding 表仍可放在 CPU 参数服务器。</p>
-<p>实验使用两个生产采样数据集，候选规模分别为 1000 万和 8000 万，向量维度 128，硬件为 A100 40GB；用户塔采用 HSTU，OverArch 使用 Mixture of Logits。系统回放 5000 个真实请求，在 P99 低于 200ms 的约束下逐步加压测最大 QPS。80M 配置用 2 张 GPU，10M 用 1 张；ANN 对照包括 Faiss-CPU IVF、Faiss-GPU IVF 与 HNSW，过滤对照为生产 CPU 倒排和 GPU Forward Index。ANN 微基准先预热 50 个 Batch，再测 100 个 Batch，Batch Size 为 16。论文不是训练算法工作，因此未报告优化器、训练 Batch 或训练步数；这不影响服务评测，但限制了端到端模型复现。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，SilverTorch 把索引从外部状态提升为模型参数。ANN Tensor、Bloom Tensor、用户塔、缓存和打分层随一个快照发布，既消除用户/物品版本漂移，也让统一编译、量化和容量估算成为可能。发布阶段利用 GPU 后，完整快照构建从数天缩短到约 1 小时。</p>
-<p>第二，论文首次把推荐资格过滤系统性地搬到 GPU，并利用推荐特征较少、查询结构可预知的性质设计 Bloom Index。它牺牲极低概率的假阳性来换取连续位运算；假阳性还会被后续排序剔除。第三，Int8 ANN 与 Bloom Filter 的联合顺序优化不是简单拼装两个 Kernel，而是根据 IVF 只访问部分聚类的性质推迟过滤，直接删除无效计算和 Scratch Memory。</p>
-<p>第四，节省的系统预算被明确返还给模型能力：OverArch 用非点积交互重排更多候选，Value Model 把多任务预测翻译成业务价值。E-Task 上，单纯 SilverTorch 在 Recall@100 为 0.20306；加入完整精度 OverArch 后为 0.24189，同时 Recall@20 从 CPU 基线 0.08239 升到 0.09181。系统创新因此不只追求更快，而是把吞吐余量转化为更复杂的召回建模。</p>
-<h2>4. 实验结果分析</h2>
-<p>80M 数据、生产 24 probes 设置下，SilverTorch 达到 1210 QPS；加入 OverArch/Value Model 后仍有 771 QPS。其成本表给出了可以直接复算的结果：</p>
-<table><thead><tr><th>方案</th><th>QPS</th><th>每小时估算 TCO</th><th>每千请求成本</th></tr></thead><tbody><tr><td>CPU 基线</td><td>51</td><td>$28.92</td><td>$0.1580</td></tr><tr><td>GPU 基线 Faiss2 + Forward4</td><td>186</td><td>$30.29</td><td>$0.0452</td></tr><tr><td>GPU 基线 Faiss2 + Forward6</td><td>340</td><td>$33.27</td><td>$0.0272</td></tr><tr><td>SilverTorch</td><td>1210</td><td>$33.27</td><td>$0.0077</td></tr><tr><td>SilverTorch + OverArch</td><td>771</td><td>$33.27</td><td>$0.0120</td></tr></tbody></table>
-<p>按每千请求计算，纯 SilverTorch 相比 CPU 基线约节省 95.1%，即成本效率约 20.5 倍；工程博客汇总为 20.9 倍。与最强列出的 GPU 基线相比，每千请求成本也下降约 71.7%。更重要的是，Pool 从 80M 降到 10M 时 SilverTorch QPS 继续上升到 3802，而服务化基线因每台服务器承载量接近，吞吐变化不明显，说明统一 GPU 路径对候选规模更敏感。</p>
-<p>联合索引消融显示，Probe-then-Filter 比先做全量 Bloom Filter 的 Filter-then-Probe 提高约 17%–25% QPS。80M 实例中模型显存大致由 5GB Bloom Index、5GB ANN Index、10GB FP16 Embedding Cache、12GB OverArch 与 Value Model 权重构成。该分解说明 Bloom/Int8 的意义不仅是局部加速，还决定复杂交互层是否装得进 40GB A100。</p>
-<p>质量结果呈现了速度与召回的可控交换。E-Task 的 CPU 基线在 Recall@100/500/1000 分别为 0.19179/0.42950/0.44127；SilverTorch + OverArch 为 0.24189/0.44758/0.45727，相对提升 25.04%、5.6%、2.4%，QPS 仍从 51 提至 771。Recall@20 达 0.09181，比基线高 28.2%。低位 Bloom 版本把签名从 1024 位降到 768 位后假阳性上升，却没有降低端到端召回，部分点还略升，说明过滤是训练外约束，微量放宽会让 OverArch 获得更多可能相关候选。</p>
-<p>Int8 ANN 在 2000 万条、128 维向量微基准中跨 Recall 0.35–0.92 均快于 Faiss-GPU；代价是无法到达 0.95 Recall。但 Faiss 为达到 0.95 需要 CPU 1024 probes 或 GPU 512 probes，延迟显著恶化。对推荐系统而言，作者选择以较低成本获取宽候选，再让 OverArch 修正点积误差。这是一个系统级结论：不要孤立追求 ANN 的极高 Recall，应优化 ANN、预排序和最终召回质量的总预算。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出，SilverTorch 当前聚焦 Embedding-based Retrieval，生产中仍存在规则召回频道；这些频道需要封装 CPU Key-Value Index 为模型层，或只复用 Bloom Filter 后再让 GPU OverArch 统一打分。频控、历史过滤等动态约束目前通常留在后续排序，并未全部进入统一快照。</p>
-<p>IVF 也带来已知边界。Probe-then-Filter 与 Filter-then-Probe 在固定 probes 下结果等价，但当过滤条件选择性极强时，被探测聚类可能没有足够合格物品，只能增加 probes；论文的语言、国家等过滤相对宽，不能代表稀有主题或严格安全策略。Bloom Index 还有假阳性，虽然下游可以清理，但在必须零误放的合规过滤中不能单独承担最终判定。</p>
-<p>物品新鲜度仍是未完成工作。作者提出独立 Fresh Index，与主索引同布局并在线合并候选，但把具体更新协议、压缩和一致性留作未来研究；简单预留内存并线性扫描新增项无法扩展。论文也没有公开线上 A/B、真实 P99 数值、模型训练成本或故障恢复时间，TCO 基于相近 AWS 实例估算而非完整财务账本。外部团队还需要评估 GPU 利用率波动、跨卡合并和 CPU 参数服务器是否成为新瓶颈。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜索/推荐团队，最可操作的第一步不是重写全部服务，而是把现有请求画成可测量的数据流：用户塔发布、索引构建、资格过滤、网络扇出、候选合并、预排序分别记录 P50/P99、QPS、显存和每千请求成本。若索引构建远慢于模型发布，先解决统一快照和版本原子切换；SilverTorch 的 30% 版本事故说明这一收益可能先于 GPU 加速出现。</p>
-<p>第二步可从宽而稳定的过滤条件试点 Bloom GPU 化，例如语言、地区、内容类型和基础资格；安全下架、隐私、频控仍保留精确后验检查。ANN 应先支持大 Top-K 的 Int8 路径，用同一批生产请求绘制 Recall—Latency 曲线，再把节省的显存给轻量 OverArch。对社区 UGC，OverArch 可加入查询—帖子跨特征、作者关系、时效和会话上下文；Value Model 则把点击、长停留、收藏、评论和负反馈映射为业务价值，避免只优化单一 CTR。</p>
-<p>部署容量可以直接参考论文的资源账：80M、128 维实例在两张 A100 40GB 上运行，但模型权重、缓存、索引各占显存大头，不能只按向量库大小估卡数。上线前应以影子流量复现 5000 请求以上的混合过滤分布，保持固定 P99 预算逐步加压，并加入突发流量、索引更新和回滚演练。若目标规模很小，论文也建议切换 CPU PyTorch Runtime，而不是为了架构统一强行上 GPU。</p>
-<p>SilverTorch 对生成式搜推的核心启示是，复杂模型是否可上线取决于检索系统能否把基础算子压缩成一个可联合优化的执行图。它没有直接生成物品 ID，却通过更宽候选、非点积 OverArch 和多任务价值层，为 LLM 级意图与内容表征留下了在线预算。真正值得复制的不是某个 Kernel，而是把索引、过滤、模型质量、成本和版本一致性放进同一个优化问题。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-web-meta-silvertorch-2026-05-26"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:2605.23312" data-paper-id="arxiv:2605.23312" data-card>
@@ -123,61 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>推荐模型扩容不能只看统一损失曲线，应分别估计每个任务的剩余容量，再把训练成本、在线缓存陈旧和新内容冷启动纳入同一决策。对社区搜索可按内容类型拟合独立 Scaling Law，优先扩容仍有 headroom 的任务，并用语义塔承接新帖冷启动。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Qiuling Xu, Ko-Jen Hsiao, Moumita Bhattacharya</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-22</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 5 · Evidence 5 · Timely 2</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.23312" id="dr-arxiv-2605-23312">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>Towards Generalizable and Efficient Large-Scale Generative Recommenders 深度解读</h2>
-<h3>1. 问题与动机</h3>
-<p>论文来自 Netflix 的标题推荐（title recommendation）生产实践，核心问题是：把生成式推荐主干从 2M 扩到 1B 参数，预训练阶段的收益<strong>不会自动</strong>传导到下游应用。作者把&quot;生产迁移&quot;拆成多个互相牵制的因素：任务自身的提升空间（task headroom）、重复训练成本、serving 延迟、item 时效性。</p>
-<p>量化证据很硬：系统每个刷新周期要在 <strong>2 万亿（2 trillion）行为 token</strong> 上训练，频繁重训使效率成为硬约束；缓存式 serving 带来 staleness——训练标签里的 item 在 serving 时可能已被消费；新标题缺乏可靠的协同 embedding。最关键的观察是&quot;serving 延迟敏感性因任务而异&quot;：Task B 在 24 小时 serving 延迟下 MRR 掉 31%、48 小时掉 41%，而 Task A 几乎不受影响（≤4%），Task C 居中（48h 掉 18%）。这说明&quot;该不该堆模型&quot;不能一刀切，必须按任务诊断。</p>
-<h3>2. 方法详解</h3>
-<p><strong>主干架构</strong>：基于 HSTU（hierarchical sequential transducer）的 Transformer 生成式推荐器，把用户行为编码成 token 序列，每个 event 把 action、context、metadata 压进单个 token。参数 scaling 区间 2M→1B（不含 embedding 与 decoding 层），embedding 维度 4096。</p>
-<p><strong>四个效率配方</strong>是落地关键：</p>
-<ol>
-<li><strong>Sampled softmax</strong>：仅用 1% 均匀采样负样本，且<strong>不做 LogQ 校正</strong>（刻意保持训练 recipe 简单）。</li>
-<li><strong>Projected decoding head</strong>：把维度从 d 投到 d/8（4096→512），在 10^6 词表规模下输出层 FLOPs 降 <strong>35.5×</strong>，10^7 item 规模下约降 <strong>249×</strong>——这是让&quot;十亿模型反复重训&quot;在工程上可行的核心。</li>
-<li><strong>Semantic item towers</strong>：用知识图谱 embedding、LLM2Vec 语言表征、人工标注特征，给协同信号弱的 item 兜底。</li>
-<li><strong>Collaborative-embedding masking</strong>：训练时按&quot;线上冷启动率&quot;随机替换 item embedding，让模型学会在没有协同 ID 时也能打分。</li>
-</ol>
-<p><strong>训练流程</strong>用&quot;small-to-large 漏斗&quot;：先在小主干上验证改动，再上十亿参数，避免直接在 1B 上试错的高成本。</p>
-<h3>3. 核心技术贡献</h3>
-<p><strong>贡献一：offset scaling-law 拟合作为诊断工具。</strong> 不同于传统 log-linear 拟合 P=a·log(N)+b，作者对每个任务拟合带偏移的形式 <strong>P(N)=P₀−(N/N₀)^(−a)</strong>，其中 P₀ 是任务相关的饱和上限。在 Table 2 上 offset 形式全面胜出：Task A 的 RMSE 降 48.4%、Task B 降 61.8%、Task C 降 14.9%。诊断结论很直接——Task A P₀=0.311 已接近经验上限，Task C P₀≈1.075（基本被 1.0 截断）几乎饱和。这把&quot;还要不要继续堆容量&quot;变成可量化的决策，并区分&quot;下一步该加容量、还是改目标、还是改 item 表征&quot;。</p>
-<p><strong>贡献二：Multi-Token Prediction (MTP) 的 serving-horizon 依赖性。</strong> 论文揭示 MTP 不是无脑收益：在 48 小时缓存式 serving 下用优化窗口能涨 MRR，但在 &lt;1s p95 的在线路径上，窗口变大反而伤害顺序敏感的任务。</p>
-<p><strong>贡献三：语义塔 + OOV embedding 处理冷启动。</strong> 把语义证据与协同信号解耦，使新标题在没有协同 ID 时仍可打分。</p>
-<h3>4. 实验结果分析</h3>
-<p><strong>MTP 结果（Figure 5）</strong>：48h 缓存 serving + 优化窗口下，Task A +22.1%、Task B +27.8%、Task C +27.9% 相对 MRR；但在线 serving（&lt;1s p95）下，MTP 让 Task A +19.6%，却随窗口增大<strong>损害</strong> Task B/C——印证 MTP 的收益强依赖 serving 时序与是否顺序敏感。</p>
-<p><strong>Production-shadow 评测（Figure 7）</strong>：1M 用户 × 1 周影子流量，1B vs 2M 主干：Task A +22.5%、Task B +11.3%、Task C +7.4% MRR，冷启动标题（词表未见）<strong>+28.1%</strong>。两个对照很说明问题：冷启动收益最大，印证语义塔设计有效；Task C 收益最小，印证 scaling-law 预测的天花板。最终在多个生产 A/B 中取得正向结果。</p>
-<p><strong>消融/趋势</strong>：MRR 为主指标，作者称 Hit Rate、NDCG 趋势一致但未详列。</p>
-<h3>5. 局限与未来方向</h3>
-<p>作者明确指出：（1）分析只用三个粗粒度任务类别，回避了实现细节；（2）offset law 拟合要求指标有界，对无界目标适用性未知；（3）sampled softmax 省掉 LogQ 校正是为简化，可能引入偏差；（4）production-shadow 衡量的是下游集成质量，不是单面的因果增益；（5）冷启动 masking 概率&quot;对齐线上冷启动率&quot;，但具体数值未披露。</p>
-<h3>6. 工业实践意义</h3>
-<p>对要落地生成式推荐/搜索的团队，这篇是难得的生产真账：</p>
-<ul>
-<li><strong>别只看离线 loss</strong>：模型 scale 只是迁移问题的一个分量，必须和 task headroom、解码成本、serving-延迟对齐、item 泛化一起评估。用 offset scaling-law 拟合判断&quot;哪些任务已到顶、哪些还能扛容量&quot;，按任务分配算力。</li>
-<li><strong>解码层是大模型反复重训的成本瓶颈</strong>：projected head（4096→512，FLOPs 降 35.5×~249×）+ 1% sampled softmax 是让十亿模型可运维的关键，对算力受限团队尤有参考。</li>
-<li><strong>MTP 要按 serving horizon 选用</strong>：缓存/可乱序场景受益，顺序敏感的在线路径慎用。</li>
-<li><strong>冷启动靠语义塔兜底</strong>：UGC/新内容密集的社区场景，知识图谱+语言表征+OOV embedding 的组合能在协同信号缺失时维持打分质量（此处冷启动 +28.1% 是最大亮点）。</li>
-</ul>
-<ul>
-<li><strong>时效性是被低估的隐形成本</strong>：Task B 在 48h serving 延迟下掉 41% MRR，说明对时效敏感的任务，缩短训练-serving 链路（更频繁刷新、更短缓存窗口）的收益可能大于堆模型容量；应把&quot;serving 延迟敏感性&quot;做成上线前标准画像，避免在已饱和或时效主导的任务上浪费算力。</li>
-</ul>
-<p><strong>部署考量</strong>：十亿主干的可运维性来自两点——projected head 把输出层从 4096 维压到 512 维，使大词表（10^7 item）下解码 FLOPs 降约 249×；small-to-large 漏斗把昂贵的 1B 验证前置到小模型上筛掉无效改动。这套组合让&quot;在 2 万亿 token 上反复重训十亿模型&quot;从纸面变成可落地流程，是想复刻 HSTU/生成式推荐 scaling 的团队绕不开的工程账。内存与延迟方面，sampled softmax（1% 负样本、省去 LogQ 校正）进一步压低训练开销，但代价是采样偏差未被显式纠正，落地时需自行评估对长尾排序的影响。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-23312"></span>
 </article>
 <article class="card t-generative" id="paper-acl:2026.acl-industry.97" data-paper-id="acl:2026.acl-industry.97" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.30</span></div>
@@ -217,96 +115,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>局部序号让同一输出神经元在不同请求中代表不同物品，难以沉淀跨请求的物品知识；全局 ID 能稳定动作空间并改善冷启动。社区搜索可为帖子构建语义 ID，再用约束解码保证输出仍来自本次候选集，从而兼顾生成式建模与线上安全。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Pengyue Jia, Xiaobei Wang, Yingyi Zhang, Shuchang Liu, Yupeng Hou, Hailan Yang, Xu Gao, Xiaopeng Li,...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-04-28</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 4 · Evidence 5 · Timely 2</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.25291" id="dr-arxiv-2604-25291">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>list-wise reranking 是现代推荐多阶段流水线的最后一环，决定最终曝光顺序，直接影响用户体验。Section 2 指出现有方法存在一个被长期忽视的根本缺陷：模型的 action space 是「local index」，即模型在第 i 个输出位置预测「选输入列表里的第几个 item」。问题在于同一个输出神经元（logits）在不同样本上对应的物品完全不同——一旦输入候选列表的顺序变化，第 3 号神经元代表的物品就换了。</p>
-<p>文章用 Proposition 2.1 给出了形式化证据：在 local index 设定下，输出层梯度存在不可消除的&quot;mapping-induced variance&quot;，下界为 <code>(1/N)(1−1/N)‖μⱼ‖²₂ &gt; 0</code>；而 Corollary 2.2 证明使用全局标签（与样本无关的 global identifier）时该方差为零。直观结果是模型很难学到稳定的物品本征效用，反而倾向于&quot;过拟合到 index 本身的 spurious 模式&quot;——例如学会&quot;第 1 个位置往往被选中&quot;，而非学会&quot;哪个具体物品该被选中&quot;。</p>
-<p>这一问题在 OneRec/TIGER 等生成式召回兴起后尤为突出：召回侧已经把 item 表示为 semantic ID 序列，但重排侧仍在用 local index 范式，导致召回-重排两段建模目标空间割裂，多阶段误差累积。</p>
-<h2>2. 方法详解</h2>
-<p>GloRank 的核心是把重排重新形式化为「在全局 token vocabulary 上生成 SID 序列」。</p>
-<p><strong>架构</strong>：T5 风格 encoder-decoder Transformer。</p>
-<p><strong>Semantic ID 构造</strong>：</p>
-<ul>
-<li>每个 item 用 title + description 经 Qwen3-embedding-4B 编码为稠密向量；</li>
-<li>用 RQ-Kmeans（残差量化 K-means）层次量化，M=4 个 codebook，每层 vocabulary 256；</li>
-<li>每个 item 因此被表示为长度 4 的离散 token 序列。</li>
-</ul>
-<p><strong>输入构造</strong>：序列化为 <code>S(𝒞) &lt;sep&gt; S(ℋ) &lt;sep&gt; &lt;rank&gt;</code>，其中 𝒞 是当前候选集（50 项）、ℋ 是用户历史。</p>
-<p><strong>自回归生成</strong>：decoder 在固定全局 token vocabulary <code>𝒱_token</code> 上做 softmax <code>P(yₜ | y&lt;t, X_input) = softmax(Wₒ · hₜ)</code>。同一个 logits 维度在所有样本里始终代表同一个 token——这是 global action space 的关键。</p>
-<p><strong>两阶段训练</strong>：</p>
-<ul>
-<li><strong>阶段一 Pre-training</strong>：监督式 next-token prediction，目标 list 由离线评估器从训练日志中筛出&quot;高质量目标 list&quot;。损失 <code>ℒ_pre = −Σ log P(yₜ<em> | y</em>&lt;t, X_input; θ)</code>。本阶段决定模型能否真正学到稳定的物品语义。</li>
-<li><strong>阶段二 Post-training</strong>：GRPO（Group Relative Policy Optimization），group size = 20、温度 τ=1.0、β=0（无 KL 惩罚），优化 list-wise utility 奖励。这一步把&quot;哪个排列最好&quot;的 list 级偏好直接灌进策略。</li>
-</ul>
-<p><strong>Inference</strong>：用 trie-based constrained decoding，把候选集 𝒞 的 SID 序列预编织成 trie，beam size = 20、输出长度 6（即重排后 top-6 from 50）。trie 同时保证生成结果都在候选集合内、不重复物品。文章指出，当候选数 N ≪ 全局 vocabulary 大小时，trie 开销可以忽略。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>1）理论分析</strong>（Section 2）：第一次把&quot;list-wise reranking 输出层梯度方差不可降&quot;这一结构性缺陷形式化，把&quot;为什么 list-wise 模型在小变动下结果抖动&quot;归结为 action space 的 mapping-induced variance，而非训练数据或正则化问题。</p>
-<p><strong>2）Global action space 形式化</strong>：把 reranking 从 &quot;select index&quot; 改成 &quot;generate identifier&quot;——一个看似只是输出维度变化的设计，实际把整个梯度更新的语义对齐了。同样的 logits 维度在所有样本里代表同一个 token，跨样本梯度是同向叠加的，模型才能学到&quot;物品本征效用&quot;。</p>
-<p><strong>3）两阶段训练 pipeline</strong>：监督式 pre-training 提供稳定的策略起点，GRPO post-training 把 list 级别奖励灌进来。Ablation 给出关键证据——去掉 pre-training 后 NDCG 从 90.08% 直接崩到 24.13%，证明纯 RL 在生成式重排上 cold start 极其困难。</p>
-<p><strong>4）Trie-based constrained decoding</strong>：在生成式范式下保证&quot;输出严格在候选集合内 + 不重复&quot;是非平凡的工程挑战，文章提出的 trie mask 在候选规模 N≪V 时开销可忽略，使得生成式重排具备落地速度。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>数据集</strong>：MovieLens-1M（161.6K lists、3K items）、Amazon Books（311.4K lists、38.1K items）、工业数据集（589.8K lists、17K items）。</p>
-<p><strong>整体效果（Table 2，主表）</strong>：</p>
-<ul>
-<li>Amazon Books：相对最强基线 GoalRank Precision +4.23%、NDCG +6.13%、MAP +9.23%；</li>
-<li>MovieLens-1M：Precision +3.03%、NDCG +4.95%、MAP +6.60%；</li>
-<li>工业数据集：Precision +3.99%、NDCG +2.35%、MAP +3.39%。</li>
-</ul>
-<p><strong>Ablations（Table 3）</strong>：</p>
-<ul>
-<li>w/o pre-training：在 Amazon NDCG 由 90.08% 跌到 24.13%，验证监督式起步必不可少；</li>
-<li>w/o post-training：核心排序敏感指标普遍下降 1–2 个百分点，GRPO 提供的是 list 级精修。</li>
-</ul>
-<p><strong>冷启动鲁棒性（Figure 6）</strong>：在候选集中加入 5% 训练时未见过的 item，GoalRank 在 MAP 上崩溃 &gt;88%，而 GloRank 仍能保持稳定——这是 global action space 的天然好处：未见过的 item 只要其 SID token 在 vocabulary 内，模型仍可生成。</p>
-<p><strong>超参（Figure 4）</strong>：group size G 越大效果越稳越好（GRPO 经验一致）；beam size 越大 Precision 上升但 MAP 反而下降——说明粗精度和排序排列质量之间存在权衡。</p>
-<p><strong>线上 A/B（Table 4，重要）</strong>：在一个 4 亿日活的内容平台上 7.8% 流量、连续 14 天测试：</p>
-<ul>
-<li>Watch Time +0.095%、Effective Views +0.111%、Like +0.286%、Comment +0.462%、Forward +0.447%；</li>
-<li>全部 p &lt; 0.05。</li>
-</ul>
-<p>互动型指标（Comment、Forward）的提升明显大于消费型指标（Watch Time、Views），暗示 GloRank 在&quot;识别真正与用户匹配的高质量内容&quot;上更准——这正是 global action space 应当带来的效果。</p>
-<h2>5. 局限与未来方向</h2>
-<p>文章没有单列 Limitations 节，但有几个明显限制：</p>
-<ul>
-<li>Trie 开销在候选 N ≪ |𝒱| 时被声称可忽略，但当候选规模放大到上千甚至更大（更早期粗排阶段），constrained decoding 的实际成本未做压力测试；</li>
-<li>依赖外部预训练 embedding（Qwen3-embedding-4B）做 SID 构造——这一步本身的质量决定整套系统的语义粒度，但 codebook 构建开销没有定量给出；</li>
-<li>选定 M=4 codebook 深度没有给出充分理由，更深的 codebook 可能进一步降低 SID 冲突但训练复杂度也涨；</li>
-<li>GRPO post-training 用 β=0（无 KL 惩罚），存在策略崩溃风险，论文中没有详尽讨论训练稳定性条件。</li>
-</ul>
-<p>工业落地中还会面临：物品库每天新增大量内容，SID codebook 是否要在线更新？冷启 item 进入 vocabulary 的延迟如何控制？这些都是部署时的真实挑战。</p>
-<h2>6. 工业实践意义</h2>
-<p>GloRank 给生成式推荐系统补齐了重要一块拼图——之前 OneRec/TIGER 解决了&quot;召回阶段如何用 SID 自回归生成候选&quot;，重排阶段依旧用判别式 list-wise 模型；GloRank 让重排端也跑在同一个 SID 表征系统上，召回-重排表征对齐，多阶段误差累积下降。</p>
-<p><strong>直接可借鉴的设计</strong>：</p>
-<ul>
-<li><strong>重排引入 SID</strong> 比 reorder pointer-network 更稳。短期就算不上线生成式范式，把 item 的 SID 作为额外特征喂给现有 list-wise 模型也能稳定收敛；</li>
-<li><strong>两阶段训练</strong>（pre-train 监督 + GRPO post-train）几乎是任何生成式排序任务的标配，不要直接上 RL；</li>
-<li><strong>Trie-based constrained decoding</strong> 是控制生成空间合法性的关键，对任何&quot;生成结果必须落在限定集合&quot;的任务（搜索 query 改写、推荐重排、广告挑库）都通用；</li>
-<li><strong>Global action space 的好处不仅是排序</strong>——它对冷启 item 提供天然鲁棒性，因为新 item 进入只需被 RQ-Kmeans 量化分配 SID 即可，模型架构无需改动。</li>
-</ul>
-<p><strong>部署考量</strong>：</p>
-<ul>
-<li>推理端 beam size = 20、输出 6 from 50 候选规模可控，单次预测延迟可压到几十毫秒级，关键在 trie 构建和 KV cache；</li>
-<li>在线 A/B 0.286% Like、0.462% Comment 的互动提升对社区/UGC 场景非常有吸引力（互动率往往就是社区核心指标），把现有 list-wise 重排替换为 GloRank 风格生成式重排，是在不引入额外召回阶段改造的前提下，把生成式范式收益独立拿到的最低风险路径。</li>
-<li>需要解决的工程问题：物品 SID 的离线构建 + 增量更新流水线、constrained decoding 的高 QPS 优化、热启动时与现有判别式模型的灰度切换。</li>
-</ul></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2604-25291"></span>
 </article>
 <article class="card t-generative" id="paper-arxiv:oai:arXiv.org:2601.00821" data-paper-id="arxiv:oai:arXiv.org:2601.00821" data-card>
   <div class="top"><span class="n">07</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.15</span></div>
@@ -336,37 +145,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>推荐任务需要的推理未必适合输出成长思维链；隐式停顿既避免昂贵的轨迹采集，也降低不稳定文本监督的影响。若社区搜推已用 LLM 生成物品 ID，可优先在隐藏状态增加少量计算步，并以端到端 nDCG、延迟和 GPU 成本验证收益。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Yinhan He, Liam Collins, Bhuvesh Kumar, Jundong Li, Neil Shah, Donald Loveland</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-06-16</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 4 · Timely 2</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.14142" id="dr-arxiv-2606-14142">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>LLM 做生成式推荐（GR）时用 Semantic ID（SID）表示物品，而 SID 是预训练词表之外的特殊 token——LLM 的世界知识通过自然语言访问，却要生成非语言的 SID，二者存在根本错配。主流做法用多阶段管线 + 显式 CoT rationale 去 ground SID，但其必要性始终不清。论文系统量化了显式推理的三个缺陷：① 世界知识&quot;可言说性&quot;被削弱——CoT SFT 后在 MMLU 等基准上 text-match 准确率从 57.60 崩到 0.10，但 logit 准确率仍 55.20≈base，说明知识仍在 logit 空间却难以用自然语言表达；② 文本-SID 嵌入空间错位——PCA 显示两类 embedding 在 CPT 后分离、经 SFT/CoT SFT 越拉越开，并有定理证明：当文本与 SID 子空间弱耦合（耦合系数 ρ 很小）时，rationale 只能微弱改变 SID token 的 logit；③ 对 rationale 扰动脆弱——ground-truth rationale Hit@5=0.1165，去掉目标类目掉到 0.0540（−53%），加 5 个噪声词 NDCG@5 掉 18.4%。更关键的是：所有 CoT SFT 变体都打不过简单的 next-item SFT，增益只在昂贵的 RL 后训练之后才出现。</p>
-<h2>2. 方法详解</h2>
-<p>PauseRec 用可训练的 &lt;pause&gt; token 替代显式自然语言 rationale，让推理发生在隐空间。三阶段训练：① Continual Pretraining（CPT）：在 SID-描述交错对上微调，只训 SID embedding、冻结 backbone，目标 L_CPT=−E[log p(s|d)+log p(d|s)]；② Pause Token 预训练：把 &lt;pause&gt; 初始化为词表均值、方差仅为 embedding 方差的 1e-9（近确定性），随机插入覆盖每条序列 10% 的位置，只训 e_&lt;pause&gt;，目的是把 pause token 定位到自然语言 token 与 SID token 的边界、桥接两个空间；③ 隐式推理 SFT：在用户历史与目标 SID 之间插入 k 个 pause（x&#x27; = Prompt(H) || &lt;pause&gt;×k），loss 屏蔽 pause 位置、只优化目标 SID（L_implicit=−Σ log p_θ(s_{n+1}^(l) | x&#x27;, s_{n+1}^(1:l-1))），让 pause 充当&quot;文本历史→离散 SID 输出&quot;之间的隐式 scratch space。推理时同样插入 k 个 pause、自回归解码 SID，不生成任何 rationale 文本。backbone 用 Qwen3-1.7B，最优 k=5（k=10 无额外增益，说明隐式计算会饱和）。注意力热图（Figure 5）揭示 pause 的多阶段过程：早期 pause 关注指令/历史边界，中后期转向历史 SID，最后聚焦到与目标相似的少量物品。</p>
-<h2>3. 核心技术贡献</h2>
-<p>① 诊断性分析：首次系统拆解显式推理训练管线，定位&quot;SID grounding 不全 + 世界知识可言说性下降 + 文本-SID 嵌入错位 + rationale 格式敏感&quot;四个失效点，并用定理刻画弱耦合下 rationale 失效的机理。② 隐式推理范式 PauseRec：用 pause token 做隐式 latent reasoning，免去 rationale 采集与推理对齐训练，是对&quot;显式 CoT 才能激发 LLM 推理&quot;这一假设的有针对性反驳。③ 在三个 Amazon 数据集上同时验证&quot;提效 + 降本&quot;，并用注意力可视化解释 pause 的实际作用。</p>
-<h2>4. 实验结果分析</h2>
-<p>数据集为 Amazon Review 的 Beauty（22,363 用户/12,101 物品/198,502 交互）、Sports &amp; Outdoors（35,598/18,357/296,337）、Toys &amp; Games（19,412/11,924/167,597）。Baseline 含 GRU4Rec、SASRec、BERT4Rec、HGN、HSTU、TIGER、next-item SFT、OneRec-Think（显式 CoT+RL）、ReaRec。指标 Hit@5/10、NDCG@5/10。效果：相比 next-item SFT，Beauty Hit@5 0.0568 vs 0.0533（+6.6% 相对）、Toys 取得 +8.85% 相对增益；相比 OneRec-Think（RL+CoT）在 12 个指标中 10 个更优，Toys Hit@5 0.0615 vs 0.0579（+6.22% 相对），仅 Beauty 的 Hit@10/NDCG@10 略逊。效率（Beauty 数据集）：训练 107.34 GPU 时 vs OneRec-Think 的 305.62（−65%）；单次推理 0.0586±0.0093s vs 0.2043±0.0255s（约 3.5×、−71.3%）；模板 CoT 变体仍比 PauseRec 慢 3.5×、teacher 生成的 rationale 变体慢 5.5–7.1×。消融（pause 初始化）：预训练初始化得 Hit@5 0.0568，优于只取文本中心 0.0559、只取 SID 中心 0.0548、默认初始化 0.0560；参数分析显示 k=5 最优。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者在附录中承认：① 只采用了紧凑的 pause 设计、报告了对 pause 长度的敏感性，但未穷尽所有插入位置、初始化日程或解码变体；② 评测仅遵循标准离线 next-item 预测协议，缺面向用户的研究——隐式推理对感知有用性、多样性、推荐呈现的影响尚未考察；③ 隐式 pause 缺乏可读性，中间计算难被用户直接解读，需要额外的探针与可视化工具；④ 标准风险：可能放大流行度偏置、强化历史偏好，并继承交互数据与预训练 LLM 的固有偏见。</p>
-<h2>6. 工业实践意义</h2>
-<p>① 管线极简化：可用 CPT→pause 预训练→隐式 SFT 三阶段，替代 CPT→SFT→CoT SFT→RL 的重管线，免去 teacher 生成 rationale 与可验证奖励信号，对没有 RL 基建的团队尤其友好。② 成本/时延双降：训练省 65% GPU 时、推理快约 3.5×，对线上时延敏感的 GR 场景十分关键。③ 性能不降反升：在摆脱 rationale 脆弱性的同时，达到或超过 CoT+RL 的效果。④ 可解释性取舍：隐式计算不如显式 rationale 可读，可用注意力可视化（类似 Figure 5）向干系人解释。⑤ 落地注意：默认 k=5；pause 预训练需访问原始 CPT 语料、并冻结 backbone 以保泛化；用受限 SID 解码做 batch 推理，避免变长 rationale 的瓶颈。⑥ 规模化待验证：仅在 1.7B 模型、12K–18K 物品的中等规模上验证，迁移到更大模型或更大物料库需补充实验。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2606-14142"></span>
 </article>
 <article class="card t-generative" id="paper-blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/06/05/acl-2026.html" data-paper-id="blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/06/05/acl-2026.html" data-card>
   <div class="top"><span class="n">10</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.80</span></div>
@@ -410,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 系统与索引 Infra" href="https://paper-daily.com/feeds/infra.xml" />
 </head>
 <body class="t-infra">
@@ -64,114 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>FP4 训练不再是理论概念——通过绕过 BF16 中间精度的直接量化路径，现有 Hopper GPU 即可实现 MoE 模型的 FP4 激活压缩，这对搜推大模型降低训练成本有直接价值。<span class="more"><b>业务关联</b> 搜推场景中大规模 MoE 模型(如 HSTU 架构)的训练受限于显存和通信带宽，FP4 激活压缩可直接降低训练成本和时间，加速模型迭代。</span><span class="more"><b>证据</b> 在 Hopper GPU 上实现了 MXFP4 精度训练，激活内存和专家并行通信量大幅减少，训练精度与 BF16/FP8 混合训练接近。</span></div>
     <div class="foot">Wuyue Zhang, Chongdong Huang, Chunbo You, Cheng Gu, Fengjuan Wang, Mou Sun · Wed, 04 Mar 2026 00:00:00 -0500 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2603.02731" id="dr-arxiv-oai-arXiv-org-2603-02731">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><p>以下是对论文 <strong>&quot;Practical FP4 Training for Large-Scale MoE Models on Hopper GPUs&quot;</strong> 的深度解读。</p>
-<hr>
-<h2>问题与动机</h2>
-<p>大规模混合专家模型（MoE）的训练面临严峻的<strong>显存瓶颈和通信瓶颈</strong>。以 DeepSeek-V3 级别的 671B 参数 MoE 模型为例，专家并行（Expert Parallelism）中 All-to-All 通信的数据量巨大，且前向传播中缓存的激活值占据了大量 GPU 显存，迫使系统采用激进的重计算（recomputation）策略，牺牲吞吐量换取可训练性。</p>
-<p>当前主流的 FP8 训练虽然已经比 BF16 减少了一半数据量，但对于 671B 这种规模的 MoE 模型仍然不够——在 80GB HBM3 的 Hopper GPU 上，FP8 方案在某些重计算配置下依然会 OOM。而 FP4（4-bit 浮点）理论上可以再减半，但 <strong>Hopper GPU 并没有原生 FP4 Tensor Core 支持</strong>（原生支持要到下一代 Blackwell 才有）。</p>
-<p>因此，核心问题是：<strong>能否在现有 Hopper 硬件上，通过纯软件方案实现 FP4 精度的激活压缩和通信压缩，同时不损失训练收敛性？</strong></p>
-<p>这个问题的重要性在于：如果可行，它可以立刻在现有硬件集群上降低大模型训练成本，而不需要等待新硬件。</p>
-<h2>方法概述</h2>
-<p>论文提出了一套<strong>混合精度训练框架</strong>，核心思路是：<strong>在 FP8 计算的基础上，将激活值的存储和专家并行通信压缩到 MXFP4 精度</strong>。</p>
-<p>整体设计采用<strong>前向-后向不对称策略</strong>：</p>
-<ul>
-<li><strong>前向传播</strong>：激活值在 All-to-All 分发前量化为 MXFP4（E2M1 格式，32 元素一组共享一个 UE8M0 缩放因子），通信量减少约 50%；缓存的激活副本也以 FP4 格式存储，显存占用减半。接收端直接从 FP4 反量化到 FP8 送入 GEMM 计算。</li>
-<li><strong>后向传播</strong>：保持 FP8 通信和存储，不使用 FP4。原因是 profiling 发现梯度的 FP4 反量化开销超过了通信节省的收益。</li>
-<li><strong>核心 GEMM 运算</strong>：始终在 FP8 精度下执行（利用 Hopper 的 FP8 Tensor Core）。</li>
-</ul>
-<p>关键创新在于<strong>绕过 BF16 中间精度</strong>的直接 FP4↔FP8 转换路径，以及融合了反量化、转置、重量化的高性能 CUDA kernel。</p>
-<h2>核心技术贡献</h2>
-<h3>1. 直接 FP4-to-FP8 位级转换</h3>
-<p>MXFP4（E2M1，block=32）和 FP8（E4M3，block=128）在格式和分组粒度上都不同。传统做法是 FP4 → BF16 → FP8，引入高精度中间值。本文设计了<strong>直接位级映射</strong>：</p>
-<ul>
-<li><strong>指数调整</strong>：<code>E_fp8 = E_fp4 - Bias_fp4 + Bias_fp8</code></li>
-<li><strong>尾数对齐</strong>：1-bit 尾数左移至 FP8 E4M3 尾数字段</li>
-<li><strong>层次化缩放对齐</strong>：4 个 MXFP4 block（每组 32 元素）对应 1 个 FP8 block（128 元素），取四个源 block 缩放因子的最大值作为目标缩放因子，通过指数补偿 <code>E&#x27;_fp8 = E_fp8 - (S_target - S_sub)</code> 保持数值一致性</li>
-<li>全部通过 <strong>IEEE 754 指数字段的位移操作</strong>完成，避免浮点数学库调用</li>
-</ul>
-<h3>2. 高性能融合 CUDA Kernel</h3>
-<p>设计了三个核心 kernel：<code>BF16ToFP4Row</code>、<code>FP4RowToFP8Row</code>、<code>FP4RowToFP8Col</code>。其中最关键的 <code>FP4RowToFP8Col</code> <strong>将反量化、矩阵转置、重量化融合为单次执行</strong>：</p>
-<ul>
-<li>使用 shared memory 做无 bank conflict 的转置（<code>[TILE_DIM][TILE_DIM+1]</code> padding）</li>
-<li>消除了中间结果写回全局内存的开销，带宽需求降低约 3 倍</li>
-<li>融合 kernel 相比分步执行实现 <strong>1.6x–1.9x 加速</strong></li>
-</ul>
-<h3>3. 对 MoE 不规则张量的支持</h3>
-<p>MoE 中不同专家接收的 token 数量不等（ragged tensor）。论文通过<strong>预计算偏移量</strong>和<strong>将缩放因子视为字节可寻址的精度无关区域</strong>，实现了对变长分片的通用支持。</p>
-<h2>实验结果分析</h2>
-<h3>671B MoE 模型（核心结果）</h3>
-<p>在 256 块 Hopper GPU（32 节点）上训练 671B 参数 MoE 模型：</p>
-<table><thead><tr><th>指标</th><th>FP8 基线</th><th>MXFP4 方案</th><th>提升</th></tr></thead><tbody><tr><td>峰值激活显存</td><td>74.20%</td><td>59.40%（同等重计算）</td><td><strong>-14.8%（节省 11.8 GB）</strong></td></tr><tr><td>吞吐量（最优配置）</td><td>1157 TGS</td><td>1302 TGS</td><td><strong>+12.5%（+146 tokens/GPU/s）</strong></td></tr></tbody></table>
-<p>关键发现：FP4 的显存节省<strong>解锁了更宽松的重计算策略</strong>。FP8 和 BF16 在仅重计算 MLA Up Proj 时会 OOM，而 MXFP4 可以正常运行，显存占用 70.11%。减少重计算量直接带来了吞吐量提升——这是一个<strong>间接但实际的加速路径</strong>。</p>
-<h3>236B MoE 模型</h3>
-<p>显存降低 6.9%–7.2%，但由于该模型本身不会 OOM，FP4 带来的额外量化开销使得同等重计算配置下吞吐量略低于 FP8。这说明 <strong>FP4 的收益在模型越大、显存越紧张时越显著</strong>。</p>
-<h3>通信量</h3>
-<p>FP8 通信量约 <code>1.03·M·K</code> 字节，MXFP4 约 <code>0.53·M·K</code> 字节，<strong>减少约 50%</strong>。</p>
-<h3>收敛性验证</h3>
-<p>在 16B 参数模型上训练 160B token，MXFP4 相对 BF16 的 loss 偏差仅 <strong>+0.61%</strong>（FP8 为 +0.29%），loss 曲线严格跟随 BF16 基线，无不稳定或发散现象。</p>
-<h3>算子级分析</h3>
-<ul>
-<li>标准线性层：FP4 方案有 0.33x 的开销（量化/反量化代价）</li>
-<li>MoE 专家层：<strong>1.43x–1.53x 加速</strong>（通信压缩收益大于量化开销）</li>
-<li>由于 671B 模型中 MoE 专家层占绝大部分 FLOPs，系统整体获益</li>
-</ul>
-<h2>局限与未来方向</h2>
-<h3>当前局限</h3>
-<ol>
-<li><strong>前后向不对称设计是妥协</strong>：后向传播没有使用 FP4，因为反量化开销大于通信节省。这意味着目前只获得了约一半的理论收益。未来优化反量化 kernel 或在 Blackwell 上有原生支持后，后向也可以 FP4 化。</li>
-</ol>
-<ol>
-<li><strong>非 MoE 层有额外开销</strong>：标准线性层使用 FP4 反而变慢（0.33x），系统整体收益依赖于 MoE 层占比高这一前提。对于 Dense 模型，该方法可能不适用。</li>
-</ol>
-<ol>
-<li><strong>软件模拟的天花板</strong>：在 Hopper 上是纯软件实现，kernel 优化空间有限。Blackwell GPU 原生 FP4 Tensor Core 将从根本上消除量化/反量化开销。</li>
-</ol>
-<ol>
-<li><strong>收敛性验证规模有限</strong>：收敛性在 16B 模型上验证，671B 模型仅展示了吞吐量和显存数据，长期训练的收敛影响有待更多验证。</li>
-</ol>
-<h3>未来方向</h3>
-<ul>
-<li><strong>Blackwell 原生 FP4 支持</strong>：论文的量化策略和 kernel 设计可以直接迁移，性能将大幅提升</li>
-<li><strong>后向传播 FP4 化</strong>：通过更高效的 kernel 或硬件支持实现对称精度</li>
-<li><strong>FP4 权重量化</strong>：当前仅压缩激活和通信，未来可扩展到权重</li>
-<li><strong>与其他并行策略的协同</strong>：如 Pipeline Parallelism 中的激活传输也可以 FP4 压缩</li>
-</ul>
-<h2>工业实践意义</h2>
-<h3>对搜推系统的直接价值</h3>
-<ol>
-<li><strong>降低大模型训练成本</strong>：搜推领域正在探索 MoE 架构（如用 MoE 做大规模多任务学习），FP4 激活压缩可以在现有 Hopper 集群上直接节省 ~15% 显存和提升 ~12% 吞吐量，无需硬件升级。</li>
-</ol>
-<ol>
-<li><strong>MoE 推理同样适用</strong>：FP4 激活压缩和通信压缩的思路可以迁移到 MoE 推理场景——搜推系统中推理成本往往远大于训练成本，Expert Parallelism 的通信压缩对推理延迟有直接帮助。</li>
-</ol>
-<ol>
-<li><strong>精度-效率权衡的工程参考</strong>：论文的&quot;前向 FP4 + 后向 FP8&quot;不对称设计体现了工程实践中的务实原则——不追求理论最优，而是在 profiling 驱动下选择实际最优方案。这种方法论对工业系统的量化落地很有参考价值。</li>
-</ol>
-<ol>
-<li><strong>直接量化路径的设计模式</strong>：绕过高精度中间值的 FP4↔FP8 直接转换，以及融合 kernel 消除中间内存访问，这些优化模式可以广泛应用于推理引擎中的量化加速（如搜推系统的 embedding 模型、排序模型的低精度推理）。</li>
-</ol>
-<ol>
-<li><strong>Scale 对齐的通用方案</strong>：不同量化格式间的层次化 scale 对齐技术，对于搜推系统中混合精度部署（如不同精度的模型组件通信）有直接参考意义。</li>
-</ol></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2603-02731"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-infra" id="paper-arxiv:oai:arXiv.org:2603.01058" data-paper-id="arxiv:oai:arXiv.org:2603.01058" data-card>
@@ -295,59 +188,6 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

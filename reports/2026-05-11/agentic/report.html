@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -64,53 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对社区搜索而言，LatentRAG 提示我们：复杂查询的多轮 query 理解/检索完全可以在 latent 空间内一次完成，而不是反复调用 LLM。把 &quot;思考-检索&quot; 折叠到 single forward 后，整条 agentic 链路成本接近 single-step RAG，使得 UGC 长尾 query 上的 agentic RAG 在线化变得可行。同时 latent decoder 可作为可解释通道用于离线诊断与训练数据生成。</div>
     <div class="foot">Yijia Zheng, Marcel Worring · 2026-05-07 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.06285" id="dr-arxiv-2605-06285">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>Agentic RAG 把检索增强从 &quot;一次召回 + 一次回答&quot; 升级为 &quot;思考-子查询-检索-再思考&quot; 的多步循环，这一范式在多跳/复杂 query 上准确率明显高于 single-step RAG，但代价是把每一轮的 reasoning 都丢回 LLM 的离散 token 空间逐 token 生成。论文用 Search-R1、AutoRefine 等强基线在 7 个 QA benchmark 上实测：相同问题下，agentic RAG 的端到端延迟通常是 single-step RAG 的 8–10×（HotpotQA 上 AutoRefine 4,782ms，Naive RAG 仅几百毫秒），而绝大部分时间消耗在串行的 thought + subquery 生成上，并非真正的检索 IO。这一观察直接暴露了 agentic RAG 在工业落地的核心矛盾——质量上去了，延迟上不了线。LatentRAG 的动机正是问一个非常具体的问题：是否一定要把 &quot;思考&quot; 和 &quot;子查询&quot; 还原成自然语言 token 才能驱动检索？如果可以让中间步骤完全停留在 LLM 的连续表征空间里，是否就能把多步 RAG 折叠到接近 single-step 的延迟。这与近年 chain-of-thought 隐式化、coconut 等 latent reasoning 工作脉络一致，但首次把这条思路完整落到 retrieval 上。</p>
-<h2>2. 方法详解</h2>
-<p>LatentRAG 的核心是 &quot;用占位符 token + 单次前向&quot; 取代 agentic RAG 的多轮自回归。具体由三块组成：</p>
-<p>(a) 带 latent token 的生成：在输入末尾追加成对的 <code>&lt;think&gt;</code> / <code>&lt;query&gt;</code> 占位符，LLM 一次前向同时输出最后一层隐藏态 H^τ_t、H^s_t，分别对应当前轮的 &quot;思考&quot; 和 &quot;子查询&quot;。这两个 latent 表征不再解码成文本，而是直接喂给后续模块，省掉了串行的 token-by-token 生成。</p>
-<p>(b) Latent 检索：作者引入轻量 projector Proj_ret 把 H^s_t 映射到检索模型的输入空间，再用预训练 retriever f_ret 得到向量 v_s^ℓ = f_ret(Proj_ret(H^s_t); θ_ret)，与文档 embedding 做 dot-product。这样 LLM 的连续表征直接成为检索 query，不再经过 &quot;先解码自然语言再编码 embedding&quot; 的两次重复编码。</p>
-<p>(c) Latent 解码（可选透明通道）：另一组 projector 模块以并行方式把 latent thought/query 还原成自然语言文本，仅用于离线诊断和训练损失，不阻塞推理路径。</p>
-<p>训练目标融合三项：ℒ = ℒ_gen + λ_ret·ℒ_ret + ℒ_dec。其中 ℒ_ret 不是常见的对比学习，而是 KL 散度——把 latent retrieval 得到的文档分布对齐到 &quot;用真实文本 query 检索&quot; 时的文档分布；ℒ_dec 用来训 latent decoder 的可读性，同时被作者用作 latent 表征本身的正则化。训练数据来自 Search-R1 与 AutoRefine 在 NQ + HotpotQA 上生成的多步检索轨迹；底座是 Qwen2.5-7B；retriever 试了 Qwen3-Embedding-0.6B、e5-base-v2、jina-embeddings-v5、harrier-oss-v1-270m、F2LLM-v2-330M 等多种规模，硬件为 H100 94GB。值得注意的是 KL 损失的选择带有强烈的实践动机：cosine/InfoNCE 都把检索看成对比任务，而 KL 把 &quot;正确文档分布&quot; 当作软标签，避免了 latent 空间和文本 query 空间在 norm/温度上的不一致。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，把 agentic RAG 的中间表征从离散 token 系统迁移到连续 latent 空间，并证明这不会损失多步推理能力——这是论文最核心的范式贡献，把过去几年 &quot;latent CoT&quot; 的思路第一次完整地落到检索上。第二，提出 &quot;projector + KL retrieval loss&quot; 的对齐方案：projector 让 LLM 输出空间和检索模型输入空间不必同源，KL loss 则避免 latent retrieval 在训练初期被对比学习的硬目标 &quot;卡死&quot;。消融显示 KL（43.46% EM）显著优于 cosine（42.55%）与 InfoNCE（41.86%），说明软分布对齐对 latent retrieval 更稳。第三，提出可选的并行 latent decoder：用一组 projector 把 latent token 还原为可读文本，既保留 agentic RAG 的可解释性，又不阻塞推理；消融实验表明 latent decoding loss 还顺带帮助 latent 表征训练，去掉它 EM 从 43.46% 跌到 40.61%。第四，提供了在不同检索器上的迁移分析，揭示了 latent RAG 的瓶颈：当 retriever 自身存在严重 anisotropy（如 e5-base-v2）时，latent 适配会有约 4.0% 性能折损。</p>
-<h2>4. 实验结果分析</h2>
-<p>主表（Table 1，Qwen3-Embedding-0.6B 作 retriever）：</p>
-<ul>
-<li>LatentRAG◆（基于 Search-R1 训练数据）：EM 46.29%，延迟 491ms；对照 Search-R1◆ EM 43.93%，延迟 3,553ms——准确率反升 +2.3 pp，延迟降低 86.2%。</li>
-<li>LatentRAG△（基于 AutoRefine 训练数据）：EM 45.73%，延迟 409ms；对照 AutoRefine△ EM 44.35%，延迟 4,782ms——准确率 +3.2 pp，延迟降低 91.4%。</li>
-</ul>
-<p>跨 7 个 benchmark（NQ、TriviaQA、PopQA、HotpotQA、2wiki、Musique、Bamboogle）平均，LatentRAG 与显式 agentic RAG 的相对差距控制在 5% 以内，但延迟下降约 90%，几乎追平 Naive RAG 的 single-step 速度。这是论文最有冲击力的结论：质量没掉，延迟回到了可在线服务的量级。</p>
-<p>ablation 还揭示了几个值得关注的点：(a) 移除预训练 retriever 直接用随机初始化训练，EM 从 43.46% 跌到 41.85%——说明 latent retrieval 仍然依赖一个语义已经收敛的 retriever 作起点；(b) latent decoding loss 不仅是可读性手段，对主任务有 +2.85 pp 贡献；(c) 加入可选 latent decoding 通道后（Table 2），相对 AutoRefine 仍能保持 47.4% 的延迟降低，意味着透明通道的开销可控。</p>
-<p>潜在失败模式：在 anisotropy 严重的检索器上，latent 适配训练困难、性能下降明显；这也是作者在附录 A 里明确指出的限制。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出：第一，latent 表征对 retriever 几何性质敏感，遇到严重 anisotropic 的 embedding 模型（如 e5-base-v2）会出现约 4.0 pp 下降，需要额外的 retriever 重训或对齐策略；第二，agentic RAG 训练数据本身仍然稀缺，他们只能借用 Search-R1 / AutoRefine 的轨迹做监督，未来需要更多多步检索语料；第三，latent decoder 提供的可解释性还是 &quot;事后还原&quot;，不是 native 解释——上线后做错误归因仍可能不足。论文未明说但实践中明显的限制还有两点：当前实验都是 7B 底座 + 单语英文 QA，没有验证在中文 UGC 这类高噪场景的稳定性；以及 latent token 维度固定后，是否能扩展到 &quot;工具调用&quot;、&quot;多模态检索&quot; 等更复杂 agent 行为，仍是开放问题。</p>
-<h2>6. 工业实践意义</h2>
-<p>对负责社区/UGC 搜索的团队，LatentRAG 给出的工程启示比指标本身更重要：</p>
-<p>(1) 延迟从 4.7s 量级降到 &lt; 0.5s，意味着 agentic RAG 第一次具备了线上 query-time 部署的可行性。过去把 agentic 当离线/异步用的团队，应当重新评估在搜索/问答主路径中接入 latent agentic RAG 的 ROI；尤其是中长尾 UGC query（多意图、需要拆解），过去要么走 fallback 到普通搜索，要么离线生成答案，现在有机会走在线多跳。</p>
-<p>(2) Projector + KL loss 是一个相对低成本的接入方案——retriever 不必重训，把现有 dense retriever 当 frozen f_ret，仅训 LLM 端 projector 和检索 loss 即可。这对已经投入大量资源训了高质量 embedding 模型的团队是友好的迁移路径。</p>
-<p>(3) 风险点同样清晰：先在自家 retriever 上做 anisotropy 检测，必要时 isotropy regularization 或者换 retriever；agentic 训练数据要从自家 query log 重采（而非直接复用学术多跳 QA 轨迹），否则 latent thought 会偏离真实业务分布。</p>
-<p>(4) 部署侧，latent decoder 应当作为可观测性基础设施常驻——线上不阻塞推理，但保留生成自然语言 thought/query 的能力，方便事后做相关性 case 分析、reward hacking 检测、A/B 解释。这是论文方法论之外，能让该范式真正上量的关键工程动作。</p>
-<p>(5) 与 NVIDIA Dynamo 当日发布的 multi-turn agentic harness 结合：上层 latent agentic RAG 把 &quot;轮数&quot; 折叠了，下层 harness 把单轮内的 prompt cache + tool dispatch 做了优化，两者乘起来才能真正把 agentic 搜索 SLA 压到与传统 RAG 同档，这是当前 agentic 搜索可工业化的最现实组合。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-06285"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-blog:nvidia_dynamo_agentic_harness_2026" data-paper-id="blog:nvidia_dynamo_agentic_harness_2026" data-card>
@@ -235,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

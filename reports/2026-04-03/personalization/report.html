@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,61 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>该工作的核心价值在于为推荐模型的 scaling law 研究提供了统一视角。通过将三种主流 scaling 架构（注意力、TokenMixer、FM）纳入同一参数化框架，实践者可以在同一代码库中比较不同架构的 scaling 效率，避免重复实验。对于追求模型规模扩展的推荐系统团队，UniMixer 提供了一条清晰的架构选择和 scaling 路径。</div>
     <div class="foot">Mingming Ha, Guanchen Wang, Linxun Chen, Xuan Rao, Yuexin Shi, Tianbao Ma, Zhaojie Liu, Yu... · 2026-04-02 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.00590" id="dr-arxiv-2604-00590">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>推荐模型的 scaling law 研究近年受到广泛关注，其核心问题是如何建立模型性能与参数量/FLOPs 之间的可预测关系。当前主流的三种 scaling 架构——基于注意力的方法（如 HSTU）、基于 TokenMixer 的方法（如 RankMixer、MixFormer）、以及基于因子分解机的方法（如 FinalMLP）——在设计哲学和结构上存在根本差异，缺乏统一的理论框架来比较和优化它们的 scaling 效率。</p>
-<p>与 LLM 中同质化的文本 token 不同，推荐系统面临异构特征空间的独特挑战：用户画像、物品属性、行为序列、查询特征等不同语义域的特征需要不同的交互模式。现有方法各自为政，导致实践者在架构选择上缺乏理论指导，不同架构的 scaling 效率（ROI）难以直接比较。</p>
-<h2>2. 方法详解</h2>
-<p>UniMixer 的核心思想是将规则化的 TokenMixer 操作转换为等价的参数化结构。</p>
-<p><strong>特征 Token 化</strong>：输入特征按语义域（用户画像、物品特征、行为序列、查询特征）组织，通过域特定的嵌入层转换为 token 级嵌入，拼接后通过线性投影得到隐状态 X ∈ ℝ^(T×D)。</p>
-<p><strong>核心发现</strong>：TokenMixer 的特征混合操作可重新表示为 TokenMixer(X) = reshape(W^perm · flatten(X))，其中 W^perm 是一个具有可压缩性、双随机性、稀疏性和对称性约束的置换矩阵。直接实现该操作的复杂度为 O(T²D²)，不可接受。</p>
-<p><strong>Kronecker 分解</strong>：将 W^perm 分解为 W^perm = G ⊗ I，将复杂度降至 O(T⁴ + (D/T)²)，进一步通过流水线优化降至 O(L²/B + LB)（B 为块大小）。具体实现包括：</p>
-<ul>
-<li><strong>局部混合模式</strong>：每个块内使用独立权重矩阵 W_B^i 执行块内特征交互</li>
-<li><strong>全局混合模式</strong>：矩阵 W_G 控制块间信息流动</li>
-<li>两者均通过 Sinkhorn-Knopp 迭代强制双随机约束</li>
-</ul>
-<p><strong>UniMixing-Lite</strong>：轻量版本使用基向量组合局部混合权重 {Z_ℓ}，全局矩阵采用低秩近似 A_G · B_G，大幅减少参数量。</p>
-<p><strong>SiameseNorm</strong>：引入耦合双流归一化（X̄_ℓ, Ȳ_ℓ），解决深层网络中 pre-norm 和 post-norm 各自的缺陷。</p>
-<p><strong>温度退火策略</strong>：从高温（τ=1.0）线性退火至 0.05；数据不足时采用两阶段策略——高温初始化后用低温和热启动权重重训。</p>
-<p><strong>训练配置</strong>：基于快手广告数据集（&gt;7亿用户样本，一年数据，数百个异构特征），使用 AUC 和 UAUC 评估性能。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>统一理论框架</strong>：首次证明注意力、TokenMixer 和 FM 三种主流方法可在统一公式下表示（论文公式17），差异仅在于交互投影函数的选择。这为跨架构比较提供了理论基础，之前不同架构间的比较缺乏公平基准。</p>
-<p><strong>参数化 TokenMixer</strong>：移除了原始 TokenMixer 中 T=H 的硬约束，使混合模式可在训练中自适应学习。通过双随机约束和温度退火，在保持混合操作的结构化特性的同时引入灵活性。</p>
-<p><strong>最陡 Scaling 曲线</strong>：UniMixer-Lite 的 scaling 指数达到 0.142，高于 RankMixer (0.116) 和标准 UniMixer (0.132)，意味着每增加同等参数量获得的性能提升更大。</p>
-<p><strong>深层扩展能力</strong>：UniMixer-Lite 展示了正向的深度 scaling（2块→4块 AUC 从 0.749228 升至 0.750803），而 RankMixer 在深度增加时出现性能退化。</p>
-<h2>4. 实验结果分析</h2>
-<p>核心实验基于快手广告真实数据集，百万量级参数模型对比：</p>
-<table><thead><tr><th>模型</th><th>参数量</th><th>AUC</th><th>相对提升</th></tr></thead><tbody><tr><td>RankMixer</td><td>76.2M</td><td>0.749329</td><td>baseline</td></tr><tr><td>UniMixer-2-Blocks</td><td>101.5M</td><td>0.750238</td><td>+0.5661%</td></tr><tr><td>UniMixer-Lite-2-Blocks</td><td>76.2M</td><td>0.751401</td><td>+0.6824%</td></tr><tr><td>UniMixer-Lite-4-Blocks</td><td>84.5M</td><td>0.752718</td><td>+0.8141%</td></tr></tbody></table>
-<p>值得注意的是，UniMixer-Lite 在与 RankMixer 相同参数量（76.2M）下即超越其性能，说明架构效率而非单纯堆参数才是关键。</p>
-<p>消融实验揭示各组件贡献：温度系数退火最关键（去除后 -0.1645% AUC），其次是模型热启动（-0.0856%），对称约束（-0.0573%）和块特定局部混合（-0.0436%）。</p>
-<p>基向量数从 b=2 到 b=8 带来 +0.1055% 提升；秩从 r=2 到 r=256 带来 +0.0971% 提升，两者均以极小的参数增长换取显著性能提升。</p>
-<p><strong>线上 A/B 测试</strong>：部署于快手多个广告场景，D1-D30 累计活跃天数（CAD）平均提升超过 15%，验证了其工业级价值。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文未设专门的局限性讨论章节。隐含的局限包括：(1) 实验验证仅限于约 100M 参数规模，未探索更大规模（1B+）下的 scaling 行为是否延续；(2) Sinkhorn-Knopp 迭代在训练时引入额外计算开销，对训练吞吐量的影响未量化；(3) 温度退火策略需要精细调节（初始温度、退火终点、两阶段切换时机），自动化程度有限；(4) 所有实验仅在快手广告数据上验证，其他推荐场景（如内容推荐、电商）的泛化性未知。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>架构选型参考</strong>：UniMixer 的统一框架使团队能在同一代码库内比较三种主流 scaling 架构的 ROI，避免独立实现和调参的重复劳动。Scaling 指数的拟合方法可直接用于预估「增加 X 参数量预期获得 Y% 收益」。</p>
-<p><strong>轻量部署路径</strong>：UniMixer-Lite 的基向量组合和低秩近似在保持 scaling 效率的同时大幅降低参数量和计算量，适合在线服务的延迟约束。实际部署时可从少量基（b=2）和低秩（r=2）起步，按需扩展。</p>
-<p><strong>训练稳定性工具</strong>：SiameseNorm 和温度退火策略解决了深层推荐模型训练不稳定的通病。特别是温度退火（消融中贡献最大），是一个即插即用的训练技巧，可迁移至现有推荐模型训练中。</p>
-<p><strong>线上 15%+ CAD 提升</strong>：在快手这一超大规模广告平台上验证了显著的业务指标提升，说明 scaling 架构的优化可以直接转化为商业价值。但需注意该指标是 CAD（累计活跃天数），与常规 CTR/CVR 指标有区别，解读时需结合具体业务逻辑。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2604-00590"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2604.01036" data-paper-id="arxiv:2604.01036" data-card>
@@ -129,57 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>SPREE 的核心创新在于将 activation steering 技术应用到推荐场景。与需要重训练的去偏方法不同，SPREE 仅在推理时调整模型表示，无需修改训练流程，部署成本极低。对于 UGC 搜索场景，这种方法可以帮助平衡热门内容与长尾内容的曝光，避免「马太效应」，提升内容生态多样性。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Mona Schirmer, Anton Thielmann, Pola Schwöbel, Thomas Martynec, Giuseppe Di Benedetto, Ben London, Y...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-04-02</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 3 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.01036" id="dr-arxiv-2604-01036">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>推荐系统中的流行度偏差是一个广泛存在的问题：系统倾向于过度推荐热门物品，导致「富者愈富」效应和内容同质化。论文从多利益方角度分析了危害：创作者受到经济损害（长尾内容被压制）、用户满意度下降（推荐不匹配个人偏好）、平台面临创作者流失和监管风险。</p>
-<p>关键洞察：现有方法将流行度偏差视为全局去偏问题（如降低所有用户对热门物品的曝光），但实际上不同用户对流行度有不同偏好——有人喜欢热门，有人偏好小众。因此，问题的本质是用户级别的对齐（alignment），而非全局的流行度压制。</p>
-<p>现有度量指标（PopLift、LogPopDiff、UPD）在度量理论上存在缺陷：缺乏方向性（D1）、大小敏感性（D2）、方差捕捉（D3）、尺度不变性（D4）或鲁棒性（D5）。这导致干预效果的评估不可靠。</p>
-<h2>2. 方法详解</h2>
-<p><strong>度量框架：Popularity Quantile Calibration</strong></p>
-<p>基于度量理论的四阶段框架设计新指标：</p>
-<p>将物品流行度映射到分位数空间 τ ∈ [0,1]，比较用户交互历史的流行度 CDF 与推荐列表的流行度 CDF。完美校准时两者对齐于对角线 τⱼ = τ̂ⱼ。</p>
-<p>Popularity Calibration Error (PCE) 定义为：PCE(u) = (1/m) Σ(τⱼ - τ̂ⱼ)²，范围 [0,1]，0 表示完美校准。该指标同时满足 D1-D5 所有度量理论要求。</p>
-<p><strong>缓解方法：SPREE (Steering PopulaRity toward human prEferEncEs)</strong></p>
-<p>SPREE 是一种推理时激活引导方法，无需重训练：</p>
-<p><strong>步骤一：识别流行度方向</strong> 构建对比数据集——高流行度序列 𝒟⁺（物品流行度 s(i) ≥ ρ⁺）和低流行度序列 𝒟⁻（s(i) ≤ ρ⁻）。在 Transformer 每一层每个位置计算引导向量 v = normalize(x⁻_mean - x⁺_mean)。通过线性探针精度选择最优层和位置。</p>
-<p><strong>步骤二：自适应引导强度</strong> 对每个用户估计中位分位数偏差 e(u) = τ̂_med - 0.5（负值表示推荐过于小众，正值表示过于热门）。用 Lasso 回归训练偏差估计器 f̂: ℝᵈ → [-0.5, 0.5]。</p>
-<p><strong>推理时修改激活</strong>：x* = x + λ · f̂(x) · v，其中 λ 是全局超参数控制引导强度。关键在于 f̂(x) 提供了每用户的方向和强度自适应。</p>
-<p><strong>训练配置</strong>：基座模型为 SASRec（L=3 Transformer 块，d=64 隐维度，序列长度 T=200-300）。对比数据集各生成 500 条序列，Lasso 回归用验证集拟合。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>度量理论驱动的度量设计</strong>：不同于经验性的指标设计，论文从度量理论出发系统化地分析了现有指标的缺陷，提出满足完整度量理论要求的 PCE 指标。实验表明 IPR 和 PopSteer 虽降低了全局流行度（S1 类偏差），但在 PCE（S3 类用户级对齐）上反而恶化。</p>
-<p><strong>个性化 vs 全局去偏的分离</strong>：论文首次在实验中清晰地分离了「降低全局流行度」和「用户级对齐」两个目标，证明了它们不仅不等价，甚至可能冲突。这挑战了流行度去偏研究中的隐含假设。</p>
-<p><strong>直接激活空间干预</strong>：与 PopSteer 需要训练稀疏自编码器（SAE）不同，SPREE 直接在激活空间中操作，通过均值差构建引导向量，部署更加轻量。偏差估计器 f̂ 的引入使得同一引导向量对不同用户产生不同的修正幅度和方向。</p>
-<h2>4. 实验结果分析</h2>
-<p>四个数据集（Foursquare Tokyo 49.5万交互、MovieLens-1M 100万交互、MovieLens-20M 2000万交互、RateBeer 263万交互）上的结果：</p>
-<table><thead><tr><th>数据集</th><th>方法</th><th>PCE@100</th><th>NDCG@100</th><th>变化</th></tr></thead><tbody><tr><td>ml-1m</td><td>Base</td><td>0.211</td><td>~6.34</td><td>-</td></tr><tr><td>ml-1m</td><td>IPR</td><td>更差</td><td>更差</td><td>两维度均退化</td></tr><tr><td>ml-1m</td><td>PopSteer</td><td>更差</td><td>略降</td><td>PCE 恶化</td></tr><tr><td>ml-1m</td><td>SPREE</td><td>0.176 (-16%)</td><td>~6.34</td><td>PCE 显著改善，NDCG 保持</td></tr><tr><td>ml-20m</td><td>SPREE</td><td>0.382 (-9%)</td><td>~9.01</td><td>两维度均改善</td></tr><tr><td>RateBeer</td><td>SPREE</td><td>0.293 (-9%)</td><td>略升</td><td>两维度均改善</td></tr></tbody></table>
-<p><strong>关键发现</strong>：IPR 和 PopSteer 在降低全局流行度的同时恶化了用户级对齐——这是本文最重要的实验发现，说明「去偏」和「对齐」是两个不同的目标。</p>
-<p><strong>消融实验</strong>：去除偏差估计器 f̂（即均匀引导）后，PCE 在 fs-tky 上恶化 143%（0.200→0.509），在 ml-1m 上恶化 106%（0.176→0.434），NDCG 也出现 7-22% 的退化。这证明个性化的引导强度是方法成功的关键。</p>
-<p><strong>校准曲线分析</strong>：基座模型在 ml-1m、ml-20m、RateBeer 上呈现负偏差（曲线低于对角线），即推荐内容比用户偏好更小众。SPREE 将校准曲线推向对角线，而 PP 方法则过度校正产生正偏差。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文明确讨论了三个局限：(1) 引导效果依赖于嵌入空间中是否存在流行度校准区域——如果物品嵌入空间的几何结构不支持流行度维度的线性分离，引导效果受限；(2) 当前方法聚焦于中位数分位数（τ=0.5）的控制，无法选择性地调节分布的上下尾部；(3) 仅处理流行度维度的对齐，未扩展到其他维度（如类型多样性、少数群体内容曝光）。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>零成本部署</strong>：SPREE 仅修改推理时的激活值，无需重训练模型、无需修改训练数据或损失函数。对于已部署序列推荐模型的团队，可以在不影响现有训练流程的情况下引入流行度对齐。</p>
-<p><strong>PCE 作为评估工具</strong>：即使不使用 SPREE，PCE 指标本身就是一个有价值的评估工具。建议团队将 PCE 纳入离线评估体系，监控推荐结果与用户流行度偏好的对齐程度。这比全局流行度分布统计更有意义。</p>
-<p><strong>UGC 搜索场景应用</strong>：在社区搜索中，热门帖子和小众优质内容的曝光平衡是核心挑战。SPREE 的个性化引导可根据用户的历史行为自适应调节：对偏好热门的用户保持热门推荐，对偏好小众的用户增加长尾内容曝光，避免一刀切的去偏策略。</p>
-<p><strong>延迟影响</strong>：引导操作仅涉及一次向量加法（x + λ·f̂(x)·v），计算开销可忽略不计。Lasso 回归的偏差估计也非常轻量。这使得 SPREE 适合对延迟敏感的在线推荐场景。但需注意，对比数据集构建和线性探针选层需要离线准备，且随着模型更新需要定期刷新引导向量。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2604-01036"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2510.15299" data-paper-id="arxiv:2510.15299" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.00</span></div>
@@ -292,60 +188,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

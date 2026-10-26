@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,105 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>核心创新在于用强化学习教会 LLM &quot;学会信任&quot;外部知识——通过 GRPO 双组对比训练，模型能动态判断何时依赖参数知识、何时利用检索增强信息。这种 RL + RAG 融合范式对搜索相关性系统具有直接参考价值：在不增加推理延迟的前提下，利用外部知识提升长尾 query 的相关性判断。对 UGC 搜索场景中快速变化内容的相关性匹配有重要启示。</div>
     <div class="foot">E-commerce Search Team · 2025-10-15 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2510.11122" id="dr-arxiv-2510-11122">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>电商搜索相关性判断是搜索系统的核心能力，直接影响 nDCG 和 CTR 等关键指标。虽然大语言模型（LLM）在语言理解和推理方面表现出色，但在处理长尾 query、快速变化的商品信息和知识密集型查询（如问答类、知识类、否定表达、替代品查询）时，仅依赖参数化知识往往力不从心。检索增强生成（RAG）是自然的解决方案，但将 RAG 引入工业级搜索系统面临三大特有挑战：</p>
-<ol>
-<li><strong>外部上下文噪声严重</strong>：电商场景中检索到的商品描述充斥营销话术、标签堆砌和情感性语言，需要模型具备鲁棒的信息甄别能力；</li>
-<li><strong>极端延迟约束</strong>：生产环境要求毫秒级响应，禁止多阶段处理或迭代精炼；</li>
-<li><strong>单次推理统一评估</strong>：模型必须在一次推理中同时完成相关性评估和上下文可信度判断。</li>
-</ol>
-<p>现有 RAG 方案（如 Self-RAG、Adaptive-RAG）在学术场景中有效，但无法扩展到日均数十亿请求的生产环境。论文明确指出：直接将 RAG 接入 SFT 模型反而导致 Macro-F1 下降（从 58.14 降至 57.06），证明了盲目信任噪声上下文的危害。</p>
-<h2>2. 方法详解</h2>
-<p>DyKnow-RAG 的核心思想是通过强化学习教会 LLM 学会信任——动态判断何时依赖内部参数知识、何时利用外部检索信息。</p>
-<p><strong>整体架构</strong>由三个阶段组成：</p>
-<ul>
-<li><strong>阶段一</strong>：监督初始化 + 偏好对齐（SFT + DPO），建立基础相关性判断能力</li>
-<li><strong>阶段二</strong>：不确定性优先过滤（p_θ &lt; 0.7 阈值筛选约 50% 错误率的样本），聚焦于模型不确定的 hard cases</li>
-<li><strong>阶段三</strong>：双组强化学习（核心创新）</li>
-</ul>
-<p><strong>双组 Rollout 策略</strong>是方法的关键设计。对每个训练样本，系统生成两组各 16 条 rollout：</p>
-<ul>
-<li>Group 0（纯参数组）：仅输入 query 和 item 信息 (q, i)</li>
-<li>Group 1（带上下文组）：额外输入检索到的上下文 (q, i, c*)</li>
-</ul>
-<p>通过对比两组的表现差异，系统能精确量化外部知识对特定样本的价值。</p>
-<p><strong>后验驱动的组间优势缩放</strong>机制实现了动态信任：</p>
-<ul>
-<li>组内优势计算：A_j^(g) = (R_j^(g) - μ_g) / s_g（标准 GRPO）</li>
-<li>组间优势使用两组的联合统计量（μ<em>, s</em>）跨组计算</li>
-<li>分段缩放函数 T(Ã_j) 的参数依赖于准确率差距：β = 4σ(4(acc_with - acc_para))，α = 0.1/β</li>
-</ul>
-<p>当带上下文组的准确率显著高于纯参数组时，β 增大，放大上下文利用的优势信号；反之则抑制对噪声上下文的依赖。</p>
-<p><strong>结构化思维链模板</strong>要求模型输出三部分：[相关性等级] + [信任决策] + [推理过程]，使信任决策可解释。</p>
-<p><strong>优化目标</strong>：J(θ) = ℓ^(0)(θ) + ℓ^(1)(θ) + ℓ̂(θ) - λ_KL D_KL[π_θ || π_ref]，其中 ℓ̂(θ) 是对齐项，在带上下文的 prompt 下评估纯参数序列并应用后验缩放。</p>
-<p><strong>训练配置</strong>：基座模型 TBStar（微调 LLM），SFT 阶段 2 epochs、学习率 1e-6、batch size 1024；GRPO 阶段 rollout group size G=16，KL 惩罚 β=0.02。奖励信号为二值正确性（解析结果与标注一致为 1，否则为 0）。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>双组对比 RL 训练范式</strong>：首次将 GRPO 扩展为双组架构，通过纯参数 vs. 带上下文的对比，让模型学习上下文的条件价值，而非无条件依赖或忽略。这比固定门控（α=2, β=0.05 配置下 Macro-F1 仅 59.31）和人工标注门控（60.15）都更有效。</li>
-</ol>
-<ol>
-<li><strong>后验驱动的自适应信任机制</strong>：准确率差距驱动的 sigmoid 缩放函数自动调节信任程度，无需人工设定信任阈值。实验显示模型在移除上下文后仍保持 74.80% 准确率（vs. 完整 75.19%），说明模型学到的是鲁棒的判断策略而非对上下文的简单依赖。</li>
-</ol>
-<ol>
-<li><strong>首个工业级动态 RAG 部署</strong>：在日均数十亿请求的淘宝搜索系统中验证了方案的可行性，p99 延迟 &lt; 400ms，无额外推理开销。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p><strong>离线评估</strong>基于专家标注的 Gold 基准测试集，覆盖 4 个相关性等级（L4: 60%, L3: 7%, L2: 27%, L1: 6%），聚焦知识密集型品类。</p>
-<table><thead><tr><th>模型</th><th>Macro-F1</th><th>Accuracy</th></tr></thead><tbody><tr><td>SFT-only</td><td>58.14</td><td>71.88</td></tr><tr><td>RAG SFT</td><td>57.06</td><td>71.92</td></tr><tr><td>RAG GRPO</td><td>58.33</td><td>72.55</td></tr><tr><td>DyKnow-RAG (SFT)</td><td>60.33</td><td>73.26</td></tr><tr><td>DyKnow-RAG (DPO)</td><td><strong>60.45</strong></td><td><strong>75.19</strong></td></tr></tbody></table>
-<p>关键发现：直接 RAG-SFT 的 Macro-F1 反而低于纯 SFT（57.06 vs. 58.14），证实了噪声上下文的负面影响。DyKnow-RAG 最终版相比 SFT-only 提升 2.31 Macro-F1 和 3.31 Accuracy。</p>
-<p><strong>在线 A/B 测试</strong>在淘宝搜索上进行，4% 流量持续 7 天，覆盖数亿用户和数十亿请求：</p>
-<ul>
-<li>问答类 query：GSB 提升 +10.37%，查询好率 +5.76 pt，商品好率 +2.45 pt</li>
-<li>知识类 query：GSB +7.75%，查询好率 +2.91 pt</li>
-<li>否定表达：GSB +3.25%</li>
-<li>替代品查询：GSB +3.60%</li>
-<li>业务指标：GMV +0.1%，IPV +2.35%，PV +2.13%</li>
-</ul>
-<p><strong>消融实验</strong>证实后验驱动的 RL 策略优于固定门控（Macro-F1 60.45 vs. 59.31）和人工标注门控（60.45 vs. 60.15）。模型在推理时不输入上下文仍保持 74.80% 准确率，证明学到了内化的知识利用策略。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文未显式列出局限，但可识别以下约束：</p>
-<ul>
-<li>需要高质量人工标注构建 Gold 基准集，标注成本较高</li>
-<li>二值奖励信号可能过度简化了相关性判断的细微差别（4 级标注被简化为对/错）</li>
-<li>方法针对电商搜索领域设计，向其他搜索场景的迁移性未验证</li>
-<li>未讨论对极端稀有或新兴 query 类型的表现</li>
-<li>不确定性过滤的阈值 0.7 是预设值，对不同领域可能需要调整</li>
-</ul>
-<h2>6. 工业实践意义</h2>
-<p><strong>直接可落地的方案</strong>：DyKnow-RAG 已于 2025 年 9 月部署在淘宝搜索，是首个大规模动态 RAG 工业部署案例。p99 延迟 &lt; 400ms 且无额外推理开销，证明了方案的工程可行性。</p>
-<p><strong>对 UGC 搜索的直接启示</strong>：</p>
-<ul>
-<li>UGC 内容同样存在噪声大、更新快的特点，DyKnow-RAG 的动态信任机制可直接迁移</li>
-<li>双组对比训练不需要额外标注上下文质量，仅需标准的相关性标注即可训练</li>
-<li>结构化输出模板（等级 + 信任决策 + 推理）提供了可解释的判断过程</li>
-</ul>
-<p><strong>部署建议</strong>：</p>
-<ul>
-<li>基于 GRPO 的 RL 训练需要较大的 rollout group size（16），训练资源需求较高</li>
-<li>检索模块的质量直接影响效果——论文使用 BM25 + 商品特征检索</li>
-<li>二值奖励信号虽简单但在工业场景中足够有效，无需复杂的奖励模型</li>
-<li>不确定性过滤可有效减少 RL 训练的样本量（约 50% 过滤率），降低训练成本</li>
-</ul>
-<p><strong>与其他方案的对比价值</strong>：相比 Self-RAG 等需要特殊 token 或多阶段推理的方案，DyKnow-RAG 的单次推理设计更适合延迟敏感的搜索场景。GMV +0.1% 和 IPV +2.35% 的业务指标证明了方案的商业价值。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2510-11122"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:2604.03676" data-paper-id="arxiv:2604.03676" data-card>
@@ -286,60 +188,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

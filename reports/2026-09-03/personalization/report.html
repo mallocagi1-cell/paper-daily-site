@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,51 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>该工作把语言模型的规模化思路改造成“用户侧一次计算、候选侧多次轻解码”，说明推荐 Transformer 的扩展瓶颈主要是行为信号质量与请求内重复计算。对社区 CTR 排序，可优先缓存长历史表征，并用候选感知的小解码器融合实时帖子特征，在不突破延迟预算的前提下扩大序列长度与模型深度。</div>
     <div class="foot">Jie Chen, Xiangqian Yu, Yanchao Lian, Tan Lu, Run Yang, Zhengchun Shang, Xing Wang, Cheng ... · 2026-09-02 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2609.01240" id="dr-arxiv-oai-arXiv-org-2609-01240">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>ReST 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>ReST 研究的是 TikTok Shop Ads 大规模广告排序中的 CVR 预估。作者指出，把 LLaMA 式 Transformer 直接搬到用户行为序列上会遇到两类结构性错配。第一类是信号质量：点击、浏览既可能代表稳定偏好，也可能来自误触、探索或曝光偏差；行为之间的物理时间间隔不规则；最终转化标签又稀疏且延迟。工业排序器通常还有很强的非序列 DLRM 分支，主损失容易从这条“捷径”下降，序列分支得到的梯度不足，作者称之为 sequence starvation。第二类是计算不对称：一次请求只有一份用户历史，却要给 N 个候选广告打分。若每个候选都重复编码历史，扩展序列模型会直接撞上线上延迟墙。</p>
-<p>论文的关键观察是，语言模型中的 token 同质、密集监督和单序列生成假设，在推荐排序中均不成立。实验也说明盲目加参数无效：在序列编码器中加入 MoE，参数增加 500%，AUC 没有可测增益。ReST 因而不追求简单复制 LLM，而是围绕“噪声行为、稀疏监督、一对多打分”重新设计 Transformer 与训练/服务系统。</p>
-<h2>2. 方法详解</h2>
-<p>模型仍预测二元转化概率，主目标为 BCE：给定用户按时间排列的行为序列、非序列用户/上下文特征和候选广告，输出 P(y=1)。整体被拆成重型序列编码器 T 与轻型交叉解码器 C。T 每个请求只执行一次，产出可复用的行为记忆；C 对每个候选执行，用四类语义 query token（CLS、context、user、ad）读取这份记忆。</p>
-<p>T 的第一项改造是 Dual-Gated Attention。普通注意力直接把 V 加权聚合，ReST 先用 sigmoid 值门对每个行为特征做预聚合过滤，再对聚合后的上下文使用另一个 sigmoid 输出门。直观上，值门回答“这条行为是否可靠”，输出门回答“聚合结果应在多大程度上更新当前 token”。作者没有改 softmax 主体，因此仍兼容高效注意力内核；相比 HSTU 的无界 SiLU 门，有限范围的 sigmoid 可避免规模增大时注意力输出发散。</p>
-<p>第二项是 RoPE+RoTE。部分 attention head 用标准 RoPE 表示顺序位置，另一部分用离散物理时间做旋转。时间戳先减去序列起点，再按每个 head 的粒度 τ 分桶；秒/分钟粒度捕捉短期邻近，天/周粒度捕捉长期新鲜度。这样序号距离和真实时间距离进入同一种旋转算子，保持 FlashAttention 兼容性，也避免传统相对时间表的外推问题。</p>
-<p>第三项 SRN 用深度相关的归一化位置和小残差系数稳定深层训练。约前 25% 层采用类似 Post-LN 的路径，后续采用 Pre-LN；每个残差分支的可学习系数初始为 0.01，使深网络从近似恒等映射开始。候选侧 C 直接把 T 的输出当 K/V，移除反复执行的 K、V 投影；不同语义 query token 使用各自参数，增加容量却只激活当前 token 的参数。</p>
-<p>训练目标为主 BCE 加两个仅训练时存在的辅助项。序列 CVR 头禁止读取非序列 DLRM 特征，权重 λ_seq=0.1 时让序列编码器平均梯度范数提高 3 倍以上。另一个 sigmoid 对比损失对齐同一用户的序列与非序列表征，且相较 softmax 对批大小不敏感。User-Level Shared-Prefix Training 把时间窗内同一用户的 M 个样本合并编码，通过 causal mask 保证各样本只能看到当时历史，把 T 的计算从 M·FLOPs(T) 降为 FLOPs(T)。线上同理只编码一次历史，再批量运行 C，复杂度从 N·T+N·C 变为 T+N·C。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，论文把行为噪声处理拆成“进入注意力前过滤”和“聚合后调制”，而不是仅在注意力输出端加门。消融显示仅输出门带来 AUC +0.03%，输出门和值门合用达到 +0.06%，与全 Q/K/V 门相同，但 FLOPs 增幅从 14.9% 降到 7.5%。</p>
-<p>第二，RoTE 将多个真实时间尺度纳入旋转位置体系。仅 RoPE 带来 +0.04%，加入单一秒级 RoTE 为 +0.08%，多粒度 RoPE+RoTE 达到 +0.12%，说明推荐序列需要同时识别“第几个行为”和“距现在多久”。</p>
-<p>第三，架构和系统围绕一对多候选共同设计。加入轻量 C 且使用 token-specific parameterization 后 AUC 增益为 +0.05%；projection-free KV 将重复 FLOPs 增幅压到 0.2%，而保留 K/V 投影会增至 6.7%。这比只扩大 T 更有效，证明推荐大模型应优先扩展可摊销的用户侧计算，同时保留低成本候选交互。</p>
-<p>第四，作者明确诊断并修复 sequence starvation。辅助序列 CVR 与表征对齐不进入推理路径，却显著加强序列分支训练信号，让模型在长度、深度和宽度上持续扩展，而 LLaMA/HSTU 基线较早饱和。</p>
-<h2>4. 实验结果分析</h2>
-<p>工业数据来自匿名化的 TikTok Shop Ads，比较时固定排序栈、行为序列和 query token，只替换序列模块。公开数据使用 ML-1M、ML-20M 和 Amazon-Books。</p>
-<table><thead><tr><th>设置/数据</th><th>基线或模型</th><th>AUC 结果</th><th>计算量</th></tr></thead><tbody><tr><td>工业 Base</td><td>LLaMA</td><td>相对 DLRM +0.53%</td><td>1.37G FLOPs</td></tr><tr><td>工业 Base</td><td>HSTU</td><td>+0.51%</td><td>1.70G FLOPs</td></tr><tr><td>工业 Base</td><td>ReST</td><td>+0.67%</td><td>1.52G FLOPs</td></tr><tr><td>工业 Large</td><td>LLaMA</td><td>+0.70%</td><td>30.21G FLOPs</td></tr><tr><td>工业 Large</td><td>ReST</td><td>+0.92%</td><td>32.40G FLOPs</td></tr><tr><td>ML-20M</td><td>HSTU</td><td>0.8103</td><td>23.32M FLOPs</td></tr><tr><td>ML-20M</td><td>ReST</td><td>0.8135</td><td>23.41M FLOPs</td></tr><tr><td>Amazon-Books</td><td>HSTU</td><td>0.7556</td><td>23.32M FLOPs</td></tr><tr><td>Amazon-Books</td><td>ReST</td><td>0.7571</td><td>23.41M FLOPs</td></tr></tbody></table>
-<p>宽度实验中，HSTU 和 LLaMA 在 d=256 附近趋于饱和，扩到 512 基本不再改善；ReST 则从 +0.67% 继续升到 +0.80%。消融中 SRN 单独贡献 +0.08%，优于 Mix-LN 的 +0.02%；多粒度时间编码是单组设计中最大的增益之一。一个反直觉结果是 MoE：参数多 5 倍却没有 AUC 改善，说明稀疏标签下容量不是首要短板，信号路径与计算位置更关键。</p>
-<p>最终的一周线上 A/B 测试取得在线 AUC +1.31%、核心收入指标 +11.93%，并把 P99 控制在 50ms 预算内，之后全量部署。线上收入增幅明显大于 AUC 相对增幅，说明对高价值转化样本的排序改善可能具有非线性业务收益，但论文因保密未公开样本规模、绝对 AUC 与收入指标定义。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出工业数据和完整系统不能公开，工业结果仅报告相对 DLRM 的 AUC Δ；这限制了外部团队复核收益与数据分布的关系。论文聚焦 CVR 二分类排序，结论能否直接迁移到 CTR、多目标时长或列表级优化仍需验证。线上实验只有一周，未展示长期兴趣反馈、广告生态或模型漂移。</p>
-<p>此外，ULT 依赖同一用户在时间窗内形成可合并样本，共享前缀收益会随流量结构变化；RoTE 的时间粒度由工程设定，不同社区内容寿命可能需要重新搜索。作者未来可进一步研究自动时间尺度、增量更新编码器记忆，以及多目标损失下 sequence starvation 是否更严重。</p>
-<h2>6. 工业实践意义</h2>
-<p>最值得采用的是分阶段改造路径。第一步不必更换整个排序器，可先给序列分支增加直接 CTR/CVR 辅助头，监控其梯度范数和对最终指标的边际贡献；若序列分支长期被 DLRM 特征压制，再加入 sigmoid 表征对齐。第二步加入值门和多粒度 RoTE，用误触、低停留等弱行为验证门值是否合理。第三步才把用户历史编码与候选交互拆开，在线缓存或请求内复用 T 的输出。</p>
-<p>对于社区 UGC，候选数量多、帖子更新快，推荐的部署形态是：用户侧编码器异步或请求级计算长历史，候选侧小解码器融合帖子文本、多模态向量和实时上下文。需要重点压测候选数增长时的 P99、KV 读带宽和缓存失效率。不要把 MoE 或参数规模当作默认升级路线；本文最强的证据恰恰表明，如果训练信号仍稀疏、候选侧仍重复计算，增加参数只会提高存储和通信成本。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2609-01240"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2609.00986" data-paper-id="arxiv:oai:arXiv.org:2609.00986" data-card>
@@ -119,52 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>TGR 的价值不只是生成式召回，而是保留逐候选多任务输出，同时逐步把召回、排序和列表目标放进统一表示空间。社区推荐可先借鉴 CCFormer 的字段隔离交叉注意力与层级序列压缩，再将离线生成的语义理由作为冷启动辅助信号，避免在线执行昂贵推理。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">TGR Team, Lei Cheng, Haonan Hu, Beibei Kong, Yudong Li, Zang Li, Yunsheng Pang, Hongyang Su, Jiancha...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-09-02</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 5 · Practical 4 · Evidence 5 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2609.00986" id="dr-arxiv-oai-arXiv-org-2609-00986">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>TGR 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>腾讯 TGR 面向新闻、短视频、长视频、音乐和网文等异构业务，候选库达到千万到亿级，单阶段 P99 预算只有几十毫秒。传统召回、预排、精排、重排各自训练，造成三个问题：阶段目标割裂，前段误差无法被后段修复；ID 特征虽擅长记忆，却缺少内容语义和冷启动泛化；生成模型即便统一了候选生成，也容易在分层语义 ID 上出现物品边界丢失和逐层语义漂移。</p>
-<p>论文的目标不是用一个庞大生成器立即替换全部级联，而是给出可逐步上线的三条路线。TGR-GenRank 用 CCFormer 将传统逐候选排序升级为可扩展 Transformer；TGR-GenRec 用 BARGE 做单物品生成、用 HiGR 做整页 slate 生成；TGR-Reason 再把推理信息注入语义 ID，但把昂贵思考移出在线关键路径。这个设计对应工业团队的现实约束：既要统一表示和目标，又必须允许局部替换、灰度和回滚。</p>
-<h2>2. 方法详解</h2>
-<p>CCFormer 先把稠密、稀疏、序列及上下文特征统一 token 化。它不是对所有 token 做无差别全注意力，而是采用 feature-field separated cross attention，使用户、内容、上下文字段按角色交互；subspace token mixing 在子空间内学习高阶组合；hierarchical sequence compression 逐层压缩长历史，同时保留逐候选多任务输出。训练依托 Numerous-Torch，结合混合精度、稀疏参数压缩和候选单次并行打分，避免 Transformer 在工业稀疏特征上失去吞吐。</p>
-<p>BARGE 解决分层 semantic ID 的两个结构问题。Item Context-Aware Attention 在生成某物品 SID 时显式注入物品级上下文，防止模型只依赖前缀 token 而忘记完整物品边界。Hierarchical Path Reranking 在每一层用双塔比较解码前隐藏状态与累计路径 embedding，训练时采用对称 InfoNCE；负例既含 batch 内路径，也含生成分布中的高概率错误前缀，还可加入“曝光未点击”业务负例。推理时把路径相容度与生成 log probability 加权，对 Top-N 路径重排后只保留 Top-B，控制 beam 不膨胀。</p>
-<p>Dual-Path Decoding 则用 Householder 参数化的正交旋转把物品表示分成两个正交子空间，各自做残差量化并生成一条 SID。共享 encoder 后接两个私有 decoder/HPR，最后以 log-sum-exp 的 soft-OR 合并物品得分。Beauty 和 Sports 上两路 Top-10 的 Jaccard 仅 0.183/0.172，成功召回样本中有 15.6%/24.3% 仅来自一条路径，说明双路不是简单重复算力。</p>
-<p>HiGR 把目标从 next-item 改为 next-slate。PCRQ-VAE 组织前缀共享的离散空间；Hierarchical Slate Decoding 先粗后细生成列表，降低完整自回归的长度和组合复杂度；ORPO 用列表级偏好对齐同时优化多目标质量。TGR-Reason 使用 LatentRec 训练 Think 模型，把连续思考经 soft token selection 变为可共享的 reason token，并加逐步推理损失。在线不运行 Think 模型，而是从 Reason Store 读取预物化记录：DRI 作为固定长度 soft prompt，GMR 用完整 reason SID 检索群体行为记忆，另有 decoder-free SID 直接召回路径。</p>
-<p>部署分三层：在线层只读且保持毫秒预算；nearline 层由请求触发，但仅在预期效用足够时刷新；offline 层定期修复缺失、过期、失败或版本不兼容记录。条件写入和版本检查避免旧推理覆盖新记录。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，TGR 提供从判别排序到生成、再到离线推理的连续迁移路线。CCFormer 保留工业系统熟悉的逐候选多任务输出，因此可先替换 ranker；BARGE/HiGR 再分别处理 item 与 slate；Reason 层独立演进，降低一次性重构风险。</p>
-<p>第二，BARGE 用层级路径判别和正交双 SID 修复 semantic ID 的误差传播。HPR 的难负例直接来自模型最可能走错的前缀，训练目标与 beam search 错误一致；双路径让同一物品拥有互补量化视图，OR 融合提升召回而不要求扩大每一路 beam。</p>
-<p>第三，HiGR 将列表多目标从事后重排前移到生成训练中。前缀结构化量化、粗到细解码和 ORPO 分别对应表示、效率与目标错配，使生成模型优化的是 slate，而不是独立 item 的概率乘积。</p>
-<p>第四，TGR-Reason 将“思考”变成可缓存的用户级状态。DRI、GMR 与直接 SID 召回都是有界、非自回归在线操作，不增加当前请求的 reason-token 生成或 SID 解码步数。这为工业系统引入大模型推理提供了比在线 CoT 更可控的成本模型。</p>
-<h2>4. 实验结果分析</h2>
-<p>论文覆盖公开数据与腾讯多条真实业务，既报告离线 Hit/NDCG，也报告线上 CTR、时长、收入与新用户转化。</p>
-<table><thead><tr><th>模块/场景</th><th>关键离线结果</th><th>线上 A/B 结果</th></tr></thead><tbody><tr><td>CCFormer</td><td>五个场景均显著改善</td><td>某场景 CTR +3.57%，广告收入 +1.71%</td></tr><tr><td>BARGE</td><td>Hit@5 +10.2%–16.9%</td><td>CTR +0.60%，阅读时长 +1.70%</td></tr><tr><td>HiGR</td><td>slate 质量 +15.9%–21.3%，推理 5×</td><td>观看时长最高 +1.22%，视频播放 +1.73%</td></tr><tr><td>TGR-Reason</td><td>冷启动新用户 Hit@1 +477.8%</td><td>有效消费 +1.75%，新用户曝光转化 +13.09%</td></tr></tbody></table>
-<p>BARGE 的双通道分析是很有解释力的消融：两路候选相似度不足 0.2，且最多 24.3% 的成功样本只由一路贡献，证明正交分解确实产生互补召回。ICA 的门激活在各层稳定约 0.35–0.38，且相对无 ICA 的累计命中优势随 SID 深度扩大，符合其抑制层级语义漂移的目标。</p>
-<p>结果中最醒目的是 Reason 对冷启动 Hit@1 的 +477.8%。这类相对增幅通常意味着原基线很低，因此不能直接等同于成熟用户的大幅绝对收益；更可信的业务证据是新用户曝光到转化 +13.09%。HiGR 同时改善列表质量和获得 5 倍推理速度，说明 coarse-to-fine 并非纯精度换效率。CCFormer 已在五个 A/B 场景验证、两个全量上线，证据强于仅有公开离线 benchmark 的推荐论文。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者强调 TGR 是一组逐步演进的系统，而非已经由单一模型完全替代所有级联阶段。各模块在不同腾讯业务上评估，指标与流量条件不完全统一，不能把所有提升简单相加。大量数据、代码、模型规模和延迟绝对值受商业保密限制，外部复现难度高。双路径解码会增加相对单路 decoder 的计算；Reason Store 还引入新鲜度、版本和缺失记录治理成本。</p>
-<p>论文没有充分展开长期反馈回路：离线 reason token 可能固化已有兴趣并放大过滤气泡，多目标 slate 的业务权重也可能随运营目标变化。未来值得研究 reason 记录的置信度与过期策略、生成和判别模型的统一校准，以及在不损失多样性的前提下压缩双路 decoder。</p>
-<h2>6. 工业实践意义</h2>
-<p>推荐团队不应从“端到端替换整条链路”开始。更稳妥的第一阶段是借鉴 CCFormer：统一字段 token 化，但保留现有 CTR/CVR 多任务头和候选接口，通过同批候选并行打分验证收益。第二阶段可在召回旁路上线单物品生成，使用 HPR 对每层 SID 做可解释重排，并将曝光未点击作为难负例；只有覆盖率、长尾和线上 CTR 同时改善后，再扩大生成流量。</p>
-<p>对社区 UGC，语义 ID 特别适合新帖和多模态内容，但必须处理帖子快速下架、审核状态变化和热点时效。SID 索引返回后应做可用性过滤，且生成与直接召回设置独立配额。Reason 层建议采用 TGR 的在线只读模式：重型模型在 nearline/offline 更新用户兴趣 reason，在线通过 KV 点查取固定 soft prompt；监控记录年龄、读取失败率、版本命中率和回退路径。</p>
-<p>需要避免三种误用：不要同步生成长 CoT；不要只看 Hit@K 而忽略列表级时长、生态与多样性；不要让双路径无限扩大 beam。TGR 最可复用的经验是把智能计算按新鲜度和延迟敏感度分层：实时上下文留在线，昂贵用户推理做预计算，群体行为证据走有界检索，最终用严格配额把各路候选汇合。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2609-00986"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2609.00165" data-paper-id="arxiv:oai:arXiv.org:2609.00165" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.40</span></div>
@@ -278,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

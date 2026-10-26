@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,49 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把「时间」从位置索引或单一衰减升级为显式的多速率 recency 通道，是这篇的核心洞察：用户的短期冲动与长期兴趣本就处于不同时间尺度，单一衰减无法同时拟合。对社区推荐/搜索可直接借鉴——MARS 是即插即用算子（+6% 参数），可挂在现有 SASRec/Mamba 召回塔上，按行为密度自动选骨干，工程落地成本低。门控融合多尺度摘要的思路也能迁移到 query-行为序列的时序特征构造。</div>
     <div class="foot">Zhenyu Yu, Shuigeng Zhou · 2026-06-03 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.03718" id="dr-arxiv-2606-03718">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>MARS 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>序列推荐的核心是给历史行为加权，但现有两类骨干各有盲区：Transformer（SASRec 类）用位置自注意力，把&quot;加权&quot;交给可学习的位置/内容注意力，没有时间先验；State-Space Model（Mamba4Rec、SIGMA 类）用单一隐式指数衰减，强加了一条固定的&quot;越近越重&quot;曲线。作者点出关键 gap：<strong>序列混合（sequence mixing）的最优架构，未必等于多尺度时间加权（multi-scale temporal weighting）的最优参数化</strong>——这两件事被现有模型耦合在了一起。真实用户行为天然有多个时间尺度：分钟级的冲动点击、天级的短期兴趣、月级的长期偏好，单一衰减无法同时拟合。量化证据上，论文显示在稀疏数据上 MARS 相对最强 content-only Transformer 基线平均 +19.7% HR@10（Games 上达 +36.2%），在稠密 ML-1M 上以 42% 更少的 MFLOPs 取得 +3.2% HR@10 / +0.9% NDCG（对比 SIGMA），说明显式多尺度建模既涨点又省算力。</p>
-<h2>2. 方法详解</h2>
-<p>MARS 是一个<strong>与编码器无关的聚合算子</strong>，挂在任意骨干输出的 token 表征 h 之上，分三步：</p>
-<p><strong>(a) Per-Head 衰减加权</strong>：先把相邻交互的真实间隔时间 Δt 做对数压缩 Δ̃tᵢ = log(1 + Δtᵢ/τ₀)，τ₀=1 小时。设 K 个衰减 head，每个 head 有可学习基础衰减率 λₖ=softplus(λ̃ₖ) 和温度 τₖ=softplus(τ̃ₖ)+0.1。</p>
-<p><strong>(b) 用户条件化调制</strong>：用序列最后一个表征 hₗₐₛₜ 过 MLP 调制每个 head 的衰减率：λₖ(u)=λₖ·exp(σ·tanh(Wλ·hₗₐₛₜ)ₖ)，σ=0.5。这样每个用户有自己的衰减曲线，但不引入 per-user 参数。</p>
-<p><strong>(c) 聚合</strong>：第 k 个 head 的权重为 softmax 归一化的衰减 logit：wₖ,ᵢ(u)=exp(−λₖ(u)Δ̃tᵢ/τₖ)·mᵢ / Σⱼ(...)，得到 K 个摘要 Zₖ(u)=Σᵢ wₖ,ᵢ(u)hᵢ。理论上（Proposition 1）K 个指数衰减的混合是单调衰减核的通用逼近器。</p>
-<p><strong>上下文自适应融合门</strong>：用上下文向量 c=[时间编码; 最后物料 embedding; hₗₐₛₜ] 对 K 个摘要做门控：gₖ=vᵀtanh(Wg[Zₖ(u);c])，α=softmax(g/τα)，最终 hᵤ=hₗₐₛₜ+Σₖ αₖZₖ(u)。<strong>残差连接保留编码器原信号</strong>，避免退化。</p>
-<p><strong>损失</strong>：L=L_CE + η_div·L_div + η_bal·L_bal。多样性损失 L_div=−Σ JSD(wₖ‖wₖ&#x27;) 防止 K 个 head 塌缩到同一衰减率；负载均衡损失 L_bal=K·Σ ᾱₖ²（MoE 风格）防止门只走单个 head。默认 η_div=η_bal=1e-2。</p>
-<p><strong>骨干自动选择</strong>：按训练集平均序列长度 L̄ 切换——L̄&lt;50 用 MARS-T（Transformer），L̄≥50 用 MARS-M（Mamba）。复杂度 O(LdK)，仅增 ~6% 参数。</p>
-<p>训练配置：d=64，2 层 block，dropout（稀疏 0.5 / 稠密 0.2），Adam lr=1e-3，batch 2048，K（稀疏 4 / ML-1M 8）。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>(1) 解耦&quot;序列混合&quot;与&quot;时间加权&quot;</strong>：这是最核心的观念贡献。把时间衰减从骨干中剥离成独立、可即插即用的算子，使得&quot;用什么架构混合序列&quot;和&quot;如何按时间加权&quot;可以各自最优。这比 TiSASRec 把时间嵌入硬塞进注意力更模块化。</p>
-<p><strong>(2) 多速率衰减 + 用户调制</strong>：用 K 个可学习指数核覆盖不同时间尺度，再用用户表征调制——既有多尺度表达力，又不爆 per-user 参数。消融显示去掉真实 Δt（用位置序号替代）在 Beauty 上掉 2.5%，是单个最重要组件。</p>
-<p><strong>(3) 防塌缩正则</strong>：多样性损失保证 K 个 head 真的学到不同尺度（Proposition 3：在 Hawkes 过程数据下可恢复真实衰减率），负载均衡保证门不退化。在稠密 ML-1M 上去掉负载均衡掉 3.0%。</p>
-<h2>4. 实验结果分析</h2>
-<p>主结果（HR@10）：Beauty 8.84（SASRec 8.04，+9.95%）、Sports 5.22（+13.5%）、Games 12.07（SASRec 8.86，+36.2%）、Yelp 6.45（+19.2%）、ML-1M 用 MARS-M 32.80（SASRec 29.62，+10.7%，对比 SIGMA +3.2%）。效率上 MARS-T 仅增 ~2% 参数、1% MFLOPs；MARS-M 比 SIGMA 省 40-42% MFLOPs。</p>
-<p>消融最有信息量：稀疏数据上 backbone-only（去掉 MARS）掉 4.0-6.3%；K=1 单 head 在 Beauty 已达最优 K=8 的 96.2%，说明<strong>稀疏场景少量 head 就够</strong>；稠密 ML-1M 上 K 敏感得多（K=16 时 +6.4% HR@10 摆动），负载均衡损失变成最关键组件。</p>
-<p>按历史长度分组分析揭示一个反直觉点：稀疏 benchmark 上增益随序列变长而增大（Yelp 从短序列 +21.8% 到超长 +29.7%）；但 ML-1M 上 MARS-T 在超长桶（76% 测试用户）反而 −2.9%——因为注意力本就已在长序列上聚焦——而 MARS-M 在所有桶稳定 +5.7%~+9.0%。这正是骨干自动选择规则的实验依据。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确列出：(1) 骨干选择是<strong>手工设定的数据集级阈值</strong>（L̄=50），在 20× 密度差内稳健但未在更连续的密度谱上验证，且非学习得到；(2) 可辨识性（Proposition 3）依赖 Hawkes 过程假设，分布无关版本仍开放；(3) TiSASRec 在 Beauty/Games 的 NDCG/MRR 上仍略胜 MARS-T（1.1-7.1%），作者用 40× 内存优势换取这一让步；(4) 评估仅限五个公开集的离线 next-item 预测。隐含未提的局限：未做线上 A/B，工业超长行为序列（千级）下 K 个核是否够用未知。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜推团队最直接的可借鉴点：<strong>MARS 是低成本即插即用算子</strong>（+6% 参数、O(LdK)），可直接挂在现有 SASRec / Mamba 召回塔输出上，不动主干。对社区推荐尤其契合——用户行为兼有秒级刷信息流的冲动和长期话题偏好，单一时间衰减拟合不了，多速率核能同时建模。三条工程结论：(1) <strong>务必喂真实时间戳</strong>而非位置序号（去掉真实 Δt 是最大掉点项）；(2) 稀疏行为场景 K=4 足矣，不必堆 head，省算力；(3) 行为密度差异大时用骨干自动选择思路——短序列用注意力、长序列用 Mamba。门控融合多尺度摘要的设计也能迁移到 query-行为时序特征构造。部署上 MARS-M 比 SIGMA 省 40% FLOPs，对延迟敏感的精排友好。需注意：超长行为用户（注意力已聚焦）上 Transformer 变体可能无增益甚至掉点，上线前要按行为长度分桶评估。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2606-03718"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>6 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2606.03866" data-paper-id="arxiv:2606.03866" data-card>
@@ -117,50 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>工业 LLM4Rec 落地的真问题不是「能不能用 LLM」，而是 LLM 语义奖励和推荐 CTR/偏好奖励经常互相打架。Taiji 把它显式建成多目标帕累托优化（POPO），而非简单加权求和，这对做多目标排序的团队很有启发：reward 冲突应该用帕累托前沿来调，而不是手调权重。SFT 用拒绝采样自产领域 CoT 数据的做法，也为缺乏推荐场 CoT 标注的团队提供了冷启动数据生产范式。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Yuecheng Li, Zeyu Song, Jing Yao, Chi Lu, Peng Jiang, Kun Gai</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-06-03</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.03866" id="dr-arxiv-2606-03866">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Taiji 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>用 LLM &quot;增强&quot;工业推荐（LLM-as-Enhancer）已成趋势，但把 LLM 的语义空间与推荐器的 ID 空间对齐（通过 SFT/RL 后训练）一直很难。Taiji 来自快手（Kun Gai、Peng Jiang 团队），直指两个被忽视的瓶颈：<strong>(1) SFT 阶段</strong>——开放域推荐里&quot;缺乏合理、系统的指标来准确衡量推荐专用 CoT 的质量&quot;，导致没法判断生成的推理链好不好、怎么提升；<strong>(2) RL 阶段</strong>——现有方法&quot;没有考虑两类异质信息之间的动态平衡&quot;，即 LLM 的语义理解奖励与推荐偏好（CTCVR）奖励经常互相打架，固定权重加和会让一方压倒另一方。这个问题在工业场景尤其尖锐：语义对了但 CTR 没涨，或 CTR 涨了但模型只学会复读热门 ID、丢了泛化。论文要解决的是&quot;如何让 LLM 既懂语义又服从线上偏好信号&quot;。</p>
-<h2>2. 方法详解</h2>
-<p>Taiji 是 LLM-as-Enhancer 框架，四阶段流水线：数据构造（从快手平台采集用户画像和行为序列）→ 推理激活（SFT 注入高质量 CoT）→ LLM-推荐协同（POPO 平衡奖励）→ 在线排序（把 LLM 输出编码成特征喂给广告排序模型）。</p>
-<p><strong>SFT 端——逆向工程 CoT 数据生产</strong>：</p>
-<ul>
-<li><strong>RUPR（Reverse-Engineered User Preference Reasoning）</strong>：用&quot;用户真实下一个购买物料&quot;作为 ground-truth 条件，喂给 QwQ-32B 反向蒸馏出推理链——即已知答案再让大模型补出&quot;为什么是这个&quot;的推理，保证 CoT 与真实偏好一致。</li>
-<li><strong>ORFT（Open-Ended Rejection Sampling Fine-Tuning）</strong>：用 ground-truth 答案的困惑度（PPL）过滤 CoT 样本，只保留 PPL &lt; R（中位数阈值 4.6）的样本，在 DeepSeek-R1-7B 上做 SFT。损失是标准自回归 NLL：L_ORFT=−(1/N)ΣΣ log P(tⱼ|qᵢ,t_&lt;ⱼ)。</li>
-</ul>
-<p><strong>RL 端——Pareto Optimal Policy Optimization (POPO)</strong>：<br>两个奖励：<strong>语义奖励</strong> r_s（预测物料与真实物料 embedding 的余弦相似度）、<strong>ID 协同奖励</strong> r_id（来自生产排序模型的 CTCVR，即点击∧转化概率）。核心是<strong>动态权重调整</strong>（Eq.5）：w̃^(t)=w̃^(t-1)⊙exp(η^(t)·I^(t)/μ)，再归一化，其中 I^(t) 是梯度对齐指示器，衡量单个目标梯度与聚合目标梯度的协调度——哪个目标&quot;拖后腿&quot;就动态加权。还提供 POPO-light，用奖励统计量替代梯度计算，几乎零开销。组合奖励 r̃ᵢ=w_s^(t)·r_s + w_id^(t)·r_id，套进 GRPO 损失：L_POPO=E[min(ρA, clip(ρ,1−ε,1+ε)A) − β·D_KL]。</p>
-<p>训练配置：快手 111 万用户记录（100 万 SFT / 10 万 RL / 1 万测试），base model DeepSeek-R1-7B，3 节点 × 8 张 A800；SFT 1 epoch lr=1e-7 batch 32；RL 1 epoch lr=2e-5 batch 16，rollout group G=4，最大 13K prompt / 2048 completion token。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>(1) 把奖励冲突显式建成帕累托优化</strong>：这是最有启发的贡献。语义奖励和 CTCVR 奖励异质且常冲突，传统做法手调固定权重加和，必然牺牲一方。POPO 用梯度对齐指示器在线动态调权，逼近帕累托前沿。消融显示 POPO 比固定权重 GRPO 在 Category L1 上 +11.61%、L3 上 +29%。</p>
-<p><strong>(2) 逆向工程 CoT 数据生产</strong>：开放域推荐没有现成 CoT 标注，RUPR 用&quot;已知答案反推理由&quot;绕开了这个冷启动难题。消融显示 RUPR 比直接蒸馏在 Category L1 准确率上 +19.83%。</p>
-<p><strong>(3) PPL 拒绝采样做质量过滤</strong>：用 ground-truth 答案困惑度作为 CoT 质量的可量化代理指标，解决了&quot;CoT 质量无法衡量&quot;的痛点，且阈值（中位数 4.6）可解释。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>离线（1 万测试集）</strong>：Category L1 准确率 0.2433 vs backbone 0.1560（+55.96%）；Title Hit-Rate@50 0.0567 vs 0.0496（+14.31%）；CTCVR 0.003816 vs 0.003417（+11.68%）。POPO 在 6 个指标中 5 个超过固定权重 GRPO；POPO-light 以可忽略开销取得几乎相同效果。</p>
-<p><strong>在线 A/B（10% 流量，1 周）</strong>：整体 ADVV +2.83%、Revenue +3.30%；<strong>长尾用户 ADVV +5.26%、Revenue +5.32%</strong>——长尾收益明显高于大盘，说明 LLM 语义增强对数据稀疏的长尾用户帮助更大，这正是 LLM4Rec 最该发力的地方。</p>
-<p><strong>消融</strong>：RUPR 对 Category L1 贡献 +19.83%（vs 直接蒸馏）；POPO 对 Category L1 贡献 +11.61%、L3 +29%（vs 固定权重）。两个核心组件都被验证有效。</p>
-<p><strong>部署规模</strong>：自 2026 年 5 月起已在快手全量上线，服务 4 亿+ 日活。这是少有的给出真实线上规模和 A/B 数字的工业 LLM4Rec 论文。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文未设独立局限章节。隐含约束有几条：(1) 强依赖 teacher 模型 QwQ-32B 的质量，蒸馏天花板受限于教师；(2) ID 协同奖励需要生产排序模型实时提供 CTCVR，没有成熟排序基建的团队无法复现；(3) 对 PPL 拒绝采样阈值（中位数 4.6）敏感，阈值选择缺乏自适应机制；(4) 整套是 LLM-as-Enhancer 离线/近线产特征喂给排序模型，并非端到端在线生成，LLM 推理仍在离线侧，线上时延问题被规避而非解决。</p>
-<h2>6. 工业实践意义</h2>
-<p>对做多目标排序的搜推团队，Taiji 给出三条可直接落地的经验：<strong>(1) reward 冲突要用帕累托前沿调，别手调权重</strong>——语义目标和业务目标（CTR/CVR）几乎必然冲突，POPO 的&quot;梯度对齐指示器动态调权&quot;思路可迁移到任意多目标排序/多任务学习场景，且 POPO-light 几乎零成本。<strong>(2) 缺 CoT 标注就用逆向工程</strong>——RUPR&quot;已知 label 反推 CoT&quot;的范式，为推荐、搜索相关性等没有现成推理标注的场景提供了冷启动数据生产模板，再用 PPL 过滤质量。<strong>(3) LLM 增强优先打长尾</strong>——线上长尾用户收益（+5.3%）显著高于大盘（+3.3%），资源有限时应把 LLM 语义增强投向数据稀疏的长尾流量。部署上 Taiji 走的是 LLM-as-Enhancer 离线产特征路线（DeepSeek-R1-7B，3×8 A800），把计算密集部分推到离线、线上只查表，这与业界主流&quot;LLM 不直接端到端在线推理&quot;的工程共识一致，是当前可落地性最高的范式。对社区搜索，可借鉴其&quot;语义 reward + 业务 reward 帕累托对齐&quot;来平衡相关性与点击。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2606-03866"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2606.03091" data-paper-id="arxiv:2606.03091" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.55</span></div>
@@ -244,60 +159,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

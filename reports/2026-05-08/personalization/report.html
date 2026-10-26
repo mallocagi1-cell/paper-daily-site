@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -65,81 +65,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>证明小尺寸 LLM（0.6B + INT8）端侧部署在工业级推荐场景已可落地，并能实时捕捉云端无法及时同步的兴趣漂移。其 SFT 数据配比中行为数据占 60%、共购信号占 20% 的策略，对社区搜索同类「短文本意图理解」任务直接可借鉴；五模块管线（行为采集→提示构造→意图 Agent→召回→训练）也是社区/电商推荐端云协同的可参考范式。</div>
     <div class="foot">Bin Zhang, Weipeng Huang, Dimin Wang, Jialin Zhu, Yuning Jiang, Zhaode Wang, Chengfei Lv, ... · 2026-05-07 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.04726" id="dr-arxiv-2605-04726">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>电商推荐系统的核心需求是「快速捕捉用户意图变化」。RecGPT-Mobile 直面三个具体痛点：（1）现有 LLM-as-Recommender（如 RecGPT）部署在云端，每次推理需把上行行为序列发送到服务器、再回传 query/排序结果，端到端延迟无法满足用户在手机端「点了一个袜子立刻想看运动鞋」这类秒级兴趣漂移；（2）千万 DAU 量级下纯云端 LLM 推理的算力成本接近线性增长；（3）现有端侧推荐模型（EdgeRec、DIR）仍是 ID-based 浅模型，缺乏 LLM 的语义推理能力，无法把「最近浏览跑鞋 + 加车袜子 + 搜索「跑步装备」」这类复合行为浓缩成一个语义化的下一步搜索 query。</p>
-<p>作者把问题形式化为 next-query prediction：根据手机端最近交互行为（浏览、加车、搜索、点击）实时生成下一步用户最可能输入的 query，反向驱动 feed 推荐。这一定义把推荐问题转化为生成式语义任务，天然适配 LLM。</p>
-<h2>2. 方法详解</h2>
-<p><strong>整体架构 5 模块</strong>：用户行为采集（端侧本地 cache，不上行原始日志）→ Prompt 构造（自适应模板）→ Intent Agent（端侧微调 LLM）→ Item 召回（基于生成 query 触发底层搜索）→ 训练管线（云端 LoRA SFT + 8-bit 量化 + OTA 下发到端侧）。</p>
-<p><strong>模型选型</strong>：作者对比 Qwen3-0.6B / 4B / 8B / 30B 四种参数量。Base 评测综合得分 0.6B=0.677、4B=0.613，反直觉地小模型 base 评分高于 4B（猜测因为 4B base 在 e-commerce domain 缺乏 supervision 收敛差）。LoRA 微调后所有规模均跃升至 0.78–0.83；INT8 量化后 0.6B+LoRA+Quant=0.794，对比未量化 0.829 仅退化 4%，最终选 0.6B-Quant 部署。</p>
-<p><strong>训练数据混合配方（关键点）</strong>：60% behavior-driven（购买/搜索日志中真实「行为序列→用户随后输入 query」对）+20% co-purchase（共购关系挖掘的潜在意图）+15% LLM-augmented（云端大模型扩写多样化 query）+5% 人工标注（高质量 anchor）。这一配比把「分布忠实度（行为日志）」「召回扩展性（共购+LLM 增广）」「质量上限（人工）」三者平衡。</p>
-<p><strong>自适应 Prompt 构造算法（4 步）</strong>：</p>
-<ul>
-<li>特征抽取：当前会话行为分布、最近性、多样性、频次</li>
-<li>模板级 adaptation：从模板池中按特征选最优模板</li>
-<li>结构级 adaptation：增量精调 prompt 各组件</li>
-<li>Budget-aware pruning：在端侧延迟/内存约束内裁剪</li>
-</ul>
-<p><strong>触发优化机制</strong>：不持续做端侧推理，而是以「intent drift score」决定何时唤起 LLM。该 score 由三部分加权：行为分布熵变化 ΔH、Jaccard similarity（语义重叠）、Jensen-Shannon divergence（分布偏移）。综合得分超过阈值 τ=0.8 才触发推理，省下大量 idle 算力。</p>
-<p><strong>训练设置</strong>：LoRA rank 适配端侧约束；INT8 对称量化；端侧使用 ONNX Runtime / Qualcomm Hexagon DSP 推理（论文未明确指定后端但提及 mobile inference engine）。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>(1) 0.6B 端侧 LLM 推荐意图理解</strong>：首次系统验证 sub-1B LLM + INT8 量化在工业级推荐意图任务上「相对准确率仅退化 4%」可接受，为后续端云协同推荐打开尺寸下限。机制在于 next-query 任务比 chat 任务对推理深度需求更弱，模式识别+少量推理即可。</p>
-<p><strong>(2) 60/20/15/5 训练数据配方</strong>：把 behavior-driven 主体（贴合分布）和 LLM-augmented（覆盖长尾）显式分离配比，是 LLM4Rec SFT 数据工程上的可复用 recipe。比纯日志蒸馏 +5–10 个百分点。</p>
-<p><strong>(3) Drift-aware 触发机制</strong>：引入 ΔH+Jaccard+JSD 三信号融合作为触发器，而非定时/每个事件触发。这把端侧 LLM 算力消耗与「确实有兴趣漂移」事件挂钩，是端侧 LLM 部署的工程关键。</p>
-<p><strong>(4) 自适应 Prompt 与结构裁剪</strong>：在固定 token budget 下根据用户特征动态选择 prompt 模板和结构，比静态 prompt 在 Ssem/Slogic/Sstyle 三维评估上一致更优。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>离线评测（综合得分越高越好）</strong>：</p>
-<ul>
-<li>Qwen3-0.6B：Base 0.677 → LoRA 0.829（+22%）→ LoRA+Quant 0.794</li>
-<li>Qwen3-4B：0.613 → 0.783 → 0.760</li>
-<li>0.6B 量化版 0.794 已优于 4B base 0.613，证明 LoRA 微调对小模型增益更显著</li>
-</ul>
-<p><strong>在线 A/B（淘宝 4 个 feed 场景，1 个月，千万级用户）</strong>：</p>
-<table><thead><tr><th>场景</th><th>CTR</th><th>支付转化</th><th>GMV</th></tr></thead><tbody><tr><td>Payment Success</td><td>+1.3%</td><td>+2.3%</td><td>+2.5%</td></tr><tr><td>Shipment Tracking</td><td>+2.4%</td><td>+2.9%</td><td>+3.0%</td></tr><tr><td>Shopping Cart</td><td>+2.5%</td><td>+2.7%</td><td>+2.9%</td></tr><tr><td>Order List</td><td>+0.8%</td><td>+1.8%</td><td>+1.8%</td></tr><tr><td><strong>平均</strong></td><td><strong>+1.8%</strong></td><td><strong>+2.7%</strong></td><td><strong>+2.5%</strong></td></tr></tbody></table>
-<p><strong>有趣现象</strong>：Shipment Tracking（物流跟踪页）涨幅最高（GMV +3.0%）——用户在等待物流时心智更开放，端侧实时捕捉「等快递期间产生的次级需求」收益最大；Order List 涨幅最低（CTR +0.8%）——订单页用户已完成购买决策，意图带宽窄。</p>
-<p><strong>延迟稳定性</strong>：P50–P95 区间在多日测试中保持平稳，反映 INT8 + 触发器组合稳定承载真实环境抖动。</p>
-<p><strong>消融</strong>：论文未给出每个模块（触发器、自适应 prompt、训练数据配比）的独立 ablation，是评测完整性短板。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出：</p>
-<ul>
-<li>模型大小被端侧硬件约束在 0.6B 量级，复杂多步推理任务表现待验证；</li>
-<li>冷启动（无端侧行为历史）场景未深入讨论，依赖云端兜底；</li>
-<li>跨设备同步（同一用户多端）未涵盖。</li>
-</ul>
-<p>笔者补充：触发器超参 τ=0.8 是 hand-tuned，不同业务可能需重新调优；intent drift score 三信号权重也是手工设计，可考虑 learnable。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>直接可借鉴</strong>：</p>
-<ol>
-<li><strong>端侧 LLM 部署可行性</strong>：对于电商/社区/短视频信息流，sub-1B + INT8 已可承载意图理解。社区搜索可考虑同样架构生成「下一步搜索 query」反向驱动 feed。</li>
-<li><strong>训练数据配方</strong>：60/20/15/5 直接套用——主体是真实行为对，少量 LLM 增广扩长尾，极少量人工兜底质量。</li>
-<li><strong>触发器设计</strong>：把端侧 LLM 触发与意图漂移信号挂钩，是控制端侧算力的关键工程实践，可推广到其他端侧大模型场景。</li>
-</ol>
-<p><strong>部署考量</strong>：</p>
-<ul>
-<li>端侧延迟：0.6B-INT8 在中端 Snapdragon SoC 单次推理 200–500ms 量级（论文未明确，但稳定 P50–P95 暗示）；</li>
-<li>内存：0.6B-INT8 ~ 600MB，对多数中高端机型可接受；</li>
-<li>模型更新：LoRA 增量 OTA 下发，无需重建底模；</li>
-<li>隐私：端侧本地行为数据不上行，符合数据合规趋势。</li>
-</ul>
-<p><strong>坑点</strong>：Order List 场景 CTR 只 +0.8%，说明端侧 LLM 不是万能药——用户已做出决策的场景边际收益小，应优先在「用户处于探索/等待状态」的页面部署。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-04726"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>5 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2605.04559" data-paper-id="arxiv:2605.04559" data-card>
@@ -150,108 +76,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>把 BoN 静态参考分布换成贝叶斯自演化目标，解决了「静态参考无法区分超出经验范围的候选」与「策略变好后梯度消失」两大对齐顽疾。社区搜索/推荐的 list-wise 公平性、多样性、相关性混合目标无法用 token-level loss 直接优化的场景，可借鉴该 CDF 估计器：不需要在线 BoN，offline 训练一次即可。τ 控制先验稳定性 vs 在线适应，是后续多目标推荐对齐工作的关键超参。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Ruijun Chen, Chongming Gao, Jiawei Chen, Weiqin Yang, Xiangnan He</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-07</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 5 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.04559" id="dr-arxiv-2605-04559">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>LLM4Rec 把推荐转成自回归生成任务，但训练目标停留在 token 级 cross-entropy 或 pair-wise preference（DPO/IPO），导致两类指标无法直接优化：（1）list-level 不可微指标，如 NDCG（涉及 ranking position）、Fairness（如组间 MGU）、Diversity（ILD）；（2）多目标的混合权衡。</p>
-<p>推理时 Best-of-N (BoN) 通过对每个 query 采样 N 个候选列表、按 list-wise reward 选最优，可绕过这一问题。但 BoN 的 N 倍延迟在线上不可接受（实测 N=4 时 178.24s vs 单次 44.56s，4× 时延）。BoN Alignment 试图把 BoN 的搜索能力 distill 进策略本身（即 offline 训练让模型直接采样到高分候选），但作者识别出两个根本性失败模式：</p>
-<p><strong>(1) Indiscriminate Supervision（无差别监督）</strong>：静态参考分布的 CDF 在超过最大参考奖励 R_max 后饱和到 1.0，所有「比 R_max 还好」的候选获得相同 quantile 分数，丢失了 ranking guidance。当策略变强、采样开始普遍超过 R_max，监督信号坍缩。</p>
-<p><strong>(2) Gradient Decay（梯度消失）</strong>：随着策略改进，weighting 项 log F_ref(R(y)) → 0，有效监督信号迅速衰减，训练提前收敛在次优。</p>
-<p>作者把这归结为「静态参考分布与动态策略不匹配」，提出动态贝叶斯参考分布。</p>
-<h2>2. 方法详解</h2>
-<p><strong>核心 CDF 估计器</strong>：</p>
-<p>F̂_BLADE(r) = (N_ref^&lt;r + τ · N_batch^&lt;r) / (M + τ · G)</p>
-<p>其中：</p>
-<ul>
-<li>N_ref^&lt;r：静态参考样本中奖励 &lt; r 的个数</li>
-<li>N_batch^&lt;r：当前 batch（rollout）中奖励 &lt; r 的个数</li>
-<li>M = 128（参考集大小）</li>
-<li>G = 16（每 query rollout 组大小）</li>
-<li>τ：动态系数，控制「先验稳定性 vs 在线适应」权衡</li>
-</ul>
-<p>形式上等价于在 Beta-Binomial 共轭框架下做参数更新：<br>α_new(r) = α_0(r) + τ · N_batch^&lt;r<br>β_new(r) = β_0(r) + τ · (G − N_batch^&lt;r)</p>
-<p>把这一动态 CDF 代入 BoN-as-distillation 的代理奖励：</p>
-<p>r_i = (N − 1) · log F̂_BLADE(R(y_i))</p>
-<p>这一奖励放进 GRPO 目标（group-relative advantage），保证当策略变强时，参考分布也跟着 batch 移动，避免 saturation。</p>
-<p><strong>训练管线</strong>：</p>
-<ul>
-<li>Backbone：Llama-3.2-1B-Instruct</li>
-<li>硬件：4×A100</li>
-<li>SFT：3 epoch，lr=1e-4</li>
-<li>BLADE 阶段：3 epoch，lr=5e-6，linear decay；group size G=16，reference set M=128</li>
-<li>采样：temperature=0.8，repetition penalty=1.05</li>
-</ul>
-<p><strong>关键设计</strong>：BLADE-N 的 N 表示用 BoN 推理时也用 N 个候选，但因 BLADE 已 distill BoN 能力进策略，单次推理与 base 同价位（44.56s）。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>(1) 动态贝叶斯参考分布</strong>：从根本上解决 BoN Alignment 的 saturation 与 gradient decay。机制：参考分布不是固定的，而是 Beta-Binomial 后验，随 rollout 不断 fuse 当前 batch 证据。τ 调节 prior vs likelihood 权重，τ=0.3 是稳健甜区。</p>
-<p><strong>(2) 与 GRPO 无缝集成</strong>：proxy reward r_i = (N−1)·log F̂(R(y_i)) 直接替换静态 quantile，无需修改 GRPO loss 形式。等于「给 PPO/GRPO 装一个动态 reference distribution adapter」，工程改动小。</p>
-<p><strong>(3) 多目标 Pareto 占优</strong>：在 R_NDCG − λ·MGU（公平性）和 R_NDCG + λ·ILD（多样性）两类复合 reward 上，BLADE 在所有 λ 值上 Pareto 占优 SFT baseline。证明该框架是 metric-agnostic 的，可挂载任意 list-wise reward。</p>
-<p><strong>(4) Inference-time 零开销</strong>：1× 单次推理，性能反超 4× BoN，是 BoN distillation 的「真 distillation」证据。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>主结果（NDCG@5）</strong>：</p>
-<table><thead><tr><th>Method</th><th>Amazon CDs</th><th>Steam</th><th>Goodreads</th></tr></thead><tbody><tr><td>BIGRec (SFT)</td><td>0.0283</td><td>0.0357</td><td>0.0545</td></tr><tr><td>S-DPO</td><td>0.0319</td><td>0.0317</td><td>0.0605</td></tr><tr><td>ReRe</td><td>0.0345</td><td>0.0358</td><td>0.0584</td></tr><tr><td>SPRec</td><td>0.0336</td><td>0.0374</td><td>0.0606</td></tr><tr><td>List-DPO</td><td>0.0308</td><td>0.0325</td><td>0.0612</td></tr><tr><td>BoN Alignment</td><td>0.0333</td><td>0.0384</td><td>0.0588</td></tr><tr><td><strong>BLADE-N</strong></td><td><strong>0.0410</strong></td><td><strong>0.0393</strong></td><td><strong>0.0618</strong></td></tr></tbody></table>
-<p>BLADE 较 BoN Alignment 在 Amazon CDs 上 +23.1%，Steam 上 +2.3%，Goodreads 上 +5.1%。Amazon CDs 增益最大，可能与该数据集 reward 分布尾部更长、static reference 更早 saturation 有关。</p>
-<p><strong>计算成本</strong>：</p>
-<ul>
-<li>Base 单次：44.56s</li>
-<li>BoN N=4：178.24s（4× latency，性能反而不如 BLADE）</li>
-<li>BLADE：44.56s（与 base 一致，零推理开销）</li>
-</ul>
-<p>这是 BoN distillation 路线的一个里程碑——首次证明 distill 后的策略能严格超过原 BoN。</p>
-<p><strong>τ 消融</strong>：</p>
-<ul>
-<li>τ=0：等价静态 BoN Alignment，gradient decay 明显，训练提前停滞</li>
-<li>τ=0.3：最优，Recall 持续上升</li>
-<li>τ&gt;1：batch 噪声放大，方差大，diminishing returns</li>
-</ul>
-<p><strong>多目标实验</strong>：</p>
-<ul>
-<li>Fairness：在 λ ∈ [0, 1] 全范围内 Pareto 占优 SFT，λ≈0.5 出现非单调 sensitivity（可能是 fairness reward 与 NDCG reward 在该点互相对抗最强）</li>
-<li>Diversity：λ=0.1 即可显著提升 ILD，且 NDCG 不降反升，说明 BLADE 学到的多样性是「高效用多样性」而非随机扰动</li>
-</ul>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确：</p>
-<ul>
-<li>BLADE 是 metric-agnostic，但实验仅 NDCG/Fairness/Diversity 三类，对 calibration、cold-start 等其他 list 指标未测；</li>
-<li>Bayesian posterior 每 batch 更新带来的额外计算未量化（声称通过 shared sampling 抵消，但没有详细数字）；</li>
-<li>仅在 Llama-3.2-1B 上验证，更大模型/不同 backbone 行为未知。</li>
-</ul>
-<p>笔者补充：M=128, G=16 的超参未做 sensitivity，且 reference set 是否随训练阶段更新（warm-start）未说明。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>对搜索/推荐 ranking team 的直接借鉴</strong>：</p>
-<ol>
-<li><strong>BoN distillation 路线可行</strong>：以前 BoN 是「推理时增加成本换效果」的 trick，BLADE 证明可以 distill 进策略，单次推理获得 BoN 效果。社区搜索/电商精排在面对 NDCG/Diversity 联合优化时，可优先尝试 BoN 训练而非 inference-time BoN。</li>
-</ol>
-<ol>
-<li><strong>τ=0.3 是工程默认值</strong>：作为新方法首次部署，可直接采用；后续按业务调优。</li>
-</ol>
-<ol>
-<li><strong>多目标 reward 设计</strong>：复合 reward R = R_NDCG + λ_1·ILD − λ_2·MGU 可直接把 list-wise diversity / fairness / accuracy 三目标统一进 RL 训练，比 multi-task / pareto search 方案工程实现简单得多。</li>
-</ol>
-<p><strong>部署考量</strong>：</p>
-<ul>
-<li>训练成本：4×A100 + 3 epoch 在 4096 训练样本上完成，资源需求中等；</li>
-<li>上线开销：与 SFT 模型同价（单次推理 ≈ 44s 是 1B 模型在 list 生成场景，社区搜索 reranker 可能用更小模型 → 毫秒级）；</li>
-<li>需要 reward model：MGU、ILD、NDCG 都要可计算，但都是规则化指标，无需训练额外 reward model。</li>
-</ul>
-<p><strong>避坑</strong>：τ 不能设过大（&gt;1 batch 噪声大）；reference set M 太小会导致 prior 不稳；group size G 必须 ≥ 8 才能稳定估计 batch CDF。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-04559"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2605.04723" data-paper-id="arxiv:2605.04723" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.35</span></div>
@@ -271,82 +96,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>把生成式推荐的「tokenizer 才是瓶颈」论点用胶囊路由具体化解决：软路由+变长 SID 同时缓解了「硬量化语义塌陷」与「定长 SID 浪费 token」两个问题，且不需要额外 dense vector 拼接，保留生成接口的简洁。对正在尝试 HSTU/TIGER 路线的搜推团队，CAPSID 提供了一个低成本的 tokenizer 升级路径——尤其对长尾物品和多面语义（如社区帖子）的 SID 表征更友好。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Wenzhuo Cheng, Menghang Gong, Qixin Guo, Hang Zheng, Zhaobin Yang, Jianguo Lou, Zhengwei Zheng</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-07</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 5 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.05096" id="dr-arxiv-2605-05096">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机 (~300字)</h2>
-<p>CapsID 直击当前生成式推荐 (Generative Recommendation, GR) 中 Semantic ID (SID) tokenizer 的核心瓶颈：基于 RQ-VAE 的 SID 生成器（TIGER、ReSID 等）在每一层使用硬最近邻路由 (hard nearest-neighbor)，把多面语义物品强制塞进单一 cluster——尤其对长尾边界物品，会在 cluster 边界处折叠语义、并把早期路由错误线性地传递给后续 SID 位。论文指出，UniRec 已形式化证明：&quot;SID 仅覆盖物品属性的一个小子集&quot;，其后果就是 GR 在长尾上系统性损失召回。常见的“补偿”做法——在 SID 后追加一段 dense 向量或属性前缀——又把 GR 的纯生成接口破坏了，推理代价显著上升。CapsID 选择从源头修：把硬路由换成胶囊网络式的软路由，让物品按概率路由到多个语义胶囊，并允许 SID 长度自适应。</p>
-<h2>2. 方法详解 (~600字)</h2>
-<p><strong>核心思想：把 RQ-VAE 的 argmax 路由换成 capsule routing + 自适应停止。</strong> 第 ℓ 层维护 K_ℓ 个语义胶囊，物品 embedding 通过下面三步迭代得到加权重建：(a) 由当前残差产生 votes；(b) 经 T 轮 (默认 T=3) iterative agreement 更新路由 logits；(c) squash 非线性把胶囊激活压缩到 [0,1)。残差更新公式与 RQ 不同：不是减去“赢家”胶囊，而是减去“routed reconstruction”——所有胶囊的加权重建之和，从而让早期错误能被后续层修正。</p>
-<p><strong>变长 SID 终止条件</strong>：当 (i) 路由权重 × 胶囊范数的 confidence &gt; τ (默认 0.82)、(ii) 残差范数 &lt; ε (默认 0.08)，或 (iii) 深度达到 L_max=6 时，编码停止。这意味着热门物品可能只用 2–3 个 token，长尾物品最多用 6 个 token，整体码表利用率显著优于固定长 SID。</p>
-<p><strong>两阶段训练</strong>：Stage 1 联合最小化 reconstruction loss、spread loss (鼓励胶囊间分散) 与 length loss (惩罚过长 SID)；Stage 2 冻结胶囊中心，只训生成器 + 一组低秩 routing adapter，将 GR 的训练成本控制在常规 RQ-VAE-based 系统的 1.2~1.3x 范围内。论文未披露完整 batch size 与硬件，但说明工业实验集训练时长与 ReSID/COBRA 持平。</p>
-<p><strong>关键设计决策</strong>：(1) 软路由让“边界物品”不再独占一个 codebook 槽位；(2) 提前终止解决了固定长 SID 的“长尾物品被压平”问题；(3) Stage 2 的 routing adapter 让生成式 ranking 微调不会破坏 codebook 几何结构。</p>
-<h2>3. 核心技术贡献 (~400字)</h2>
-<ul>
-<li><strong>胶囊软路由 → SID 量化的范式更替</strong>：把 RQ-VAE 的硬 argmax 替换为可微的多目标软路由，论文消融显示退回硬路由会让 Recall@10 直接下降 16.3%。这一改动几乎不增加推理成本（解码阶段只看 argmax），却根治了 cluster 边界塌陷问题。</li>
-<li><strong>变长 SID + 提前停止机制</strong>：胶囊置信度收敛即停，使热门物品短码、长尾物品长码，避免“为长尾留长度而拖累热门”。固定长 L=4 时整体下降 8.8%，验证变长是必要的。</li>
-<li><strong>iterative agreement (T=3)</strong>：相比 single-iteration (T=1) 能多回收 12.9% 的 Recall@10 增益——这是把胶囊网络从视觉迁移到 SID tokenizer 的关键工程细节。</li>
-<li><strong>保留纯生成接口</strong>：与“SID + dense 前缀”路线不同，CapsID 不引入额外的 dense 向量参与解码，因而 KV cache 占用与 RQ-VAE 相当，但物品冲突率从 33.8%（ADA-SID）降到 13.4%。</li>
-</ul>
-<h2>4. 实验结果分析 (~600字)</h2>
-<p><strong>数据集</strong>：Amazon Beauty (22K user / 12K item)、Sports (35K / 18K)、Toys (19K / 12K)，外加一个 35M 物品的工业级目录（多模态 embedding）。</p>
-<p><strong>主结果</strong>（Recall@10，相对 ReSID 强基线）：</p>
-<ul>
-<li>Beauty: +8.9%</li>
-<li>Sports: +11.0%</li>
-<li>Toys: +8.8%</li>
-</ul>
-<p>在三个 Amazon 集上 CapsID + Semantic-BPE 组合稳定优于 COBRA、TIGER、LETTER、ActionPiece。工业目录上的发现更具决定性：CapsID 在 Recall@K 与 COBRA 持平，但推理时延只占 COBRA 的 51%——这正是“纯生成接口 + 变长 SID”联合带来的工程收益。</p>
-<p><strong>Ablation</strong>（生效指标 Recall@10）：</p>
-<ul>
-<li>Soft → Hard routing: −16.3%</li>
-<li>T=3 → T=1 iterative agreement: −12.9%</li>
-<li>Variable → Fixed length L=4: −8.8%</li>
-<li>删除 spread loss: −8.2%</li>
-</ul>
-<p>四个消融的差距都显著大于其他 GR 论文里常见的 1–3pp 提升，说明这四件设计都不是“锦上添花”而是“缺一不可”。</p>
-<p><strong>长尾分析</strong>：论文专门切了 “tail items only” 子集，CapsID 较 TIGER 提升 +140%（相对值），显示软路由对低频物品的语义保持效果显著。论文还报告了物品冲突率 13.4% vs ADA-SID 33.8%，这一数字直接关系到 GR 在大 catalog 下能否保留物品级排序能力。</p>
-<p><strong>未上线的限制</strong>：论文没给出 online A/B 数据，工业目录的实验仍是离线对比；这是当前 CapsID 与 MTGR / OneRec 这种已经全量上线的工业系统的最大差距。</p>
-<h2>5. 局限与未来方向 (~300字)</h2>
-<p>作者明确承认四个限制：</p>
-<ol>
-<li><strong>训练侧 overhead</strong>：胶囊路由的多轮 iteration 让 tokenizer 训练成本比 RQ-KMeans 高 20–30%；对每天都要更新 SID 的内容平台 (UGC、新品频繁上架) 是不小的开销。</li>
-<li><strong>目录扩张</strong>：固定的胶囊数 K_ℓ 让目录大幅增长时需要 retrofit。论文建议的“增量胶囊”是 future work。</li>
-<li><strong>理论分析的强假设</strong>：EM-style 收敛证明依赖各层 isotropic Gaussian，工业 embedding 的强各向异性可能带来路由不稳定。</li>
-<li><strong>公平性 / 流行度偏置</strong>：变长 SID 让“热门物品短码、长尾物品长码”，可能在解码侧加剧 popularity bias，论文呼吁后续工作引入 fairness control。</li>
-</ol>
-<p>未提及但工业团队需关注的额外限制：(a) 推理阶段虽然时延降低 49%，但 capsule routing 推理 kernel 在 H100/H200 上未必有官方实现；(b) 与 KV-cache 调度（如 HELM）的协同尚未评估。</p>
-<h2>6. 工业实践意义 (~400字)</h2>
-<p><strong>直接可借鉴</strong>：</p>
-<ul>
-<li>任何已经上线 RQ-VAE-based SID 的团队（淘宝 / 美团 / 快手、字节内部 GR 试点），都可以把 CapsID 视作“低风险增量”——只需替换 tokenizer 这一段，下游生成器结构 / KV cache / serving 链路都不需重写。</li>
-<li>长尾内容平台（社区搜索、UGC 帖子、知识问答）的 cold-start 问题尤其受益：作者报告的 “tail items +140%”是同类工作中最大的增量。</li>
-<li>物品冲突率从 33.8% 到 13.4%，意味着大 catalog 场景（千万级以上 SKU / 帖子）下 GR 的“多个不同物品共享同一 SID 序列”这一问题被实质性缓解，可显著提升 ranking 的 fine-grained 区分度。</li>
-</ul>
-<p><strong>部署考量</strong>：</p>
-<ul>
-<li><strong>推理</strong>：CapsID 解码阶段只看 argmax，KV cache 占用与 RQ-VAE 相当；时延较 COBRA 降低约 49%。</li>
-<li><strong>训练</strong>：tokenizer 训练增加 ~25%，可放在离线 pipeline；Stage 2 routing adapter 可以热更新而不必重训生成器。</li>
-<li><strong>集成</strong>：与 R3-VAE 的“离线 SID 评估指标”天然互补——前者解决“怎么训得稳”，CapsID 解决“怎么编得准”；与 HELM 的 HBM 调度可叠加。</li>
-<li><strong>风险</strong>：popularity bias 放大需要在线监控；建议在 GR 上线初期先在长尾 query / 长尾位置灰度。</li>
-</ul>
-<p><strong>对社区搜索的具体启示</strong>：UGC 短文本场景的物品分布异常陡峭，固定长 SID 通常会让 80% 长尾帖子挤进少量 cluster；CapsID 的“长尾长码 + 软路由”天然对应这一分布形态，是当前最值得移植的 SID 工程方案之一。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-05096"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2605.05165" data-paper-id="arxiv:2605.05165" data-card>
   <div class="top"><span class="n">05</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.80</span></div>
@@ -400,60 +150,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

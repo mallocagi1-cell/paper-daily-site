@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,46 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把 CoT 从“生成文本”换成“连续 latent intent 状态”，是生成式检索绕开推理延迟的关键设计——既保留推理带来的意图建模收益，又避免 token 级 rationale 的解码开销。用类目层级做 coarse-to-fine 脚手架，对短文本、属性密集的社区/电商 query 尤其契合：先定位粗粒度意图再细化到 SID，缓解短 query 表征不足。动态前缀 trie + constrained decoding 保证生成的 SID 落在合法商品空间，这套“latent 推理 + 受约束解码”组合可直接借鉴到 UGC 短文本检索召回链路。</div>
     <div class="foot">2026-06-08 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.07075" id="dr-arxiv-2606-07075">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Beyond Matching: Category-Guided Latent Intent Reasoning for Generative Retrieval in E-Commerce (CaLIR) 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>电商生成式检索把用户 query 直接映射到商品的 Semantic ID（SID），但论文指出存在一个根本的&quot;表征鸿沟&quot;：电商 query 短、噪声大、属性密集（&quot;short, noisy, attribute-heavy&quot;），且一个 query 常对应多个同类目商品；而 SID 是 RQ-VAE 量化出来的抽象 token（如 sid_17），本身不携带商品语义，两者之间的语义错配让 query→SID 的直接映射很难学好。论文用数据佐证：在 ESCI-us 上，最强基线 MERGE 的 R@100 仅 29.74%，稀疏、稠密、已有生成式检索方法在该指标上普遍低于 33%。一个自然的弥合手段是显式 Chain-of-Thought（CoT）推理，但显式生成 rationale token 会带来难以接受的在线延迟。论文据此提出 latent intent reasoning 作为折中：在连续隐空间做 coarse-to-fine 的意图推理，既拿到推理的语义对齐收益，又不付出显式 token 生成的解码开销。</p>
-<h2>2. 方法详解</h2>
-<p>CaLIR 是 indexing→training→inference 三阶段框架。索引阶段用 RQ-VAE 做 m=4 层残差量化、codebook size 256，生成层级化 SID。</p>
-<p>核心是在生成 SID 前先走 L 步（默认 L=3）latent 推理：h_l = DecoderBlock(h_{l-1}, H_enc)，得到连续 latent 状态路径 R_q={h_1,…,h_L}，让模型在连续空间先校准意图再落到离散 token。围绕这条 latent 路径有两个监督目标：(1) Hierarchical Semantic Reasoning（HSR）把第 l 步 latent 与商品类目层级第 l 层对齐，z_l=φ_l(h_l)，P(c^l|z_l,c^{l-1})=Softmax(W_c^l z_l + M(c^{l-1}))，其中 M(·) 把非法子类目 logit 置为 −∞，用 masked 交叉熵只监督有效深度层；(2) Query-wise Reasoning Enhancement（QRE）针对一个 query 对应多个正类目的 multi-positive 情况，用 multi-positive InfoNCE 把 query latent 与所有正类目原型拉近、与负样本推远，按有效深度累加。</p>
-<p>联合损失 L_total = L_gen + α·L_cls + β·L_con（α=β=0.1），L_gen 是以最终 latent h_L 为条件的 SID 生成交叉熵。推理阶段是 Reasoning-aware Constrained Decoding（RCD）：先从最终 latent 投影取 Top-K 类目（K=3），把离线预建的 category-level SID trie 动态拼成 query-specific trie，把候选空间从约 10^5 商品压到 10^3–10^4；再把 latent 推理状态与 encoder 输出拼接 H_full=[H_enc;H_reasoning] 做受约束 beam search，非法转移概率置 0。Backbone 用 T5-base（多语言用 mT5-base），商品文本用 BERT/mBERT 编码；训练 batch 512、lr 5e-4、300 epoch、A100。关键效率设计：L 步 latent 推理在 batch 级算一次（成本 BL），不随 beam 数 N 或 SID 长度 m 翻倍；动态 trie 组装只是 O(BK) 轻量查表（约 0.1ms/query）。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li>Category-guided latent intent reasoning 框架：在连续空间弥合 query 与 SID 的表征鸿沟，用 latent 推理替代显式 CoT，兼顾语义 grounding 与在线延迟——消融显示&quot;空推理&quot;（无监督 latent）几乎没有增益（26.38% vs TIGER 25.98%），说明真正起作用的是把 latent 与类目层级对齐的监督。</li>
-<li>Coarse-to-fine 学习范式：把商品类目层级当作天然脚手架，HSR 做层级类目对齐、QRE 解决多意图，二者把 R@100 从 32.76%（仅 HSR）推到 34.10%（HSR+QRE）。</li>
-<li>Reasoning-aware constrained decoding：用推断出的意图类目动态拼 trie，既缩候选空间又保证生成 SID 合法，RCD 再把 R@100 从 34.10% 提到 36.15%。</li>
-<li>跨数据集、跨 backbone、跨 SID 构造方法的系统验证，证明可迁移性与正交增益。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p>主结果（ESCI 三语种，对比最强基线 MERGE）：ESCI-us（288K 商品、20K 训练 query）R@5 7.22% vs 5.68%（相对 +27%）、R@10 11.75% vs 9.26%、R@100 36.15% vs 29.74%（+22%）、N@10 10.75% vs 9.05%、N@100 18.14% vs 15.17%；ESCI-es R@100 34.83% vs 30.86%（+13%）；ESCI-jp R@100 31.71% vs 27.64%（+15%）。均通过 p&lt;0.05 配对 t 检验。</p>
-<p>消融（ESCI-us，R@100）很有说服力：TIGER 25.98% → 空推理 26.38%（几乎无效）→ 仅 HSR 32.76%（+26%）→ HSR+QRE 34.10% → 全量 CaLIR 36.15%（+39%）。这条链清楚说明：无监督的 latent token 没用，HSR 的类目监督才是主增益来源，QRE 处理多意图、RCD 的 trie 约束各再加一截。与显式推理对比（ESCI-us）：显式 CoT R@100 仅 24.05%、显式 SID 28.48%，都低于 CaLIR 36.15%——显式生成 rationale 不仅慢，效果反而更差，验证了 latent 路线。推理深度上 L=1 约 31%、L=3 最优 36.15%、L=5 退化到约 35%，过深引入噪声。通用域迁移（MS MARCO，用 k-means 50→200→2000 造伪层级）CaLIR MRR@10 0.382 vs RIPOR 0.333（+15%），说明不依赖预定义 taxonomy 也能用；叠加更强 SID 构造（MERGE/CAT-ID2）还能再涨 1–3%，是正交增益。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确或隐含的局限：(1) 强依赖类目层级——通用域要靠聚类造伪层级，层级质量差时性能会退化；(2) 推理深度 L=3 是数据集相关的，训练/推理深度不匹配会掉点（Fig.5b）；(3) Top-K=3 是 ESCI 上调的，缺少按 query 动态选 K 的机制；(4) 当 SID 构造已较好（MERGE/CAT-ID2）时增益收窄到 1–3%，边际递减；(5) RQ-VAE 的 SID 碰撞要靠事后 Sinkhorn 处理，增加索引复杂度；(6) QRE 假设有 ground-truth 多正类目标签，对隐式/未标注正样本的处理不清楚。未来方向自然指向动态推理深度、按 query 自适应选 Top-K，以及弱标注下的多意图建模。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜索/推荐从业者，CaLIR 最值得借鉴的是&quot;用 latent 推理替代显式 CoT&quot;这条在线可用的路线：在不牺牲在线延迟的前提下吃到推理收益，而它把延迟控制住的关键工程手法——latent 推理在 batch 级算一次、不随 beam/SID 长度翻倍，动态 trie 只做 O(BK) 查表——是任何生成式检索/推荐系统都能直接套用的优化。对社区短文本搜索尤为契合：UGC query 同样短、噪声大、一词多意，用内容类目层级做 coarse-to-fine 脚手架（先粗粒度意图、再细化到 SID），能缓解短 query 表征不足；动态前缀 trie + 受约束解码保证生成的 ID 一定落在合法内容空间，避免生成式方法常见的&quot;幻觉 ID&quot;。落地要点：需要一套可靠的内容类目体系（或用聚类造伪层级），离线预建 category-level trie 换在线效率；注意推理深度要与训练一致、Top-K 与 SID 长度需按自己语料调参。消融给出的明确信号——&quot;裸 latent 无用、类目监督才是主增益&quot;——提醒我们若要引入 latent 推理，必须配上有意义的中间监督信号，而不是简单堆 latent token。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2606-07075"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>7 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:2606.07317" data-paper-id="arxiv:2606.07317" data-card>
@@ -208,60 +169,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

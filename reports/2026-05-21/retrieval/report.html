@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,92 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对社区搜索/UGC RAG 系统的启示是：当下游是 LLM 而非人工时，Recall@K 这种「宽松命中」指标会高估检索器价值，导致离线评估与线上效果脱节。BoR 提供一个几乎零成本的诊断信号——只需现有 qrels 即可计算，特别适合短文本召回中「候选池大但相关文档稀少」的场景。可立即落地用于排序模型 A/B 评估的辅助指标，识别「看上去成功」的检索回路。</div>
     <div class="foot">Vyzantinos Repantis, Harshvardhan Singh, Tony Joseph, Cien Zhang 等 · 2026-05-20 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.18857" id="dr-arxiv-2605-18857">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>深度解读：The 99% Success Paradox</h1>
-<h2>1. 问题与动机</h2>
-<p>传统 IR 评估（Recall@K、Precision、F1、nDCG）的设计假设是&quot;人工读者最终过滤&quot;——人能扫描、跳过、忽略不相关结果，所以系统的目标是尽量把相关文档塞进 top-K 即可。但 LLM 作为消费者并不具备这种过滤能力：每一条候选都进入 token、注意力与生成损失，无关候选直接拖垮下游质量。论文用一个直观例子说明问题：在 1,000 文档、10 个相关项的语料下，馆员 A 取 20 项（命中 6 个），馆员 B 取 12 项（命中 4 个），传统 F1 偏好 A（40% vs 36%），但 B 用更小池子获得更高&quot;选择性&quot;，对 LLM 更友好。</p>
-<p>更尖锐的实证：在 20 Newsgroups 上，BM25 和 SPLADE 在 K=100 的 coverage 都报告 100% 成功率，但作者证明它们的&quot;机会校正后选择性&quot;BoR ≈ 0，意味着这套 99% 报表与&quot;随机抽 100 篇&quot;几乎没区别。这种现象在 BEIR/SciFact、MS MARCO 等通用基准上同样隐藏——只是被低 λ 值（候选/相关比例）掩盖。</p>
-<h2>2. 方法详解</h2>
-<p><strong>核心定义</strong> Bits-over-Random：</p>
-<pre><code>BoR = log2(P_obs / P_rand)</code></pre>
-<p>其中 P_obs 是观测成功率，P_rand 是同样命中规则下随机选取的成功率基线，用超几何分布给出：</p>
-<pre><code>P_rand(K; R_q) = 1 − C(N − R_q, K) / C(N, K)</code></pre>
-<p>N 为语料规模，R_q 为该 query 的相关文档数。BoR 单位是 bit：0 表示与随机持平，每多 1 bit 等价 2× 选择性提升，3 bit 即 8× 改进。理论上限：</p>
-<pre><code>BoR_max(K) = −log2(P̄_rand(K))</code></pre>
-<p><strong>坍塌边界 (selectivity collapse)</strong>：当 λ = K·R̄_q/N 足够大时，随机命中已接近 1，BoR 上限被压到 0 附近：</p>
-<ul>
-<li>λ ≈ 3 → 95% 随机命中 → BoR_max ≈ 0.074 bit</li>
-<li>λ ≈ 4.6 → 99% 随机命中 → BoR_max ≈ 0.014 bit</li>
-</ul>
-<p>20 Newsgroups 在 K=100、R̄_q≈572 下，λ≈5.1，正好落在 collapse 区，所以 100% 成功率根本不携带信息。</p>
-<p><strong>深度校准恒等式 (depth-calibrated identity)</strong>：BoR 随 K 变化可解析分解：</p>
-<pre><code>ΔBoR = log2(P2/P1) − log2(P̄_rand(K2)/P̄_rand(K1))</code></pre>
-<p>在 rare-hit regime（K·R̄_q/N ≪ 1）下近似为 <code>ΔBoR ≈ log2(P2/P1) − log2(K2/K1)</code>。直接给出工程结论：&quot;当 success 已经饱和，再翻倍 K 会损失约 1 bit 选择性。&quot;实验中预测 ΔBoR 与实际观测在多数系统/数据集上偏差 &lt;0.01 bit，公式有效。</p>
-<p>实验设置：在 BEIR/SciFact、MS MARCO（41 个公开系统）和 20 Newsgroups 三种&quot;相关密度光谱&quot;上覆盖低/中/高 R̄_q；并补充 RAG 下游验证（50 query、温度 0.0、instruction-tuned LLM）以及 LLM agent tool-selection 场景的代入分析。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>机会校正度量 BoR</strong>：把&quot;覆盖率/Recall&quot;从单调上升的&quot;假阳性偏好&quot;指标，转为与随机基线对比的对数选择性度量。它不奖励多召回——把 K 翻倍而 P 不变会立刻吃掉 1 bit。这一改写直接对齐了 LLM 消费者的成本结构。</li>
-</ol>
-<ol>
-<li><strong>解析的坍塌边界</strong>：明确给出 λ = K·R̄_q/N 这一无量纲量作为评估有效区/无效区的判据。一旦 λ ∈ [3, 5]，连完美检索器都无法区分有意义的选择性。这给出了&quot;什么时候 Recall@K 报表纯属噪声&quot;的代数答案，比经验阈值更通用。</li>
-</ol>
-<ol>
-<li><strong>深度校准恒等式</strong>：把 ΔBoR 拆成&quot;成功率增益&quot;与&quot;深度成本&quot;两项，可直接用来做&quot;再加 K 是否值得&quot;的离线决策。实验中 &lt;0.01 bit 的偏差表明这是接近精确的工程工具，而非仅理论装饰。</li>
-</ol>
-<ol>
-<li><strong>跨场景统一框架</strong>：同一个 λ-BoR 框架既覆盖文档检索（N 千～千万），又覆盖 LLM agent tool selection（N=50–500 工具）；后者天然容易坍塌（论文示例：N=58、R_q=4，把 58 个工具全塞进 prompt 时 BoR_max≈0.02 bit），解释了 agent 工具池膨胀后效果反而退化的实证现象。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p><strong>核心对比表（关键数字）：</strong></p>
-<table><thead><tr><th>数据集</th><th>N</th><th>R̄_q</th><th>系统</th><th>K</th><th>Success</th><th>BoR</th><th>Ceiling</th></tr></thead><tbody><tr><td>SciFact</td><td>5,185</td><td>1.1</td><td>BM25</td><td>100</td><td>89%</td><td>5.36 bit</td><td>5.52</td></tr><tr><td>SciFact</td><td>5,185</td><td>1.1</td><td>SPLADE</td><td>100</td><td>93%</td><td>5.41 bit</td><td>5.52</td></tr><tr><td>MS MARCO</td><td>8.84M</td><td>≈1</td><td>BM25</td><td>1000</td><td>85.7% Recall</td><td>12.89 bit</td><td>13.11</td></tr><tr><td>MS MARCO</td><td>8.84M</td><td>≈1</td><td>SimLM (SOTA)</td><td>1000</td><td>98.7% Recall</td><td>13.09 bit</td><td>13.11</td></tr><tr><td>20NG</td><td>11,314</td><td>572</td><td>BM25</td><td>100</td><td>100%</td><td>0.01 bit</td><td>0.01</td></tr><tr><td>20NG</td><td>11,314</td><td>572</td><td>SPLADE</td><td>100</td><td>100%</td><td>0.01 bit</td><td>0.01</td></tr></tbody></table>
-<p>关键发现：MS MARCO 上 BM25 与 SimLM 的 Recall 相差 13 个百分点，但 BoR 只相差 0.20 bit——因为大家都贴着 13.11 bit 的理论上限，所以&quot;SOTA 提升&quot;在选择性维度上几乎不存在；这与&quot;近几年 MS MARCO 的进展是否被 leaderboard 高估&quot;的业界质疑高度共振。</p>
-<p><strong>RAG 下游消融（20 Newsgroups，50 query，温度 0）：</strong></p>
-<table><thead><tr><th>系统</th><th>K=10 Accuracy</th><th>K=100 Accuracy</th><th>Success K=10→K=100</th></tr></thead><tbody><tr><td>BM25</td><td>66%</td><td>50%</td><td>94% → 100%</td></tr><tr><td>SPLADE</td><td>68%</td><td>58%</td><td>95% → 100%</td></tr></tbody></table>
-<p>把 K 从 10 提到 100，传统 Recall/Success 看上去&quot;无损升级&quot;，但 LLM 答案准确率反而掉 10–16 个百分点，token 成本 10×。这是直接的&quot;99% 成功率却让产品变差&quot;的下游证据。</p>
-<p><strong>Agent 工具选择代入</strong>：N=58 工具、R_q=4 时，展示 5 个工具 λ=0.34 → BoR_max≈1.7 bit（有意义），全部 58 个 λ=4.0 → BoR_max≈0.02 bit（坍塌）。论文引用业界数据：当前主流 agent harness 工具定义已占 50,000–134,000 token，说明该坍塌区在生产中很常见。</p>
-<p><strong>与传统指标对照</strong>：作者明确指出 Recall 单调随 K 上升、Precision 不感知任务难度、nDCG/MAP/RBP/ERR 只优化排序顺序而忽略 LLM 全读 K 项的 token 成本——这些都解释了为什么传统 leaderboard 与 LLM 实际下游性能之间出现脱节。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确声明的局限：</p>
-<ol>
-<li>当前主要讨论 m=1（coverage 命中规则），m≥2（要求至少 m 个相关）需要更复杂的超几何展开；</li>
-<li>关键近似（rare-hit regime, λ ≪ 1）在相关密度高时失效，baseline 饱和效应超过 m-bit 近似；</li>
-<li>RAG 下游验证只用了 50 个 query，仍属 &quot;preliminary&quot; 量级；</li>
-<li>给出 Recall@K 版本的 BoR（Eq.12）但未做大规模实验。</li>
-</ol>
-<p>未提到但工程上需要注意：BoR 对小语料（N&lt;1000）方差大，需要 bootstrap 置信区间；对长尾 query（R_q=0 或 1）的稳定估计也是开放问题。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索 / UGC RAG 团队的直接动作项：</p>
-<ol>
-<li><strong>新增离线指标</strong>：把 BoR@K 加入排序模型 A/B 评估。代码量极小——只需现有 qrels 即可计算。一旦发现某条链路 BoR_max &lt; 0.1 bit，就说明&quot;目前的 K 设置下评估已无意义&quot;，需要降 K 或换数据集。</li>
-</ol>
-<ol>
-<li><strong>K 选择的代数判据</strong>：依 λ = K·R̄_q/N 控制候选池大小。社区搜索短文本场景下 R̄_q 通常较大（同一帖与多个 query 相关），N 在百万级时 λ 仍可能接近坍塌，应主动收缩 K，把&quot;召回宽度&quot;从 KPI 中剔除。</li>
-</ol>
-<ol>
-<li><strong>LLM 摘要前重排刚需</strong>：实验表明 K 从 10→100 直接掉 10–16% 的下游准确率。任何&quot;召回到 LLM 直答&quot;的产品都必须有一个把 K 收回到个位数的精排或自适应阈值层（呼应 #6 的 Adaptive Table Retrieval）。</li>
-</ol>
-<ol>
-<li><strong>Agent 工具池治理</strong>：本论文对 LLM agent harness 设计给出了量化警告——工具数 N=50–500、相关工具 R_q≈3-5 时极易坍塌。社区搜索若要集成 agent（如复杂主题汇总），必须实现按 query 动态收敛工具集，而非把所有 skill 描述全部塞入 prompt。</li>
-</ol>
-<p>部署考量：BoR 计算开销 O(1) per query，可直接接到现有 offline pipeline；λ 监控可作为 dashboards 一行 SQL；唯一需要注意的是 R_q 估计——对没有充分人工标注的长尾意图，建议先用强 reranker 的高分文档做近似相关集再计算 BoR_max。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-18857"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:2605.18767" data-paper-id="arxiv:2605.18767" data-card>
@@ -274,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,48 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>它的关键不是简单把多个场景拼进一个大模型，而是用分层用户表示和场景调制控制跨业务迁移，避免广告或交易信号淹没内容兴趣。对社区搜索/推荐可借鉴共享用户塔、特征预取和图级优化，把跨场景长期行为纳入排序，同时用多目标训练守住CTR与生态指标。</div>
     <div class="foot">Yinqi Zhang, Peiyu Hu, Yuntian Tang, Siying Gu, Jiahao Liang, Longxin Kou, Haiqing Hu, Shu... · 2026-08-19 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2608.18606" id="dr-arxiv-oai-arXiv-org-2608-18606">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>1. 问题与动机</h1>
-<p>OneModel针对的是平台型推荐系统的跨业务割裂。小红书同时存在内容推荐、信息流广告和商家服务，用户在三个流之间连续活动：浏览帖子可能暴露购买意图，广告互动会补充商业偏好，商家行为又能反哺用户长期兴趣。如果三个业务各自维护一套排序器，就会重复训练长行为序列、Embedding和内容理解模块，用户表示也会被切成互不相通的几段。作者认为，这种工程拆分已经成为继续扩展模型能力的瓶颈。</p>
-<p>困难不只是把数据拼起来。三个流的特征schema不同，监督信号也不同：内容推荐关心兴趣匹配和互动，广告关心点击与广告价值，商家侧关心转化、GMV和GPM。直接共享参数会产生负迁移，完全分塔又失去跨流信息复用；更长的用户序列还不能在每个请求上重复用Transformer计算。论文把问题定义为平台级多流最终排序，并在小红书真实生产系统中验证统一用户建模、跨场景专属化和在线成本之间的折中。</p>
-<h1>2. 方法详解</h1>
-<p>OneModel把每条行为表示为包含物品、业务流、动作类型和时间间隔的事件，先映射到共享token空间，再送入行动导向的长上下文骨干。与把物品和动作拆成两个token不同，作者把动作作为预测目标、物品作为上下文信号，减少有效序列长度。请求候选项加入masked action embedding，并施加causal mask保持历史时间方向、candidate mask阻止同一请求候选相互泄漏。</p>
-<p>跨场景表示由两步组成。对来自场景s的异构特征，模型使用场景专属投影把ID embedding、类别token和归一化稠密特征映射到共享空间，形式为e_i=phi(W_s x_i+b_s)。随后把场景、动作、位置和时间间隔编码加到物品向量上：z_j=e_i+Embed(s_j,a_j,delta_t_j,pos_j)。时间间隔使用多频正弦编码，离散场景和动作使用可学习Embedding，并额外加入位置、请求索引和分桶时间差；相对时间还用ALiBi式线性偏置表达，避免为所有时间差建立巨大偏置表。</p>
-<p>核心的Scenario-aware Information Modulation，也就是SAIM，插在共享Transformer的FFN里。对场景token embedding e_s先生成通道门g_t=sigma(W_g e_s+b_g)，再用SiLU(W_1 h_t)逐通道乘门，最后经过W_2输出。这样所有场景共用同一计算图，但广告、推荐和商家token可以使用不同特征通道，比简单shared-bottom细粒度、比完全独立多塔省计算。</p>
-<p>用户表示采用分层结构：对全历史隐藏状态做注意力池化得到长期全局表示u_global，取最后一个局部状态u_local代表当前意图，二者拼接后经MLP得到最终用户向量。训练目标由跨流混合历史的next-item自监督损失、每个业务流的点击/收藏/评论/停留/关注/隐藏/点赞等监督损失和L2正则构成。训练初期逐渐减小自监督权重、增大业务监督权重；业务权重按验证AUC倒数设置，让更难的流得到更多关注。跨流batch采样防止高频推荐流压制低资源广告与商家流，early gradient isolation先让业务塔稳定，再把梯度传回共享骨干；超长序列还使用selective backprop，重点计算高困惑度位置。</p>
-<p>上线把用户状态与候选打分解耦。长历史编码得到的用户状态增量更新并缓存到低延迟KV存储，请求到来时只做候选特征堆叠和向量化打分。特征分解把可复用用户侧计算移到请求前，user feature prefetch减少特征获取，shared user-tower避免为每个候选重复编码用户，graph-level optimization消除推理图冗余。默认实验使用序列长度500、物品embedding 768维、3层Transformer、8个注意力头、FFN宽768、dropout 0.2，并使用bf16、FlashAttention、gradient checkpointing和in-batch negative sampled softmax。数据是小红书生产流量10%的匿名切片，推荐:广告:商家相对流量约为1:0.2:0.15。</p>
-<h1>3. 核心技术贡献</h1>
-<p>第一，OneModel把三种业务行为组织成同一条跨流事件轨迹，复用用户兴趣和内容语义，解决独立排序器表示碎片化。第二，SAIM通过场景门在共享骨干中保留业务差异，允许推荐行为帮助广告建模，又避免三种目标强行压成一个表示。第三，分层用户表示明确拆分全局长期兴趣与最后一步短期意图。第四，缓存、预取、用户塔复用和图优化把长上下文能力转化为可服务架构，而不是停留在离线模型。</p>
-<h1>4. 实验结果分析</h1>
-<p>单流广告训练时，OneModel的Click AUC为0.7682，GenRank为0.7648，HSTU为0.7644；统一多流训练后广告Click AUC达到0.7712。统一训练的推荐、广告和商家流也保持较强AUC。线上A/B结果为：探索流Time Spent提升0.33%、Engagement提升1.25%；信息流广告价值提升3.43%、CTR提升8.18%；商家推荐DGMV提升1.1867%、GPM提升2.1585%。</p>
-<table><thead><tr><th>模型/设置</th><th>Ads Click AUC</th><th>Merchant Click AUC</th><th>说明</th></tr></thead><tbody><tr><td>GenRank单流</td><td>0.7648</td><td>—</td><td>广告基线</td></tr><tr><td>OneModel单流</td><td>0.7682</td><td>—</td><td>仅广告训练</td></tr><tr><td>OneModel统一多流</td><td>0.7712</td><td>0.7819</td><td>三业务共享训练</td></tr></tbody></table>
-<p>统一训练使广告Click AUC从0.7682升到0.7712，商家从0.7789升到0.7819，均提升3.0‰；推荐流几乎不变，从0.7906到0.7905，说明高资源推荐流没有被明显伤害。预测广告时移除广告历史损失最大，但移除推荐历史也会降低广告AUC，证明推荐行为提供了额外商业意图；反过来，推荐对广告历史不敏感。</p>
-<p>模块消融中，去掉统一表示、SAIM和分层用户表示，广告Click AUC分别从0.7712降到0.7698、0.7701和0.7704，下降1.4‰、1.1‰和0.8‰。去掉gradient isolation后广告AUC从0.7712降到0.7696。SAIM平均门值在推荐、广告、商家分别为0.61、0.54、0.58，表明门控学到了业务差异。长度从500缩短到200和100，AUC分别下降1.5‰和2.5‰；从500延长到1000只增加0.5‰。层数从3减到1下降2.0‰，增加到5层只提升0.7‰，说明服务成本与上下文长度需要共同权衡。</p>
-<p>线上成本实验尤其有价值：稠密参数从173M增到230M，即增加32.9%，但经过特征分解、预取、共享用户塔和图优化，延迟从270ms降到90ms，下降66.7%。这说明服务图和缓存设计对规模化落地的影响可能大于单纯压缩参数。</p>
-<h1>5. 局限与未来方向</h1>
-<p>作者明确说明，数据保密使实验只能公开10%流量切片的相对流量比例和聚合指标，不能复现绝对用户、物品和交互规模；统一多流的跨平台泛化也没有验证。统一模型增加了场景schema、用户状态缓存、特征预取和多目标权重的工程复杂度，如果业务流相关性弱，共享可能引入噪声。论文没有充分展开冷启动、缓存失效、行为分布突变、长期生态质量和公平性的分层结果。</p>
-<h1>6. 工业实践意义</h1>
-<p>对社区搜索/推荐，最值得复用的是跨场景行为组织方式，而不是立即训练同等规模的生成式骨干。可先把帖子浏览、搜索点击、收藏、评论、关注、广告互动和交易行为统一成带场景、动作、时间的事件schema，再用现有序列模型做共享用户塔。排序目标按内容相关性、CTR、深度互动和商业转化分头监督，用场景门或轻量adapter控制信息流向。</p>
-<p>落地建议分三阶段：先用行为遮罩验证跨流历史是否提升nDCG、CTR和转化；再加入分层用户表示与场景门，观察低资源业务是否提升以及主场景是否稳定；最后投入缓存、预取和图优化，把长历史编码从请求内移到增量状态更新。OneModel的500长度和270ms到90ms结果提醒我们，验收必须同时记录模型容量、端到端延迟、缓存命中率和GPU成本，不能只看AUC。</p>
-<p>对UGC短文本搜索，推荐行为可以作为query意图的辅助监督，广告或交易行为则要经过隐私、时效和业务边界处理，避免把商业意图错误迁移给普通内容搜索。最终应同时看跨场景迁移收益、nDCG/CTR、收藏评论、长留存、广告价值、商家转化、曝光量变化和用户分层公平性。统一模型的正确姿势是共享可复用的用户基础能力、保留业务特定决策头，并用可回滚的场景门控制负迁移。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2608-18606"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2608.18764" data-paper-id="arxiv:oai:arXiv.org:2608.18764" data-card>
@@ -116,53 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>对用户建模而言，先把行为清洗成可解释的多时间尺度意图，再做排序，比让一个序列编码器隐式吸收所有信号更容易控制。工程上可以采用大模型离线蒸馏、在线轻量融合的方式，把转化监督接入意图抽取；但需要重点监控扩散增强带来的延迟和教师标签漂移。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Jialong Duan, Zichen Zhang, Zirui Tu, Zheng Zhang, Zepeng Li, Qingyao Cui, Qinwen Wang, Yudan Liu, L...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-08-19</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 5 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2608.18764" id="dr-arxiv-oai-arXiv-org-2608-18764">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 12 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>1. 问题与动机</h1>
-<p>GateDiffInt研究工业推荐CVR排序里的Noise–Intent Coupling。传统特征交互模型和序列模型都能读取用户行为，却通常把意图隐含在参数或最后的隐藏状态里，难以明确区分长期生活方式、短期事件、反复浏览形成的潜在意图和当前购买意图。行为噪声与真实意图也不是独立的：浅层曝光、快速划过等弱行为会稀释强信号，而没有结构化意图先验时，去噪器不知道哪些弱信号应该保留。作者把这两个失败模式分别称为noise-induced intent distortion和intent-agnostic denoising failure，并认为二者会相互强化。</p>
-<p>现有扩散推荐多服务于Top-K生成，LLM推荐多服务于生成或解释，二者没有自然接入候选条件下的点式CVR排名。GateDiffInt用最终转化信号共同指导序列去噪和意图抽取，再把大模型语义能力蒸馏到小学生模型，目标是在线可部署而不直接调用大模型。</p>
-<h1>2. 方法详解</h1>
-<p>输入是用户最近L条按时间排序的交互，每条包含物品、动作类型和距当前时刻的时间间隔；给定目标物品，模型预测购买概率，主任务使用二元交叉熵。整体数据流为行为序列到增强序列表示和位置重要性，再到四个结构化意图，最后与候选物品融合预测。系统由GMCD、MILD和Intent-aware Conversion Prediction三块组成，训练分阶段进行。</p>
-<p>GMCD是Gate-Mediated Controllable Diffusion。第一块CACE将物品和时间嵌入线性投影后，与可学习fusion token拼接，使用只在每个位置内部工作的共享Transformer完成特征融合。对每个非padding位置独立采样item mask和action mask，浅层pv等弱行为的action mask概率更高，buy等强行为概率更低；物品被替换成MASK token后重新编码，得到clean view X1和masked view。训练时每个序列采样2个masked view，推理不做mask。</p>
-<p>第二块MFCD在CACE隐空间运行DDPM式条件扩散。不同掩码状态使用不同噪声强度，双重掩码位置受到更强噪声；共享denoising network预测原始X1，损失是重建均方误差。两个masked view的池化去噪表示还用InfoNCE拉近同一序列的不同增强、拉远batch内其他用户。推理从中间步开始，用cosine schedule和确定性的DDIM反向采样，eta=0，避免随机采样造成线上结果抖动。</p>
-<p>第三块DDGH用两个结构相同但参数独立的门融合原始和去噪表示。融合门按位置计算，E_final等于g_f乘去噪表示加上1减g_f乘原始表示；重要性门不参与融合，只输出给大模型教师的可解释位置权重。融合门的伪标签是归一化去噪误差的反值，重要性门的伪标签还混合行为可靠性先验，两个门都用BCE训练。GMCD总损失由denoise、contrastive、fusion和importance四项构成，让模型保留去噪器无法重建的弱信号，也能压制明显噪声。</p>
-<p>MILD是Multi-Intent LLM Distillation。用户目标拆为四类：长期意图来自身份和生活方式，短期意图来自事件或状态变化，潜在意图来自重复浏览和比较但尚未转化，转化意图表示当前上下文下最可能的购买决策。教师使用冻结的Gemini 3.5 Flash API，根据行为序列和重要性提示生成四类意图文本。学生使用冻结的Qwen3-1.7B骨干，前置4个可学习intent token；每个token通过独立LoRA路径只读取行为位置，四个intent token彼此不可见，行为token使用因果mask且不能读取intent token。教师文本用Qwen3-Embedding-8B编码，学生向量经projection head映射后用带有效监督mask的余弦距离对齐。</p>
-<p>下游预测模块用四个意图向量作query，把E_final和原始行为embedding作为key/value做多头cross-attention；得到上下文化意图后，与候选物品特征一起经过self-attention和MLP输出CVR。训练先分别预训练GMCD和MILD，再挂接CVR头联合微调。联合阶段冻结GMCD主体，只在融合Transformer中注入LoRA；MILD保留每个意图的Multi-LoRA，并增加教师锚定余弦正则，避免联合CVR训练破坏意图语义空间。</p>
-<p>实现配置为Adam学习率5乘10的负4次方，最多15个epoch，early stopping patience 4；公共数据GateDiffInt batch 96，生产batch 64。Taobao最大序列128、平均约101；Amazon-Electronics最大32、平均约9；生产序列最大1024。扩散前向时间步从1到1000均匀采样，反向从700开始DDIM；默认attention维度256、4个头。GMCD和MILD每周更新，CVR模型与LoRA每天联合微调。</p>
-<h1>3. 核心技术贡献</h1>
-<p>第一，扩散去噪由行为可靠性控制：弱行为加大mask与噪声，强行为保留更多信息，反向采样再用门决定原始与重建表示比例。第二，MILD让LLM生成结构化监督而不是直接在线推荐，四个intent token与四条LoRA路径把语义压缩成轻量学生，解决大模型成本和延迟。</p>
-<p>第三，GMCD与MILD由最终CVR监督信号连接，扩散模块改善序列、意图模块负责语义拆分，二者共同服务候选转化预测。第四，双门、四意图、多LoRA和teacher anchoring均有消融，说明它们是在处理噪声、语义与转化监督的互补关系，而不是简单堆模块。</p>
-<h1>4. 实验结果分析</h1>
-<p>公共实验使用Taobao和Amazon-Electronics，指标是AUC、GAUC和LogLoss；基线包括DIN、DIEN、DSIN、BST、DMIN和HSTU。完整模型在Taobao达到AUC 0.8515、GAUC 0.8275、LogLoss 0.4836，在Amazon达到AUC 0.8016、GAUC 0.7792、LogLoss 0.5414。HSTU在两套数据分别为0.8304/0.8075/0.5064和0.7829/0.7681/0.5693，完整模型在全部指标上更好，pairwise t-test的p值小于0.01。</p>
-<table><thead><tr><th>模型</th><th>Taobao AUC</th><th>Taobao GAUC</th><th>Taobao LogLoss</th><th>Amazon AUC</th><th>Amazon GAUC</th><th>Amazon LogLoss</th></tr></thead><tbody><tr><td>HSTU</td><td>0.8304</td><td>0.8075</td><td>0.5064</td><td>0.7829</td><td>0.7681</td><td>0.5693</td></tr><tr><td>GateDiffInt</td><td>0.8515</td><td>0.8275</td><td>0.4836</td><td>0.8016</td><td>0.7792</td><td>0.5414</td></tr></tbody></table>
-<p>生产数据上，GateDiffInt相对HSTU的AUC提升3.00%、GAUC提升1.82%、LogLoss改善2.81%，最终分数为AUC 0.8486、GAUC 0.7612、LogLoss 0.4974；HSTU为0.8239、0.7476、0.5118。线上在主平台首页feed做14天A/B，GMV提升1.13%，推广到同场景其他业务后累计GMV提升5.13%。系统服务数亿日活，GMCD与MILD每周更新、CVR和LoRA每天更新。</p>
-<p>消融显示Taobao完整模型为0.8515/0.8275/0.4836；换成vanilla diffusion后降到0.8326/0.8158/0.5112；同时去掉GMCD和MILD则大幅降到0.7154/0.6295/0.7128；只去掉GMCD为0.8313/0.8139/0.5241，只去掉MILD为0.8278/0.8037/0.5092。去掉fusion gate后为0.8358/0.8170/0.5073，去掉importance gate后为0.8424/0.8215/0.4983；去掉Multi-LoRA和Multi-Intent后分别为0.8467/0.8253/0.4981与0.8374/0.8133/0.5022。结果说明GMCD与MILD互补，融合门贡献大于重要性门，多意图拆分优于一个混合向量。</p>
-<p>实验还揭示数据域差异：HSTU在Taobao因特征少、序列短而不如DIEN/DMIN，在Amazon因评论文本更丰富、序列更长而占优。学习率在5乘10的负4次方到1乘10的负3次方较稳，超过2乘10的负3次方会不稳定；attention维度256、4个头是默认较优点，序列越长总体越有利。</p>
-<h1>5. 局限与未来方向</h1>
-<p>作者在结论中明确把未来方向写成扩展到多任务CVR/CTR建模，并继续诊断NID与IDF。论文没有给出线上绝对GMV、流量分桶和时延数字，工业数据绝对规模也未公开；生产实验报告相对提升而非完整置信区间。教师依赖Gemini API、学生依赖Qwen模型，部署团队需要处理教师访问成本、模型版本、蒸馏标签质量和意图描述偏差。</p>
-<p>训练与服务流程仍较复杂：GMCD、MILD和CVR头分别有周更、日更和实时行为三个时间尺度，线上每次请求要依次执行GMCD、学生意图和CVR头。论文没有充分展开冷启动、极短序列、意图快速漂移、教师错误描述和敏感用户画像的安全审计。将这些视为工程风险，而不是论文已经解决的结论。</p>
-<h1>6. 工业实践意义</h1>
-<p>对社区搜索/推荐，GateDiffInt提供一条离线大模型、在线轻量模型的路径。可以把浏览、点击、停留、收藏、评论、关注和跳过按行为强度分级，先验证浅层行为是否产生噪声；再用遮罩重建或轻量扩散做序列增强，同时保留原始分支；最后让LLM离线生成长期、短期、潜在和转化意图标签，用小模型蒸馏到用户塔，在线只运行学生和排序头。</p>
-<p>如果业务是社区搜索，不应照搬CVR命名，而应把最终目标换成query-item相关点击、深读、收藏或后续回访。重要性门可以给教师提示哪些行为更可信，例如完整阅读和收藏权重大于曝光或快速划过；四类意图也可以映射为用户主题、当前query需求、潜在探索方向和当前内容匹配意愿，随后用cross-attention与候选帖子特征做重排。</p>
-<p>上线可沿论文节奏更新：结构化意图抽取和扩散模块按周更新，轻量CVR/CTR头按日或小时微调，实时行为只更新用户状态。监控必须覆盖CTR之外的校准、GAUC、长尾用户、冷启动用户、主题多样性、过度重复和负反馈；性能要测完整链路，包括序列读取、扩散步数、LoRA、cross-attention、特征获取和候选批量。</p>
-<p>最重要的验收标准是论文消融中的互补关系能否迁移：如果只加入LLM意图标签就有收益，MILD可能已经足够；如果去噪和门控仍带来增量，再增加GMCD；如果融合门和重要性门收益很小，就不要为追求论文结构承受额外延迟。GateDiffInt的价值不是把大模型放进线上，而是把它变成可解释的离线老师，再用业务监督约束一个能被缓存、量化和回滚的用户建模模块。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2608-18764"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2608.18322" data-paper-id="arxiv:oai:arXiv.org:2608.18322" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.45</span></div>
@@ -212,83 +125,7 @@
   
   
   <div class="foot"><span>网页来源</span><span>·</span><span>2026-06-04</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 3 · Practical 5 · Evidence 4 · Timely 2</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="web_search:chatpaper:ds-mlp-ctr:2026-06-04" id="dr-web_search-chatpaper-ds-mlp-ctr-2026-06-04">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 15 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>DS-MLP：先把复杂 CTR 模型蒸馏进一个三层 MLP，再并联一个独立 MLP 纠正老师的错，三个公开数据集上 AUC 小幅领先</h1>
-<p>我的判断：维护 CTR 排序模型、又被各种特征交叉结构折腾得够呛的团队值得一读，但别指望大幅提升。它要解决的问题是：主流 CTR 模型（DeepFM、DCNv2、GDCN（Gated Deep Cross Network，门控深度交叉网络）等）都是“双流”结构，一路用乘法显式构造特征交叉，一路用 MLP 隐式学习，两路输出直接相加；结构越复杂越难调，而且乘法那一路的输出会随交叉阶数变大，相加时容易压过 MLP 那一路。DS-MLP 的结论是：最终上线的模型只要两个普通 MLP 就够。一个 MLP 通过知识蒸馏学会老师模型的显式交叉，另一个从零学习、补上老师漏掉的模式，两路先做 batch normalization，再各自用点击标签监督，所以谁也压不过谁。作者在 Criteo、Avazu、MovieLens 三个公开数据集上和 17 个基线比较，DS-MLP 的 AUC 都是第一，但领先幅度很小，前两个数据集甚至低于论文自己给的显著线。</p>
-<h2>它到底在解决什么问题？</h2>
-<p>CTR 预估的输入是一堆离散特征：用户 ID、性别、广告类目、设备、时段等。单个特征的信息有限，真正有用的是组合，比如“晚上十点 + 手机端 + 游戏类广告”。怎么学这些组合，是 CTR 模型过去十年的主线。</p>
-<p>两种学法的取舍：</p>
-<table><thead><tr><th>学法</th><th>怎么做</th><th>代表模型</th><th>问题</th></tr></thead><tbody><tr><td>显式交叉</td><td>用内积、逐元素乘法直接构造特征组合，叠几层就是几阶交叉</td><td>FM、CrossNet、DCNv2</td><td>阶数越高结构越复杂、越难调；乘法让输出数值随阶数放大</td></tr><tr><td>隐式交叉</td><td>把所有特征拼起来过 MLP，让网络自己学组合</td><td>DNN、FinalMLP</td><td>学到了什么说不清，作者认为单靠它学不好显式组合</td></tr><tr><td>双流（两者相加）</td><td>两路并联，输出直接相加</td><td>DeepFM、xDeepFM、GDCN</td><td>两路结构差异大，输出尺度不一致，一路容易压过另一路</td></tr></tbody></table>
-<p>作者把第三行的问题叫作不平衡融合：显式那一路做的是逐元素乘法，高阶交叉的数值会越乘越大；MLP 那一路经过 ReLU 之类的激活，输出范围有限。两者相加时，显式那一路就主导了最终预测。</p>
-<h2>先看全景</h2>
-<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig1_arch.png" alt="DS-MLP 结构。左边是高阶老师模型（如 GDCN），第一步把它的预测蒸馏给学生 MLP；中间是学生 MLP 和并联 MLP 两路，各自先过 Norm 层，再把两路的 logit 相加得到最终预测；右上是第二步的对齐损失，每一路都单独用点击标签算一次交叉熵。" loading="lazy" decoding="async"><figcaption>DS-MLP 结构。左边是高阶老师模型（如 GDCN），第一步把它的预测蒸馏给学生 MLP；中间是学生 MLP 和并联 MLP 两路，各自先过 Norm 层，再把两路的 logit 相加得到最终预测；右上是第二步的对齐损失，每一路都单独用点击标签算一次交叉熵。</figcaption></figure>
-<p>训练分两步，上线时只保留两个 MLP：</p>
-<table><thead><tr><th>阶段</th><th>做什么</th><th>训练谁</th></tr></thead><tbody><tr><td>0. 准备老师</td><td>先按常规训练好一个强 CTR 模型（Criteo 用 GDCN，Avazu 用 DCNv2，MovieLens 用 FinalMLP）</td><td>老师</td></tr><tr><td>1. 蒸馏</td><td>冻结老师，学生 MLP 同时拟合点击标签和老师的预测</td><td>学生 MLP</td></tr><tr><td>2. 对齐微调</td><td>加入并联 MLP，两路隐藏层做 batch normalization，总损失 = 融合预测的交叉熵 + 每一路各自的交叉熵</td><td>两个 MLP 一起</td></tr><tr><td>上线</td><td>两路 logit 取平均，过 sigmoid 得到点击率</td><td>只有两个 MLP，没有老师</td></tr></tbody></table>
-<h2>第一步：把老师的显式交叉蒸馏进一个三层 MLP</h2>
-<p>老师 GDCN 每一层做的事可以这样理解：拿原始特征向量和上一层结果逐元素相乘，得到更高一阶的组合，再乘一个 sigmoid 门过滤掉没用的组合，最后加回上一层。叠 L 层就是 L+1 阶交叉。最终预测是这个交叉网络的输出加上一个普通 DNN（深度全连接网络，结构上就是 MLP）的输出。</p>
-<p>学生是一个三层 MLP，宽度比基线常用的 400 更大：Criteo 上每层 600，Avazu 900，MovieLens 1000。损失是点击交叉熵加上 λ 倍的蒸馏损失，λ 在 Criteo 和 Avazu 上取 1.0，MovieLens 取 0.5。</p>
-<p>为什么 MLP 能学会乘法结构？论文第 3.5 节给了一个理论论证：MLP 是通用函数逼近器，只要容量够，就能在输出上逼近老师；再假设函数足够光滑，输出接近意味着二阶导数也接近，而二阶混合偏导正好衡量两个特征之间的交互强度。这个论证的前提（光滑性、过参数化优化能收敛）在实际训练里无法验证，它说明的是“可能学会”，不是“一定学会”。</p>
-<p>作者在实验里做了一个更直接的检查：用老师 GDCN 在三个合成特征上生成标签，看谁能拟合这些显式交叉。</p>
-<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig3_mse.png" alt="拟合老师生成的显式交叉时各模块的均方误差（MSE，越低越好），横轴是每层隐藏单元数。学生 MLP（蓝）稳定在 0.45 到 0.75，宽度到 1200 时最低；并联 MLP（橙）一直在 1.6 以上；老师自己的 CrossNet（绿）在接近 0 和 0.87 之间来回跳。" loading="lazy" decoding="async"><figcaption>拟合老师生成的显式交叉时各模块的均方误差（MSE，越低越好），横轴是每层隐藏单元数。学生 MLP（蓝）稳定在 0.45 到 0.75，宽度到 1200 时最低；并联 MLP（橙）一直在 1.6 以上；老师自己的 CrossNet（绿）在接近 0 和 0.87 之间来回跳。</figcaption></figure>
-<p>这张图可以读出两点。一是学生的误差比并联 MLP 低得多，说明蒸馏确实把老师的交叉模式传了过去，而并联 MLP 没有学老师，留给它去学别的东西。二是 CrossNet 本身的误差忽高忽低，这正是作者说的显式结构难优化，而 MLP 的曲线平稳得多。</p>
-<h2>第二步：并联一个 MLP，用两种对齐让两路平起平坐</h2>
-<p>作者在初步实验里发现，老师本身就是不平衡的双流，显式那一路主导预测，所以学生蒸馏到的也主要是显式交叉，隐式那部分被忽略了。补救办法是再并联一个 MLP，专门学隐式交叉。这个并联 MLP 不用老师的特征 embedding，而是从零学习，因为它的任务不是模仿老师。</p>
-<p>两路训练方式不同，输出差别会很大，直接相加又会回到“一路压过另一路”的老问题。作者用了两种对齐：</p>
-<table><thead><tr><th>对齐方式</th><th>做法</th><th>解决什么</th></tr></thead><tbody><tr><td>隐藏状态对齐</td><td>两路的隐藏层都做 batch normalization，把每个维度按批内均值和方差标准化</td><td>两路输出落在相近的数值范围，谁也不会因为数值大而主导</td></tr><tr><td>预测对齐</td><td>除了融合预测的交叉熵，每一路单独再算一次点击交叉熵，分别乘 α 和 β</td><td>每一路自己也要能预测点击，不能只靠另一路兜底</td></tr></tbody></table>
-<p>α 和 β 不能太大也不能太小。作者在 0.5 到 1.5 之间扫 α，效果在 1 附近最好：这是因为太大时两路被逼得几乎一样，失去互补；太小时对齐不够。各数据集最终选的 α 在 0.8 到 1.5 之间，β 在 0.6 到 1.2 之间，说明这组权重需要按数据集调。</p>
-<p>并联 MLP 到底补了什么？作者挑了 20 个样本画出各模型的预测：</p>
-<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig4_case.png" alt="20 个样本上老师、只蒸馏的学生和完整 DS-MLP 的预测值。负样本 3 上老师给出约 0.68，学生跟着给出约 0.93，DS-MLP 降到约 0.07；正样本 18 上老师约 0.13，学生约 0.14，DS-MLP 升到约 0.94。" loading="lazy" decoding="async"><figcaption>20 个样本上老师、只蒸馏的学生和完整 DS-MLP 的预测值。负样本 3 上老师给出约 0.68，学生跟着给出约 0.93，DS-MLP 降到约 0.07；正样本 18 上老师约 0.13，学生约 0.14，DS-MLP 升到约 0.94。</figcaption></figure>
-<p>这个例子说明了蒸馏的一个代价：学生会把老师的错误一起学走。并联 MLP 不受老师影响，能在这些样本上把预测拉回来。不过这是挑出来的 20 个样本，只能当示意，不能说明整体上纠错有多频繁。</p>
-<h2>效果：领先多少，算不算数</h2>
-<p>实验沿用 BARS（CTR 领域的开源可复现基准）的设置：embedding 维度 10，batch 4096，基线的 MLP 都是三层 400。指标是 AUC（随机取一个点击样本和一个未点击样本，模型把点击样本排在前面的概率）和 LogLoss（预测概率与真实点击的交叉熵，越低越好）。论文表头写明，AUC 高 0.001 或 LogLoss 低 0.001 在 CTR 任务里就算显著。下表里出现的两个基线：FCN（Fusing Cross Network，2024 年的融合交叉网络，把线性和指数增长的交叉子网络合在一起）和 Final（2023 年的因子化交互层模型，用改造过的线性层显式学二阶交叉，和 FinalMLP 是两个不同的模型）。</p>
-<table><thead><tr><th>数据集（样本量）</th><th>最强基线 AUC</th><th>DS-MLP AUC</th><th>差值</th><th>DS-MLP 延迟 / 最快的强基线延迟（ms）</th></tr></thead><tbody><tr><td>Criteo（4,584 万）</td><td>FCN 0.8149</td><td>0.8152</td><td>+0.0003</td><td>59.43 / Final 25.56</td></tr><tr><td>Avazu（4,043 万）</td><td>Final 0.7664</td><td>0.7670</td><td>+0.0006</td><td>25.89 / Final 19.26</td></tr><tr><td>MovieLens（201 万）</td><td>Final 0.9717</td><td>0.9752</td><td>+0.0035</td><td>2.65 / Final 2.29</td></tr></tbody></table>
-<p>按论文自己的 0.001 标准，Criteo 和 Avazu 上 DS-MLP 相对最强基线的领先都不到显著线，只有 MovieLens 上是明确的提升。论文没有报告多次运行的标准差，也没有做显著性检验，所以 0.0003 这种差距很可能落在随机种子的波动里。</p>
-<p>延迟方面，DS-MLP 在 Criteo 上是 59.43 ms，和 FinalMLP 的 56.71 接近，但比 Final 和 DeepFM 慢一倍多，比老师 GDCN 的 45.02 也慢。原因不难理解：学生每层 600 宽，再加一个并联 MLP，计算量并不比 GDCN 小。论文说的“简单高效”更多指结构单一、好部署，而不是更快。另外论文没说明延迟是按单条样本还是按一个 batch 测的。</p>
-<h2>换个老师也行吗</h2>
-<p>作者用五种不同结构的老师各训练一个 DS-MLP，和老师本身比较：</p>
-<table><thead><tr><th>老师</th><th>Criteo AUC（老师 → DS-MLP）</th><th>Avazu AUC</th><th>MovieLens AUC</th></tr></thead><tbody><tr><td>AutoInt</td><td>0.8138 → 0.8145</td><td>0.7634 → 0.7656</td><td>0.9688 → 0.9734</td></tr><tr><td>DCNv2</td><td>0.8132 → 0.8147</td><td>0.7627 → 0.7670</td><td>0.9690 → 0.9728</td></tr><tr><td>xDeepFM</td><td>0.8136 → 0.8149</td><td>0.7639 → 0.7659</td><td>0.9685 → 0.9714</td></tr><tr><td>GDCN</td><td>0.8137 → 0.8152</td><td>0.7648 → 0.7662</td><td>0.9685 → 0.9737</td></tr><tr><td>FinalMLP</td><td>0.8147 → 0.8148</td><td>0.7659 → 0.7662</td><td>0.9716 → 0.9752</td></tr></tbody></table>
-<p>AUC 上十五组全部超过老师，这是全文最有说服力的一张表，因为它是同一框架对不同老师的稳定提升，而且多数组的提升超过 0.001。但 LogLoss 并非全都改善：以 FinalMLP 为老师时，Criteo 的 LogLoss 从 0.4374 变差到 0.4431，Avazu 从 0.3662 变差到 0.3675；以 DCNv2 为老师时，MovieLens 从 0.2139 变差到 0.2173。如果线上依赖校准后的点击率出价，这几组需要另做校准。另外，老师本身已经很强时（FinalMLP），Criteo 和 Avazu 上几乎没有提升。</p>
-<h2>消融：哪一块在起作用</h2>
-<table><thead><tr><th>配置</th><th>Avazu AUC</th><th>Criteo AUC</th><th>MovieLens AUC</th></tr></thead><tbody><tr><td>完整 DS-MLP</td><td>0.7670</td><td>0.8152</td><td>0.9752</td></tr><tr><td>去掉对齐损失</td><td>0.7641</td><td>0.8145</td><td>0.9703</td></tr><tr><td>去掉学生 MLP（老师直接和并联 MLP 融合）</td><td>0.7652</td><td>0.8137</td><td>0.9669</td></tr><tr><td>去掉并联 MLP（只用蒸馏后的学生）</td><td>0.7648</td><td>0.8140</td><td>0.9690</td></tr><tr><td>学生换成 CrossNet</td><td>0.7639</td><td>0.8138</td><td>0.9708</td></tr><tr><td>去掉蒸馏（两个 MLP 从零训练）</td><td>0.7655</td><td>0.8135</td><td>0.9715</td></tr></tbody></table>
-<p>有三点值得注意。第一，Criteo 上去掉蒸馏掉得最多，两个 MLP 从零训练只有 0.8135，和老师 GDCN 的 0.8137 差不多，说明 Criteo 上的提升主要来自蒸馏。第二，Avazu 上去掉对齐损失掉得最多，说明两路怎么融合在这里更关键。第三，“老师直接和并联 MLP 融合”反而更差，作者的解释是结构差异太大、对不齐，这支持了“先把老师变成 MLP 再融合”的思路。</p>
-<p>再看“只用蒸馏后的学生”这一行和老师对比：Avazu 上学生 0.7648 比老师 DCNv2 的 0.7627 还高，Criteo 上 0.8140 和 GDCN 的 0.8137 持平，MovieLens 上 0.9690 却低于老师 FinalMLP 的 0.9716。也就是说，单独一个蒸馏 MLP 在不同数据集上可能超过老师，也可能不如老师，并联 MLP 才是让三个数据集都稳定领先的那一块。</p>
-<h2>加大模型会更好吗</h2>
-<figure class="dr-fig"><img data-fig="1" src="../../../figs/2026-08-21/personalization/2606.04944/fig2_scaling_criteo.png" alt="Criteo 上 DS-MLP（红方块）和 GDCN（蓝圆点）的 AUC 随参数量的变化，横轴刻度为 ×10^6，直线是最小二乘拟合。DS-MLP 从最小配置约 0.8122 升到约 200 万参数时的约 0.8153，之后在 0.8150 到 0.8153 之间持平；GDCN 基本在 0.8132 到 0.8143 之间波动，拟合线是平的。" loading="lazy" decoding="async"><figcaption>Criteo 上 DS-MLP（红方块）和 GDCN（蓝圆点）的 AUC 随参数量的变化，横轴刻度为 ×10^6，直线是最小二乘拟合。DS-MLP 从最小配置约 0.8122 升到约 200 万参数时的约 0.8153，之后在 0.8150 到 0.8153 之间持平；GDCN 基本在 0.8132 到 0.8143 之间波动，拟合线是平的。</figcaption></figure>
-<p>论文据此说 DS-MLP 随容量增长持续提升，而 GDCN 饱和甚至下降。看散点会更谨慎一些：DS-MLP 在约 200 万参数后也已经饱和，拟合直线的上升主要来自左边几个很小的配置。这张图能说明的是，加宽 MLP 不会像 GDCN 那样不稳定，但说不上“越大越好”。Avazu 上的情况类似，DS-MLP 的点散布在 0.7647 到 0.7660 之间，GDCN 的波动更大。</p>
-<h2>我认为它的局限</h2>
-<p>第一，提升幅度和统计证据都偏弱。两个大数据集上领先最强基线不到 0.001，又没有多次运行的方差，结论“全部 SOTA”站得不太稳。</p>
-<p>第二，总成本没有算全。上线模型是两个 MLP，但训练前必须先训好一个强老师，再蒸馏、再微调，整个流程要依次跑老师训练、蒸馏、对齐微调三轮。延迟也没有比主流双流模型低。</p>
-<p>第三，方法描述前后不一致。第 3.1.3 节说蒸馏的是 logit、用带温度的交叉熵；算法 1 写的是对隐藏表示算 KL 散度；理论部分又用均方误差。融合方式也是一处写 logit 取平均、一处写概率按 γ=0.5 加权。复现时应以开源代码为准。</p>
-<p>第四，embedding 表的数量不清楚。正文说并联 MLP 不复用老师的 embedding、从零学习，这意味着可能有两套 embedding；而对比表里又标注 DS-MLP 只用单个 embedding 表。CTR 模型的参数大头在 embedding，这一点直接影响线上内存。</p>
-<p>第五，“显式那一路压过隐式那一路”是全文动机，但论文只给了文字描述，没有展示两路输出的数值分布。此外，超参数图里 MovieLens 的最高 AUC 约为 0.9711，和主表的 0.9752 对不上，可能是不同配置，论文没有解释。</p>
-<h2>一个排序团队可以怎么试</h2>
-<ol>
-<li>拿线上现有的交叉网络模型当老师，不必换成 GDCN，兼容性实验说明换老师基本都有收益。</li>
-<li>先只做第一步，训练一个比现有 MLP 更宽的学生，看它单独能否追平老师；如果追平了，就已经得到一个结构更简单的模型。</li>
-<li>再加并联 MLP 和两种对齐，α、β 从 1 附近开始调，同时盯 AUC 和 LogLoss，后者变差时要补校准。</li>
-<li>用自己的线上延迟标准测一遍，不要假设它比现有模型快。</li>
-</ol>
-<h2>结论</h2>
-<p>一句话：把复杂交叉网络的知识蒸馏进 MLP，再并联一个独立 MLP 纠正老师的偏差，能得到一个结构单一、效果不输复杂模型的 CTR 模型，但离线提升很小，成本也没有省下来。</p>
-<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>中。双流结构的复杂度和融合不平衡是真问题，但多数团队已有成熟方案</td></tr><tr><td>方法创新性</td><td>中。蒸馏加双 MLP 都不新，新在“先变成同构的 MLP 再对齐融合”这个组合</td></tr><tr><td>实验证据</td><td>偏弱。只有公开数据集，大数据集上提升低于显著线，无方差、无线上实验</td></tr><tr><td>工程成本</td><td>中。上线结构简单，但训练流程变长，延迟没有优势</td></tr><tr><td>是否值得尝试</td><td>可以小规模试。适合想把复杂交叉结构换成纯 MLP、便于部署和扩展的团队</td></tr></tbody></table></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-web_search-chatpaper-ds-mlp-ctr-2026-06-04"></span>
 </article>
 <article class="card t-personalization" id="paper-web_search:aem:ctr-cvr-multitask:2026-08-13" data-paper-id="web_search:aem:ctr-cvr-multitask:2026-08-13" data-card>
   <div class="top"><span class="n">08</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.85</span></div>
@@ -352,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

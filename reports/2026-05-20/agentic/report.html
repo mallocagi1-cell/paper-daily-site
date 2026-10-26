@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -64,47 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>核心是用 on-policy hindsight self-distillation 做 query 级信用分配：teacher 知道哪些 rollout 成功，其 query 分布隐式标出哪些 search 决策值得做，再用 JS 散度蒸馏回 student。对社区搜索的启示是，用 LLM 做多轮 query 改写或迭代检索时，可用同一模型加后见上下文构造 step 级监督，省掉维护更大 teacher 或人工标注子问题，降低 query 改写策略训练的标注与算力门槛；hindsight block 只传 query 摘要与成败这一极简接口，本身就是一种轻量信用分配设计。</div>
     <div class="foot">Yufei Ma, Zihan Liang, Ben Chen, Zhipeng Qian, Huangyu Dai, Lingtao Mao, Xuxin Zhang, Chen... · 2026-05-18 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.18299" id="dr-arxiv-2605-18299">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>SD-Search 深度解读</h2>
-<h3>1. 问题与动机</h3>
-<p>搜索增强推理（search-augmented reasoning）agent 在内部 think 与外部 retriever 调用之间交替，性能高度依赖每一次 search query 的质量。问题在于：当前主流用 outcome-reward RL（如 GRPO）训练时，一条 rollout 里所有 search 决策共享同一个轨迹级 reward——&quot;every search decision in a rollout shares the same trajectory-level reward, leaving individual queries without step-specific credit&quot;。后果是一条成功轨迹里的差 query 和好 query 拿到完全相同的梯度信号，反之亦然，step 级信用分配缺失。</p>
-<p>已有的 process-supervision 方案（Thinker、StepSearch）确实补了 step 级信号，但代价是引入外部资源：Thinker 需要一个 72B teacher 模型对全训练集做一遍推理再加 SFT 阶段，StepSearch 依赖 GPT-4o 标注子问题。作者的关键观察是：policy 自己只要拿到关于 rollout 结果的&quot;后见信息&quot;，就能在内部产生这些 step 级信号，不需要更大的 teacher，也不需要训练之外的额外标注。这一动机直接对应工业界痛点——多轮检索/query 改写策略训练里，维护一个更大的 teacher 或人工标注子问题的成本极高。</p>
-<h3>2. 方法详解</h3>
-<p><strong>双角色（同参数）。</strong> student 只看推理时可见的上下文：对位置 p 的动作 token，student 分布为 πθ(·|τ&lt;p)。teacher 用同一套参数，但额外条件于一个 hindsight block h(𝒢)，其中汇总了同一问题采样的一组（group size G=5）sibling rollouts 的 search query 与 outcome label。</p>
-<p><strong>Hindsight block 内容。</strong> 对每条 sibling rollout τⱼ，block 含两部分：(a) 掩码视图 ℳ(τⱼ)，只保留 search span，用&quot;future masking&quot;剥掉 think、检索文档、answer；(b) 二元 outcome label y(τⱼ)∈{Correct, Incorrect}，由 F1 阈值（ρ=0）导出。future masking 的必要性被消融证明：若 teacher 看到检索文档和后续 think，gold answer 会从 hindsight 前缀里被直接抽出，导致分布崩塌——去掉 future masking 掉 3.0 EM（在 2Wiki 多跳上掉 4.7）。</p>
-<p><strong>JS 散度目标。</strong> 只在 search-query token 集合 𝒬τ 上施加 token 级损失：ℒ_SD(τ)=(1/|𝒬τ|)Σ JSD(P^tch_p ∥ P^stu_p)。选 JSD 而非 KL/MSE 的理由是对称（避免 mode-seeking/covering 偏置）且有界（≤log2，提升稳定性），分布只取 top-k=50 token 提效。消融显示：forward KL −1.0、reverse KL −1.4、MSE −2.1 EM；把作用域从 𝒬τ 扩到全部动作 token 𝒜τ −0.7 EM。</p>
-<p><strong>与轨迹级 reward 结合。</strong> 总损失 ℒ_total=ℒ_GRPO+α_SD·ℒ_SD，两项互补：GRPO 用 advantage 提供粗粒度轨迹级强化，ℒ_SD 用直接分布匹配提供稠密 token 级监督。</p>
-<p><strong>训练配置。</strong> base 模型 Qwen2.5-3B/7B（base 与 instruct）；GRPO，group size 5；训练集 NQ+HotpotQA 合并，评测 7 个 QA 基准（3 单跳 4 多跳）；actor lr 1e-6，200 步，KL 系数 β=0.001，clip ε=0.2；SD 专属超参 α_SD=1e-3、warmup 50 步、top-k=50、outcome 阈值 ρ=0；检索器 E5-base-v2 + 2018-12 Wikipedia，每 query 取 3 文档；硬件 8×H800。</p>
-<h3>3. 核心技术贡献</h3>
-<p>(1) <strong>on-policy hindsight self-distillation 框架</strong>：用 policy 自身在标准 RL loop 内产生 search 决策的 step 级监督，不需外部 teacher、不需 outcome-reward 训练以外的标注。机制是&quot;teacher 知道哪些 rollout 成功，其 query 分布隐式标出哪些 search 决策值得做&quot;，再蒸馏回 student。</p>
-<p>(2) <strong>token 级 JS 目标</strong>：在每个 search step 把 policy 的 query 分布对齐到&quot;后见条件下&quot;的分布。相比 KL，JSD 的对称+有界特性带来 1.0–2.1 EM 的稳定收益（消融实证）。</p>
-<p>(3) <strong>规模化验证</strong>：在 3B/7B 两个尺度、7 个基准上一致优于 outcome-reward，并匹配或超过依赖外部 teacher 的 process-supervision 基线。相比 AutoRefine-Base，3B 提升 +2.3、7B +2.1，多跳收益更大。</p>
-<h3>4. 实验结果分析</h3>
-<p>3B 尺度（Table 1，Avg EM）：AutoRefine-Base 0.405、MR-Search-Base 0.414、Thinker-Instruct（72B teacher+SFT）0.430、SD-Search-Base（纯 RL）0.428——即不用外部 teacher 就追平了最强 process-supervision 基线，比 AutoRefine-Base 高 2.3、比 MR-Search-Base 高 1.4。多跳收益更明显：Bamboogle +5.8、MuSiQue +3.1、2Wiki +2.7，作者归因于更稠密的 per-step 监督与轨迹内方差。</p>
-<p>7B 尺度（Table 2）：SD-Search-Instruct 0.476，超 Thinker-Instruct 2.4 点；值得注意的是 7B 上 Thinker 相对 AutoRefine 的增益转负（−0.3），而 SD-Search 仍 +2.1。Scaling 分析（1.5B/3B/7B/14B）：SD-Search 增益 +2.5/+2.3/+2.1/+0.9，全程为正；Thinker 增益随规模单调缩小并从 7B 起转负——说明外部 teacher 蒸馏在大模型上反而拖累，而 on-policy 自蒸馏更稳。</p>
-<p>消融（hindsight block）：去掉 outcome label −1.4；打乱 label −2.3（比直接删更差，说明 label 必须正确而非仅占位）；去 future masking −3.0；leave-one-out（teacher 只看 siblings 不看本条）−0.5。超参敏感性（Figure 4）各默认值都在曲线峰附近，波动 &lt;2.5 点，调参鲁棒。局限是 14B 上增益收窄。</p>
-<h3>5. 局限与未来方向</h3>
-<p>作者明确两点局限（Section 4）：(1) <strong>可评分性要求</strong>：hindsight 对比依赖由 gold answer 导出的 outcome label，方法被限制在有可靠参考答案、可打分的任务；开放式生成需要换成学习的偏好分数或多数投票代理。(2) <strong>label 同质化退化</strong>：当一组 rollout 的 label 全同时对比信号消失——全失败时与 GRPO 一样崩，全成功时对比被抹平；这正是 14B 上增益收窄的原因（base 成功率高使 group 内全 Correct 更频繁）。一个作者未展开但明显的方向是：把二元 label 换成连续/分档 reward，或对 group 采样做难度平衡以缓解同质化。</p>
-<h3>6. 工业实践意义</h3>
-<p>对社区搜索/UGC 检索的 LLM query 改写与多轮检索策略训练，SD-Search 提供了一条低成本路径：用同一个 policy + 后见上下文构造 step 级监督，省掉维护更大 teacher 或人工标注子问题。<strong>该采用的</strong>：JSD 而非 KL 作对齐目标（对称有界、收益 1–2 EM 且更稳）；future masking（不掩码会让 teacher 泄漏答案、掉 3 EM）；只在 search-query token 上施加蒸馏（扩到全 token 反而 −0.7）。<strong>该试的</strong>：把 hindsight block 的&quot;query 摘要+二元成败&quot;接口迁移到自家 RL 改写管线，作为轻量信用分配层。<strong>部署考量</strong>：训练端到端 wall-clock 仅 +15.5%（8×H800，11.9h vs 10.3h），其中 teacher forward+JSD +22% step 时间、SD backward +17.5%，rollout/PPO/optimizer 基本不变；<strong>推理成本完全不变</strong>（teacher forward 仅训练时用且 stop-gradient）。相较 Thinker 需 72B 全集推理+SFT、StepSearch 需 GPT-4o API，SD-Search 的开销全部包在标准 RL loop 内，对算力有限的搜索团队尤其友好。需注意其前提是任务可打分——社区搜索相关性可用线上点击/人工标注代理 outcome label，但要警惕 label 同质化（高基线成功率场景对比信号会变弱）。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-18299"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-arxiv:2508.16438" data-paper-id="arxiv:2508.16438" data-card>
@@ -229,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

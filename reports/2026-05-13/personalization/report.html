@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,53 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>AR 与 NAR 的根本矛盾在于&#x27;序列依赖 vs. 错误传播&#x27;，UniRank 通过迭代去噪 + 置信度排序把这两者打通：先把高置信位置当作 NAR 全部生成，再像 AR 一样逐步精修难点位置。对短视频/电商重排有直接借鉴价值——可以替换现有 PRM 或 GRN 类列表模型，统一线上 serving；并且推理时可在 AR/NAR 之间动态切换以平衡延迟和质量。</div>
     <div class="foot">Pengyue Jia, Hailan Yang, Shuchang Liu, Xiaobei Wang, Wanyu Wang, Xiang Li, Yongqi Liu, Ka... · 2026-05-12 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.10527" id="dr-arxiv-2605-10527">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>生成式列表重排 (list-wise reranking) 是搜索/推荐多阶段流水线的最后一步，目标是把上游粗排/精排给出的 N 个候选 (论文取 N=50) 重新排列成一个长度 L=6 的最终曝光 slate，最大化用户满意度。现有生成式重排器分两大流派且互不让步：自回归 (AR) 模型如 GoalRank、GloRank、PRM 从左到右逐槽位生成，能显式建模 slate 内 item 间依赖，但任何早期错误都会一路传染到后续位置；非自回归 (NAR) 模型如 NAR4Rec、DCDR 并行预测所有槽位，规避了 error propagation，但因为每槽位独立预测，几乎丢失了 item 间交互建模能力。论文用 Amazon Books 数据集量化了这一权衡：AR 代表 GloRank 拿到 90.08% NDCG@6，而 NAR 代表 NAR4Rec 只有 79.46% NDCG@6，整整 10.62pp 的鸿沟，说明序列依赖建模和误差控制是当前生成式重排无法兼得的两面。论文提出的核心问题是：能否设计一个统一架构，同时获得双向 inter-item 交互和无误差传播的稳定生成？</p>
-<h2>2. 方法详解</h2>
-<p>UniRank 把列表重排建模成一个针对 slate 槽位的 masked discrete diffusion 过程：起始时整个 slate 全部被 mask，模型通过若干步去噪逐步把 mask 替换成具体 item。架构由三部分组成：(a) Semantic Fusion Layer (SFL)：每个 item 由 M=4 个并行 codebook (每个 256 entries) 给出的 Semantic ID token 表示，SFL 把这 M 个 token embedding 拼接后线性投影到 d=256 维，得到 item 表征 e_i = W_agg[E[sid_{i,1}] ‖ … ‖ E[sid_{i,M}]] + b_agg；(b) Bidirectional Transformer Backbone：4 层全双向 attention，对 [用户历史 H ‖ sep ‖ 候选集 C ‖ sep ‖ 部分填充 slate x_α] 联合 self-attention，从而在任何去噪步都能同时看到历史、候选池和当前已生成 slate；(c) Latent Pool Selection (LPS)：不再把 item 当作 vocabulary 中的 token 解码，而是直接对请求级候选池打分 Z = (H_S W_q) H_C^T / √d ∈ R^{L×|C|}，对每个 slot 用 softmax 输出在候选池上的概率，从根本上避免了 vocabulary 爆炸。</p>
-<p>训练目标 (Equation 5): L = (1/L) Σ_{j∈M} (r_j/α) CE(softmax(Z_{j,:}), ℓ_j)。其中 1/α 是 mask ratio 归一化、r_j 是 label 加权 (r_j=1 正反馈，0 负反馈，也可换成 utility-based 奖励)。训练时随机 mask n~U{1,…,L} 个 slate 槽位，未被 mask 的 ground-truth item 留在原位，用户历史与候选池保持干净。优化器 AdamW，peak lr=3e-3，weight decay=0.05，batch size=64，bf16 混合精度，硬件是 2 张 NVIDIA RTX PRO 6000 Blackwell；公开数据 80/20 切分，|H|=50，|C|=50，L=6。</p>
-<p>推理阶段：UniRank 默认采用 confidence-ordered denoising —— 每步从所有 (slot, candidate) 对中选 argmax Z^(k)_{j,i}，即先填最有把握的位置；剩下不确定的位置可见的 slate 上下文更丰富后再决定。同样的训练模型，只要换一个 commit policy，就能恢复 AR (强制 left-to-right 填槽位) 或 NAR (单步并行全部生成) 行为，论文据此声明 UniRank 在推理时统一了三种范式。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) 统一架构：同一套双向去噪器只通过推理时 commit 策略切换，就能恢复 AR、NAR 和 confidence-ordered 变体。这一统一让原本互斥的 AR/NAR 选型变成可在线动态决策——延迟严格时跑 NAR (Table 2 显示 NAR 变体只比默认低 0.10pp Precision，依然显著优于现有 NAR 基线)；延迟宽松时跑 6 步 confidence-ordered；甚至可以加额外 refine 步骤。</p>
-<p>(2) 任务定制的 SFL + LPS：SFL 把多 codebook SID 融合给到 item embedding 解决 SID 缺先验语义的问题；LPS 把生成约束在 request-specific 候选池里，避免词表级生成的不准确和延迟。Ablation 显示去掉 SFL 后 Precision 从 88.30% 暴跌到 81.13%（-7.17pp），是整篇文章中最重要的组件；去掉 LPS 后 MAP 从 90.58% 降到 89.07%。</p>
-<p>(3) 双向上下文 + 置信度排序去噪：相比 AR 的 fixed-order，confidence-ordered 让模型可以先填&#x27;容易&#x27;位置，把更难的留到后期当 slate 信号更丰富时再决策。Table 4 中 2 步去噪的 (a,b) 分配实验里 (5,1) 拿到 94.00% NDCG，(1,5) 只有 93.78%，验证了 confidence 排序的有效性。</p>
-<p>(4) 灵活 label 加权：通过 r_j 可以无缝整合不同反馈信号 (点击、时长、utility 奖励等)，理论上 r_j = U(x_0|u,C)/L 时还能恢复 utility-rewarded policy gradient，等价于一种生成式重排的 RL 训练。</p>
-<h2>4. 实验结果分析</h2>
-<p>主结果 (Table 1，L=6)：</p>
-<ul>
-<li>Amazon Books: UniRank 88.30% Precision / 94.00% NDCG / 90.58% MAP / 91.70% F1；runner-up GloRank 83.75 / 90.08 / 85.10 / 86.97 —— UniRank 整体提升 4.4–6.4pp。</li>
-<li>MovieLens-1M: UniRank 76.88 / 88.65 / 82.64 / 83.59；runner-up DCDR 73.04 / 84.61 / 77.17 / 79.60。</li>
-<li>工业数据集 (短视频)：UniRank 63.54 / 91.34 / 86.53 / 75.49；runner-up GloRank 62.56 / 90.15 / 84.84 / 74.32。</li>
-</ul>
-<p>基线覆盖了 generator-only (DNN, DLCM, PRM, GoalRank, GloRank) 与 generator-evaluator (PIER, NAR4Rec, G-nn, DCDR) 两大家族。</p>
-<p>Ablation (Table 2)：去掉 SFL 是最大 negative 信号 (-7.17pp Precision)；去掉 iterative decoding 实际等价于 NAR 变体，只降 0.10pp，说明 UniRank 即使在 NAR 模式下也比现有 NAR 基线领先一截。</p>
-<p>去噪步数分析 (Figure 3)：1 步 93.74% NDCG → 2 步 93.89% → 3 步 93.93% → 6 步 94.00%，明显的边际递减——意味着实际部署可根据延迟预算选 2–3 步即可拿到大部分收益。</p>
-<p>模型尺寸 (Figure 4)：XS (0.29M) 93.36% → M (5.08M) 94.00% → XL (27.59M) 93.92%，先升后降，作者解释为 &#x27;training signal 限制了模型容量上限&#x27;，提醒了不可一味堆 size。</p>
-<p>在线 A/B (Table 3，billion-scale 短视频)：用户人均时长 +0.159%、share-rate +1.016%、长留 DAU +0.085%、hate UV -2.038%。10% 流量、7 天连续实验，把原 GoalRank 风格 reranker 直接替换为 UniRank，上下游保持不变以隔离重排效果。</p>
-<p>KuaiSim 模拟实验 (Table 7)：UniRank reward 3.0551、GloRank 2.9730、NAR4Rec 1.5723，进一步从环境层面验证 list-level utility 收益。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者在 Appendix H 明确指出：UniRank 是 reranking 阶段方法，从一个 request-specific 候选池里挑选，因此最终 slate 质量受限于上游 retrieval/ranking 阶段。作者建议的扩展方向是把候选生成和 diffusion 重排联合优化，或者把 UniRank 输出当作 feedback 反哺上游召回/精排。另外，论文没显式讨论但可观察到：去噪步数与延迟的 trade-off 在不同业务场景下需要单独调；M 个 codebook 的 SID 也依赖额外的 RQ-VAE/Kmeans 训练管道，对 SID 不成熟的团队会增加部署门槛。</p>
-<h2>6. 工业实践意义</h2>
-<p>UniRank 的工业价值非常清晰：(1) 同一个训练好的模型可以在 serving 时根据延迟需求在 AR/NAR/confidence-ordered 间切换，避免上线两套 reranker；(2) 6 步去噪并不算重——若延迟敏感可降到 2 步、损失极小 (NDCG 仅降 0.11pp)；(3) 在线 A/B 取得 share-rate +1.016%、user-time +0.159% 的可观增益，且 hate UV 反而 -2.038%，意味着不只是堆 engagement 还改善了 negative experience；(4) 完全兼容现有 multi-stage 架构，作者只替换 reranker 模块，上游召回精排不变，这种 &#x27;plug-in&#x27; 性质降低了 AB 风险。对短视频/电商重排团队的可执行建议是：把现有 PRM、GRN 类 listwise 模型替换为 UniRank-NAR 变体先验证延迟可行性，再视情况升级到 confidence-ordered 多步去噪。SID 已经部署在召回/生成式推荐链路 (如 TIGER/HSTU 体系) 的团队可以直接复用 codebook，极大降低落地成本。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2605-10527"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2605.09040" data-paper-id="arxiv:2605.09040" data-card>
@@ -121,55 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>ultra-long sequence 建模长期被 SIM、ETA、TWIN 等 item-search 路线主导，UxSID 把 SID 当作&#x27;兴趣分组锚点&#x27;，用语义压缩替代显式检索，省去了检索阶段的延迟和复杂度。对推荐排序团队的启示：当 SID 已经在召回/生成式推荐链路落地后，可顺势用 SID 桥接超长序列建模，把不同模块复用的语义空间统一起来，降低系统复杂度。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Hongwei Zhang, Qiqiang Zhong, Jiangxia Cao, Yiyang Lv, Huanjie Wang, Liwei Guan, Jing Yao, Yiyu Wang...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-12</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2605.09040" id="dr-arxiv-2605-09040">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>工业推荐系统中，活跃用户每周可产生约 10,000 条交互，超长行为序列建模因此成为提升 CTR/CVR 的关键资源。然而传统 attention-based DIN/DIEN 因为 O(n²) 复杂度只能截到 n=100 左右；SIM/ETA/TWIN 路线把它当作&#x27;对目标 item 做检索 (Top-K)&#x27;问题，引入选择偏置——离散语义相关但 retrieval 没召回的远端 item 会被忽略，TWIN 在 KuaiRec-Big 上 AUC 0.8269 但随序列变长收益减缓；item-agnostic 压缩路线 C-Former、MIMN、LURM 把整段序列压缩成固定数量的兴趣向量，相当于&#x27;低通滤波&#x27;，丢掉了 target-specific 的偏好峰，C-Former 在同数据集 0.8276。论文在 XLong 数据集做了更尖锐的对照：C-Former 0.8135、TWIN 0.8154，而 UxSID 拿到 0.8408，差距 2.5–2.7pp 是非常显著的工业级提升。这一 motivation 实际暗示了第三条道路：既不做 item-level 检索 (避免选择偏置和检索延迟)，也不做完全 item-agnostic 压缩 (避免 target 信号被滤掉)。</p>
-<h2>2. 方法详解</h2>
-<p>UxSID 的核心思想是用 Semantic IDs (SIDs) 把&#x27;语义相近的 item 聚合成共享兴趣组&#x27;，再用双层注意力捕捉 target-aware 偏好。具体由两阶段组成：</p>
-<p>(a) SID 构造：用一个 MLLM (论文沿用 Kuaishou 自研 QARM V2 体系) 把每个 item 的多模态属性编码为 z_i ∈ R^d，然后用 Res-KmeansFSQ 做层级量化，公开数据集 codebook shape 是 256×256×256×256 (M=4 层)，工业版本第一层 codebook 大小 4096，embedding 维度 32。只取第一层量化结果 k_1 作为 target SID，作者解释这是 granularity vs. latency 的折中。每个 item 因此都有一个紧凑的 SID 表示，而&#x27;共享同一 SID 的 item 群&#x27;天然形成语义兴趣组。</p>
-<p>(b) 双层注意力：<br>Stage 1 (Item-Agnostic Interest Compression, IAIC)：把原始长序列 B=[b_1,…,b_L] 压缩成 K=16 个可学习的 interest anchors P ∈ R^{K×d}。Cross-attention 公式为 H = Softmax((Q_anc W^Q)(E W^K)^T/√d)(E W^V)。每个 anchor 后接 anchor-specific PFFN (per-token FFN，权重不共享) 防止表示坍塌：p_k = LN(h_k + σ(h_k W_1^(k))W_2^(k))。再加正交损失 L_ortho = ||PP^T/||P||_2² − I||_F，强约束 16 个 anchor 彼此分散。</p>
-<p>Stage 2 (Hierarchical Semantic Probing)：用 target SID c_target 引导分两步探测：</p>
-<ul>
-<li>显式全局探测：e_global = Softmax((c_target W_g^Q)(E W_g^K)^T/√d)(E W_g^V)，直接从原始 ultra-long 序列里抽 target-related 细粒度信号；</li>
-<li>门控隐式探测：先用一个 2 层 sigmoid MLP 得 g_ctx = σ(GatedNet(e_global))，再 q_ref = c_target ⊙ g_ctx (Hadamard) 形成 refined query，最后 e_local = Softmax((q_ref W_l^Q)(P W_l^K)^T/√d)(P W_l^V) 在 16 个 anchor 上探测。</li>
-</ul>
-<p>最终拼接 E^UxSID = [e_global; e_local]，作为一个 2×d=2×32 的 embedding 接入排序模型：p(x) = σ(MLP(E^t; E^u; E^c; E^short; E^UxSID))。损失是 BCE + λ·L_ortho。优化器 Adam，lr=0.001，batch=256，公开数据集用 NVIDIA L20，工业 1k 序列 16 张 A10，10k 序列 40 张 A10。</p>
-<p>值得强调的两点设计：(i) 把 stage 1 设计成 item-agnostic 但加强 anchor 多样性，stage 2 才引入 target 信号，保留了&#x27;压缩 + 探测&#x27;的两段式分工；(ii) gated probing 用 stage 1 的全局上下文调制 target SID，避免直接拿 SID 当 query 在压缩后的 anchor 上做盲探。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) SID-guided 压缩 + 双层 attention 第三条路径：跳出了 SIM/TWIN 检索 vs. C-Former 静态压缩的二元对立。Ablation 显示把 SID 换成 category tag 后 XLong AUC 从 0.8408 掉到 0.8605→0.8205 区段，Interest Recall@50 从 0.1488 降到 0.0543，确认了 SID 的语义聚合作用是核心。</p>
-<p>(2) Dual-stage 探测拆分：去掉 e_global 后 KuaiRec-Big AUC 从 0.8348 降到 0.8302 (-0.0046)、XLong 从 0.8408 降到 0.8370；去掉 e_local 后两数据集分别 -0.0034 / -0.0033。两个分支同等重要，说明全局精细信号 + anchor-level 精探测真是互补。</p>
-<p>(3) 门控 refined probing：去掉 gate 后 XLong AUC 降 0.0032，验证&#x27;用全局上下文调制 target SID&#x27; 比裸 SID query 显著更好。</p>
-<p>(4) 正交锚点：L_ortho 让 16 个 anchor 保持独立兴趣方向，去掉后 XLong AUC -0.0023，从工业实战看这是个低成本但稳定收益的项。</p>
-<h2>4. 实验结果分析</h2>
-<p>公开数据 (Table 1)：UxSID 在 XLong/KuaiRec-Big 两个 ultra-long 数据集相对最强基线 TWIN、C-Former 都拉开 0.7–2.7pp AUC。</p>
-<p>工业数据 (Table 2)：在 Kuaishou 广告 CTR 任务上 AUC 0.8728 (vs. TWIN 0.8712，+0.16pp)，CTCVR AUC 0.8626 (vs. TWIN 0.8609，+0.17pp)。AUC 的工业基线本就很高，0.16pp 在 Kuaishou 这个量级是有意义的。</p>
-<p>在线 A/B (Table 3，Kuaishou 广告 7 天 10% 流量)：曝光 +0.111%，cost +0.231%，<strong>revenue +0.337%</strong>。Revenue 远超曝光增幅说明精准度在提升——同样的曝光带来更高转化效率。</p>
-<p>序列长度 scaling (Figure 3)：UxSID 在 1k→10k 长度上 AUC 单调上升且不收敛，TWIN/SIM 在 2k 之后基本 plateau，C-Former 在长序列上变得不稳定。这是 SID 路线相对 retrieval/compress 路线的关键优势。</p>
-<p>健壮性 (Table 7)：3 个 seed 下 KuaiRec-Big AUC 0.8348±0.0001、XLong 0.8415±0.0023，标准差很小。</p>
-<p>特征注入对照 (Table 8)：单纯给 TWIN 加上 SID 特征只能提升到 0.8296，仍输 UxSID 的 0.8348，说明收益来自架构而非特征加固。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文没有显式 limitations section，但从工程视角可以总结：(1) 需要先训好 RQ-VAE 风格的多层 codebook (Res-KmeansFSQ)，对 SID 还没成熟的团队是一次性投入；(2) 工业部署需要 ~2.56 TB ES 容量做 UID⊗SID hash 的 embedding cache (Kuaishou ~400M 用户 ×100 SID/用户)，对中小厂可能不容忽视；(3) 论文只取第一层 SID (k_1)，更细粒度的 k_2, k_3 是否能带来额外信息没有实验；(4) 评估场景集中在短视频与电商 CTR，对长视频/音乐/资讯类是否同样有效未知；(5) anchor K=16 是经验最优，λ 也需要按数据集调，迁移到新业务可能要再调参。</p>
-<h2>6. 工业实践意义</h2>
-<p>UxSID 给搜推团队最具操作性的一条建议是：当你已经在召回或生成式推荐链路落地了 SID/RQ-VAE codebook (如 TIGER、KUNLUN、HSTU、QARM 体系)，就可以顺势把它当作&#x27;第三种超长行为序列建模工具&#x27;，避免每条链路各自重训一套语义空间。线上推理上 UxSID 设计了 O(1) hash table 方案——Key=Hash(UID⊕SID)、Value 是预算好的 2×32 embedding，缓存到 Embedding Server，主排序模型只在最后做轻量 attention，论文报告增加约 0.16ms 延迟，几乎可忽略。重的 O(n²) 注意力被 offload 到离线 batch (1k 序列 16 张 A10、10k 序列 40 张 A10，每周刷新一次)，这种 &#x27;离线生产兴趣表征 + 在线轻量查表&#x27; 模式对很多 RTP/特征平台都成熟可复用。</p>
-<p>落地建议：先把 SID 训出来 (利用现有 MLLM 物料信息和 RQ 量化)，然后用 UxSID 框架替换或并联现有 SIM/TWIN 模块。先 16 个 anchor、第一层 SID 这套默认配置跑一遍，观察 CTR/AUC，再考虑加 k_2 探测或更大 anchor 数量。对 UGC/短视频社区，物料语义信息天然丰富 (封面、首帧、标题、tag)，SID 训练比纯 ID 类 ID 场景容易出效果；广告 0.337% revenue lift 在内容场景往往会对应更大的人均时长/留存提升。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2605-09040"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2604.21675" data-paper-id="arxiv:2604.21675" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.20</span></div>
@@ -283,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

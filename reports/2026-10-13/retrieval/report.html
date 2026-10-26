@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -75,56 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>社区 UGC 搜索可把局部关键词与语义证据作为独立匹配通道，避免整篇表征掩盖关键细节。先测试无训练融合，再考虑只更新查询侧的低秩适配器；但必须同时测量索引大小和 P95 延迟，论文中未压缩 token 索引显著大于单向量索引，不能只依据离线 nDCG 决定上线。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Han Luo, Zhan Zhuang, Xu He, Jujia Zhao, Yu Li, Suqin Yuan, Dong Li, Lei Feng</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-10-09</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 4 · Timely 4</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2610.13277" id="dr-arxiv-oai-arXiv-org-2610-13277">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 12 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Beyond the Final Embedding：复用 token 表征改善局部证据检索</h1>
-<p>全文来源：https://arxiv.org/html/2610.13277 。本次已取得并保存论文方法、主实验、消融、效率分析及附录正文；以下数值均为作者报告，未进行独立复现。</p>
-<h2>1. 问题与动机</h2>
-<p>论文讨论的是记忆检索：给定问题，从历史对话或文档中找到支撑答案的原始记录。单向量检索把整条记录压缩为一个 pooled embedding，查询也压缩为一个向量，两者点积决定相关性。问题在于，一条长记录里真正回答问题的信息可能只占很小一部分；多个记录又可能共享话题、人物和背景。整体相似度因此能够识别“谈论同一件事”，却未必识别“包含所需细节”。这与社区长帖、问答合集里局部事实被背景文字稀释的现象相近，但论文没有直接做中文社区线上实验。</p>
-<p>作者没有另训一个完整检索器，而是追问：现有 embedding 模型在生成最终向量时已经计算过上下文 token 状态，为什么把这些细粒度信息丢掉？论文图 1 展示了一个相关记忆由第 28 名升到第 1 名的案例，并报告 LoCoMo 上净增加 523 个 Top-10 命中。这个例子说明局部匹配可以补足整体表征，但不能单独作为普遍效果的证明。其方法继承 ColBERT 的 late interaction 思想和 XTR 的 token 检索、缺失相似度估计，重点是复用冻结通用编码器，而不是再建立专用的 token 编码模型。</p>
-<h2>2. 方法详解</h2>
-<p>离线阶段，每条记忆只经过一次冻结编码器。系统同时保存归一化的整条记忆向量，以及最后一层内容 token 的归一化状态；每个 token 状态附带所属记忆 ID。查询阶段也取得 pooled 向量和 token 状态。两边使用相同编码器，并保持各模型原生提示、内容位置 mask 和特殊 token 处理规则，不能简单把提示词及填充位置一起写进索引。</p>
-<p>第一条通道是原来的 pooled 向量点积。第二条通道对每个查询 token，在整个候选记忆的 token 库中做 HNSW 近邻检索，默认返回 64 个 token。它不是先给每条记忆做完整 MaxSim，再挑分数最高的记忆；它先全局挑匹配 token，再依据 token 的记忆 ID 回收证据。对一个查询 token，某条记忆如果有多个命中，只保留最高相似度。</p>
-<p>未被取回的匹配也不能当成零。作者用当前查询 token 所返回的最后一个近邻的相似度，截断到不小于零，作为统一的分数下界。某条记忆没有对应 token 命中时，就使用这个下界；有命中时取命中分数与下界的较大值。最后对查询 token 求平均，得到记忆级的 sparse score。这个尾部分数补偿是实质性设计：近邻列表之外意味着“相似度不超过检索尾部”，并不意味着“完全不相关”。</p>
-<p>融合前，两条通道分别在当前查询的候选记忆集合内做均值、标准差归一化，标准差下界为 10^-6，避免尺度差异或常量分数造成异常。融合分数为 alpha 乘归一化 pooled 分数，加上 1-alpha 乘归一化 sparse 分数，默认 alpha=0.5。pooled 分数会计算到每条候选记忆，因此即使它的 token 没有进入近邻列表，也可能通过整体语义进入最终结果。</p>
-<p>可选训练只修改查询 token。作者使用秩为 32 的低秩残差 h+BAh，再把结果缩放回输入状态的范数；没有中间激活，B 零初始化，初始行为等同于原模型。参数量为 2dr，文档向量、token 库和 pooled 查询向量始终不变。由于 ANN 的邻居选择是离散操作，训练改用可微的 MaxSim 代理损失：分子汇总全部正例记忆的指数分数，分母汇总所有候选，温度为 0.07。这个多正例形式允许一个问题对应多条支撑记录。</p>
-<p>附录 B 明确训练数据取自 EvoTrain-180K：使用 1,024 个训练样本、256 个验证样本，而不是使用全部 18 万条。训练 25 个 epoch，batch size 为 16，AdamW 学习率和 weight decay 均为 10^-4，梯度范数裁剪为 1。根据源验证集 Recall@10 与 NDCG@10 的均值，在 epoch 0、1、5、10、15、20、25 中选择 checkpoint；结果平均三个随机种子 31070、31071、31072。本次核对的训练说明没有给出训练 GPU 型号，不能补写硬件或总训练时间。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一项贡献是把现有 embedding 模型的内部 token 状态变成可复用的局部检索索引。它针对单向量丢失证据的问题，不要求改动编码器训练。Qwen3-Embedding-4B 的八任务平均 Recall@10/NDCG@10，从原模型的 62.5/48.0 提升到无训练融合的 73.8/59.9，表明大部分收益来自匹配机制本身，而不是监督适配。</p>
-<p>第二项贡献是将全局稀疏 token 命中、尾部相似度补偿及整条记录分数结合。完整 MaxSim 对每条记忆找最佳局部匹配，而本文用全局 token 近邻限定能够获得额外证据的记忆。保持融合及适配不变，把稀疏匹配换成 MaxSim，会让 Qwen-4B 的平均 Recall@10/NDCG@10 下降 3.4/2.2 个百分点。其意义在于，全局筛选能够减少每条记忆总能找到某个局部相似 token 的噪声机会。</p>
-<p>第三项贡献是把小规模监督放在查询侧，保留固定记忆库。Qwen-4B 从无训练的 73.8/59.9 进一步升至 75.7/62.3，但 Qwen-0.6B 的增益仅为 0.3/0.5 点，Llama-3B 甚至有小幅下降。因此适配不是默认必需步骤，应先看无训练方案是否解决本业务问题，再决定是否引入标签和训练维护。</p>
-<h2>4. 实验结果分析</h2>
-<p>作者在八个数据集上等权汇总 capped Recall@10 与 NDCG@10：LoCoMo、LongMemEval、REALTALK 为对话记忆；其余覆盖 ESG 报告、QASPER、PeerQA、CovidQA 和 MLDR。相同 backbone 的方法输入一致；ColBERTv2、XTR、ConstBERT 等独立系统保留原生配置，因此跨系统比较不等于所有变量完全受控。</p>
-<table><thead><tr><th>Qwen3-Embedding-4B 设置</th><th>平均 Recall@10 (%)</th><th>平均 NDCG@10 (%)</th></tr></thead><tbody><tr><td>原始单向量</td><td>62.5</td><td>48.0</td></tr><tr><td>直接 MaxSim</td><td>67.8</td><td>54.3</td></tr><tr><td>本文无训练融合</td><td>73.8</td><td>59.9</td></tr><tr><td>本文加查询适配</td><td>75.7</td><td>62.3</td></tr><tr><td>去掉局部与整体融合</td><td>74.5</td><td>60.6</td></tr><tr><td>用 MaxSim 替代稀疏匹配</td><td>72.4</td><td>60.1</td></tr></tbody></table>
-<p>表中最后两行是查询适配保持开启时的组件消融，不能拿它们当成无训练方案。去掉融合下降 1.2/1.7 点，说明局部证据和整体语义互补；去掉稀疏匹配的损失更大。额外机制分析把尾部下界换成零，在两种 backbone、两组数据上让适配方案 Recall@10 下降 1.61–7.14 点、NDCG@10 下降 2.57–7.98 点。相较之下，把 HNSW 换为精确 token 搜索，Recall@10 变化为 -0.06 到 +1.62 点，NDCG@10 增加 0.03–1.91 点。作者据此强调，估计未返回匹配的重要性超过单纯消除 ANN 误差。</p>
-<p>跨 backbone 结果也有边界。EmbeddingGemma-300M 无训练方案的平均 Recall@10 从 72.8 到 79.8，NDCG@10 从 59.4 到 67.1；Llama-NV-Embed-Reasoning-3B 的 NDCG 则由 60.9 到 67.4，再训练适配反而降到 66.8。不同模型内部表示已经有不同的局部检索能力，不能认为模型越大、适配越多一定越好。</p>
-<p>下游回答采用固定 Qwen3-30B-A3B-Instruct 阅读器及 GPT-4o-mini 评判器，取回 10 条记忆。Qwen-4B 上 LoCoMo 答案准确率由 63.4 到 67.9，LongMemEval 由 67.8 到 72.6；但 LongMemEval F1 从 13.1 到 12.4。准确率改善与词面 F1 下降同时出现，提示评估指标、答案表达和判定协议会影响结论，不能把检索指标直接换算成答案质量或点击率。</p>
-<p>效率实验尤其值得关注：在 Qwen-0.6B 的 LoCoMo 设置中，原单向量索引 2.23 MiB、查询 16.66 ms，完整本文索引为 153.93 MiB、29.21 ms。SQ4 压缩后为 26.17 MiB、21.68 ms，Recall@10/NDCG@10 为 68.37/54.31，接近完整索引的 68.53/54.45。再做 128 维随机投影并 SQ4，索引为 10.70 MiB、20.69 ms，质量下降至 66.69/51.92。压缩可以缓解成本，但即使 SQ4 仍比原单向量占用更多空间。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文没有单列正式 limitations 章节，结论主要重申冻结模型、局部匹配、查询适配及压缩的价值。正文明确展示的边界包括：查询适配并非在所有 backbone 上有效；增大每个查询 token 的检索预算也没有稳定收益，LoCoMo 上无训练 Qwen-4B 在 k 超过 32 后甚至下降；稀疏匹配也存在数据集特例，匹配消融中 Gemma 在 REALTALK、两种 Llama 在 QASPER 的 NDCG 没有占优。</p>
-<p>存储增长是方法结构决定的：token 索引有效载荷随全部内容 token 数量乘隐藏维度增长，单向量则随记忆条数增长。作者实测给出了压缩取舍，而没有证明可无成本替换亿级生产索引。除此之外，本次阅读未发现中文社区短文本、线上 A/B 或内容频繁更新场景的验证；这是评估范围的缺口，不是作者声称的负面结论。未来可测试 token 裁剪、增量建库、按 query 难度启用局部通道，并将真实尾延迟和索引维护成本纳入比较。</p>
-<h2>6. 工业实践意义</h2>
-<p>对于社区搜索，最可借鉴的是“整体相似度负责语义方向，局部证据负责具体细节”的双信号设计。试验可以从现有帖子和问答索引的一小部分开始，保留单向量召回基线，导出内容 token 表征，加入全局 token 索引，再按论文相同归一化方式融合。测试集应同时覆盖实体名、别称、具体数字、否定关系，以及背景相同但答案不同的帖子。不要只选择原模型失败样本来评估，否则容易夸大收益。</p>
-<p>落地顺序应先无训练，再压缩，再考虑查询适配。第一阶段用离线 nDCG@10 和 Recall@10 判断局部信号是否有效；第二阶段用 SQ4 作为存储与质量的对照，同时测量实际硬件上的 P50/P95/P99 延迟；第三阶段才建立可靠的多正例 query—帖子标签，检查小规模查询适配是否优于保持冻结。论文的训练数据选择很小，适合做概念验证，但点击日志里的位置和曝光偏差不能直接等同于论文支撑记忆标签。</p>
-<p>还要注意候选范围：论文的全局搜索针对每个查询定义的候选记忆库，而融合归一化统计也依赖该集合。在生产中若先缩成粗召回候选再算局部分数，已经改变算法条件，必须单独测量漏召回；若在全站 token 库上搜索，则索引规模、分片和缓存成本又远大于论文小集合。索引增量更新和删除一致性也需要纳入工程设计。</p>
-<p>本文没有线上 CTR 或 A/B 收益，不能据八任务 Recall 改善承诺社区点击率提升。可执行的结论是：复用已有模型的 token 信息值得试验，尾部分数补偿和分数标准化值得认真复刻，查询适配与 token 压缩则应由本业务消融决定。上线决策仍需本地 UGC 相关性评测、延迟预算和线上实验共同支撑。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2610-13277"></span>
 </article>
 <article class="card t-retrieval" id="paper-arxiv:oai:arXiv.org:2610.13314" data-paper-id="arxiv:oai:arXiv.org:2610.13314" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.00</span></div>
@@ -198,60 +149,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

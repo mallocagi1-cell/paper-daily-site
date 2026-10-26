@@ -23,8 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
-<link rel="stylesheet" href="../../../vendor/katex/katex.min.css?v=bee433569a"><style>.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:1em 0}.katex{font-size:1.08em}</style>
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -65,58 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>工业级序列排序落地的范本：序列 Transformer 在排序阶段（而非仅召回）替换 DCNv2 是可行且收益明确的路径，关键不在模型多大而在 serving 优化能否扛住延迟约束。论文明确给出他们试过 LLM-based 排序但因生产效率放弃，对社区搜索/推荐排序的启示是——先把用户行为序列建模做进排序主模型，再权衡 LLM；停留时长+2.10% 这类指标提升来自序列信号而非更复杂的特征工程。</div>
     <div class="foot">LinkedIn · 2026-02-16 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2602.12354" id="dr-arxiv-2602-12354">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>An Industrial-Scale Sequential Recommender for LinkedIn Feed Ranking 深度解读</h2>
-<h3>1. 问题与动机</h3>
-<p>LinkedIn Feed 服务 12 亿会员，排序系统必须在「几百毫秒延迟、数万 QPS 吞吐」的硬约束下实时打分。原生产模型是基于 DCNv2 的排序器——Deep &amp; Cross Network 用 cross 层做显式特征交叉，但本质上是「对单点特征做交叉」，缺乏对用户行为序列的时序建模能力。作者的核心判断是：会员的近期 Feed 行为序列里藏着比手工交叉特征更强的兴趣信号，而 DCNv2 这类 wide&amp;deep 谱系的模型无法自然地消化变长序列。</p>
-<p>论文同时回应了一个现实诱惑：既然 LLM 这么强，为什么不直接上 LLM 排序？作者明确做了 LLM 排序的尝试并放弃（见第 5 节），因此 Feed SR 的定位是「在生产效率与线上指标之间取最优」的序列 Transformer，而非追求最大模型。它要替换 DCNv2 并真正扛住 12 亿会员的线上流量，已稳定服务大部分 Feed 流量超过三个月。</p>
-<h3>2. 方法详解</h3>
-<p><strong>序列构造</strong>：把 Feed 帖子表示与动作表示交替拼接，输入序列为 <code>Xin = [X1, A1, X2, A2, ..., XT, AT]</code>，每个帖子用 J 个特征拼接 <code>Xt = concat(f1(xt,1),...,fJ(xt,J))</code>。会员历史取最近 <code>T=1000</code> 次曝光，按时间顺序排列。</p>
-<p><strong>Transformer 结构</strong>：Decoder-only，采用 pre-LayerNorm、旋转位置编码 (RoPE) 和带缩放的残差连接，用因果自注意力（SDPA）。过完 Transformer block 后，丢弃对应「动作输入」位置的输出，压回 T 个表示，再与上下文特征拼接。</p>
-<p><strong>候选打分（target attention）</strong>：推理时把待排候选 append 到序列末尾，用自定义 attention mask 一次性对所有候选打分（batch candidate scoring），这是后面 80× 加速的基础。</p>
-<p><strong>损失与多任务</strong>：在所有序列位置上施加二元交叉熵，多任务预测会员对帖子可能采取的动作（long-dwell 长停留、like、comment、share）。</p>
-<p><strong>训练设置</strong>：用一年训练数据；负采样上「未点击的曝光以 0.1 概率随机保留」。冷启后模型每日增量更新——增量训练时只对新观测到的交互计损失，但仍输入完整历史序列。为缓解 in-session 泄漏（train-serve 不一致：条件于 session 首个 item 会抬高后续 item 超阈概率），对每个 session 内 item 顺序做随机化。</p>
-<p><strong>关键稳定性设计</strong>：pre-LN 是必需的，去掉它 AUC 会塌到 0.5；vanilla 残差相加会间歇性不稳定。</p>
-<h3>3. 核心技术贡献</h3>
-<ol>
-<li><strong>序列 Transformer 直接替换 DCNv2 做精排</strong>：把「用户行为序列 → Transformer 编码 → 候选 target attention 打分」做成可上线的精排主模型，而非仅停留在召回或粗排。证明序列信号本身（而非更复杂特征工程）带来主要增益。</li>
-</ol>
-<ol>
-<li><strong>Late Fusion（晚融合）</strong>：把上下文特征移到 Transformer 之后再融合，计算量降 12%，而 Long Dwell AUC 仅 +0.04%——几乎无损地省算力。这是把「会随 candidate 变化的强信号（popularity、affinity）」与序列表示解耦的工程巧思。</li>
-</ol>
-<ol>
-<li><strong>一整套 serving 加速</strong>：Shared Context Batching（N 个候选 append 后单次前向，Transformer 前向 80× 加速）、自定义 Flash Attention 内核 SRMIS（相比 PyTorch SDPA ~2× 加速，靠免去 O((L+N)²) mask 物化和跳过无效 tile）、CPU 向量化（历史解析 450ms→2ms，225×；稀疏转稠密 254ms→5ms，50×）、Arrow 列式 buffer 零拷贝转 PyTorch tensor。</li>
-</ol>
-<ol>
-<li><strong>Scaling 经验律</strong>：训练 FLOPs 每涨一个数量级，评估 Long Dwell AUC 约 +0.0093；其中拉长序列长度带来的增益最一致。</li>
-</ol>
-<h3>4. 实验结果分析</h3>
-<p><strong>消融（Table 1，相对 Long Dwell / Contributions ∆%）</strong>：去掉 RoPE 改用学习式 PE 为 -0.19%/-0.16%；把序列头换成 linear head 为 -1.20%/-0.48%（最大降幅，说明序列建模头至关重要）；Softmax 换 SiLU -0.09%/-0.05%；Feed SR vs HSTU -0.23%/-0.28%（优于 HSTU）；late fusion vs early +0.04%/+0.01%。</p>
-<p><strong>线上 A/B（Table 4）</strong>：整体 +2.10% 停留时长、+3.52% 点赞/评论/转发；分群看 DAU +2.38%/+4.07%、WAU +1.84%/+3.40%、MAU +0.82%/+1.86%；新用户不显著（NSS）。说明序列模型对高活用户收益最大，对历史稀疏的新用户帮助有限。</p>
-<p><strong>能耗</strong>：训练能耗为旧系统 0.2×，推理为旧 CPU 模型的 0.7×——既提效又省钱。</p>
-<p><strong>稀疏历史增益</strong>：用 LLM 生成的会员画像 embedding 只对历史 &lt;10 次动作的会员有效（+2% AUC），印证序列模型的短板在冷启动。</p>
-<h3>5. 局限与未来方向</h3>
-<p>作者明确陈述：(1) 特征裁剪权衡——砍掉 80% 特征但必须保留 item popularity、viewer-to-author affinity 等关键数值信号，部分数值特征不可替换否则 AUC 显著下降；(2) 会员画像 embedding 仅惠及稀疏历史会员；(3) 训练稳定性强依赖 pre-LN；(4) 新会员线上中性（不显著）；(5) 与 TransAct 相比，非序列优先设计会显著增加训练时间与推理延迟。隐含局限是该方案对冷启动/新会员仍缺乏有效解。</p>
-<h3>6. 工业实践意义</h3>
-<p>对搜索/推荐排序团队，这是一份难得的「序列 Transformer 上线手册」：<strong>该采用</strong>——把用户行为序列建模做进精排主模型，用 target attention 一次性给所有候选打分，配合 Shared Context Batching 把 80× 算力省回来；<strong>该尝试</strong>——late fusion 把 candidate 相关强信号晚融合，几乎无损省 12% 算力，pre-LN + RoPE 是稳定训练的标配。<strong>该规避</strong>——别盲目上 LLM 排序：作者实测 LLM 难编码数值/网络关系特征、历史几万 token 太贵、线上从未超过现网模型。落地考量上，几百毫秒延迟、数万 QPS 下，自定义 CUDA 内核与 Arrow 零拷贝是把 Transformer 精排压进延迟预算的关键。对社区搜索的迁移：搜索点击序列同样可作为精排序列输入，但要预留对新用户/冷启动 query 的兜底策略。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2602-12354"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>5 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2511.12081" data-paper-id="arxiv:2511.12081" data-card>
@@ -127,129 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>对「为什么 CTR 模型没有 LLM 那样的 scaling law」给出了结构性而非数据量的解释，值得搜索/推荐排序团队反思：盲目加宽加深排序模型收益有限，问题出在 attention 的序列组合假设与表格化 field 数据不匹配。FAT 的 field-aware 重构 + hypernetwork 合成参数思路，可借鉴到短文本搜索排序中对 query/doc/上下文多 field 的建模，用更少参数换取更强的特征交叉表达。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">-</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2025-11-15</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 5 · Practical 4 · Evidence 3 · Timely 2</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2511.12081" id="dr-arxiv-2511-12081">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>深度解读：From Scaling to Structured Expressivity: Rethinking Transformers for CTR Prediction</h1>
-<h2>1. 问题与动机</h2>
-<p>本文瞄准了 CTR 预测领域一个根本性的架构错配问题：<strong>标准 Transformer 假设的是序列化的组合性（sequential compositionality），而 CTR 数据需要的是高基数语义字段间的组合推理（combinatorial reasoning）。</strong></p>
-<p>具体而言，当前工业界将 Transformer 引入 CTR 预测的主流做法是&quot;简单堆参数&quot;——增大模型宽度和深度。然而，这种朴素的 scaling 策略在 CTR 场景下遇到了严重瓶颈：</p>
-<ul>
-<li><strong>数据极度稀疏</strong>：CTR 特征的词表规模 n 极大（通常 10⁶–10⁹ 量级），但有效的语义交互主要发生在有限的字段（field）之间，字段数 F 通常仅在 10–100 量级</li>
-<li><strong>标准注意力的浪费</strong>：vanilla Transformer 在所有 token 对之间无差别地分配注意力，无法区分&quot;用户年龄 × 商品品类&quot;（有意义）和&quot;用户年龄 × 请求时间戳&quot;（弱相关）这类字段对的语义差异</li>
-<li><strong>扩展回报递减</strong>：实验表明，传统 CTR 模型在参数量增长到一定规模后，AUC 提升几乎停滞，无法复现 LLM 领域的幂律增长曲线</li>
-</ul>
-<p><strong>这个问题之所以重要</strong>，是因为它直接挑战了&quot;规模即性能&quot;的信条。如果 CTR 模型不能像 LLM 一样通过 scaling 持续获益，那么工业系统的模型迭代策略就需要根本性转变——从&quot;加资源&quot;转向&quot;改结构&quot;。</p>
-<h2>2. 方法概述</h2>
-<p>论文提出了 <strong>Field-Aware Transformer (FAT)</strong>，核心思路是：<strong>将字段级交互的先验知识直接嵌入注意力机制的计算图中，让模型的表达能力沿着语义有效的路径增长，而非无差别膨胀。</strong></p>
-<p>FAT 的架构由两个关键组件构成：</p>
-<h3>(1) Field-Decomposed Attention（字段分解注意力）</h3>
-<p>将标准注意力拆解为两个正交的子机制：</p>
-<ul>
-<li><strong>Field-Aware Content Alignment（字段感知内容对齐）</strong>：Q 和 K 使用字段专属的投影矩阵 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.4744em;vertical-align:-0.4296em;"></span><span class="mord"><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0448em;"><span style="top:-2.4065em;margin-left:-0.016em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">Q</span></span></span><span style="top:-3.2198em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4296em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0448em;"><span style="top:-2.4065em;margin-left:-0.016em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span></span></span><span style="top:-3.2198em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2935em;"><span></span></span></span></span></span></span></span></span></span>，使不同语义字段的 token 按照各自角色进行编码。这意味着&quot;用户侧特征&quot;和&quot;物品侧特征&quot;拥有不同的查询/键空间</li>
-<li><strong>Field-Pair Interaction Modulation（字段对交互调制）</strong>：引入标量权重 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7779em;vertical-align:-0.3473em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.1076em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.1076em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3473em;"><span></span></span></span></span></span></span></span></span></span> 控制字段对之间的信息流强度，允许非对称关系（如&quot;用户历史 → 商品品类&quot;可以比&quot;商品品类 → 用户历史&quot;更强）</li>
-</ul>
-<h3>(2) Basis-Composed Hypernetwork（基组合超网络）</h3>
-<p>为避免字段专属参数带来的参数膨胀，FAT 使用共享基矩阵（shared basis matrices）动态生成字段特定参数。这将参数增长与字段基数解耦，且在推理时<strong>零额外开销</strong>（参数在初始化后可以预计算）。</p>
-<p><strong>总体参数复杂度从 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> 降低到 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></strong>，其中 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span></span></span></span> 是字段数，<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span> 是嵌入维度。</p>
-<h2>3. 核心技术贡献</h2>
-<h3>贡献一：首个 CTR 模型的形式化 Scaling Law</h3>
-<p>这是本文最重要的理论贡献。<strong>Theorem 4.1</strong> 证明了：FAT 的泛化误差界依赖于 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span>，而<strong>不依赖于词表大小 n</strong>（注意 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≫</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span></span></span></span>）。</p>
-<p>这一结论的深刻含义在于：</p>
-<ul>
-<li>传统模型的泛化界与 n 相关，而 n 在工业场景中可达数十亿，导致统计效率极低</li>
-<li>FAT 将复杂度锚定在字段数 F 上，F 是一个远小于 n 的、与语义结构对齐的量</li>
-<li>由此推导出幂律关系：<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mord text"><span class="mord">AUC</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∝</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.2322em;vertical-align:-0.3831em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-2.453em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">params</span></span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05278em;">β</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3831em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span></li>
-</ul>
-<h3>贡献二：结构化表达力的概念框架</h3>
-<p>论文提出了 <strong>&quot;structured expressivity&quot;（结构化表达力）</strong> 的概念——模型的表达能力不应无差别膨胀，而应沿着数据固有的语义结构（字段间交互）有针对性地增长。这为 CTR 模型设计提供了新的原则性指导。</p>
-<h3>与现有方法的关键区别</h3>
-<table><thead><tr><th>方法</th><th>交互建模方式</th><th>Scaling 特性</th></tr></thead><tbody><tr><td>DeepFM / DCN</td><td>固定阶数的显式交互</td><td>参数增长无法改善交互阶数</td></tr><tr><td>AutoInt</td><td>标准 self-attention</td><td>无字段意识，注意力分散</td></tr><tr><td>FinalMLP</td><td>双流 MLP</td><td>隐式交互，缺乏可解释性</td></tr><tr><td><strong>FAT</strong></td><td>字段分解注意力 + 交互调制</td><td>参数增长 → AUC 幂律提升</td></tr></tbody></table>
-<h2>4. 实验结果分析</h2>
-<h3>离线实验</h3>
-<p>论文设置了三个模型规模进行验证：</p>
-<table><thead><tr><th>模型</th><th>AUC 提升</th><th>关键发现</th></tr></thead><tbody><tr><td>FAT-Small</td><td>+0.13%</td><td>在同等参数量下已超越传统模型</td></tr><tr><td>FAT-Large</td><td>+0.41%</td><td>超越以 scaling 为导向的架构</td></tr><tr><td>FAT-XL</td><td>+0.51%</td><td>继续提升，<strong>无饱和迹象</strong></td></tr></tbody></table>
-<p>&quot;无饱和&quot;这一点至关重要——它表明 FAT 的结构设计确实解锁了类似 LLM 的 scaling 行为。</p>
-<h3>Scaling Law 验证</h3>
-<p>Figure 3 展示了核心结果：幂律关系 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mord text"><span class="mord">AUC</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5.81</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8974em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">5</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.1972em;vertical-align:-0.3831em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.453em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">params</span></span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">0.433</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3831em;"><span></span></span></span></span></span></span></span></span></span> 在<strong>三个数量级</strong>的参数范围内成立，没有出现饱和拐点。幂律指数 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.433</span></span></span></span> 表明收益虽非线性递增，但持续稳定。</p>
-<h3>消融实验</h3>
-<p>Table 2 的消融结果揭示了各组件的贡献度排序：</p>
-<ol>
-<li><strong>Field-Aware Content Alignment</strong>：贡献最大（0.17 个百分点），说明字段感知的 Q/K 投影是核心</li>
-<li><strong>Field-Pair Interaction Modulation</strong>：提供次要但显著的增益</li>
-<li><strong>Basis-Composed Hypernetwork</strong>：主要贡献是参数效率，对精度影响较小</li>
-</ol>
-<h3>可解释性分析</h3>
-<p>学到的字段对权重 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7779em;vertical-align:-0.3473em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.1076em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.1076em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3473em;"><span></span></span></span></span></span></span></span></span></span> 展现出强语义一致性：</p>
-<ul>
-<li>高权重集中在语义相关的字段对上（如&quot;商品品类 × 用户近期点击&quot;）</li>
-<li>无关字段对的权重趋近于零</li>
-<li>这为模型决策提供了直观的可解释性</li>
-</ul>
-<h3>线上 A/B 测试</h3>
-<p>在<strong>淘宝直通车（Taobao Sponsored Search）</strong> 上的在线实验取得了：</p>
-<ul>
-<li><strong>CTR +2.33%</strong></li>
-<li><strong>RPM（千次展示收入）+0.66%</strong></li>
-</ul>
-<p>这是非常显著的线上提升，证实了方法的实际生产价值。</p>
-<h2>5. 局限与未来方向</h2>
-<h3>当前局限</h3>
-<ol>
-<li><strong>字段定义依赖人工先验</strong>：FAT 的核心假设是字段结构已知且固定，但实际业务中字段的划分（尤其是交叉特征、序列特征的归属）并不总是清晰的。如何自动发现最优字段划分是一个开放问题</li>
-</ol>
-<ol>
-<li><strong>对序列特征的建模不足</strong>：CTR 场景中用户行为序列（点击序列、购买序列）既有序列内的时序关系，又有与其他字段的交叉关系。FAT 目前主要关注字段间交互，对序列内建模可能仍需依赖额外的序列编码器</li>
-</ol>
-<ol>
-<li><strong>Scaling Law 的泛化性待验证</strong>：论文的幂律关系在淘宝搜索广告场景下得到验证，但在其他场域（如信息流推荐、视频推荐）的适用性尚未确认。不同场景的字段结构差异可能导致不同的 scaling 行为</li>
-</ol>
-<ol>
-<li><strong>与预训练范式的结合</strong>：论文聚焦于监督学习下的 scaling，但未探讨 FAT 与预训练-微调范式的兼容性</li>
-</ol>
-<h3>未来方向</h3>
-<ul>
-<li><strong>自动化字段结构发现</strong>：结合 NAS 或可微分分组方法，自动学习最优字段划分</li>
-<li><strong>动态字段交互</strong>：根据不同样本（query/user）动态调整字段对权重，而非全局共享</li>
-<li><strong>多模态字段扩展</strong>：将 FAT 的字段分解思想扩展到图像、文本等多模态特征的交互建模</li>
-<li><strong>跨域 Scaling Law</strong>：在更多业务场景下验证和校准幂律关系，建立通用的 CTR scaling 理论</li>
-</ul>
-<h2>6. 工业实践意义</h2>
-<h3>对模型架构设计的启示</h3>
-<p>FAT 传递了一个清晰的信号：<strong>在 CTR 场景下，&quot;怎么扩&quot;比&quot;扩多大&quot;更重要。</strong> 工业团队在模型迭代时，应优先考虑架构是否与特征语义对齐，而非一味增大模型规模。具体来说：</p>
-<ul>
-<li><strong>字段感知应成为标配</strong>：当前工业 CTR 模型（尤其是 Transformer-based 架构）大多忽略了字段结构。FAT 表明，仅通过在注意力层注入字段先验，就能以极低的额外成本获得显著收益</li>
-<li><strong>参数预算的重新分配</strong>：与其将参数平均分配到所有交互路径，不如集中分配到高价值字段对上。FAT 的 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7779em;vertical-align:-0.3473em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.1076em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.1076em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3473em;"><span></span></span></span></span></span></span></span></span></span> 可以作为特征交互重要性的诊断工具</li>
-</ul>
-<h3>对 Scaling 策略的指导</h3>
-<ul>
-<li><strong>幂律指数 <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.433</span></span></span></span> 提供了量化的扩展预期</strong>：工业团队可以据此评估增加参数量的预期收益，做出更理性的资源分配决策</li>
-<li><strong>Scaling Law 可用于模型选型</strong>：在不同候选架构之间，比较其 scaling curve 的斜率（<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span></span></span></span>），而非单点性能，可以更好地预测大规模部署后的收益</li>
-</ul>
-<h3>对系统工程的影响</h3>
-<ul>
-<li><strong>推理零开销</strong>：Basis-Composed Hypernetwork 的参数可以离线预计算，线上推理复杂度与标准 Transformer 相当，不增加 serving 延迟——这对工业部署极为友好</li>
-<li><strong>可解释性辅助业务决策</strong>：字段对权重矩阵可以直接用于分析&quot;哪些特征交互在驱动 CTR&quot;，辅助特征工程和业务策略优化</li>
-<li><strong>淘宝线上验证的可信度</strong>：CTR +2.33% 的线上增益在搜索广告场景下属于非常显著的提升，证明该方法已跨越了&quot;论文效果&quot;到&quot;生产效果&quot;的鸿沟</li>
-</ul>
-<h3>一句话总结</h3>
-<blockquote><p>FAT 论文的核心洞见——<strong>CTR 模型的扩展瓶颈在结构而非规模</strong>——值得每个做搜推广的工业团队认真审视。它不仅提供了一个具体的模型架构，更重要的是确立了一个新范式：<strong>让模型复杂度沿着数据的语义结构增长，而非无差别膨胀。</strong></p></blockquote></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2511-12081"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2606.00282" data-paper-id="arxiv:2606.00282" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.75</span></div>
@@ -323,60 +149,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

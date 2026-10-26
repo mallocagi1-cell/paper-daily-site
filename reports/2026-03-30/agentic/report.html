@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -64,51 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>R1-Searcher 的核心创新在于用纯 RL（无过程监督）让 LLM 学会在推理链中自主插入搜索操作。这种方法对搜索系统的启示是：可以通过 RL 训练让模型学会何时需要检索外部知识、如何构造有效查询，实现 reasoning-and-retrieval 的无缝融合。对 UGC 搜索场景，这种能力可用于复杂 query 的多步分解和迭代检索，提升长尾复杂查询的召回质量。</div>
     <div class="foot">Huatong Song, Jinhao Jiang, Yingqian Min, Jie Chen, Zhipeng Chen, Wayne Xin Zhao, Lei Fang... · 2025-03-07 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2503.05592" id="dr-arxiv-2503-05592">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>R1-Searcher 针对大型推理模型（LRM，如 OpenAI-o1 和 DeepSeek-R1）的核心局限性：这些模型虽然推理能力强大，但完全依赖内部知识回答问题，在时效性信息、知识密集型任务和多跳推理场景中会产生幻觉和错误。传统 RAG 方法通过固定流程（检索-然后-生成）解决外部知识获取问题，但缺乏自适应推理能力——模型无法根据推理进展动态决定何时检索、检索什么。而基于测试时扩展的方法（如 ReARTeR 使用 MCTS）虽然能实现动态检索，但推理时计算成本极高（需要大量树搜索展开）。R1-Searcher 的核心动机是：能否通过强化学习训练模型在推理链中自主学会何时调用搜索、如何构造有效查询，同时避免 SFT 带来的「内部知识依赖」问题和 MCTS 的高推理成本？</p>
-<h2>2. 方法详解</h2>
-<p>R1-Searcher 采用两阶段的基于结果奖励的 RL 框架：</p>
-<p><strong>阶段一：学习检索调用格式。</strong> 使用 350 个中等难度样本（200 HotpotQA + 150 2WikiMultiHopQA），训练模型学会在推理过程中插入 <code>&lt;|begin_of_query|&gt;...&lt;|end_of_query|&gt;</code> 标签来触发搜索。奖励函数包含两部分：检索奖励（是否至少调用一次搜索，0.5 分）和格式奖励（输出是否符合规范，0.5 分），总奖励上限 1.0。此阶段不要求答案正确，只需模型学会调用检索。</p>
-<p><strong>阶段二：学习有效整合。</strong> 使用约 8,000 个混合难度样本，训练模型学会何时检索以及如何利用检索结果。奖励函数切换为：答案奖励（F1 分数，计算公式 2×IN/(PN+RN)，IN 为交集词数）+ 格式奖励（正确 0 分，错误 -2 分惩罚）。F1 奖励的选择至关重要——实验证明 EM 奖励导致平均 CEM 仅 39.7%，而 F1 奖励达到 60.6%。</p>
-<p><strong>训练算法</strong>基于修改版 Reinforce++（而非 GRPO），包含两个关键适配：(1) RAG-based Rollout：模型生成 <code>&lt;|end_of_query|&gt;</code> 时暂停生成，提取查询进行检索，将结果包裹在 <code>&lt;|begin_of_documents|&gt;...&lt;|end_of_documents|&gt;</code> 标签中注入上下文后恢复推理；(2) Retrieval Mask-based Loss：将文档标签指定为特殊 token 并在训练时遮蔽，防止外部环境内容影响损失计算。训练使用 16 rollouts/样本、batch size 256、学习率 2×10⁻⁶、温度 1.0、最大检索次数 8、DeepSpeed Zero-2 框架。</p>
-<p><strong>数据选择策略</strong>采用基于难度的课程学习：按正确答案所需 rollout 次数分为简单（&lt;10）、中等（10-20）、困难（&gt;20），混合中等和困难样本效果最佳。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>(1) 纯 RL 驱动的搜索学习范式。</strong> 不同于 SFT 依赖标注的搜索轨迹数据，R1-Searcher 通过结果奖励让模型自主探索最优搜索策略。实验证明 RL 比 SFT 平均 CEM 高 10+ 个百分点（60.6% vs 50.1%），因为 SFT 容易被内部知识误导，而 RL 学会了在不确定时主动检索。</p>
-<p><strong>(2) 检索遮蔽损失机制。</strong> 通过遮蔽检索文档在训练损失中的贡献，确保模型学习聚焦于推理策略而非记忆文档结构，这是将外部工具整合到 RL 训练循环中的关键技术。</p>
-<p><strong>(3) 两阶段课程学习。</strong> 分离「学会调用」和「学会有效使用」两个目标，降低了 RL 训练的探索难度。阶段一的低门槛奖励确保模型首先掌握工具使用格式。</p>
-<p><strong>(4) F1 奖励设计。</strong> 相比 EM 和 CEM 等严格匹配指标，F1 奖励提供了更平滑的梯度信号，使 RL 训练更稳定，带来 52.6% 的性能提升（F1 60.6% vs EM 39.7%）。</p>
-<h2>4. 实验结果分析</h2>
-<p>主实验在 HotpotQA、2WikiMultiHopQA（域内）和 Musique、Bamboogle（域外）上评测：</p>
-<table><thead><tr><th>模型</th><th>HotpotQA CEM</th><th>2Wiki CEM</th><th>Bamboogle CEM</th><th>Musique CEM</th><th>平均</th></tr></thead><tbody><tr><td>GPT-4o-mini</td><td>46.8%</td><td>47.4%</td><td>56.8%</td><td>29.2%</td><td>45.1%</td></tr><tr><td>ReARTeR (MCTS)</td><td>42.4%</td><td>47.0%</td><td>48.0%</td><td>20.0%</td><td>39.4%</td></tr><tr><td>R1-Searcher (Qwen-7B)</td><td><strong>65.4%</strong></td><td><strong>63.6%</strong></td><td><strong>52.8%</strong></td><td><strong>28.2%</strong></td><td><strong>52.5%</strong></td></tr><tr><td>R1-Searcher (Llama-8B)</td><td>64.8%</td><td>59.4%</td><td>50.4%</td><td>25.4%</td><td>50.0%</td></tr></tbody></table>
-<p>关键发现：(1) 7B 模型通过 RL 训练后超越闭源 GPT-4o-mini，在 HotpotQA 上高出 18.6 个百分点；(2) 大幅超越基于 MCTS 的 ReARTeR，同时推理成本更低；(3) RL vs SFT 消融显示 RL 在所有数据集上均优于 SFT；(4) 数据多样性至关重要——混合两个数据集训练比单数据集提升 10.9%；(5) 包含困难样本带来 3.4% 额外提升。</p>
-<p>在线搜索泛化实验中，R1-Searcher (Qwen-7B) 使用 Google API 在 Bamboogle 上比 Search-o1 (32B) 高 11.4%，证明了从维基百科检索到真实网页搜索的迁移能力。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者提到的局限包括：(1) 实验仅覆盖 7B-8B 规模模型，更大模型的效果待验证；(2) 训练需要 16 rollouts/样本，计算成本不低；(3) 检索质量依赖于语料库（29M 维基百科段落）。未提及但值得注意的局限：(1) 仅在多跳 QA 任务上验证，未涉及开放域生成、摘要等任务；(2) 最大检索次数固定为 8，对极复杂任务可能不够；(3) 奖励设计需要针对不同任务类型调整，泛化性未充分验证。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜索/推荐系统从业者的核心启示：</p>
-<p><strong>(1) RL 训练搜索策略优于 SFT。</strong> 工业场景中，与其用标注数据教模型何时检索，不如用 RL 让模型自主探索——这避免了标注偏差和内部知识干扰的问题。对 UGC 搜索场景，可训练模型在处理复杂查询时自主决定是否需要多步检索。</p>
-<p><strong>(2) 检索遮蔽机制可推广。</strong> 在任何将外部工具（搜索引擎、知识图谱、API）整合到 LLM 训练循环的场景中，遮蔽外部输入的损失贡献都是值得采用的技术，防止模型学到捷径。</p>
-<p><strong>(3) 从离线检索到在线搜索的迁移。</strong> 实验证明在维基百科上训练的模型可直接迁移到 Google 搜索，这意味着可以用内部知识库训练，然后部署到真实搜索引擎环境。</p>
-<p><strong>(4) 部署考量。</strong> 模型规模 7B 可在单 GPU 上推理，但需要与检索系统实时交互（最多 8 次往返），延迟可能是瓶颈。建议在异步检索架构下部署，或对检索次数做更严格的预算控制。推理成本远低于 MCTS 方法但高于单次 RAG。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2503-05592"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>4 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-arxiv:2504.21776" data-paper-id="arxiv:2504.21776" data-card>
@@ -182,60 +138,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

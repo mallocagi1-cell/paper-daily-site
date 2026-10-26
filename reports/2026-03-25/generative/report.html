@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,95 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>将广告竞价信号直接融入生成式推荐的解码过程是一种优雅的工程设计，避免了传统双塔架构中推荐与广告独立排序再混排的复杂度。控制 token 的解耦设计可迁移至搜索场景——例如在 UGC 搜索中区分自然结果与推广内容，实现统一生成式排序。这为搜推一体的商业化提供了可落地的技术路线。</div>
     <div class="foot">Yanchen Jiang, Zhe Feng, Christopher P. Mah, Aranyak Mehta, Di Wang · 2026-03-24 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2603.22231" id="dr-arxiv-2603-22231">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>生成式推荐系统（如 Google 的 TIGER）通过语义 ID 将推荐建模为序列生成任务，在有机内容检索上取得了显著成功。然而，现有架构仅优化用户偏好，完全忽略了商业变现——而真实平台必须同时满足用户满意度与平台收入两个目标。传统方案（如双塔架构）将推荐与广告作为两个独立系统分别排序再混排，引入了大量工程复杂度和次优的全局排序。</p>
-<p>核心挑战在于：有机内容和付费广告遵循根本不同的目标函数，历史日志代表的是已通过用户相关性和经济可行性双重过滤的「幸存者」分布。如何在统一的生成式框架中同时建模这两种不同目标，是本文要解决的关键问题。</p>
-<p>本文构建于 TIGER 等语义 ID 范式之上，但指出 OneRec (2025)、Yang et al. (2024) 等后续工作仍停留在偏好建模层面，未涉及经济机制设计。同时，已有的广告联合优化方法大多基于 RL 独立处理广告插入，而非将其集成到生成过程本身。</p>
-<h2>2. 方法详解</h2>
-<h3>2.1 语义 ID 基础</h3>
-<p>与 TIGER 一致，GEM-Rec 使用 Residual Quantized VAE (RQ-VAE) 将商品编码为层次化元组 (c₁, c₂, ..., c_D)，其中早期码表示粗粒度类别、后期码添加细节。RQ-VAE 在 Sentence-T5 嵌入上训练，码本大小 256，深度 3。</p>
-<h3>2.2 统一序列构造：控制 Token</h3>
-<p>核心创新在于在语义词汇表中添加显式控制 token。每个生成步骤由控制标志 f_t 和语义码序列拼接而成：</p>
-<p>[f_t] ⊕ [c_{t,1}, c_{t,2}, ..., c_{t,D}]</p>
-<p>其中 f_t ∈ {&lt;ORG&gt;, &lt;AD&gt;}。这一设计将「槽位分配决策」（是否展示广告）与「内容检索」（展示哪个商品）优雅地解耦。当 f_t = &lt;ORG&gt; 时进入「偏好模式」生成有机内容，f_t = &lt;AD&gt; 时进入「变现模式」生成付费广告。</p>
-<h3>2.3 分解式生成目标</h3>
-<p>生成概率被分解为：</p>
-<p>P(x_t|H_{&lt;t}) = P(f_t|H_{&lt;t}) · ∏P(c_{t,k}|H_{&lt;t}, f_t, c_{t,&lt;k})</p>
-<p>第一项学习「广告满意度建模」——在什么上下文中广告历史上是成功的；第二项处理「模式条件检索」——给定模式后选择哪个商品。这种分解使得模型可以从交互日志中直接学习有效的广告放置模式。</p>
-<h3>2.4 Bid-Aware Decoding 机制</h3>
-<p>推理阶段注入实时出价信号，分为两个层次：</p>
-<p><strong>槽位级调制</strong>：z̃_{&lt;AD&gt;} = z_{&lt;AD&gt;} + λ · log(1 + b_max)。使用最大可用出价提升广告标志的 logit，使广告负载随市场需求弹性扩展。</p>
-<p><strong>商品级调制</strong>：z̃_c = z_c + λ · log(1 + B(c))。使用前缀感知的出价聚合来调制 token logit，引导 beam search 朝向语义空间中的高价值库存集群。</p>
-<p>λ 是可调的平台控制参数，λ=0 时完全退化为原始 TIGER。</p>
-<h3>2.5 训练设置</h3>
-<p>架构：T5 encoder-decoder（6层，128维，6注意力头）。训练：100,000 步，batch size 256，AdamW 优化器，单张 A100 GPU。</p>
-<h3>2.6 理论性质</h3>
-<p><strong>分配单调性（Proposition 1）</strong>：更高出价弱增加商品曝光，无需模型重训练。<strong>结构一致性（Proposition 2）</strong>：λ=0 时安全回退到纯有机排序；有机排名不受广告放置变化影响；可推广到纯有机语料。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>贡献一：控制 Token 解耦机制。</strong> 通过在生成序列中引入 &lt;ORG&gt;/&lt;AD&gt; 控制标志，将广告/有机决策与内容检索解耦。这是一种无需修改底层 Transformer 架构的轻量级设计，直接复用已有的生成式推荐训练范式。其优于传统混排方案的原因在于：模型可以端到端地学习广告放置的上下文依赖性，而非依赖后处理规则。</p>
-<p><strong>贡献二：推理时 Bid-Aware Decoding。</strong> 在不修改模型权重的前提下，通过 logit 调制注入实时出价信号。这相比重新训练的方案，具有零延迟响应市场变化的优势——当高价值广告主突然加价时，系统可即时调整而无需等待模型更新。</p>
-<p><strong>贡献三：Pareto 前沿的可控性。</strong> 通过单参数 λ 在推荐质量和广告收入之间提供平滑、可预测的权衡曲线，使平台运营者可以动态调整商业策略。</p>
-<p><strong>贡献四：理论保证。</strong> 证明了分配单调性和结构一致性，为该框架在实际广告拍卖中的合规性提供了基础。</p>
-<h2>4. 实验结果分析</h2>
-<h3>数据集与设置</h3>
-<p>在 Steam、Amazon Beauty/Sports/Toys 四个数据集上评测。通过合成市场模拟构建广告数据：20% 商品指定为付费商品，出价服从对数正态分布，基线广告密度 3-6%。</p>
-<h3>主要结果（Steam 数据集）</h3>
-<table><thead><tr><th>方法</th><th>广告率</th><th>收入</th><th>NDCG@10</th><th>有机NDCG@10</th></tr></thead><tbody><tr><td>TIGER 基线</td><td>0.0%</td><td>—</td><td>0.1442</td><td>0.1487</td></tr><tr><td>GEM-Rec (λ=0)</td><td>2.5%</td><td>535</td><td>0.1411</td><td>0.1468</td></tr><tr><td>GEM-Rec (λ=1)</td><td>4.7%</td><td>1,173</td><td>0.1381</td><td>0.1467</td></tr></tbody></table>
-<p>关键发现：即使在 λ=0（无出价调制）时，GEM-Rec 仅通过学习控制 token 就恢复了 2.5% 的基线广告密度。有机 NDCG 几乎持平（0.1487→0.1467），证明广告插入未显著损害用户体验。</p>
-<h3>市场冲击实验</h3>
-<p>当 5% 库存获得 10× 出价乘数时：</p>
-<ul>
-<li>λ=0 时高价值份额仅 21.8%，收入为 1.0×</li>
-<li>λ=0.5 时高价值份额达 81.5%，收入提升 9.0×，广告率仅 7.1%</li>
-<li>λ=1.0 时高价值份额 97.4%，收入提升 28.2×</li>
-</ul>
-<p>这说明适度的 λ 调制（0.5）即可捕获绝大部分市场机会，同时保持保守的广告负载。</p>
-<h3>消融实验</h3>
-<p>更高基线广告密度（10-20%）训练使 Pareto 前沿更凸，反映更广泛的语义可行广告场景。跨数据集结果一致，100% 生成有效性（无幻觉无效标识符）。</p>
-<h2>5. 局限与未来方向</h2>
-<p><strong>作者自述局限：</strong></p>
-<ol>
-<li><strong>激励兼容性（DSIC）</strong>：当前采用第一价格拍卖（工业标准），但缺乏占优策略激励兼容的实现。精确 DSIC 需要反事实推理和 beam search 近似下的阈值刻画，计算开销较大。</li>
-<li><strong>广告质量退化</strong>：当系统优先经济价值时，不可避免地选择与用户有机意图语义距离更远的商品。这是变现与相关性之间的固有张力。</li>
-<li><strong>控制参数耦合</strong>：当前单一 λ 同时控制槽位分配和商品选择，未来可引入独立参数 (λ_slot, λ_item) 实现更细粒度的平台控制。</li>
-</ol>
-<p><strong>未被作者提及的局限：</strong> 实验仅在合成广告市场上进行，缺乏真实广告拍卖数据和在线 A/B 测试验证。T5 encoder-decoder 架构的规模（6层128维）远小于工业级生成式推荐模型。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>直接可采纳的设计：</strong></p>
-<ul>
-<li><strong>控制 Token 范式</strong>：对任何已部署 TIGER/HSTU 类系统的团队，只需在词汇表中添加 &lt;ORG&gt;/&lt;AD&gt; token 即可快速 PoC，无需重新设计架构。</li>
-<li><strong>推理时调制</strong>：λ 参数可在线动态调整，支持「大促期间提高广告密度、日常保守投放」的运营策略，且不需要重训模型。</li>
-</ul>
-<p><strong>搜索场景的迁移路径：</strong></p>
-<ul>
-<li>在 UGC 搜索中，可用控制 token 区分自然搜索结果与推广内容，实现搜索+广告的统一生成式排序</li>
-<li>Bid-Aware Decoding 可扩展为「搜索广告 eCPM 调制」，在搜索结果页中动态插入竞价广告</li>
-</ul>
-<p><strong>部署考量：</strong></p>
-<ul>
-<li>推理延迟：Bid-Aware Decoding 仅在 logit 层做加法，几乎零额外延迟</li>
-<li>内存：需维护商品到出价的映射表和前缀聚合索引</li>
-<li>风险：需要监控广告质量退化指标（如语义匹配深度），设置安全阈值防止过度商业化</li>
-</ul></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2603-22231"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>6 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:2407.05033" data-paper-id="arxiv:2407.05033" data-card>
@@ -246,60 +158,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

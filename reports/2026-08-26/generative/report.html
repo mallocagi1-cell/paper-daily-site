@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,66 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>生成式推荐的第一道质量门槛不是换更大的 backbone，而是确认 tokenizer 与评估指标是否忠实。上线前应同时报告 ItemHit@K/ItemNDCG@K、碰撞率和 SID-level 指标，并把 ZCR 作为存量语义 ID 的低成本修复基线。</div>
     <div class="foot">Qian Zhang, Lech Szymanski, Haibo Zhang, Jeremiah D. Deng · 2026-08-25 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2605.25330" id="dr-arxiv-oai-arXiv-org-2605-25330">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 16 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>1. 问题与动机</h1>
-<p>这篇论文研究 Semantic ID（SID）生成式推荐中一个容易被忽略、却会直接污染模型比较的问题：推荐系统最终要识别具体 item，但常用评估只检查模型生成的 SID 序列是否与目标 item 的 SID 序列相同。这个等价关系只有在 SID 与 item 一一对应时才成立。实际 tokenizer 使用量化压缩语义表示，文本相似但协同偏好不同的 item 可能被映射到同一个 SID；模型生成这个 SID，只能说明命中了一个碰撞组，不能证明识别了目标 item。</p>
-<p>论文在 4 个公开数据集、5 种代表性 tokenizer 上量化了这个问题。碰撞率从 Beauty/RQ-VAE 的 8.52% 到 Scientific/RK-Means 的 30.52% 不等；在 Scientific 上，RK-Means 的标准 SID-level Hit@10 为 0.1330，但碰撞校正后的 ItemHit@10 只有 0.0654，指标相对膨胀 103.36%。更严重的是，指标校正会改变方法排名：在 Scientific、Cell、Beauty 上，RK-Means 在 SID-level H@10 中领先，却在 ItemHit@10 中降到最后；Scientific 上 LETTER、Cell 与 Beauty 上 QuaSID 才成为校正后的领先者。</p>
-<p>这说明生成式推荐的 tokenizer 评估可能把“更容易产生碰撞”误判成“推荐更准”。如果业务团队依据被高估的 Hit@10 选择 tokenizer，再把它用于社区短文本或商品推荐，线上可能出现 item 级误命中、同质内容重复和长尾内容被挤压。论文因此提出两个互补目标：CCE 在不重训模型的情况下修正评估信用，ZCR 在不改变 SID 长度的情况下构造零碰撞分配，为 tokenizer 横向比较提供统一条件。</p>
-<h1>2. 方法详解</h1>
-<h2>2.1 任务和碰撞定义</h2>
-<p>每个 item i 由 tokenizer 映射为长度为 L 的离散码序列 s_i=[s_i(1),...,s_i(L)]，每层 codebook 大小为 V。用户历史中的 item 被替换成 SID 序列，T5 类自回归生成器根据历史预测下一个 item 的 SID。beam search 输出的是排序后的 SID 序列列表，而不是已经唯一确定的 item 列表。</p>
-<p>当两个不同 item i≠j 满足 s_i=s_j 时就发生碰撞。论文把同一 SID 对应的 item 集合定义为碰撞组 C(s)，碰撞率是“属于至少一个碰撞组的 item 数”除以总 item 数。一个直观例子是 Yelp 中不同地址的 65 家商户都只有相同的名称和类别；它们可能共享同一个语义表示，但业务上并不是同一个推荐目标。</p>
-<h2>2.2 Collision-Corrected Evaluation（CCE）</h2>
-<p>标准 SID-level Hit@K 把“预测 SID 出现在 top-K”记为一次完整命中。CCE 先把 beam 中每个预测 SID 展开成对应的碰撞组，再在展开后的 item 排名上计算信用。设目标 SID 第 r 个出现，目标碰撞组大小为 g，在 top-K 截止位置内落入该组的 item 数为 m。目标组之前所有 beam 组的 item 数决定其展开起点 p，然后 m=min(g,max(0,K-p+1))。</p>
-<p>CCE 的 ItemHit@K 为 m/g，即碰撞组中只有一部分 item 落入 top-K 时只给部分信用。ItemNDCG@K 则对展开排名中的目标组 item 使用标准 log discount，再除以 g：ItemNDCG@K=(1/g)Σ[1/log2(p+e)]。当 g=1 时，两者退化为普通 Hit@K/NDCG@K；当 g&gt;1 时，模型只能生成共享标识，不能区分组内 item，因此必须降低信用。这个做法不需要改变 tokenizer，也不要求重训生成器，只需要保存 beam 输出和 item-to-SID 反向索引。</p>
-<h2>2.3 Zero-Collision Reassignment（ZCR）</h2>
-<p>CCE 修正了测量，但不同 tokenizer 仍可能在不同碰撞率下训练。ZCR 进一步为已有 tokenizer 构造零碰撞 SID。它固定每个 item 的前 L-1 个 code，只重新分配最后一级 code，从而保持层级语义前缀和 SID 长度不变。可行条件是每个 prefix group 的 item 数不超过最后一级 codebook 大小：max_p |P(p)| &lt;= V。</p>
-<p>实验中所有数据集使用 V=256，最大 prefix group 都低于 256，因此条件成立。对每个共享前缀的组，先计算需要变更的最少 item 数 rho_p=|P(p)|-distinct-last-codes。随后用 tokenizer 的原始残差与最后一级 codeword 的平方距离构造成本矩阵 D[i,c]，只允许恰好 rho_p 个 item 改变最后一级 code，并要求组内最终 code 互不相同。每个 prefix group 独立求解，使用 Hungarian algorithm 找最小代价二分图匹配。</p>
-<p>复杂度为 O(NVd+Σ_p |P(p)|²V)，前一项是批量计算残差到 codebook 的距离，后一项是各 prefix group 的匹配；论文的实验规模 N≤5×10^4、V=256 下，ZCR 运行时间相对 tokenizer 训练可以忽略。只改最后一级还有一个重要理由：Residual quantization 是顺序的，改动前级 code 会改变后续残差，使得原始 tokenizer 空间中的最小代价失去可比性。</p>
-<h1>3. 核心技术贡献</h1>
-<p>第一，论文把 SID 碰撞从“tokenizer 的副作用”提升为“评估协议的系统性偏差”。它不仅报告碰撞率，还证明错误会放大 Hit@10、改变 tokenizer 排名，因此不能再把 SID-level 指标当作 item-level 质量的无条件代理。</p>
-<p>第二，CCE 用 item-level fractional credit 修复了测量问题。它不要求修改模型结构，也不要求额外训练，适合对历史实验的 beam 输出做离线回放，尤其适用于已经有多个 tokenizer 结果但没有条件重训的团队。</p>
-<p>第三，ZCR 提供了一个轻量、可解释的 collision-free 后处理。固定前缀、只改尾部、按原始残差做最小代价匹配，避免了追加非语义 token 导致 SID 变长，也比逐项贪心重新分配更少地破坏原有语义结构。相对 greedy，ZCR 在 RK-Means 上将重分配成本降低 8.21%–12.19%，在 RQ-VAE 上降低 18.17%–24.00%。</p>
-<p>第四，论文显示文本语义与协同信号应共同参与 tokenizer。将 256 维 PPMI-SVD item 共现 embedding 以 α=0.5 拼接到文本 embedding 后再 PCA，RK-Means+ZCR+CF 在 4 个数据集上的 IH@10 都有提升，增幅为 2.2%–63.1%；Yelp 因文本元数据只有商户名和类别，收益尤其明显。</p>
-<h1>4. 实验结果分析</h1>
-<h2>4.1 数据和实现</h2>
-<p>实验使用 Amazon Review 的 Scientific、Cell、Beauty 以及 Yelp 商户评论数据，先做 5-core 过滤，再按用户时间顺序 leave-one-out：最后一次交互测试、倒数第二次验证、其余训练。4 个数据集的规模如下：</p>
-<table><thead><tr><th>数据集</th><th>用户数</th><th>item 数</th><th>交互数</th><th>平均序列长度</th><th>稀疏度</th></tr></thead><tbody><tr><td>Scientific</td><td>8,317</td><td>4,344</td><td>58,492</td><td>7.03</td><td>99.84%</td></tr><tr><td>Cell</td><td>154,778</td><td>47,593</td><td>1,109,257</td><td>7.17</td><td>99.98%</td></tr><tr><td>Beauty</td><td>22,363</td><td>12,101</td><td>198,502</td><td>8.88</td><td>99.93%</td></tr><tr><td>Yelp</td><td>30,431</td><td>20,033</td><td>316,354</td><td>10.40</td><td>99.95%</td></tr></tbody></table>
-<p>比较的 5 个 tokenizer 是 RK-Means、RQ-VAE、LETTER、QuaSID 和 MQL4GRec。前 4 个使用原生或 ZCR 版本，MQL4GRec 作为已零碰撞的内置参考。所有方法使用相同的文本 item embedding、SID 长度 L=4 和 codebook 大小 V=256，因此差异主要来自 tokenizer。文本表示由 Qwen3-Embedding-8B 提取，维度 4096；生成器是从头训练的统一 T5，4 层 encoder/decoder、hidden size 128、FFN 1024、6 个 attention heads、dropout 0.1，beam width 20。每个实验使用随机种子 42、123、2026 的均值，并在单张 NVIDIA RTX PRO 6000 Blackwell 上运行。</p>
-<h2>4.2 碰撞与指标膨胀</h2>
-<table><thead><tr><th>数据集 / tokenizer</th><th>碰撞率</th><th>SID H@10</th><th>ItemHit@10</th><th>膨胀比例</th></tr></thead><tbody><tr><td>Scientific / RK-Means</td><td>30.52%</td><td>0.1330</td><td>0.0654</td><td>103.36%</td></tr><tr><td>Scientific / RQ-VAE</td><td>20.42%</td><td>0.1147</td><td>0.0665</td><td>72.48%</td></tr><tr><td>Cell / RK-Means</td><td>28.52%</td><td>0.0830</td><td>0.0524</td><td>58.40%</td></tr><tr><td>Beauty / RK-Means</td><td>21.58%</td><td>0.0818</td><td>0.0547</td><td>49.54%</td></tr><tr><td>Yelp / RK-Means</td><td>15.73%</td><td>0.0415</td><td>0.0313</td><td>32.59%</td></tr></tbody></table>
-<p>高碰撞 tokenizer 的标准指标明显更乐观。更关键的是，排名会发生翻转：Scientific、Cell、Beauty 上 RK-Means 由 SID-level 的领先者变成 ItemHit@10 的最后一名；Scientific 上 RQ-VAE 原本在 H@10 高于 LETTER，校正后 LETTER 反超。由此可见，离线平台如果只存 SID-level Hit@10，可能把 tokenizer 选择错误固化到模型和数据管线中。</p>
-<h2>4.3 ZCR 的效果与消融</h2>
-<p>ZCR 在高碰撞方法上收益最大。Scientific/RK-Means 的 ItemHit@10 从 0.0654 提升到 0.0812，提升 24.1%；Cell/RK-Means 从 0.0524 到 0.0694，提升 32.4%；Beauty/RK-Means 从 0.0547 到 0.0662，提升 21.1%。Scientific/RQ-VAE 的 ItemHit@10 从 0.0665 到 0.0800，提升 20.4%。LETTER 和 QuaSID 原始碰撞率较低，所以提升通常只有 0.2%–9.5%，符合“校正空间越大，收益越大”的预期。</p>
-<p>在重分配代价上，RK-Means 的 4 个数据集相对 greedy 降低 8.21%、8.68%、12.19% 和 8.67%；RQ-VAE 则降低 20.64%、18.17%、24.00% 和 20.95%。Beauty/RK-Means 的案例中，两个 item 共享 prefix [127,244,179] 和尾码 206。贪心把 item 1943 换到 code 111，代价增加 20.65；ZCR 反过来保留 item 1943 的 206，把 item 14 换到 111，代价只有 13.76。两者都只改一个 item，但全组联合优化得到更小的距离损失。</p>
-<p>协同融合实验进一步说明 collision 不只来源于文本压缩。作者用用户训练序列构造窗口 3 的 PPMI 矩阵，最后 2 个 item 留作验证防止泄漏，截断 SVD 得到 256 维协同 embedding，再以 0.5 权重与文本 embedding 拼接并 PCA。RK-Means+ZCR+CF 在 4 个数据集均优于文本-only，IH@10 增益为 +2.2% 到 +63.1%；在 Yelp 上，RK-Means+ZCR 为 0.0347，LETTER+ZCR 为 0.0442，加入协同融合后升至 0.0566。说明同名、同类但地址或行为不同的 item 需要协同信息做区分。</p>
-<h1>5. 局限与未来方向</h1>
-<p>作者明确列出三点限制。第一，CCE 对碰撞组采用均匀 credit，因为生成的 SID 本身不能区分组内 item；若将来加入 popularity 或上下文，可能可以做更细的组内分配，但那已经超出本文的“忠实评估”目标。第二，ZCR 只改最后一级、固定前缀，其最优性依赖每个 prefix group 不超过 V；如果小 codebook 或大量近重复 item 让条件失败，需要增大 codebook 或加入多模态 item 特征。第三，实验使用公开 Amazon/Yelp 数据与单一生成器架构，规模和数据分布与工业系统不同，碰撞膨胀幅度和排名翻转可能会改变。</p>
-<p>论文还指出，多级重分配理论上可扩大搜索空间，但会破坏 prefix group 分解，并且改变后续 residual；因此没有把它作为当前 ZCR 的默认方案。未来方向是保证 item-level identifiability 的新 tokenizer、保留语义结构的碰撞规避训练，以及在其他 SID 生成式推荐范式中验证碰撞是否仍然存在。</p>
-<h1>6. 工业实践意义</h1>
-<p>对社区搜索和推荐，第一步应把 SID-level 指标和 item-level 指标同时接入离线评估。对于帖子、评论和商品等 UGC item，建立 item→SID 与 SID→item 的反向索引，按碰撞组展开 beam 输出，报告 ItemHit@10、ItemNDCG@10、碰撞率、最大碰撞组大小和传统 Hit@10 的差值。若只上线普通 Hit@10，模型可能把“命中相似帖子集合”错误当成“命中目标帖子”。</p>
-<p>第二步是做低风险回溯：保留现有 tokenizer 与生成器，离线运行 CCE，不需要重训就能重算历史实验；如果不同候选方法的排名发生翻转，先不要扩大全量训练，应该以 ItemHit/NDCG 和分层长尾指标重新选择。对于已有 L=4、V=256 的 SID 系统，可以先检查每个 prefix group 是否满足 |P(p)|≤256，再在最后一级运行 ZCR。论文实验显示 ZCR 的重分配成本相对 greedy 可降低到 8.21%–24.00%，适合做一次性索引修复和 A/B 前的对照。</p>
-<p>第三步是让 tokenizer 同时看内容与行为。社区短文本的标题、正文、作者和主题提供语义相似性，但点击、收藏、关注、共读和时间邻近关系提供协同区分度。可先用文本 embedding 生成初始 SID，再用窗口化共现矩阵和时间衰减行为构造 256 维或更小的协同向量；像论文中的 α=0.5 只应作为起点，必须用冷启动 item、长尾 item、重复标题和跨社区迁移分层调参。</p>
-<p>部署上，CCE 是评估逻辑，ZCR 是离线 tokenizer/post-processing，二者不会直接增加在线生成步骤；但修正 SID 后要重新生成 item-to-SID 索引、训练目标和 beam 约束表。上线监控应包括 SID collision rate、collision group size 分布、ItemHit/NDCG、重复曝光率、长尾 item coverage、P99 解码延迟和新 item 的分配失败率。对于文本非常短、同质标题多的社区，碰撞很可能高于公开 benchmark，必须使用真实业务日志做校准。</p>
-<p>最后要避免把零碰撞当成唯一目标。论文的 CCE 在碰撞组内采用均匀先验，无法利用用户当前上下文判断组内 item；如果社区存在地址、作者、时间或安全属性等强区分信号，后续可以在 SID 生成之后增加轻量 item-level rerank，但要把它和生成器的目标错位单独评估。更稳妥的架构是：生成式 SID 负责高召回候选，CCE 保证离线指标忠实，最后用协同与业务约束做 item-level 重排，并以 nDCG、CTR、探索覆盖和内容多样性共同决定是否放量。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2605-25330"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:oai:arXiv.org:2608.22381" data-paper-id="arxiv:oai:arXiv.org:2608.22381" data-card>
@@ -248,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

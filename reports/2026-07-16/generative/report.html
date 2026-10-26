@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 生成式推荐 Generative" href="https://paper-daily.com/feeds/generative.xml" />
 </head>
 <body class="t-generative">
@@ -64,51 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>生成式推荐的推理算力不应平均铺在整段语义 ID 上：前部 token 往往决定物品大类，边际信息更高，应获得更多隐式迭代。工程上可把 IBA 作为预算控制层，在总推理步数不变时重排计算位置，先验证精度收益，再逐步压缩尾部 token 的计算。</div>
     <div class="foot">Shangxin Yang, Min Gao, Zongwei Wang, Junliang Yu · 2026-07-15 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2607.12425" id="dr-arxiv-oai-arXiv-org-2607-12425">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 11 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>Where Reasoning Matters 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>语义 ID 生成式推荐把下一物品预测改写为短 token 序列生成：先用 RQ-VAE 将物品压成 4 个分层 code，再由 T5 按前缀逐位解码。相比互相独立的 item ID，这种表示允许相似物品共享前缀，对稀疏和新物品更友好；但一旦把“慢思考”引入生成过程，已有方法通常默认每个位置获得相同数量的隐式迭代。论文指出这个假设忽略了两层结构。第一，残差量化天然分层，前部 code 承载主语义，后部 code 只补残差；第二，前缀 trie 会随着 token 生成快速缩小合法候选集，所以后两个位置在不额外推理时往往已接近饱和。</p>
-<p>作者从训练集频率计算位置级信息增益：先以物品交互频率作为先验概率，再对共享某个语义 ID 前缀的候选集合求条件熵，某位置的 IG 就是观察该 token 前后候选熵的下降量。Instruments 和 Beauty 从第 1 位到第 4 位单调下降；MicroLens 第 2 位略高于第 1 位，但后部仍明显下降。真正决定“一步推理值不值”的不是 IG 单项，而是 IG 与这一步带来的 token 正确率增量之积。高 IG 的前部 token 一旦预测错误，会把后续整条路径带偏；而后部 token 即使继续算，准确率增量也很小。因此，固定深度既把算力浪费在低边际收益位置，又可能让关键前缀算得不够。</p>
-<h2>2. 方法详解</h2>
-<p>IBA 以 T5-small 编码用户最近最多 20 个交互，解码由 RQ-VAE 产生的四段式语义 ID。其第一部分是“双轴精炼”。横轴是在同一 token 位置反复更新隐藏状态；纵轴则在每一步都把 T5 隐状态拉回该位置的 RQ-VAE codebook 语义空间，避免循环越深语义越漂。具体做法是用 5 层 T5 decoder 结构组成 alignment stack，再由步数相关的 MLP 产生 FiLM 缩放和偏移，按特征维对 aligned state 调制。横向递归不只吃上一步的 aligned state，而是把原始 decoder 输出作为锚点，与 refined state 按系数 γ_rec 融合，并加可学习 step embedding；默认 γ_rec=0.5。这样不同位置即使被分配 0、1、2 或 3 步，也走同一模块且不容易累积误差。</p>
-<p>第二部分是预算分配器。对用户编码向量、位置 embedding 和候选步 embedding 拼接后，一个轻量 MLP 经 Softplus 输出“给位置 t 增加第 j 步”的非负收益。监督信号不是人工标注，而来自第一阶段统一深度模型：把同一位置从 j-1 步展开到 j 步，计算 token 交叉熵下降，并乘以该位置 IG，再裁掉负收益。推理时在总预算 B=6 下枚举所有四位置整数分配，最大化预测收益之和，同时以 λ_P=0.1 软约束分配不要偏离先验 (3,2,1,0)。四个位置和小预算使穷举开销可忽略；分配对每个用户只算一次，并由所有 beam 候选共享。</p>
-<p>训练分两阶段。Stage 1 每个位置统一做 K=2 次精炼，训练 200 epochs，学习率 5×10^-4、batch size 128、梯度累积 2，以普通语义 ID 交叉熵学会稳定精炼并产生经验收益标签。Stage 2 从该 checkpoint 出发训练 50 epochs，学习率降至 5×10^-5，同时学习收益预测器和动态分配。主损失仍是最终 token 交叉熵，另加入最大前看 2 位、权重 λ_LA=0.15 的 prefix lookahead：前部精炼表示加 offset embedding 后，直接预测后续 token，防止它只顾当前 code。论文还加入收益预测损失；作者未报告所用优化器与训练步数，只给出 epoch 配置。所有实验在单张 RTX 4090 24GB 上完成，推理使用 beam=20、最大 10 个生成 token，并由前缀 trie 保证输出对应合法物品。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，论文把“语义 ID 每一位是否同等值得推理”变成可测量的结构问题。IG 来自训练交互与 code 前缀，不依赖当前模型输出，因而可以作为稳定先验；再用用户条件收益预测器补上个体差异，比纯启发式固定 (3,2,1,0) 更灵活。</p>
-<p>第二，Dual-Axis Refinement 解决非均匀循环深度的稳定性。横向递归提供额外计算，纵向 alignment 强制中间状态贴近 codebook，FiLM 让每一步采用不同调制强度。消融中去掉 alignment，MicroLens R@10 从 0.0646 降到 0.0556，是三项组件里最大跌幅，说明“多算几步”本身不够，隐藏空间必须与目标离散语义对齐。</p>
-<p>第三，论文将固定算力预算明确写成组合优化，并让 Stage 1 的损失下降自动监督 Stage 2 的分配器。去掉 predictor 后，Instruments R@10 从 0.0975 降到 0.0958；说明位置先验已经有效，但按用户调整仍有增益。去掉 lookahead 后同一指标降至 0.0948，表明前部 token 的计算需要对后续 code 有前瞻约束。</p>
-<p>第四，IBA 是可插拔模块：加到 TIGER 与 LETTER 都在三套数据、四项指标上提升，并非绑定某一种 tokenizer。相比固定八步，它以六步得到更高精度和更低延迟，直接给出了“更聪明地花测试时算力”而不是简单扩大计算量的证据。</p>
-<h2>4. 实验结果分析</h2>
-<p>数据覆盖 Amazon Instruments（24,772 用户、9,922 物品、206,153 交互）、Beauty（22,363 用户、12,101 物品、198,502 交互）和微视频 MicroLens（13,210 用户、5,312 物品、78,255 交互）；均采用 leave-one-out，过滤少于 5 次交互的用户。核心对比如下：</p>
-<table><thead><tr><th>模型</th><th>Instruments R@10</th><th>Instruments N@10</th><th>Beauty R@10</th><th>MicroLens R@10</th><th>MicroLens N@10</th></tr></thead><tbody><tr><td>TIGER</td><td>0.0853</td><td>0.0629</td><td>0.0355</td><td>0.0561</td><td>0.0289</td></tr><tr><td>TIGER + IBA</td><td>0.0975</td><td>0.0725</td><td>0.0453</td><td>0.0646</td><td>0.0347</td></tr><tr><td>LETTER</td><td>0.0882</td><td>0.0661</td><td>0.0362</td><td>0.0729</td><td>0.0382</td></tr><tr><td>LETTER + IBA</td><td>0.0964</td><td>0.0719</td><td>0.0475</td><td>0.0780</td><td>0.0437</td></tr></tbody></table>
-<p>以 TIGER 为例，Instruments R@10 相对提升约 14.3%，Beauty R@10 约 27.6%，MicroLens R@10 约 15.2%。LETTER+IBA 在 Beauty 的 R@10/N@10 和 MicroLens 全部指标最好，说明短视频域也能受益。与推理增强基线 CARE 相比，两种 IBA 版本在所有数据与指标上均更高；对 LatentR3，TIGER+IBA 在 Instruments 略高，LETTER+IBA 则在 MicroLens 更明显。</p>
-<p>预算方向实验尤其关键。统一 (2,2,2,2) 共 8 步时，Instruments R@10/N@10 为 0.0961/0.0718；把 6 步错误地后置成 (0,1,2,3) 降至 0.0947/0.0707；按 IG 前置的 (3,2,1,0) 反而达到 0.0975/0.0725。MicroLens 也从统一八步的 0.0605/0.0335 提升到前置六步的 0.0646/0.0347，证明收益来自分配方向而非总步数。</p>
-<p>效率表显示，基础 TIGER 为 60.9M 参数、20.99 ms/用户；统一八步精炼和 IBA 都是 83.5M 参数，但前者 25.78 ms、R@10 0.0961，IBA 六步为 24.61 ms、R@10 0.0975。IBA 并没有比基础模型更快，实际增加约 17.2% 生成时延；它的优势是相对同参数、更多均匀精炼少 4.5% 时延且精度略高。逐步分析还显示前两位 Hit@5 随 Step 0→2 稳步上涨，后两位在 Step 0 已近饱和，甚至可能被多余迭代扰动，这与 IG 论证互相印证。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确提出，当前分配器仍以全局位置 IG 模式为先验，只在用户上下文上做有限调整；未来应让精炼深度更直接地依赖物品语义或当前前缀不确定性。论文没有独立 limitation 小节，也没有报告线上 A/B、吞吐 QPS、显存峰值或大规模 catalog 下 beam search 成本。三个数据集规模都偏小，历史截断为 20，骨干仅 T5-small，尚不能证明在亿级 UGC、千长行为和多任务生产模型中仍保持同样的收益。</p>
-<p>另一个未充分讨论的问题是离线 IG 对动态目录的稳定性。内容结构、流行度和 RQ-VAE codebook 更新后，位置熵可能漂移；若继续使用旧先验，分配方向可能失真。实验只覆盖 4-token 层次式 RQ-VAE，无法直接外推到并行 PQ、变长 code 或端到端可学习 tokenizer。收益预测器由 Stage 1 离线损失下降监督，也可能继承该 checkpoint 的偏差，需要用跨时间切分和新物品分层评估。</p>
-<h2>6. 工业实践意义</h2>
-<p>最可落地的做法不是立即替换主推荐模型，而是在现有语义 ID 生成器旁建立预算审计。先离线计算每个 code 位置的 IG 和 Step 0→1→2 的 token 准确率增量；若前部高、后部饱和的模式成立，再尝试 (3,2,1,0) 这类固定前置调度。论文消融说明仅靠这一先验就已接近动态分配器，适合作为低风险第一版。随后再加入用户条件 gain predictor，并把总步数设为硬 SLA 约束。</p>
-<p>社区 UGC 的短文本、热门帖和新帖语义层级差异很大，建议按新鲜度、内容域和用户历史长度分桶观察 IG，而不是只算全局均值。服务侧应缓存每用户的分配结果并让 beam 共享；同时记录每一位实际步数、候选集大小和置信度，便于发现 codebook 更新后的漂移。由于 IBA 比基础 TIGER 仍慢 3.62 ms/用户，应只放在高价值或高不确定请求，或用小 beam、蒸馏后的 alignment stack 控制 P99。</p>
-<p>应避免两种误用。其一，不要把“更多推理”当作统一升级：后部 token 的过度精炼可能破坏已经可靠的表示。其二，不要只看总体 Recall；需单独看新内容、长尾、短历史用户，以及错误前缀造成的灾难性漏召。上线评测至少同时报告 Recall/NDCG、GPU 毫秒、QPS、显存、候选覆盖和新物品指标，并用 A/B 验证 CTR、停留与多样性。IBA 的真正价值是把测试时计算从常量变成可治理预算，使推荐质量提升与成本约束能在同一优化框架中讨论。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2607-12425"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-generative" id="paper-arxiv:oai:arXiv.org:2607.12392" data-paper-id="arxiv:oai:arXiv.org:2607.12392" data-card>
@@ -233,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

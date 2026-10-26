@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,47 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>核心价值在于它不是把 LLM 当零样本 reranker，而是补齐工业推荐最难的三件事：商品 ID 语义化、可解析的候选重排输出、以及防 reward hacking 的条件奖励。对社区推荐/UGC 排序而言，可借鉴的不是直接上 32B 模型，而是“语义 ID + 推理蒸馏 + 可验证重排奖励”的训练范式；文中 1.7B 学生模型恢复 32B 教师 82% 收益、仅 5% 体量，并用 80% token 压缩保持 R@3/N@3 基本不降，说明低延迟部署有现实路径。</div>
     <div class="foot">Yufei Li (Yongkang), Zaiwei Zhang (Yongkang), Mingfu Liang (Yongkang), Kavosh Asadi (Yongk... · 2026-07-01 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2606.31984" id="dr-arxiv-oai-arXiv-org-2606-31984">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 11 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>深度解读：GR2 Technical Report</h2>
-<h3>1. 问题与动机</h3>
-<p>GR2 解决的是工业推荐漏斗中最接近用户曝光的 re-ranking，而不是常见的召回或粗排。论文的基本判断是：多阶段系统里，最终 carousel/grid 展示位置对点击和互动影响最大，但当前大多数 LLM4Rec 工作仍集中在 retrieval 或 early ranking；工业重排仍大量依赖 point-wise CTR 分数，把候选按独立概率排序，缺少对用户历史、候选集合相互关系和商品语义的整体推理。作者还指出三类具体障碍：第一，零样本或普通 SFT 没有释放 LLM 的推理能力；第二，工业目录里数十亿商品通常是非语义 ID，基础 LLM 词表无法直接理解；第三，真实训练和服务成本过高，长 CoT 推理会拖慢吞吐，还容易出现 reward hacking，例如保留输入顺序或利用位置偏置。论文选择 Meta 内部工业流量做验证：训练只用 01-25 一天约 70k user sessions，测试是 02-01 到 02-09 的留出会话，且 99% candidate products、100% user IDs、93% user-history items 在训练中未出现，说明它关注的是冷启动泛化而不是记忆老用户。</p>
-<h3>2. 方法详解</h3>
-<p>GR2 是四阶段训练和部署管线。第一阶段是 tokenized mid-training：用 RQ-VAE 风格 tokenizer 把商品文本/类目信息离散成 Semantic ID，并把 SID 作为特殊 token 加入 LLM 词表；论文报告 tokenizer 能达到 99% uniqueness，目标是让模型在不扩张到原始商品 ID 规模的情况下识别 catalog item。中训练任务把 SID 与自然语言 token 交织在同一个 next-token prediction 序列里，使 SID embedding 对齐到 LLM 的语言空间和推荐知识空间。</p>
-<p>第二阶段是 reasoning enhancement。训练样本采用 chat 格式：system message 规定模型是推荐分析员和 re-ranking 任务，user message 给出用户历史和候选集，assistant message 输出推理解释与最终 ranked list 的 JSON。推理数据有两种生成方式：targeted sampling 会把 ground-truth target 放进 prompt，让教师模型解释为什么这个 item 合适；rejection sampling 不提供答案，而是让教师多次预测候选中最可能的下一兴趣，直到命中目标。作者明确说明 targeted traces 容易带 label-aware shortcut，rejection sampling 又会过滤困难样本，因此工业规模下主要用 OPD 替代静态 CoT SFT。</p>
-<p>第三阶段是 RL post-training。策略输出是完整的 assistant action，奖励由 format reward 与 ranking reward 组成。ranking reward 不是单正样本 rank delta，而是适配工业 slate 的多正样本 AUC，必要时再加入分级相关性的 NDCG；format reward 检查 JSON 可解析、输出是否是候选集的合法 permutation。关键防护是 conditional format reward：如果模型简单复读输入顺序且输入顺序不是最优，就把奖励置零，避免“保留上游排序”这种 reward hacking。</p>
-<p>第四阶段是 serving ROI optimization。输入侧训练 context compressor，用 GRPO 和 LLM-as-judge 在 solvability、information preservation、ranking quality 三个维度上打分，把 prompt token 大幅压缩；输出侧再做一次不显式生成 CoT 的 RL，把推理能力内化到直接输出 ranked list 的 policy。系统层还使用 layer pruning、redistillation，以及候选集 KV cache 复用：prompt 顺序设计成 system、candidates、user context，让候选 KV 可跨请求复用。</p>
-<h3>3. 核心技术贡献</h3>
-<p>第一，GR2 把 LLM 推荐的重点从“生成候选/打分”推进到最终 re-ranking，并证明语义知识和推理能转化成 Recall/NDCG 提升。相对 point-wise CTR baseline，它不是只看单个 item，而是用用户历史、候选全集和商品语义进行集合级比较。</p>
-<p>第二，Semantic ID mid-training 解决了 LLM 与工业商品 ID 的词表断层。99% uniqueness 的 SID 让模型能在自然语言、类目和离散 item token 之间建立桥接，对社区内容也有启发：帖子、作者、话题同样可以语义 ID 化，而不是把裸 ID 塞进大模型。</p>
-<p>第三，OPD + RL 的组合比静态 SFT 更适合工业规模。论文指出普通 SFT 在工业规模上会 collapse；OPD 让学生在自己采样的轨迹上学习，由教师提供 KL anchor，不把教师输出当死标签，从而缓解 train/inference mismatch。</p>
-<p>第四，条件化可验证奖励是上线关键。作者发现 LLM 会利用输入顺序和位置偏置刷高离线指标，因此奖励函数必须显式检查合法 permutation、identity shortcut 和 slate 质量，否则 RL 可能优化出不可用策略。</p>
-<h3>4. 实验结果分析</h3>
-<table><thead><tr><th>对比项</th><th>结果</th></tr></thead><tbody><tr><td>GR2 vs legacy baseline</td><td>+18.7% Recall@1</td></tr><tr><td>GR2 vs legacy baseline</td><td>+7.1% Recall@3</td></tr><tr><td>GR2 vs legacy baseline</td><td>+9.6% NDCG@3</td></tr><tr><td>训练数据</td><td>1 天约 70k sessions</td></tr><tr><td>测试跨度</td><td>02-01 到 02-09 连续 9 天</td></tr><tr><td>冷启动强度</td><td>99% candidate products、100% users 未见过</td></tr><tr><td>OPD student</td><td>1.7B 模型恢复 32B 教师 82% 收益，体量约 5%</td></tr><tr><td>context compression</td><td>只用 20% token，R@3/N@3 基本持平：+7.71% vs +7.14%，+8.16% vs +7.98%</td></tr></tbody></table>
-<p>主结果说明 GR2 在重排质量上显著超过强 legacy baseline，而且 baseline 每 60-90 分钟刷新，GR2 checkpoint 相对测试窗口已有约两周陈旧，因此收益不太可能来自数据新鲜度。Fig.3 的测试规模 sweep 显示在不同测试集大小上 R@K/N@K 相对收益基本稳定，排除了小样本偶然性。Fig.4 的 9 天连续流量验证没有明显衰减，尤其重要，因为测试时几乎所有用户和商品都是训练未见。</p>
-<p>消融和部署实验更有价值。模型规模从 Qwen3 1.7B 到 32B 时 R@3 lift 单调上升，说明 LLM scaling 在 ads re-ranking 中仍有效；但直接服务大模型成本高，所以 OPD 用 1.7B 学生拿回 82% 的 32B 收益，并比无蒸馏的 8B 训练路线收益高 2.6 倍，论文称 serving ROI 提升 15 倍。上下文压缩实验显示 80% token reduction 不损 R@3/N@3，甚至略好，作者解释为 ranking-aware compressor 学会丢弃噪声。CoT 内化实验在“需要强推理”的 hard subset 上验证：直接拿掉 CoT 会让 0.6B/1.7B 的 R@1/N@1 下降 6-7%，R@3/N@3 下降 3-5%；第二次 RL 后不生成 CoT 的模型在 R@1/N@1 上反超显式 CoT 版本，如 1.7B 为 0.3070 vs 0.3059，说明推理能力可以被压进低延迟 policy。</p>
-<h3>5. 局限与未来方向</h3>
-<p>作者明确暴露了几个工业限制。第一，论文主实验集中在内部流量和内部 catalog，公共基准、tokenizer 细节和更完整的代码本体不在本文展开，外部团队难以完全复现。第二，GR2 依赖强教师、SID tokenizer、re-ranking logs、候选 slate 多标签反馈和 LLM-as-judge，系统工程门槛很高。第三，reward hacking 是持续风险：如果奖励没有条件化约束，模型可能保持输入顺序或利用位置偏置；这说明 RL ranker 的离线指标必须接受严格审计。第四，虽然作者通过 context compression、OPD、CoT internalization 降成本，但训练仍需要 10-GPU 预算探索，且大模型规模曲线尚未饱和，成本与收益的 Pareto 前沿还需要继续验证。作者未充分展开的限制是线上 A/B 指标：论文报告的是工业流量 offline ranking 指标，而不是直接的线上 CTR、CVR 或收入 uplift。</p>
-<h3>6. 工业实践意义</h3>
-<p>对社区搜索/推荐团队，GR2 最值得借鉴的是“LLM 重排的工程化闭环”，而不是直接复制 Meta 的模型规模。第一步可以从语义 ID 开始：把帖子、话题、作者、商品或内容簇映射为可被模型理解的离散 token，降低裸 ID 的冷启动和泛化问题。第二步是在离线重排任务中引入候选集合级训练，让模型看到用户历史和完整候选，而不是只做 point-wise CTR。第三步是用可验证奖励替代模糊偏好奖励，例如用 AUC/NDCG、合法排序输出、去 identity shortcut 等硬规则约束 RL。第四步是把 CoT 作为训练时脚手架而不是服务时负担：先用推理轨迹激活能力，再通过蒸馏和二次 RL 转成直接输出 ranked list 的模型。</p>
-<p>部署上要格外保守。GR2 的收益建立在高质量日志、候选 slate 标签和强平台工程上；没有足够数据时，可先在重排后的 rerank sandbox 或运营精选场景试验。社区 UGC 场景还要加安全护栏：推理链可能强化用户短期偏好或内容茧房，因此奖励中需要加入多样性、低质内容惩罚、创作者曝光公平等约束。整体看，GR2 给出了 LLM4Rec 从论文概念走向工业可用的一条路线：语义化 catalog、推理蒸馏、可验证 RL、压缩服务成本，四者缺一不可。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2606-31984"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2602.14110" data-paper-id="arxiv:oai:arXiv.org:2602.14110" data-card>
@@ -115,50 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>这篇论文的实践启示很直接：推荐大模型扩容时，不应只在序列塔或特征交互塔单点堆参数，而应让两类信号在同一 backbone 中共享容量并深度交互。它的 UI-MixFormer 通过 user-item decoupled HeadMixing 做请求级复用，把 medium 版 FLOPs 从 3503 降到 2242，同时保持同等 AUC/UAUC；这对 UGC 信息流和社区搜索排序很有价值，因为长行为序列与上下文/内容特征往往同时决定 CTR、停留和互动。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Xu Huang, Hao Zhang, Zhifang Fan, Yunwen Huang, Zhuoxing Wei, Zheng Chai, Jinan Ni, Yuchao Zheng, Qi...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-07-02</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 5 · Evidence 5 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2602.14110" id="dr-arxiv-oai-arXiv-org-2602-14110">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 12 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>深度解读：MixFormer: Co-Scaling Up Dense and Sequence in Industrial Recommenders</h2>
-<h3>1. 问题与动机</h3>
-<p>MixFormer 关注工业推荐大模型扩展中的一个很具体但常被忽略的问题：序列建模和稠密特征交互通常是两套模块，参数、计算和优化目标相互独立。当前推荐系统一方面需要更长的用户行为序列来捕捉动态兴趣，另一方面又需要更强的特征交互能力来处理 user profile、item 属性、上下文、交叉特征等高维稀疏信号。传统做法要么先用序列 Transformer 聚合历史，再把结果交给 dense interaction 模块；要么把两个模块并行后拼接。论文认为这种 rigid separation 会造成 co-scaling 失配：序列模块计算随长度快速增长，占据预算后压缩 dense 模块扩容；反过来，如果优先扩 dense 特征交互，又无法利用长序列。随着推荐进入 scaling-driven regime，架构本身决定新增参数和 FLOPs 能否转化成 AUC/UAUC 提升，所以作者提出把 sequence modeling 和 feature interaction 统一到同一 Transformer-style 参数空间里。</p>
-<h3>2. 方法详解</h3>
-<p>MixFormer 是面向多任务推荐的 decoder-only Transformer 变体，由 input layer、若干 MixFormer blocks 和 task-specific heads 组成。输入先分成两类：顺序特征是用户历史行为序列，每个 action 包含 item identifier、action type、timestamp 和 side attributes；非顺序特征包括 user features、item features、contextual features。非顺序特征经过 embedding 后被切分成多个固定维度的 feature heads，每个 head 再投影到统一维度。这样做的目的是保留不同字段的语义多样性，不把所有异构特征压成一个全局向量。</p>
-<p>每个 MixFormer block 有三部分。第一是 Query Mixer。作者认为推荐里的 user/item/context 字段来自不同稀疏 ID 空间，直接用 self-attention 的内积相似度不可靠，还会引入高开销。因此 Query Mixer 用类似 RankMixer/MLP-Mixer 的 HeadMixing：通过 reshape、transpose、flatten 做跨 head 信息交换，再给每个 head 配独立 FFN。这个模块不依赖 similarity attention，更适合异构特征。</p>
-<p>第二是 Cross Attention。Query Mixer 产出的高阶非顺序 head 被当作 query，去 attend 用户行为序列。每个 head 是一个语义子查询，分别聚合与该特征子空间相关的历史行为；行为 action 先通过 per-layer SwiGLU FFN 对齐，再投影为 key/value。这样 dense 特征不是序列模块外面的附加信息，而是直接控制序列聚合。</p>
-<p>第三是 Output Fusion。Cross-attention 输出同时包含非顺序信息和对应 head 下的序列信息，作者用 per-head SwiGLU FFN 进一步融合，避免共享 FFN 抹平 head specialization。多层堆叠后，非顺序特征交互和序列建模在同一参数体系中逐层交织。</p>
-<p>为了上线，MixFormer 还设计 User-Item Decoupling。普通 HeadMixing 会让 user-side head 混入 item-side 信号，导致同一请求中 user 表征无法复用。作者借鉴 causal mask，构造单向 user-to-item fusion 的 mask，去掉 user-side heads 中的 item-side 信号，让用户侧计算能在请求级 batch 中共享，同时保留 user 信息向 item 侧传播。这一点是工业部署关键，因为推荐服务常对同一用户请求中的大量候选 item 做打分。</p>
-<h3>3. 核心技术贡献</h3>
-<p>第一，MixFormer 提出统一参数化的推荐 Transformer，把 long-sequence aggregation 与 dense feature interaction 放到同一 backbone 中，解决传统 stacked/parallel 结构的容量割裂。它的机制不是简单拼接，而是让高阶 dense head 直接成为序列 cross-attention 的 query，使 item/context 语义参与历史聚合。</p>
-<p>第二，Query Mixer 替代 self-attention 是面向推荐异构特征的实用设计。论文消融显示，将 HeadMixing 换成更贵的 self-attention 没有观察到收益，说明推荐字段之间并不天然满足语言 token 那样的内积相似度假设；零额外参数的 HeadMixing 加 per-head FFN 更适合大规模稀疏字段。</p>
-<p>第三，User-Item Decoupling 把统一模型从“好看但贵”推进到可服务。UI-MixFormer-medium 在保持同等 AUC/UAUC 的情况下，把 FLOPs/Batch 从 3503 降到 2242，约 36% FLOPs reduction。这种请求级复用对候选规模大的推荐/广告排序非常关键。</p>
-<p>第四，论文给出了真实工业证据，而不是只在公开小数据集验证。数据来自抖音推荐系统连续两周、万亿级 user-item 交互，每条样本超过 300 个特征，线上 A/B 覆盖 Douyin 和 Douyin Lite。</p>
-<h3>4. 实验结果分析</h3>
-<table><thead><tr><th>模型/设置</th><th>Finish AUC</th><th>Finish UAUC</th><th>Skip AUC</th><th>Skip UAUC</th><th>Params</th><th>GFLOPs/Batch</th></tr></thead><tbody><tr><td>TADLRM</td><td>0.8554</td><td>0.8270</td><td>0.8124</td><td>0.7294</td><td>9M</td><td>52</td></tr><tr><td>STCARankMixer</td><td>+1.12%</td><td>+1.40%</td><td>+1.43%</td><td>+2.14%</td><td>1255M</td><td>6736</td></tr><tr><td>OneTrans</td><td>+1.05%</td><td>+1.31%</td><td>+1.30%</td><td>+1.95%</td><td>316M</td><td>23371</td></tr><tr><td>MixFormer-small</td><td>+1.01%</td><td>-</td><td>+1.18%</td><td>-</td><td>282M</td><td>733</td></tr><tr><td>MixFormer-medium</td><td>+1.28%</td><td>+1.60%</td><td>+1.60%</td><td>+2.46%</td><td>1226M</td><td>3503</td></tr><tr><td>UI-MixFormer-medium</td><td>+1.28%</td><td>+1.60%</td><td>+1.60%</td><td>+2.46%</td><td>1226M</td><td>2242</td></tr></tbody></table>
-<p>离线对比显示，简单堆叠或并行连接序列模块和特征交互模块只能带来有限差异；真正的提升来自统一参数化。MixFormer-medium 在 Finish/Skip 两个任务上均超过 STCARankMixer 和 OneTrans，尤其 Skip UAUC 达 +2.46%，说明它不只提升平均点击类指标，也改善用户级排序一致性。UI-MixFormer-medium 与 MixFormer-medium 指标相同，但 FLOPs 从 3503 降到 2242，证明 decoupling 没有牺牲精度。</p>
-<p>线上 A/B 更能说明工业价值。相对线上最强 STCARankMixer baseline，Douyin app 整体 Active Day +0.0415%、Duration +0.2799%、Like +0.1766%、Finish +0.3897%、Comment +0.7035%；Douyin Lite 整体 Active Day +0.0252%、Duration +0.4105%、Like +0.2125%、Finish +0.2924%、Comment +1.9097%。低活用户增益更明显：Douyin Lite 低活 Like +3.0565%、Comment +2.6452%，说明统一长序列和 dense 特征对弱行为用户的兴趣理解更有帮助。</p>
-<p>消融实验指出三个组件重要：Query Mixer 的 HeadMixing、per-head FFN，以及 Cross Attention 中 per-layer FFN 都有贡献。替换成更贵的 self-attention 没有可见收益，支持“异构推荐字段不适合直接 token self-attention”的假设。Scaling analysis 也关键：固定 sequence length=512 时，单独扩 RankMixer 比单独扩 sequence component 边际收益更大；但 MixFormer 在不同 FLOPs budget 下有更高 intercept 和有竞争力的 scaling slope，说明统一结构让 dense 与 sequence 两侧共同受益。序列长度 scaling 覆盖 512、2048、8192、10000，指向长行为历史下的扩展能力。</p>
-<h3>5. 局限与未来方向</h3>
-<p>作者没有把局限章节写得很重，但从正文可以看到几类约束。第一，实验依赖 ByteDance 内部超大规模数据和混合分布式训练框架，公开复现难度高；线上收益虽强，但外部团队只能复现架构思路，无法验证同等规模效果。第二，MixFormer 的收益建立在丰富 sequential + non-sequential 特征共存的场景，如果业务只有短历史或特征工程较弱，统一 backbone 的边际收益可能不如论文。第三，UI decoupling 需要对特征字段和请求打分方式有清晰拆分，候选组织不稳定的系统可能难以直接复用 user-side computation。第四，论文主要报告 AUC/UAUC 和互动指标，没有深入讨论多目标冲突、内容生态、安全性或长期留存的负向影响。未来方向应包括：对多目标排序约束的统一建模、与生成式推荐/语义 ID 的结合、公开 benchmark 复现，以及在更低成本硬件上的推理优化。</p>
-<h3>6. 工业实践意义</h3>
-<p>对社区搜索/推荐系统，MixFormer 的启发是架构升级要围绕“长行为序列 + 稠密上下文/内容特征”的共同扩展，而不是把序列模型作为独立插件。UGC 场景里的用户历史包括点击、停留、收藏、评论、关注、跳出等多行为序列；非顺序特征包括 query、帖子文本/图像、作者、话题、地理、时间和安全质量分。若二者分开建模，排序模型很难让“当前候选内容语义”精确控制“应该关注哪段历史”。MixFormer 的 cross-attention 设计正适合这个问题：用候选和上下文产生的 high-order heads 去检索用户历史中的相关行为。</p>
-<p>实践落地可分三步。第一，先在现有 ranker 中引入 feature-head split 和轻量 Query Mixer，替换一部分高阶交互模块，验证异构字段下 HeadMixing 是否比 self-attention 更稳。第二，把序列聚合从固定 target attention 升级成 feature-conditioned cross attention，让不同候选用不同子查询读取历史。第三，在候选批打分服务中实现 user-item decoupling 和 request-level batching，确保扩容不会被 latency 吃掉。对低活用户，论文线上结果显示收益更大，这对社区冷启动和低频用户尤其有吸引力。</p>
-<p>需要避免的误区是只看“Transformer 推荐大模型”这个标签而忽略成本。MixFormer-medium 仍有 1226M dense params，训练用数百 GPU，直接复制不现实；真正可复用的是统一参数化原则、head-level 异构建模和请求级复用策略。对于中小团队，可以先做小型 MixFormer block 作为重排层或 multi-task tower，在 CTR/完播/互动多目标上观察 AUC、UAUC、延迟和低活用户分层收益，再决定是否扩大到主排序链路。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2602-14110"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2607.01530" data-paper-id="arxiv:oai:arXiv.org:2607.01530" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.30</span></div>
@@ -168,51 +85,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>它把搜索 query understanding 与个性化排序连接起来：当 query 本身信息不足时，用户最近搜索和浏览序列可以成为 intent resolver 的特征，而不只是排序模型的后置特征。对社区 UGC 搜索，这意味着“关键词召回前”就应引入轻量用户意图推断，例如把模糊 query 映射到用户偏好的内容类目、创作者类型或消费场景，再影响召回/重排；同时需保留 population prior 作为冷启动兜底，但不能把它当成主信号。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Rachith Aiyappa, Ishita Khan, Chester Palen-Michel, Jayanth Yetukuri, Samarth Agrawal, Mehran Elyasi...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-07-01</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 4 · Evidence 3 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2607.01530" id="dr-arxiv-oai-arXiv-org-2607-01530">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 13 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>IntentTune 深度解读</h1>
-<h2>1. 问题与动机</h2>
-<p>这篇论文处理的是电商搜索里非常常见但容易被低估的“unknown intent”问题：用户输入的 query 往往极短，例如 watch、shirt、boots、sneakers，文本本身没有明确表达性别、年龄段、尺码、品类细分等关键属性。论文指出，现代搜索栈通常先用 Query Understanding 模型给 query 打 gender intent、age-group intent、size intent、category 等标签，再把标签交给召回与排序。但当 query 过短时，BERT 分类器或 token classifier 会把大量样本落到 unspecified 类，导致后续 lexical retrieval 和 embedding-based retrieval 都只能围绕粗粒度意图工作。作者的动机不是把 query 模型本身做得更大，而是问：这些缺失意图能否由用户行为和全站需求补齐？这一点对社区 UGC 搜索同样重要，因为用户常用一两个词表达模糊需求，真实意图隐藏在历史点击、历史搜索和会话上下文中。</p>
-<p>论文把该问题放在 eBay 的 fashion query understanding 场景中验证。现有 baseline intent models 的宏/微 F 值都高于 0.9，但这是在 query 显式表达属性时的表现；一旦 query 没有写出属性，模型仍会返回 unspecified。作者强调，这类错误会在检索源头传播，而不是只影响最终排序。相比传统个性化搜索主要在 retrieval 之后重排结果，IntentTune 把个性化信号前移到 intent inference 阶段，用它重写或细化搜索任务本身。</p>
-<h2>2. 方法详解</h2>
-<p>IntentTune 接在现有 QU pipeline 后面运行。系统首先用既有模型预测四类意图：gender intent、age-group intent、size intent 和 category prediction。gender 是四分类：male、female、unisex、unspecified；age 是八分类：infant、toddler、kids、teen、young adult、adult、senior、unspecified；size 模型是 BERT token classification，识别 clothing_size、shoe_size、size_type 等细粒度实体；category 模型基于历史搜索数据把 query 映射到类目 taxonomy。当任一模型返回 unspecified，或 category prediction 过粗时，pipeline 才触发 IntentTune。</p>
-<p>框架包含两条补全路径。第一条是 demand-based resolution：利用 category prediction 的高置信类目推断缺失属性。例如 dell shirt 被类目模型映射到 Men &gt; Men’s Clothing &gt; Shirts &gt; T-Shirts 时，可以推断 male 和 adult。作者没有把它用于 size，因为类目层级对尺码没有稳定约束，强行推断可能伤害召回。第二条是 personalization-based resolution：把用户级上下文交给内部托管 LLM，让它在明确定义的 intent class 空间内推断 gender、age、size 和 category。论文实际使用两类个性化输入：账号创建时的非敏感 profile 属性，以及过去一个月内的 historical queries。为了控制噪声，历史 query 只保留 baseline intent 模型高置信的记录：gender confidence &gt; 0.8，或者非 unspecified age intent confidence &gt; 0.9。category 推断时，LLM 还会看到 category prediction model 给出的候选类目列表，只能在候选中选择或缩窄。</p>
-<p>数据集构造也很具体。作者从大规模 fashion search query 中抽取 30 个具有 size、age、gender unspecified 问题的 ambiguous queries，再抽取 30 个有足够搜索活动的用户；用户必须在一个 session 中浏览至少 20 个搜索结果页，并且在六个月内参与过不止一次搜索 session。30 个 query 与 30 个用户两两组合，形成 900 个 user-query pair。人工标注时同时参考 user profile、historical queries 和用户在 session 中选择过的 aspect filters。size 允许多标签，gender 和 age 为单标签。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，论文把个性化搜索的作用点从后排序前移到 query intent 解析。传统个性化搜索通常拿用户画像去 rerank 已召回文档，但如果召回阶段已经因为 boots 被解释成错误性别或年龄段而漏召，重排很难补救。IntentTune 在 QU 输出 unspecified 时就介入，使下游检索任务变得更具体。</p>
-<p>第二，论文清楚地区分了 demand signal、static profile 和 dynamic behavior 三类信号，并用同一个任务验证它们的有效性差异。结果显示，全站需求可以解释一部分 age 和 gender，但 historical queries 明显更强；而 profile 属性虽然看起来稳定，却不一定反映当前购买或搜索意图。这个结论对社区场景也成立：用户长期注册信息往往不如最近搜索和点击能解释当下意图。</p>
-<p>第三，作者把 LLM 限制在结构化标签空间内使用。模型不是自由生成解释或改写整条 query，而是在明确 intent class、候选 category、历史 query 证据和阈值过滤后的上下文上做受约束推断。这种设计降低了 LLM hallucination 对召回链路的影响，也更容易接入现有 search stack。</p>
-<p>第四，论文提供了一套可复现的评估拆分：30 个 query、30 个用户、900 个 pair，并在 age、gender、size 和 category refinement 上分别统计。虽然规模不大，但它把“模糊 query + 用户上下文”的标注问题定义清楚了，适合作为企业内部构建类似 benchmark 的模板。</p>
-<h2>4. 实验结果分析</h2>
-<p>论文的核心实验比较 demand-based、profile-based personalization 和 historical-query-based personalization。人工标注数据的分布高度不均衡：age 中 adult 762 个，占 84.67%，unspecified 107 个；gender 中 unspecified 362 个，占 40.22%，male 354 个，female 183 个；size 最稀疏，unspecified 707 个，占 73.72%，剩余尺码长尾分散。因此作者报告 accuracy、weighted precision、weighted recall 和 weighted F1。</p>
-<table><thead><tr><th>维度</th><th>方法</th><th>Accuracy</th><th>Weighted F1</th><th>关键观察</th></tr></thead><tbody><tr><td>Age</td><td>Demand</td><td>0.674</td><td>0.698</td><td>全站需求能覆盖一部分主流意图</td></tr><tr><td>Age</td><td>Profile</td><td>0.650</td><td>0.687</td><td>静态属性不如需求信号</td></tr><tr><td>Age</td><td>Historical Queries</td><td>0.833</td><td>0.816</td><td>相比 demand，weighted F1 提升约 17%</td></tr><tr><td>Gender</td><td>Demand</td><td>0.387</td><td>0.330</td><td>对较均衡的 gender 任务较弱</td></tr><tr><td>Gender</td><td>Profile</td><td>0.387</td><td>0.382</td><td>profile 也不能有效消歧</td></tr><tr><td>Gender</td><td>Historical Queries</td><td>0.741</td><td>0.726</td><td>accuracy 接近翻倍，weighted F 分数提升超过 90%</td></tr><tr><td>Size</td><td>Historical Queries</td><td>0.743</td><td>0.853</td><td>只评估历史 query 路径，因为需求和 profile 缺少可靠 size 信号</td></tr></tbody></table>
-<p>覆盖率结果同样重要。Demand-based 模块能为 77.3% 的 ambiguous queries 预测 age，为 76.56% 预测 gender；historical-query personalization 对 age 的预测覆盖为 90.22%，对 gender 为 75.44%；profile 对 age 为 73.44%，对 gender 为 86.44%。这说明 profile 在某些覆盖率上并不差，但质量不如历史 query。category refinement 部分，historical-query personalization 可以在 68.5% 的候选类目中把 demand 模块给出的多个候选正确缩减到单个类目；另有 10% 被标记为需要进一步 review，说明候选类目集合本身可能缺失或错误。</p>
-<p>实验中最有价值的现象是：静态用户属性并不等于搜索意图。一个成年人可能正在搜索儿童鞋，一个女性账号也可能给男性家人购物。历史 query 能捕捉这些临时但强烈的任务上下文，所以对 gender 和 age 的提升最大。作者也明确说本文不是追求 SOTA，而是证明把用户上下文接入 query understanding 可以带来可观收益。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者提出的主要局限有两类。第一，多源上下文会冲突：profile 可能指向 adult，historical queries 指向 kids，用户最近选择的 aspect filters 又指向另一个方向。当前 IntentTune 没有系统解决冲突，只是分别评估 demand、profile 和 historical query。真正上线时需要一个冲突仲裁机制，例如基于时间衰减、意图类型、历史置信度和业务风险来融合。</p>
-<p>第二，cold-start 仍然困难。当用户几乎没有历史行为、需求信号稀疏，或者 query 本身是探索式搜索时，IntentTune 缺少可用上下文，无法稳定推断个性化意图。作者还把线上指标留给未来工作，包括 user satisfaction、CTR、engagement 等。另一个论文没有展开的限制是隐私与合规：使用过去一个月搜索 query 作为 LLM prompt，需要严格的数据脱敏、最小化输入和审计，否则很难进入高敏感业务链路。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜索/推荐从业者，IntentTune 的第一条实践建议是：不要只把个性化放在排序层。对于 UGC 短文本搜索，很多低相关结果来自召回前的 query intent 错误；如果能在 query understanding 阶段推断缺失属性、主题或场景，再交给召回模型，后续 nDCG 和 CTR 的上限都会提高。</p>
-<p>第二，历史 query 应该被当作高价值上下文，而不是普通 profile 特征。论文中 historical-query path 在 age 上达到 0.833 accuracy、0.816 weighted F1，在 gender 上达到 0.741 accuracy、0.726 weighted F1，明显优于 demand 和 profile。社区产品可以把最近 7-30 天的搜索、点击、收藏和筛选条件转成结构化 intent evidence，用于 query rewrite、召回过滤或生成式解释。</p>
-<p>第三，LLM 的工程角色应当受约束。IntentTune 使用内部 LLM 推断标签，但输入里有 class definition、ambiguous query、候选类目和经过置信阈值过滤的历史 query；输出也是 intent assignments。这比让 LLM 直接生成完整搜索 query 更可控，也更容易做离线评估。上线时可以先在低风险类目做 shadow evaluation，监控 unspecified 减少率、类目缩窄正确率、召回覆盖率、CTR 和人工 badcase。</p>
-<p>第四，系统需要明确的 fallback。对于冲突上下文和 cold-start 用户，不应强制个性化；可以回退到 demand-based inference 或保留 unspecified，交给多路召回兜底。对 UGC 社区来说，还可以把“个性化意图强度”作为排序特征，而不是硬过滤条件，以避免过度个性化导致新内容探索下降。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2607-01530"></span>
 </article>
 <article class="card t-personalization" id="paper-web:meta:ads-ranking-ai-innovation" data-paper-id="web:meta:ads-ranking-ai-innovation" data-card>
   <div class="top"><span class="n">04</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.20</span></div>
@@ -316,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

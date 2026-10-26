@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,66 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>在 UGC 短文本搜索的领域迁移场景中，采样策略往往比模型规模更关键。UnIte 把贝叶斯不确定性分解显式地引入数据筛选，给出了&quot;少而精&quot;的伪查询生成范式，可直接复用到社区搜索冷启动域、新版块召回器微调等场景。其核心启示是：以 epistemic uncertainty 作为高学习价值信号、aleatoric uncertainty 作为噪声过滤信号，可将 fine-tune 数据量降到 4k 量级仍获得稳定提升，对线上低成本迭代非常友好。</div>
     <div class="foot">Jongyoon Kim, Minseong Hwang, Seung-won Hwang · 2026-04-29 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.25142" id="dr-arxiv-2604-25142">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>UnIte: 基于不确定性的迭代式文档采样用于 IR 领域适配</h1>
-<h2>1. 问题与动机</h2>
-<p>无监督领域适配（unsupervised domain adaptation, UDA）是把神经检索器迁移到新领域的主流路径之一：在目标域文档上用 LLM 自动生成伪查询 (pseudo queries)，再用这些 (query, doc) 对来微调 retriever。论文指出，对于超过 100k 文档的目标域，&quot;采哪些文档去生成伪查询&quot;成为了核心瓶颈，而非&quot;如何生成查询&quot;。</p>
-<p>作者通过对前沿方法 DUQGen 的诊断给出了量化证据：DUQGen 仅用语义多样性 (semantic diversity) 来挑文档，结果倾向于把样本采在&quot;低密度区&quot;或&quot;高置信区&quot;——把训练只限制在低密度区会让 nDCG@10 从 62.56 降到 38.41 (−24.15)；只限制在高置信区则降到 43.24 (−19.32)。换言之，DUQGen 的失败模式不是&quot;覆盖不全&quot;，而是把训练预算花在了模型已经学好或语义本就嘈杂的文档上。</p>
-<p>UnIte 把贝叶斯不确定性分解（aleatoric vs epistemic）显式引入采样：偶然不确定性高的文档当作&quot;噪声离群点&quot;过滤掉，认知不确定性高的文档当作&quot;高学习价值样本&quot;优先采。论文证明这一替换能在 BEIR 大语料 (TREC-COVID 171k、Quora 522k、HotpotQA 5.2M 等) 上稳定带来 +2.45 ~ +3.49 nDCG@10 的提升，并明显加速收敛。</p>
-<h2>2. 方法详解</h2>
-<p>UnIte 是一个三段式迭代采样—训练循环 (Algorithm 1)：每轮先估 EU、再做带预算分配的 EU 采样、再用生成的伪查询更新 retriever。</p>
-<p><strong>Aleatoric Uncertainty 估计 (Equation 1)</strong>：<br>D_k(d) = 1 / (ε + BM25(d, n_k))，其中 n_k 是文档 d 的 k=3 BM25 最近邻。这是一个纯词法层面的离群度，不依赖模型，刻画文档处在低密度区的程度。过滤准则 (Equation 2)：先做 z-score 归一化，丢掉 z(d) &gt; 1.5 的离群文档（约 5% 总量）。这一步保证后续投入的训练预算不会被低质量长尾文档稀释。</p>
-<p><strong>Epistemic Uncertainty 估计 (Equation 3)</strong>：<br>U_k(d; θ_t) = Σ [log IDF(t) − p(t|e_d; θ_t)]，对每个文档取目标域 IDF 排名前 1000 的 token，比较&quot;领域真实重要性 (log IDF)&quot; 和&quot;模型当前对该 token 的预测概率 p(t|e_d)&quot; 的差距。模型若对高 IDF 领域词汇预测概率低，说明它没学好该领域，就是一个高学习价值文档。这种&quot;目标域感知&quot; 的不确定性度量，比 MC-Dropout (34.22) 与基于 entropy 的方法 (34.21) 平均高出 +2.53 nDCG@10 (UnIte 36.75)。</p>
-<p><strong>采样得分 (Equation 4)</strong>：score(d; θ_t) = λ · Û_k(d; θ_t) + (1 − λ) · Ψ̂(d; θ_t)，λ=0.5，Ψ 用 MMR 在语义簇内补充多样性。两项都做 z-score 归一化以避免量纲偏置。</p>
-<p><strong>Resampling Penalty (Equation 5)</strong>：每轮按簇 i 已抽样次数 P_i 反向加权：w_i = |C_i| / (P_i + ε)，再以 n_i = n · w_i / Σw_j 重新分配预算。这避免反复采到同一主导簇上，强制把后续预算分给被忽视的子领域。</p>
-<p><strong>Early Stopping</strong>：对所有候选的平均 EU 做 EMA (α=0.4)，监控其在迭代间的局部最小，作为停训信号；最大预算 5k 样本。Figure 4 实证显示 EU 局部最小与 retrieval 性能峰值高度吻合。</p>
-<p><strong>训练 setup</strong>：底座 retriever 含 DPR、coCondenser、COCO-DR、Qwen3-Embedding-4B (bi-encoders)，以及 ColBERT、MonoT5 (附录)。Batch size 32 (MonoT5 用 8)，AdamW (lr 2e-5/5e-6/1e-6 分别对 DPR/coCondenser/COCO-DR)，loss 用 InfoNCE (bi-encoder) 或回归 (MonoT5)；负样本来自 in-batch + Contriever hard negatives；伪查询生成用 Llama3-8B-Instruct (T=0.8, top-p=0.9)。硬件仅一张 RTX 3090 24GB，每个 epoch ~10 分钟。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>AU/EU 解耦的采样视角</strong>：把&quot;语义多样性 + 模型置信度&quot; 升级为贝叶斯式的二维不确定性建模。AU 过滤掉低密度噪声文档（带来 5–9 nDCG@10 的稳定收益），EU 优先选择目标域上模型仍困惑的文档（带来约 +2.3 nDCG@10），两者互补缺一不可。</li>
-<li><strong>目标域感知的 EU 估计</strong>：用 log IDF 与 token 级预测概率的差距来量化模型在目标域上的认知盲区。区别于 MC-Dropout 这种&quot;模型自身分布敏感度&quot;的无目标度量，本方法明确把目标域统计信号纳入 EU，定量优于 MC-Dropout +2.53 nDCG@10。</li>
-<li><strong>基于 cluster-budget 的 Resampling Penalty</strong>：通过累计采样计数动态再分配预算，TREC-NEWS +8.56 / TREC-COVID +7.34 / Quora +1.53 nDCG@10 的提升直接验证了该机制对&quot;主导簇过采样&quot;的修正作用，是对 BEIR 长尾语料尤其重要的设计。</li>
-<li><strong>EU 驱动的 early stopping</strong>：把训练过程中的不确定性作为停训信号，实证显示 EU 局部最小恰好对应 retrieval 性能峰值，从根上避免了 BEIR 上易出现的过拟合伪查询问题。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p>主结果 (Table 1) 在 5 个 BEIR 数据集上对比 DUQGen vs UnIte，平均 nDCG@10：</p>
-<ul>
-<li>DPR: 46.61 → 49.06 (+2.45*)</li>
-<li>coCondenser: 54.94 → 55.69 (+0.75)</li>
-<li>COCO-DR: 62.01 → 62.27 (+0.26)</li>
-<li>Qwen3-Embedding-4B: 69.31 → 72.80 (+3.49*)</li>
-</ul>
-<p>显著标记 (p&lt;0.05) 主要落在 DPR 与 Qwen3 上 — 提示一个有意思的规律：<strong>模型容量两端的 retriever 改善最大</strong>——小模型本身知识储备不足、最依赖采样质量；大模型 (Qwen3-4B) 反而仍未学好目标域细节，UnIte 的 EU 信号能精准指出&quot;大模型还困惑的部分&quot;。中等基线 coCondenser/COCO-DR 已被预训练充分覆盖，提升相应较小。</p>
-<p>消融研究 (Figure 3 + Table 2)：去掉 EU sampling 平均掉 ~2.3 nDCG@10，Robust04 上掉 4 点；去掉 AU filtering 在多数集合上掉 5–9 点，证明噪声过滤是更基础的收益来源。Resampling penalty 在 TREC-COVID (+7.34)、TREC-NEWS (+8.56)、Quora (+1.53) 上贡献最大，与&quot;领域内主题分布越偏斜，cluster-budget 修正越重要&quot;的直觉一致。</p>
-<p>EU 估计方法对比 (Table 4)：UnIte 的 IDF-anchored 方法 36.75 vs MC-Dropout 34.22 vs Entropy 34.21，目标域 IDF 信号是 EU 设计中最关键的差异。</p>
-<p>样本效率 (Table 3)：UnIte 在 DPR 上每 1k 样本约带来 +0.94 nDCG@10，3–5k 即可收敛，单卡每 epoch ~8 分钟，比 DUQGen 的 5k+ 收敛更快。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确指出三点局限：(1) 多向量/重排模型 (ColBERT、MonoT5) 上需要近似 pooling，偏离了原生训练目标，可解释性受损；(2) EU 估计依赖 IDF 统计，作者建议未来探索更丰富的分布度量 (如 topic-conditioned statistics)；(3) Resampling penalty 没有显式照顾&quot;目标域里的极少数主题&quot;，在高度偏斜分布下可能导致小众但相关的子主题被低估。</p>
-<p>显而易见但论文未强调的额外限制：方法对生成式 reranker 是间接适配，对纯 generative retrieval (如 TIGER 系) 不直接适用；同时 IDF 信号对低资源语言 (如中文 UGC) 的可迁移性需另行验证。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索 (UGC 短文本) 团队而言，UnIte 给出三条立刻可用的工程线索：</p>
-<p><strong>(1) 把&quot;采样质量&quot;作为线上 retriever 持续迭代的一等公民。</strong> 论文反复证明 4k–5k 高质量伪查询胜过 10k+ 随机或多样性采样。社区搜索每周数据回灌时，可仿照 UnIte 在新增文档上跑 EU 估计，只把 top 1000 个高 EU 文档送 LLM 生成伪 query，大幅降低 LLM 调用成本。一张 RTX 3090 跑 ~10 分钟即可完成一个域的微调，对线上低成本日级或周级迭代非常友好。</p>
-<p><strong>(2) AU 过滤可作为通用数据清洗模板。</strong> UGC 平台天生有大量&quot;低密度噪声内容&quot; (机器灌水帖、错字、半成品)，BM25 k-NN 距离 + 1.5 σ z-score 阈值是一个不依赖模型、纯词法的过滤器，可直接接入数据预处理 pipeline，能稳定带来 5–9 nDCG@10 的提升相当于一次中等大小的模型升级。</p>
-<p><strong>(3) Cluster-budget 思路可推广到日常 hard negative 挖掘。</strong> Resampling penalty 把&quot;主题簇—预算&quot;反向耦合的设计，对 hard negatives 的均衡采样同样适用：在 hard negative pool 上按 cluster 分配预算可避免负样本过度集中在热门主题，从而改善长尾 query 的相关性。</p>
-<p>部署考虑：方法计算开销集中在 EU 估计（每文档前向计算 + IDF 统计）和 LLM 伪 query 生成。前者可批量在 GPU 上 amortize；后者是主要 LLM cost，但 UnIte 的优势恰恰是把 LLM 调用从 5k 量级降到 3–4k 量级。整体增量基础设施需求不超过现有 BEIR 风格离线评估管线一倍，是工业团队可接受的负担。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2604-25142"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>6 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:2601.01930" data-paper-id="arxiv:2601.01930" data-card>
@@ -217,60 +158,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

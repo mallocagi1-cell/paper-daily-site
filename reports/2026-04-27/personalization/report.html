@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,67 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把『一条长序列由一个模型吃完』拆成『多个 expert 按主题分工』是抓住 session hopping 的关键。Codebook + EMA 取代标准 top-k routing 大幅降低专家坍塌风险，三阶段训练让 MoE 工业可控。对社区搜索/推荐里用户兴趣多样、跨版块切换频繁的场景非常对位，n=4 expert 即饱和，可作为长序列 backbone plug-in。当前缺线上 A/B 数据是落地前最大未知数。</div>
     <div class="foot">2026-04-25 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.20858" id="dr-arxiv-2604-20858">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>长序列推荐建模面临一个长期被低估的根本问题：用户兴趣不是连续光滑的演化，而是呈现<strong>会话跳变</strong>（session hopping）。论文用&quot;自相似度热力图&quot;在真实交易历史上做实证（Figure 2），明确了用户行为的三大性质：①Stability — 同一会话内行为高度一致；②Discontinuity — 跨会话出现&quot;突变且不连续&quot;的兴趣切换；③Reappearance — 相似兴趣会在非相邻位置重现。</p>
-<p>现有依赖 Attention/RNN/Transformer 的长序列模型本质都假设&quot;连续函数族&quot;，对这种离散跳变天然乏力。作者由此提出问题：能否让模型按&quot;主题&quot;在长序列上挑出策略性子集，从互补视角做更准的预测？这是过去 long-sequence rec 工作（MIRRN、AttenMixer、MiasRec）和标准 MoE（GShard、DSelect-k、Expert Choice）都没有正面回答的。</p>
-<h2>2. 方法详解</h2>
-<p><strong>主题感知路由（Theme-aware Routing）</strong>：维护一个 codebook <strong>W</strong> ∈ ℝ^(n×D)，其中 n 是 expert 数，每行代表一种潜在用户行为主题。打分网络先把 item embedding 通过 MLP h(·) 投影到主题空间，然后用余弦相似度计算到 codebook 各行的归属：H(x) = (‖h(x)‖₂√diag(WW^T))^(-1) · Wh(x)。论文的 <strong>Proposition 1</strong> 给出理论保证：内部相似度高的子序列会被一致地路由到同一 expert——这正是&quot;按 session 分主题&quot;想要的性质。</p>
-<p>为防止 codebook 在联合训练中被梯度坍塌（典型 MoE 痛点），作者用 EMA（γ=0.999）更新 codebook，并用预训练 item embedding 做 K-means 聚类初始化。</p>
-<p><strong>多尺度融合</strong>：三类 expert 互补：</p>
-<ul>
-<li><strong>Global Expert</strong>：吃完整长序列，相当于退化到 backbone；</li>
-<li><strong>Item Experts</strong>：基于主题路由抽取 item-level 子序列 S_I^(i)，由专属 expert F_I^(i) 处理；</li>
-<li><strong>Window Experts</strong>：先用滑窗（L=8, stride=4）把序列重切成 window embedding（窗内 item embedding 取均值），再走主题路由。</li>
-</ul>
-<p>最终融合：y = (1−α_I−α_W)·y_G + α_I·y_I + α_W·y_W，α_I=α_W=0.25。</p>
-<p><strong>三阶段训练</strong>：①只训练 global expert（warm up backbone）；②冻 embedding/classifier，只训 item/window expert，强制 theme expert 与 global 对齐；③联合微调全部参数与融合权重。这种 staging 大幅降低 MoE 联合训练的不稳定性，是工业可复现的关键工程实践。</p>
-<h2>3. 核心技术贡献</h2>
-<p><strong>贡献 1：Codebook-based 主题路由 + Proposition 1 的理论保证</strong>。区别于 GShard / DSelect-k 把 item 在 expert 间均匀分配，MoS 用余弦相似度+codebook 显式保证语义一致的子序列被同一 expert 接管，且只激活 top-k 个 expert（稀疏路由）。</p>
-<p><strong>贡献 2：多尺度（Global/Item/Window）融合架构</strong>。这是真正解决 session hopping 的核心：单一尺度抓不住&quot;块状&quot;行为模式，而 Item+Window 双尺度专家天然把&quot;跨 session 的相似主题&quot;和&quot;session 内的短窗模式&quot;都拿到，再叠加 Global expert 兜底。消融显示三尺度同时启用最优。</p>
-<p><strong>贡献 3：复杂度优势</strong>。理论时间复杂度为 O(k₁²N²/n₁ + k₂²N²/s²·n₂)，相对 shared-expert MoE 的 O((k₁+k₂)²N²/(n₁+n₂))，论文实验设置下约降 53%。Figure 4 把所有 MoE 变体打在 utility-FLOPs 二维图，MoS 占据&quot;左上&quot;（最高 utility、最低算力）。</p>
-<p><strong>贡献 4：Backbone-agnostic plug-in</strong>。在 Mamba4Rec、TransAct、TWIN、SDIM 四个 backbone 上都稳定取得增益，工程上可直接接到现有长序列模型上而不重构架构。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>数据集</strong>：MicroVideo（短视频多模态）、KuaiVideo（快手）、EBNeRD-Small（新闻），均为公开学术数据集。<strong>注意：论文未报告任何线上 A/B 结果或工业部署数字</strong>——这是它当前的弱点。</p>
-<p><strong>主表（Table 1）</strong>：四个 backbone × 三个数据集，MoS 平均 AUC +0.68%、GAUC +0.72%，<strong>全部 12 组配置 AUC/GAUC 都拿第一</strong>（average rank 1.00/1.00）。最大单点增益是 Mamba4Rec/MicroVideo 的 AUC +2.91%、GAUC +0.85%。这种&quot;小平均、强稳定&quot;的格局对工业团队比&quot;局部极高但 backbone 切换就掉&quot;的方法更可信。</p>
-<p><strong>MoE Baseline 对比</strong>：相对 GShard、DSelect-k、Expert Choice，MoS 在 utility 占优的同时 FLOPs 最低。Figure 5 的路由可视化显示 MoS 把流行 item 路由到固定 expert（如 #2），其它 MoE 则均匀分散——证实 codebook 真的让专家分化。</p>
-<p><strong>消融实验</strong>：①多尺度融合：三类 expert 同时开最优，但融合权重 α_I/α_W 的小扰动只带来 0.26%/0.07% 的 AUC/GAUC 波动，对超参极鲁棒；②序列长度 100→400 单调改善；③专家数量 0→8 在 4 时性能饱和——超过 4 后主题被切得太细，反而降低子序列质量。这给工业部署一个实操参数：n=4 是甜蜜点。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文未单独写 Limitations 或 Future Work 章节。可观察到但作者未明说的局限包括：①缺乏线上 A/B 验证，只在三个公开数据集上做的离线对比，离工业部署的 latency/CTR 增益还差关键一步；②序列长度上限只测到 400，超过 1000 的极长序列（典型工业场景）行为未知；③主题数 n=4 已饱和，意味着 codebook 容量对真实复杂用户的覆盖可能不足；④codebook 用 K-means 初始化，对冷启动用户/新业务线时初始化质量未讨论；⑤Backbone 测试集中在 Transformer/Mamba 类，对 GNN-based 或 multi-task 框架的兼容性未验证。</p>
-<h2>6. 工业实践意义</h2>
-<p><strong>值得借鉴的设计</strong>：</p>
-<ul>
-<li><strong>Codebook + EMA 路由</strong>是任何想引入 MoE 到长序列模型团队的标准模板，比 vanilla top-k routing 稳定很多；</li>
-<li><strong>三阶段训练</strong>是 MoE 落地的关键工程：先 warm up backbone 再 unfreeze experts，能直接复用到任何企业的现有 sequential rec 系统；</li>
-<li><strong>n=4 experts、α=0.25</strong> 这两个开箱可用的超参省去了大量调参成本。</li>
-</ul>
-<p><strong>对 UGC 社区搜索/推荐的启示</strong>：用户在社区里频繁切换兴趣 board（生活→职场→数码→旅行），正是典型的 session hopping 场景。把现有 SASRec/TWIN 类长序列召回精排模型按 MoS 模板加 4 个 theme expert，预期能带来 0.5–1% AUC 增益（与论文公开数据集吻合区间）。Window expert 对短文本互动节奏（评论、点赞 burst）特别契合。</p>
-<p><strong>部署考虑</strong>：</p>
-<ul>
-<li><strong>算力</strong>：相比同等 expert 数的 shared-expert MoE 节省约 50% FLOPs，serving 侧可承受；</li>
-<li><strong>存储</strong>：codebook (n×D, n=4, D≤64) 仅占 1KB 量级，可忽略；</li>
-<li><strong>风险</strong>：缺乏线上 A/B 验证是落地前的最大未知数，建议在小流量先做 7 天 holdout 实验，重点观察 long-tail item 召回率；</li>
-<li><strong>监控</strong>：Figure 5 的&quot;路由集中度&quot;应作为线上健康度指标——若专家分化退化为均匀分布，意味着 codebook 已坍塌，需重新初始化或降低 EMA 衰减。</li>
-</ul>
-<p>总体看，MoS 是一个&quot;理论清晰、工程可控、增益稳定&quot;的长序列 plug-in，缺一份线上 A/B 数据就能晋升工业首选 baseline。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2604-20858"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>8 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2604.04976" data-paper-id="arxiv:2604.04976" data-card>
@@ -239,60 +179,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

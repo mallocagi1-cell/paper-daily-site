@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,47 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>把多目标融合权重从「人工全局常数」升级为「按请求上下文个性化、可即时换挡的 RL 策略」，且与排序模型解耦——这正是社区搜索/推荐多目标融合(相关性+CTR+时长)长期痛点。值得借鉴的两点：(1) utility 层独立于 ranker 单独用一步 RL 调参，部署风险低、可灰度；(2) 推理期 Pareto 扫描让产品/运营在一条已训练好的策略族上直接选业务工作点，省去反复重训。</div>
     <div class="foot">Yichu Zhou, Mehdi Ben Ayed, Lin Yang, Jiacong He, Andreanne Lemay, Jiaye Wang, Jaewon Yang... · 2026-05-19 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2605.16344" id="dr-arxiv-oai-arXiv-org-2605-16344">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>PRL-PUTS 深度解读：Pinterest 生产级个性化效用权重 RL 调优 + 推理期 Pareto 扫描</h1>
-<h2>1. 问题与动机</h2>
-<p>大规模推荐系统普遍采用「多预测头 + 线性加权融合成单一 utility 分」的架构：ranker 输出 repin、p2p 等多个 engagement 预测，再用一组 utility 权重线性组合成最终排序分。论文指出这一 utility 层的权重调优存在严重的工程与产品痛点，并给出定性证据：(1) 权重「typically selected through ad hoc offline analyses and repeated online experiments」，从想法到上线「often taking weeks to months」，且「hard to reproduce, and difficult to revisit」；(2) 全局权重对异质上下文施加同一 trade-off，无法个性化，作者称「personalization at scale is intractable」；(3) ranker 频繁迭代后，旧权重相对新 ranker 会「stale」，但缺乏「clear visibility into the set of feasible trade-offs」。</p>
-<p>这个问题对社区搜索/推荐特别关键：相关性、CTR、停留时长、多样性等目标的融合权重长期靠人工拍 + 反复 A/B，既慢又难治理，且不同 query/用户场景下最优 trade-off 本应不同。论文的核心主张是：utility 层可以独立于 ranker 单独优化，把「调权重」变成一个可学习、可个性化、可即时换挡的策略问题。</p>
-<h2>2. 方法详解</h2>
-<p><strong>RL 形式化（单步 contextual bandit）。</strong> 论文把 utility 调优建模为 γ=0 的单步 MDP：每个请求是一次决策。State s 为服务期上下文特征——user embedding、最近 N 个用户行为序列（带 engagement 时间戳）、context 特征（设备、surface、请求时间）。Action a 是施加到 ranker 预测上的 utility 权重向量。具体实例化只控制两个权重并离散化：repin 权重在 [10,200] 离散成 K=7 档，p2p impression 权重在 [1,30] 离散成 K=7 档，动作空间 7×7=49，其余 utility 权重固定为生产值。Reward 为向量值且做 clip 二值化：r_repin = min(n_repin,1)，r_p2p = min(n_p2p,1)，clip 的目的是「reduce the influence of rare heavy-tail events and stabilize offline estimation」。</p>
-<p><strong>Pareto 扫描（推理期标量化）。</strong> 这是该工作最关键的设计。训练得到双头 Q 网络后，推理时用一个标量化参数 α∈[0,1] 在线动作选择：a* = arg max_a ( α·Q_θ^p2p(s,a) + (1−α)·Q_θ^repin(s,a) )。在有限网格 G⊂[0,1] 上扫 α 即得到一族策略 {π_α}，对应不同的 objective trade-off，构成经验 Pareto 前沿。切换线上工作点「requires only setting α via configuration; no model retraining is needed」——这把「换 trade-off」从重训模型降级成改一个配置项。</p>
-<p><strong>模型结构。</strong> 双头 value 网络：State Module 把类别特征 embedding、序列特征用 Transformer 编码 + 平均池化、与 user embedding 拼接过 MLP；Action Encoding 对权重做 min-max 归一化后过单层 MLP embedding；Backbone 是三层共享 MLP（BN→Linear→ReLU）；输出两个单层 MLP + sigmoid 头，Q_θ^repin、Q_θ^p2p 均 bound 到 [0,1]。损失为 MSE：L(θ)=1/N Σ (Q^p2p−r^p2p)² + (Q^repin−r^repin)²。</p>
-<p><strong>训练设置。</strong> 用 14 天探索日志训练、7 天不相交 hold-out 评估。关键是探索策略：对「capped 1.25% of requests」用均匀随机 logging policy μ(a|s)=1/|A|，49 个动作等倾向性采样——这保证了无偏 off-policy 评估。离线评估用 hit-based OPE（Reward@HIT）：V̂_hit = Σ 1[a_i<em>=a_i]·r_i / Σ 1[a_i</em>=a_i]，并在 |G|=25 个 α 上做网格扫描。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) <strong>Ranker 无关的形式化</strong>：action 是施加到 ranker 预测上的权重向量，使 utility 控制器与排序模型解耦，可在请求期做上下文相关控制，且 ranker 例行迭代时 PRL-PUTS「remains stable...as long as serving contract is preserved」，仅当 contract 实质变化才需重训。相比把多目标揉进 ranker 端到端训练，这种「外挂控制层」工程风险与迭代成本低一个量级。</p>
-<p>(2) <strong>推理期 Pareto 扫描</strong>：用单个训练好的模型 + 标量化 α 诱导出一族策略并构建经验 Pareto 前沿。价值在于「单次训练、配置即换挡」，决策者能在已知 trade-off 谱上直接选业务工作点，把过去需要数周的多次 A/B 压缩成改配置。</p>
-<p>(3) <strong>生产集成与零延迟</strong>：RL agent pathway 与核心排序并行运行，「adds no measurable end-to-end serving latency」，并设固定推理预算，超时/缺特征/推理失败时 fallback 到生产静态权重——这是它敢称 production-ready 的关键。</p>
-<p>(4) <strong>增益归因证据</strong>：通过对照实验证明收益来自「context-dependent weight selection」即个性化，而非全局权重平移。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>线上 A/B（2 周，每臂 1% 流量）。</strong> Table 1 三个全局工作点：Repin-leaning（α=0.17）线上 Repin +2.26%、P2P −0.21%、SS −0.09%；Balanced（α=0.21）Repin +1.35%、P2P −0.04%；P2P-leaning（α=0.24）Repin +0.66%、P2P +0.30%、SS +0.13%。清晰展示了 α 调出的 trade-off 谱。<strong>离线-线上相关性极高</strong>：Repin 0.999、P2P 0.986，说明 hit-based OPE 在该问题上是可信的离线代理——这点对工程团队尤为重要，意味着可以离线选 α 再上线验证。</p>
-<p><strong>个性化 vs 全局调参（Table 3）</strong>：匹配的静态权重变体线上 Repin −0.24%、P2P +0.07%、SS +0.02%（中性偏负），而 PRL-PUTS 为 Repin +0.12%、P2P +0.21%、SS +0.11%（三指标全正）。作者结论：「improvements are driven by context-dependent weight selection rather than a single globally retuned weight vector」——即收益本质来自个性化而非重调全局权重。Table 2 的 cohort 条件策略中，CASUAL cohort 的 Repin-leaning 达 +7.62% Repin，离线-线上相关 0.996，说明分人群施加不同 α 收益更大。</p>
-<p>整体证据质量：双数据集口径（线上多指标 + 离线 OPE）、相关性分析、个性化消融、cohort 切片，证据链完整，但缺硬件/规模细节。</p>
-<h2>5. 局限与未来方向（作者陈述）</h2>
-<p>作者明确列出：(1) 单步 contextual bandit「does not explicitly capture longer-horizon effects such as future engagement or retention」——只优化请求级即时收益，不含留存等长程效应；(2) 实例化只控制两个目标，「does not directly address cases with three or more goals」；(3) 离散紧凑动作集「reduces expressivity and may miss fine-grained operating policies」；(4) clip 二值奖励「discards information about engagement intensity beyond the first event」，可能限制对长尾上界的优化；(5) OPE 估计的可靠性与方差依赖 hit 事件数。这些都是诚实且关键的边界——尤其「不建模留存」与「≥3 目标未解」对实际多目标系统是真实约束。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索/推荐团队，这是一份高可操作性的蓝图。<strong>应采纳</strong>：把多目标融合权重层从 ranker 中解耦、用单步 RL + 上下文做个性化调权，是比「人工全局权重 + 反复 A/B」更系统、风险更低的范式；并行旁路 + 超时 fallback 到静态权重的工程契约值得照搬，能让 RL 控制层安全灰度。<strong>应尝试</strong>：推理期 α 扫描构建 Pareto 前沿，让产品/运营在已训练策略族上直接选工作点；对低活/新用户等 cohort 施加不同 α（论文 cohort 实验已验证收益更大）。<strong>应警惕</strong>：单步 bandit 不建模留存，社区场景若强依赖长期留存需补长程信号或叠加约束；二值 clip 奖励会丢失强度信息，时长类目标慎用；OPE 可信的前提是有足量均匀探索流量（论文用 1.25% 等倾向性探索），探索预算不足时离线选 α 不可靠。部署上几乎零额外延迟、配置即换挡，是其相对端到端多目标方案最大的落地优势。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2605-16344"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2605.17863" data-paper-id="arxiv:oai:arXiv.org:2605.17863" data-card>
@@ -115,49 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>「全局 calibrated 但分区间互相抵消」是所有回归型排序目标(时长、停留、转化)的共性陷阱，社区搜索的 dwell-time 排序同样适用。最大工程价值在于 DADF 是挂在已上线预测器之上的二阶段乘性残差校正，不动主模型即可纠偏——上线风险极低、可作为旁路插件灰度，比重训第一阶段预测器现实得多。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">（作者见 arXiv 页面）</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-05-19</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 5 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2605.17863" id="dr-arxiv-oai-arXiv-org-2605-17863">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>DADF 深度解读：短视频时长回归的分布感知二阶段去偏框架</h1>
-<h2>1. 问题与动机</h2>
-<p>观看时长预测是短视频推荐的核心回归任务，但标签高度长尾——「most impressions correspond to short views or quick skips, while only a small fraction lead to long consumption」。论文指出一个被长期忽视的「伪平衡（pseudo-balance）」陷阱：模型可能整体 calibrated（全局 y/ŷ 比值≈1.0），但同时<strong>系统性高估短播放、低估长播放</strong>，因为正负残差在聚合时相互抵消。Figure 1(a) 给出定量证据：已部署预测器在各 watch-time 桶上「consistently overestimates short views and underestimates long views」，而全局比值仍接近 1.0。更深一层的根因是：乘性 bias factor b=y/ŷ 继承了原始时长分布的长尾性（Appendix A.1 给出理论刻画），导致直接对 b 做回归不稳定。</p>
-<p>这一陷阱对任何回归型排序目标（时长、停留、转化时长）都成立，社区搜索的 dwell-time 排序同样会「整体校准但分区间互相抵消」。已有方法多在第一阶段时长预测器上改进，残差分布偏差仍未被充分纠正——这正是 DADF 切入点：不动主模型，在其之上挂一个分布感知的二阶段乘性残差校正。</p>
-<h2>2. 方法详解</h2>
-<p><strong>二阶段乘性校正框架。</strong> 设冻结的一阶段预测为 ŷ₀，校正标签 b=y/(sg(ŷ₀)+ε)（sg 为 stop-gradient），最终预测 ŷ=ŷ₀·b̂=ŷ₀·T_λg⁻¹(F_θ(x, ℓ₀, π(d), ha))。即学习一个对 b 的校正而非替换 ŷ₀。三大组件：</p>
-<p><strong>A. 动态分布感知模块。</strong> 对乘性校正因子做分组 Box–Cox 变换：T_λg(b)={(b+ε)^λg−1}/λg（λg≠0），log(b+ε)（λg=0），其中 λg 是每个时长分组可学习的变换参数；推理时用解析逆变换 T_λg⁻¹ 还原。作用是把长尾、异方差的校正目标拉成更接近正态、可稳定回归的空间——这是全框架最关键的设计（消融显示移除它 MAE 退化最大）。</p>
-<p><strong>B. Debias-factor-aware 模块。</strong> 硬路由：每个样本按时长分组 g=π(d) 选择专家网络 E_g，融合信号 h=Fusion(x, ℓ₀, g, ha)，预测变换空间校正量 ẑ=E_g(h)。理论依据用全方差定律证明分组后 oracle 风险满足 R<em>_G ≤ R</em>₀，即按时长分桶建模能降低不可约不确定性。</p>
-<p><strong>C. Multi-label-aware 模块。</strong> 三路辅助信息：context 分支 hc=MLP([ℓ_play, xc])；logit 注意力 h_ℓ=SelfAttention(Φ₁(ℓ₁),…,Φ_M(ℓ_M))；tower 表示 hr=TokenMixer(r₁,…,r_M)，拼接成 ha=MLP([hc,h_ℓ,hr])。即复用多任务 engagement 头的 logits 与表示作为去偏辅助信号。</p>
-<p><strong>训练目标。</strong> L_DADF=α·L_trans+β·L_abs+η·L_reg，其中 L_trans 是变换空间 MSE、L_abs 是原空间 Huber、L_reg 对每个时长分组的均值/方差/偏度做正则；超参 α=1.0、β=0.8、η=0.10。</p>
-<h2>3. 核心技术贡献</h2>
-<p>(1) <strong>不替换已部署预测器的分布感知二阶段去偏</strong>：直接建模乘性 bias factor，是对现有时长预测管线的「model-agnostic plug-in」，落地侵入性极低。</p>
-<p>(2) <strong>分组条件建模</strong>：用时长分桶 + 专家硬路由把异质残差模式拆开，并以全方差定律给出 oracle 风险下界证明（R<em>_G≤R</em>₀），让「分桶」有理论支撑而非纯工程经验。</p>
-<p>(3) <strong>异质变换设计</strong>：每个时长 regime 学独立 Box–Cox 参数 λg，针对短/中/长播放的不同残差分布分别拉正态。</p>
-<p>(4) <strong>多任务辅助信号融合</strong>：把 engagement 头的 logit 与 tower 表示引入去偏，复用既有多任务结构而非额外造特征。</p>
-<p>(5) <strong>理论刻画</strong>：附录证明 bias factor 的长尾继承性与分组降风险，是该工作区别于纯经验去偏的亮点。</p>
-<h2>4. 实验结果分析</h2>
-<p><strong>离线（Table 1）。</strong> 跨 7 个 backbone（VR/WLR/TPM/D2Q/CREAD/D2CO/EGMN）× 2 数据集（KuaiRec/WeChat21）一致提升。KuaiRec 上 WLR：MAE 4.414→4.172、XAUC 0.5941→0.6227；D2CO：MAE 4.613→4.168、XAUC 0.5687→0.6233（提升幅度最大的一档）。WeChat21 上 VR：MAE 18.681→17.912、XAUC 0.6766→0.6902。<strong>平均「reduces MAE by 4.33% and improves XAUC by 4.01%」覆盖所有 backbone-数据集组合</strong>，说明它是 backbone 无关的通用增益层。</p>
-<p><strong>线上 A/B（Table 2，快手 Kwai 平台）。</strong> App 总时长 +0.356%、单设备人均时长 +0.347%、单设备播放数 +0.120%、7 日留存 +0.054%、完播率 +0.215%、有效播放率 +0.312%、长播率 +0.351%、短播率 −0.273%，全部 p&lt;0.05；生产离线 WUAUC +1.88pp、MAE 降 12.57%。短播率下降 + 长播率上升的方向，正好印证它纠正了「高估短播、低估长播」的伪平衡。</p>
-<p><strong>消融（Table 3, WLR）。</strong> 移除分布模块（w/o Dist.）KuaiRec MAE 4.1723→4.1901 退化最大；移除辅助模块（w/o Aux.）对 XAUC 冲击最大（WeChat21 XAUC 0.6934→0.6920）。<strong>分桶分析（RQ4）</strong>最有说服力：分时长桶 MAE 降幅 [0,20)s 5.5%、[20,40)s 7.0%、中长桶 &gt;15%、[180,200) 峰值 23.8%、[200,+) 18.2%；尾部切片 Tail-10% MAE 降 10.43%、XAUC 升 7.98%——证明收益主要来自长尾/长播放区间，恰是伪平衡受害最重的地方。桶数 K 在 2~8 范围稳定。证据质量很高（多 backbone、多数据集、线上多指标显著、细粒度偏差分析）。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者<strong>未显式设置 limitations 章节</strong>（这是该论文的一个不足）。从方法可推出的隐含约束：(1) 依赖推理期可观测的 duration 作为 debias factor，若 duration 不可得则路由失效；(2) 冻结一阶段预测器假设，无法与主预测器联合自适应；(3) 分组变换需每组足够样本，长尾极稀疏分组的 λg 估计可能不稳；(4) 依赖多任务 engagement 头的 logits/表示作为辅助信号，单任务时长模型无法直接套用。这些边界在迁移到社区 dwell-time 场景时需逐一核对，尤其辅助信号依赖会限制无多任务结构系统的复用。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索/推荐团队，DADF 的最大价值是<strong>几乎零侵入的纠偏旁路</strong>。<strong>应采纳</strong>：「整体校准但分区间互相抵消」是 dwell-time/转化时长排序的通病，先用 DADF 的分桶残差诊断（按目标值分桶看 y/ŷ 是否系统性偏移）做体检，再决定是否上二阶段乘性校正——这套诊断方法本身就值得纳入排序模型上线 checklist。<strong>应尝试</strong>：在已上线时长/停留预测器之上挂二阶段乘性校正（不动主模型），按目标值分 3~4 桶 + 分组 Box–Cox，线上以旁路插件灰度，风险远低于重训第一阶段预测器；快手线上 7 日留存 +0.054%、长播率 +0.351% 且全显著，收益方向明确。<strong>应警惕</strong>：辅助模块强依赖多任务 engagement 头，单塔系统需先补多任务结构或裁剪该模块（消融显示去掉 Aux. 主要损 XAUC、MAE 影响小，可接受降级）；分组需足量样本，极稀疏长尾桶要合并；线上分桶建议用「historical traffic statistics and production experience」定固定边界而非等频，避免线上线下桶不一致。部署上仅需 ranking 特征 x、duration d、原始时长输出 ℓ₀、辅助表示 ha，无显式额外延迟，属轻量级改造。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2605-17863"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2605.17788" data-paper-id="arxiv:oai:arXiv.org:2605.17788" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.10</span></div>
@@ -271,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

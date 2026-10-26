@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,87 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>对社区 UGC 搜索/推荐场景，“LLM 语义 + ID 协同”双塔融合是主流，但盲目对齐会抹掉短文本场景里宝贵的语义私有信息（话题热度、表达风格）。共享+私有的两路解耦思路提示我们：在排序模型里应保留两条独立通路，仅对“共享因子”做对齐损失，对“私有因子”用门控融合，避免协同信号压制 LLM 带来的长尾语义增量。该思路对短文本召回与精排都直接可借鉴。</div>
     <div class="foot">Maolin Wang, Dongze Wu, Jianing Zhou, Hongyu Chen, Beining Bao, Yu Jiang, Chenbin Zhang, C... · 2026-04-27 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.22195" id="dr-arxiv-2604-22195">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>主流&quot;LLM 语义嵌入 + 协同过滤&quot;融合范式建立在一个隐含假设上：两类视图编码同一个潜在实体，因此用低复杂度的对齐变换（线性映射/MLP+InfoNCE）就能把它们投到同一空间，得到更好的推荐。论文将这一假设形式化为<strong>全局低复杂度对齐假设（global low-complexity alignment hypothesis）</strong>，并通过实证证伪。论文给出的核心数据极具说服力：在 Movies 数据集上，LightGCN 与 BGE-M3 语义检索的命中物品列表 Jaccard 相似度仅 6.37%，跨数据集 CompRatio（互补命中比例）超过 55%。这意味着两条路线本质上在解决&quot;用户需求的不同子集&quot;——语义视图擅长长尾命中（语义独占命中物品流行度比平均低 18.4%），协同视图偏向流行物品。如果强行把两者对齐，就会把语义路径上的长尾增益和协同路径上的流行度信号双双抹平。这一动机解释了为什么过去几年大量&quot;语义+协同对齐&quot;工作上线后线上指标提升幅度有限，而简单的 concat 反而经常更好用。</p>
-<h2>2. 方法详解</h2>
-<p>论文方法非常克制，但内部组件值得复用：</p>
-<p><strong>编码器</strong>：协同侧用 LightGCN，embedding 维度 d=64，BPR 损失训练；语义侧用 BGE-M3 冻结编码（1024 维），通过线性投影降到 64 维，并用温度 τ=0.15 的 InfoNCE 训练投影矩阵。</p>
-<p><strong>融合模块（核心，Section 3.4.1）</strong>：采用 <strong>Norm-Concat-Norm</strong> 三步操作：</p>
-<ul>
-<li><code>h_u^sem = Norm(W_s · e_u^SEM + b_s)</code></li>
-<li><code>h_u^cf = Norm(GCN(u))</code></li>
-<li><code>z_u = Norm(h_u^cf ⊕ h_u^sem)</code></li>
-</ul>
-<p>关键设计是两次 L2 归一化：第一步保证两个视图等幅贡献（||·||=1），第二步对拼接后的整体再次归一化避免协同信号在数值幅度上压制语义信号。这一处的归一化次序是融合质量的关键，对应作者所诊断的&quot;协同信号 dominance&quot;问题。</p>
-<p><strong>共享+私有潜在结构（Equations 7-9）</strong>：</p>
-<pre><code>z_i = (z_i^shared, z_i^CF-only, z_i^SEM-only)
-e_i^CF = g_CF(z_i^shared, z_i^CF-only)
-e_i^SEM = g_SEM(z_i^shared, z_i^SEM-only)</code></pre>
-<p>每个物品被分解为三段隐变量：共享因子、协同私有因子、语义私有因子。论文不强制对齐损失，而是让融合模型隐式学习如何利用三段信息。</p>
-<p><strong>训练设置</strong>：Adam 优化器，学习率 1e-3，batch size 2048，weight decay 1e-4；早停 patience=5。损失为带动态 hard negative 的 InfoNCE。</p>
-<p><strong>对齐探针实验（E2）</strong>：冻结两组编码器，只训练&quot;语义→协同&quot;的映射网络。线性映射在训练集 R²=0.171，测试集降到 0.166；MLP-2 训练集 R²=0.977，测试集 R²=-0.487（负值表示比常数预测更差）。这一对比直接证明协同视图含有从语义视图无法重建的私有因子。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>互补性诊断指标族（Equations 10-12）</strong>：定义 Hit Jaccard、CompRatio、Union-TopK 三个指标，把&quot;两条路线是否互补&quot;从模糊概念变成可量化的结构属性，并给出&quot;无需改进编码器就可达的融合性能上界&quot;。这套指标本身可以作为 benchmark 的一部分被广泛复用。</li>
-</ol>
-<ol>
-<li><strong>对齐探针证伪实验</strong>：用冻结编码器+回归探针的实验范式，干净地证明协同结构存在不可被语义重建的私有因子，从根本上推翻了&quot;对齐即可&quot;的隐含假设。</li>
-</ol>
-<ol>
-<li><strong>极简融合框架</strong>：Norm-Concat-Norm 比所有 SOTA 对齐方法都简单（一行公式），但在 Movies/Books/Games 三个数据集上 Recall@20 分别提升 0.1100→0.1579 / 0.1891→0.2404 / 0.1766→0.2177，是该领域的重要 sanity check。</li>
-</ol>
-<ol>
-<li><strong>结构化评估范式转移</strong>：论文呼吁从单一全局排序指标转向&quot;覆盖率（CompRatio）+ 上界（UUB）+ 流行度分层&quot;的结构化评估，让 A/B 实验解释力大幅增强。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p><strong>主表（Recall@20）</strong>：</p>
-<table><thead><tr><th>模型</th><th>Movies</th><th>Books</th><th>Games</th></tr></thead><tbody><tr><td>LightGCN</td><td>0.1100</td><td>0.1891</td><td>0.1766</td></tr><tr><td>RLMRec（对齐 SOTA）</td><td>0.1210</td><td>0.1998</td><td>0.1850</td></tr><tr><td>Naive Fusion</td><td><strong>0.1579</strong></td><td><strong>0.2404</strong></td><td><strong>0.2177</strong></td></tr></tbody></table>
-<p>简单 concat 比 RLMRec 这种&quot;对齐+协同蒸馏&quot;高 13–30%，是该论文最强力的反驳证据。</p>
-<p><strong>对齐探针（Tables 4-5）</strong>：线性映射 R²=0.166，MLP-2 R²=-0.487，强烈验证&quot;非低复杂度可对齐&quot;。</p>
-<p><strong>Union-TopK 上界（Table 7）</strong>：Movies 上 Naive Fusion 取得 0.1580 的 Recall@20，已接近&quot;两个视图取并集&quot;上界 UUB=0.1594（覆盖了 41.7% 的相对增益）。这表明真正缺失的不是&quot;更复杂的对齐器&quot;，而是能否把两路独立信号都保住。</p>
-<p><strong>流行度分层（Table 8）</strong>：在中流行度区间（既不是头部也不是长尾），Naive Fusion 比最佳单视图高出 36.8%（Books），说明融合的主要红利来自中频物品的覆盖扩展，而非排序重排。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文主动给出的限制：(1) 当前方案隐式实现&quot;并集&quot;，没有显式做共享/私有分解，可解释性不足；(2) 在数据稀疏与稠密场景下，最优&quot;私有/共享比例&quot;可能不同，需要自适应机制；(3) 高容量映射会过拟合、低容量又欠拟合，未来应该用 optimal transport 等几何工具替代简单 InfoNCE；(4) 实验全在 Amazon Reviews 这类稀疏 benchmark 上，未验证稠密内容场景（短视频、社区、直播）。</p>
-<p>作者隐含未谈但需关注的限制：未提供线上 A/B 数据；BGE-M3 是英文为主的模型，中文社区 UGC 场景需重新选择编码器（如 BGE-zh、Qwen-embedding）。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区 UGC 搜索/推荐：</p>
-<ol>
-<li><strong>马上能做的事</strong>：把现网&quot;对齐 + 协同蒸馏&quot;模块替换成 Norm-Concat-Norm 融合并跑 A/B。本论文的最大价值是一个反直觉发现——简单的 concat 比 SOTA 对齐器在 Recall@20 上高 13-41%。改造工作量极小（只是删掉对齐损失），但风险很低。</li>
-</ol>
-<ol>
-<li><strong>架构建议</strong>：在排序模型里保留两条独立通路（LLM 语义塔 + ID 协同塔），仅在共享因子层做轻量正则（如 InfoNCE w/ 极弱权重），私有因子用门控网络融合而非强制对齐。</li>
-</ol>
-<ol>
-<li><strong>评估改造</strong>：上线时不仅看 nDCG/Recall，还要监控 CompRatio 与 UUB——如果 UUB 没涨而总指标涨，说明只是排序重排没有覆盖扩展，长期会导致信息茧房。社区搜索尤其要看长尾命中率。</li>
-</ol>
-<ol>
-<li><strong>冷启动与中长尾</strong>：语义视图独占命中目标流行度低 18.4%、对中流行度物品融合增益高达 36.8%，意味着对社区里&quot;刚发布但未热&quot;的内容（典型中流行度），LLM 语义路径是关键增量来源，不能被协同信号压制。</li>
-</ol>
-<ol>
-<li><strong>风险点</strong>：在中文短文本场景，BGE-M3 的语义信号质量可能远不如 Amazon 英文场景（短文本句法噪声大），需要先做编码器筛选；其次 InfoNCE 温度 τ=0.15 在我们场景可能偏低（短文本相似度分布更陡），建议从 τ=0.2 起 grid。</li>
-</ol>
-<ol>
-<li><strong>部署成本</strong>：方法本身不增加任何推理成本（融合是简单 concat），训练成本也只是基线水平。这是一篇&quot;几乎零成本就能拿来跑&quot;的论文。</li>
-</ol></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2604-22195"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2604.22504" data-paper-id="arxiv:2604.22504" data-card>
@@ -155,91 +75,7 @@ e_i^SEM = g_SEM(z_i^shared, z_i^SEM-only)</code></pre>
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>把 LLM 排序训练目标显式与 Top-K 业务指标对齐，是当前 RL-推荐最值得借鉴的方向。WPAUC 给出一条工程友好的路径：保持外部 RL 框架不变，仅替换 group 内采样策略与 advantage 计算，就能让 GRPO 类训练自动对齐 Top-K（社区搜索的 nDCG@10/CTR@K 几乎完全是 Top-K 指标）。这意味着任何已经在用 GRPO/PPO 微调 LLM 排序器的团队，可以低成本接入 WPAUC 来提升线上指标。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Wentao Shi, Qifan Wang, Chen Chen, Fei Liu, Dongfang Liu, Xu Liu, Wanli Ma, Junfeng Pan, Linhong Zhu...</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-04-27</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 5 · Practical 4 · Evidence 4 · Timely 5</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2604.22504" id="dr-arxiv-2604-22504">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>近一年大量工作开始用 GRPO/DAPO 等 group-based RL 算法微调 LLM 推荐器，并普遍发现一个经验现象：beam-search 负样本远比随机负样本好用。但论文指出，业界对这一现象的解释停留在&quot;beam-search 负样本提供更具信息量的训练信号&quot;这种<strong>直觉表述</strong>，缺乏理论支撑，因此无法指导算法设计。论文的核心问题是把这个经验差异转化为可解释、可控的优化目标差异。具体证据：在 Amazon Toys/Industrial/Office 与 Yelp 四个 benchmark 上，作者实证 GRPO+random negatives 与 GRPO+beam-search negatives 的差距在 Recall@1 上可达 20–40%（Figure 1a），但所有 SOTA 论文（包括 BigRec、ReRe、MiniOneRec 等）都未给出严格机理分析。论文的第二个动机是 Top-K 错配：现有 GRPO 优化的目标本质上是 ROC-AUC（要把所有正样本排在所有负样本前面），但工业指标是 Top-K（Recall@5、NDCG@10），两者并不等价——一个 AUC 很高的模型完全可能在 Top-K 上表现普通。论文要把&quot;训练目标&quot;显式与&quot;工业 Top-K 指标&quot;对齐。</p>
-<h2>2. 方法详解</h2>
-<p><strong>核心定理（Lemma 3.1）GRPO ≡ AUC</strong>：作者把 GRPO 的目标函数重写为：</p>
-<pre><code>J(θ) = E[√(p(Hu)(1-p(Hu))) · E[s_θ+(Y+, Hu) - s_θ-(Y-, Hu)]]</code></pre>
-<p>形式上变为正负样本对的 score 差期望（pairwise hinge），等价于最大化 P(s+ &gt; s-)，正是 AUC 定义。这一重写关键在于把 group-relative advantage 展开为正负样本对的差值，揭示 GRPO 在二元奖励下的本质是 AUC 优化。</p>
-<p><strong>Lemma 3.2 Beam-search ≡ Partial AUC</strong>：当 beam 宽度 B→∞ 时，受约束的 beam search 会从负样本 score 排在前 (α+d) 分位的子集中采样，这等价于把优化目标从 full AUC 变成 One-way Partial AUC（OPAUC）——只惩罚那些 score 已经超过 α 分位的&quot;硬负样本&quot;。</p>
-<p><strong>WPAUC 定义</strong>：作者进一步把窗口起点也限定，定义 Windowed Partial AUC：</p>
-<pre><code>WPAUC_u(α, d) := Pr[f_u,i+ &gt; f_u,i- ]  其中 i- ∈ W⁻_u(α, d)
-W⁻_u(α, d) := {i(σ) : ⌈αn-⌉ &lt; σ ≤ ⌈(α+d)n-⌉}</code></pre>
-<p>即 FPR 被夹在窗口 [α, α+d] 内。Lemma 3.5 给出关键性质：当只有一个正样本时，WPAUC 退化为精确的 Recall@K。这意味着只要选对窗口参数，训练目标就直接等同于业务指标。</p>
-<p><strong>TAWin 实现（核心算法）</strong>：因为硬截断会丢梯度，作者用 soft Top-K 算子近似窗口选择：</p>
-<pre><code>T_{K,τ}(x) := min(1, exp((x - λ(x)·1)/τ))   s.t.  Σ T_{K,τ}(x)_i = K</code></pre>
-<p>对每个候选 Y，先按照 score 排序得到秩 σ_u(Y)，再以&quot;目标锚点 σ⋆&quot;为中心计算距离：</p>
-<pre><code>x_u(Y) := -|σ̃(σ_u(Y)) - σ̃(σ⋆)|</code></pre>
-<p>最后用 T_{K,τ} 把这些距离映射为 reweight 系数，距离锚点近的样本权重接近 1，远离的指数衰减。这等价于&quot;软窗口选择&quot;——既保留了梯度信息，又把训练焦点压在指定 Top-K 区间。</p>
-<p><strong>训练设置</strong>：底座 Qwen2.5-0.5B SFT 后启动 RL；学习率 1e-5，GRPO 系数 β=1e-3，batch size 512，每输入采样 n=16 个候选序列；硬件 8×NVIDIA H800；2 个 epoch；超参 K=4，σ⋆ ∈ {0,1,2}，τ ∈ {1/2, 1/3, 1/4, 1/5, 1/6}。</p>
-<h2>3. 核心技术贡献</h2>
-<ol>
-<li><strong>GRPO 优化目标的理论刻画</strong>：第一次给出 GRPO+random negatives = AUC、GRPO+beam negatives ≈ OPAUC 的严格证明，把经验差异变成机理结论。这一贡献本身就值得被作为 RL 推荐的标准认知。</li>
-</ol>
-<ol>
-<li><strong>WPAUC 指标 + 与 Recall@K 的精确对应</strong>：通过 Theorem 3.4 证明 WPAUC 比 OPAUC 更紧地 bound 住 Recall@K，并在 Lemma 3.5 给出与 Recall@K 的精确等价条件，是把&quot;训练目标-业务指标&quot;显式连接的关键工具。</li>
-</ol>
-<ol>
-<li><strong>TAWin 软窗口算法</strong>：提出可微的软窗口 reweight 算子，避免硬截断丢梯度的问题，工程上是 plug-in 式的（仅替换 GRPO 内的 advantage 计算，外层 RL 框架不变）。</li>
-</ol>
-<ol>
-<li><strong>可控目标整形</strong>：实证 σ⋆/K 与最终 Recall@K 之间存在单峰关系（Figure 4 显示 R@1 最优 σ⋆=1，R@5 最优 σ⋆=4–6），意味着团队可以根据自己想优化的 K 值精确选择超参。</li>
-</ol>
-<h2>4. 实验结果分析</h2>
-<p><strong>主表（Table 1，部分摘录）</strong>：</p>
-<table><thead><tr><th>数据集</th><th>方法</th><th>R@1</th><th>R@3</th><th>NDCG@3</th></tr></thead><tbody><tr><td>Toys</td><td>ReRe（baseline）</td><td>0.0411</td><td>0.0709</td><td>0.0583</td></tr><tr><td>Toys</td><td>TAWin</td><td><strong>0.0471</strong></td><td><strong>0.0761</strong></td><td><strong>0.0639</strong></td></tr><tr><td>Industrial</td><td>ReRe</td><td>0.0783</td><td>0.1184</td><td>0.1016</td></tr><tr><td>Industrial</td><td>TAWin</td><td><strong>0.0904</strong></td><td><strong>0.1237</strong></td><td><strong>0.1099</strong></td></tr></tbody></table>
-<p>平均比 ReRe 提升 5.5%，比 BigRec 提升 49.4%——后者是论文宣传的最大数字，主要因为 BigRec 是更早的 SFT-only 基线，距离不严格反映方法增益，但 ReRe 的 5.5% 是同代际公平比较。</p>
-<p><strong>超参单峰性（Figure 4）</strong>：固定目标 R@K，调 σ⋆ 时性能呈单峰；目标 R@1 时 σ⋆=0–1 最优，目标 R@5 时 σ⋆=4–6 最优。这一规律为线上调优提供清晰指引：不再需要 grid，按照 K 值对应位置就近搜索即可。</p>
-<p><strong>跨模型 / 跨算法（RQ3）</strong>：在 Qwen2.5-0.5B/3B/7B、Llama-3.2-1B 上 TAWin 都稳定优于 ReRe；与 DAPO、GSPO、GRPO 三种 RL 算法都兼容；对 MiniOneRec 那种 Semantic-ID 编码同样有效（Office R@3 从 0.1325→0.1378）。</p>
-<p><strong>意外结果</strong>：Office 数据集上 σ⋆=0 反而最优，说明在某些数据稀疏场景，&quot;最严格的 Top-1 对齐&quot;会损害学习——TAWin 给出了一个事后可解释的窗口收缩方向。</p>
-<h2>5. 局限与未来方向</h2>
-<p>论文未显式列出 Limitations 章节，但隐含限制：</p>
-<ol>
-<li><strong>超参依赖</strong>：仍需在 τ（6 个候选）×σ⋆（3 个候选）网格里调；不同数据集最优值不同，对线上自动化训练管线是负担。</li>
-<li><strong>二元奖励假设</strong>：理论分析建立在二元奖励（命中=1，未命中=0）上，对工业更常见的&quot;曝光时长奖励、CTR 奖励&quot;等连续/多级奖励，等价性证明需要重做。</li>
-<li><strong>小目录场景</strong>：分析依赖大量负样本，对 catalog 极小的场景（如某些精排小池子）可能行为退化。</li>
-<li><strong>未在工业 A/B 中验证</strong>：作者只跑公开数据 benchmark，未说明在线 CTR/停留时长是否同步提升。</li>
-<li><strong>公平性副作用</strong>：作者显式提醒&quot;更精准的个性化可能放大 filter bubble 与曝光不公&quot;，需要配套公平性约束。</li>
-</ol>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索 / UGC 内容排序：</p>
-<ol>
-<li><strong>直接落地</strong>：如果团队已经在用 GRPO/PPO/DAPO 微调 LLM 排序器，可以零侵入接入 TAWin——只替换 advantage 计算和 reward 加权即可，外层 RL 框架不变。这是该论文最大的工业价值。</li>
-</ol>
-<ol>
-<li><strong>目标对齐</strong>：社区搜索的核心指标 nDCG@10 / CTR@K 都是 Top-K 形式。WPAUC 的窗口 (α, d) 与 σ⋆ 可以直接按业务 K 值选取（K=10 时 σ⋆≈10），不再需要让训练目标&quot;碰运气&quot;对齐线上指标。</li>
-</ol>
-<ol>
-<li><strong>样本利用率</strong>：传统硬截断负采样会丢弃大量 RL rollout（GPU 浪费），TAWin 用软窗口保留所有负样本但赋予不同权重，对 RL 训练成本节约 20–30% 量级（按 rollout 利用率折算）。</li>
-</ol>
-<ol>
-<li><strong>训练-推理一致性</strong>：因为 TAWin 直接以 Recall@K 形式训练，训练 loss 曲线与 holdout NDCG@K 单调相关，调试效率显著提高，不再出现&quot;训练 loss 降但线上指标涨幅小&quot;的迷之现象。</li>
-</ol>
-<ol>
-<li><strong>风险与防护</strong>：作者明确提示个性化放大可能加剧曝光不公，社区平台落地时需要配合 promoted-content quota、explore 流量、公平性正则一起部署，避免长尾创作者曝光被压。</li>
-</ol>
-<ol>
-<li><strong>延伸方向</strong>：把 WPAUC 思路迁移到非生成式排序模型（如 DIN、SASRec）：把 BPR loss 替换为窗口加权对比损失，理论上同样可对齐 Top-K，是值得试验的迁移方向。</li>
-</ol></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2604-22504"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2604.22169" data-paper-id="arxiv:2604.22169" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.20</span></div>
@@ -352,59 +188,6 @@ W⁻_u(α, d) := {i(σ) : ⌈αn-⌉ &lt; σ ≤ ⌈(α+d)n-⌉}</code></pre>
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

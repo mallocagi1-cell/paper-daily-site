@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -64,37 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>训练用的采样损失与上线排序指标会系统性背离，且背离程度本身随算力变化——critical batch size、冻结后最优负样本数、loss 与排序质量的一致性都随算力和评测指标漂移。对搜推团队的直接启示：做用户行为大模型时不要照搬文本 LM 的参数分配，embedder 要做小、数据要给足；选型必须看线上排序指标而非训练 loss，否则离线最优在线上未必成立。</div>
     <div class="foot">Rickard Brüel Gabrielsson · 2026-06-03 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.05257" id="dr-arxiv-2606-05257">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>推荐、支付、风控、电商等系统越来越多地把&quot;用户行为序列&quot;喂给基础模型，但与语言模型不同，这类行为基础模型缺少 Chinchilla 式的算力标定指南。工业界普遍采用&quot;两段式&quot;架构——一个把多模态 item（文本、类目、价格、图像）映射成向量的特征化 event embedder，再接一个 decoder-only Transformer 在 embedding 序列上预测下一个事件——但没人系统回答过：给定算力预算，参数该怎么在两段之间分、batch 该多大、模型与数据怎么配比、冻结 embedder 后该采多少负样本。作者直言现状是&quot;field has little Chinchilla-style guidance for them&quot;。于是用约 600 组训练、408 次验证评估，在真实零售交互数据（商品搜索、浏览、点击、购买）上把这套两段式架构的 scaling law 系统地跑了一遍，目标是给出可直接照搬的部署配方，而不仅是理论曲线。</p>
-<h2>2. 方法详解</h2>
-<p>架构上，event embedder 把原始 item 特征编码到隐维 h；contextualizer 是 decoder-only Transformer，吃 Lseq=256 个 event embedding，用 sampled softmax 预测下一个事件。总参数 N 拆成 embedder 参数 p_e 与 contextualizer 参数 p，定义 embedder 占比 s = p_e/N。单步算力按 Kaplan 式 F_step = 6·B·Lseq·(t·p_e + p + 3·B·Lseq·h)，其中 t=24 是 embedder 的上下文事件数。训练分两阶段：阶段一联合训练，用 in-batch sampled softmax，候选池 ≤ B·Lseq 个 batch 内唯一 item；阶段二冻结并缓存 embedder，只继续训 contextualizer，对每个位置额外采 K 个均匀负样本打分（K 从 16k 一路扫到 2M）。评测也分两套：阶段一只在 batch 内约 5–10k 唯一 item 上算，阶段二在全量约 13.6M item 目录上算——这个区分很关键，因为两套评测会给出方向相反的结论。作者对四个部署相关维度做网格扫描：架构（s 从 0 到 50%，4 个预算）、batch（B∈{64,128,256,512,1024,2048}）、模型/数据配比（45 个 contextualizer 配置×5 预算）、冻结后负采样数（K∈{0,16k,…,2M}×5 预算）。embedder 占比的损失用两项幂律 Loss(s)=a·s^α+b·s^(−β)+E 拟合求闭式最优；负样本数同样用 starvation/bias 两项式 y(K)=a·K^α+b·K^(−β)+E 拟合。</p>
-<h2>3. 核心技术贡献</h2>
-<p>（1）给出行为基础模型第一份&quot;可复现配方&quot;（Table 7），决策顺序明确：先定上线指标 → s≈2% → B≈2048（过 val_loss 的 B_crit、吞吐最优）→ lr≈2e-3·√(B/512)+cosine+5% warmup → D/N 按 Table 4 抛物线最优取 → 冻结后 K∈[2.5e5,9e5]、10^18 时上限近 10^6。（2）发现 embedder 算力最优占比极小：s<em>≈2%（跨预算落在 1.1%–3.7%），机理是 embedder 参数每个 item 被触碰约 t 倍多、且热门 item 暴露成百上千次，&quot;更贵且重复&quot;。（3）揭示&quot;评测指标本身是 scaling law 的一部分&quot;——critical batch size、最优 K、loss 与排序一致性都随所选指标变化，这是相对文本 LM 的本质新发现。（4）给出行为模型 D/N 幂律：N</em>=3.35e-4·C^0.617、D*=4.97e2·C^0.383，低算力下数据密集、随算力增大向 Chinchilla 靠拢。</p>
-<h2>4. 实验结果分析</h2>
-<p>算力范围 C∈[10^15,10^19] FLOPs，数据约 10^8 唯一行为、10^9 event token、强重尾分布。关键数字：embedder 占比 s<em>≈2%（Table 2 区间 1.1%–3.7%），跨 4 个预算稳定。模型/数据配比 D/N 从 344→265→222→110→36（10^15→10^19，Table 4），对比文本 LM Chinchilla 的 D/N≈20，行为模型低算力时高近一个数量级，到 10^19 才接近；各指标拟合指数 a_N∈[0.574,0.617] 在误差带内一致（Table 5），说明配比规律对 val_loss、recall@10、NDCG@10、coverage@10 都稳。critical batch size（Table 3）：val_loss/recall@10 约 570–574，但位置加权的 NDCG@10/MRR@10 早饱和在 200–275，val_entropy 在 [64,2048] 内未现平台。冻结后负样本 K</em>∈[125k,870k]（Table 6）；bias 指数 β 在 loss 上约 1.2、在排序指标上仅 0.39–0.56；在 10^19 时&quot;每个头条指标在最大 K 仍在涨&quot;，此时瓶颈从算力变成显存。最关键的 loss 与排序背离（Fig 7/Table 17）：阶段一 Spearman ρ≈−0.98（loss 降则 recall 升，锁死），但阶段二 K 扫描里 ρ 从 10^15 的 +0.93 翻转到 10^18 的 −1.00。机理是阶段一每个候选自身就是目标、q∝p，损失最小点在目录上均匀，绝对热度不可辨识，只学到 batch 内相对序——这意味着用 in-batch loss 选大模型会被系统性误导。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确列出：（1）阶段一架构/配比扫描只在 batch 内约 5–10k item 上评，跨预算 loss 不可直接比，只有同预算内排序有效；（2）没做固定深度下宽度×文本编码器占比的联合扫，完整 5D 网格（share×width×depth×embedder-depth×lr）是下一步；（3）s<em>≈2% 基于无 embedder 正则，加 embedder 专属正则可能上移 s</em>；（4）训练上下文固定 Lseq=256，未扫（附录 H 显示打分鲁棒性随上下文长度变化）；（5）算力只到 10^19，更大预算待探。此外不开源数据/代码，复现门槛高，外部团队只能照搬配方而难复算。</p>
-<h2>6. 工业实践意义</h2>
-<p>对做用户行为大模型的搜推团队，最直接三条：一是不要照搬文本 LM 的参数分配——embedder 做小（约 2%）、把更多参数留给 contextualizer，同等算力下更优；二是先定上线指标再选型——NDCG 这类位置加权指标的 critical batch size（约 200–275）和最优负样本数与 val_loss（约 570）不同，用训练 loss 选出来的模型上线未必最好，本文 ρ 在大算力下甚至完全反向；三是行为数据要&quot;给足&quot;——低算力阶段最优是数据密集型（D/N 远高于文本的 20）。部署层面，冻结 embedder 后增大负样本 K 仍持续涨点直到显存打满，意味着大目录场景应把负采样规模当成显存预算而非算力预算来规划，缓存冻结 embedding 也能省阶段二算力。社区搜索把 query/曝光/点击/停留当 event 序列建模时，这套配方可直接迁移用于标定用户塔大小、batch、负采样与训练超参，避免昂贵的盲目网格搜索。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-2606-05257"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>6 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:2606.06225" data-paper-id="arxiv:2606.06225" data-card>
@@ -105,37 +75,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>关键设计是“非对称”——只让有交互的一侧用图结构，无历史的一侧被逼着学纯特征到协同空间的映射，从而绕开“新内容必须立即拿到独立 embedding 且要适配 ANN 检索”的线上约束。对 UGC 社区的启示：新帖/新作者冷启动可借鉴这种“浅塔强制特征映射”，避免给新内容临时拼凑 ID 向量导致召回质量塌陷。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Anh Truong, John Trenkle, Yuanbo Chen, Honghong Zhao, Abdullah Alchihabi, Effy Fang, Michael Tamir</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-06-04</span><span>·</span><span class="score-detail">Relevance 4 · Novelty 4 · Practical 4 · Evidence 4 · Timely 4</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:2606.06225" id="dr-arxiv-2606-06225">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 7 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>协同过滤/图推荐之所以强，是因为它们利用观测到的用户交互；但这也带来根本冷启动困境：新内容没有任何观看历史。在 Tubi（广告支撑的流媒体，数亿设备、数十万内容）的生产检索系统里，这个困境还被线上服务接口进一步约束——新内容必须&quot;立刻&quot;拿到一个独立 embedding，且设备/内容 embedding 都要能进 ANN 近邻检索，不能靠 query 时遍历图或两两打分。已有做法要么给新内容拼凑 ID 向量、要么靠交互派生子图，都无法满足&quot;零历史也要即时出向量且可 ANN&quot;的工程约束。作者把它形式化成时序二部&quot;设备-内容&quot;图上的归纳式图补全（inductive graph completion）的极端情形：暖内容是有观看边的内容节点，冷内容是无任何观看边的节点；内容编码函数必须对暖、冷内容（含零历史新片）都适用，且只能依赖内容固有特征。</p>
-<h2>2. 方法详解</h2>
-<p>Shallow-RHS 是非对称双塔。左塔（设备）用设备特征 + 时序有效的观看历史消息传递编码：初始 h_d^(0)=HeteroTF_D(x_d)（基于 PyTorch Frame 的 FTTransformer），从历史边构造内容→设备消息 m_{d←c,τ}^(ℓ)=ψ^(ℓ)(z_c, γ(TVT_{d,c,τ}), η(t−τ))，其中 γ 编码观看时长信号、η 编码时间衰减，多层置换不变聚合得 z_d(t)=h_d^(L)。右塔（内容）故意对图&quot;浅&quot;：z_c=HeteroTF_C(x_c)，只用内容固有特征，不做设备消息传递、不做内容侧子图、不用 ID embedding、不做邻居聚合、不用任何交互派生表征——这逼着内容编码器把固有特征映射进&quot;协同感知&quot;的 embedding 空间。训练用时序 softmax 链接预测损失：对每个（设备,时间戳）正样本是未来观看内容、负样本是未观看候选，打分用余弦 s(d,c,t)=cos(z_d(t),z_c)、温度 τ_s。训练后对暖内容 embedding 建 ANN 索引；冷内容直接用内容塔产出 embedding，再检索 top-M 暖&quot;代理近邻&quot;S_M(c)=TopM_{w∈warm} cos(z_c,z_w) 做隐式图补全，作为推广/检索的行为代理，且不改观测图。设备冷启动：把暖设备按人口属性（国家/地区、设备类型、平台、账户属性）聚成约 K_D 个 cohort，取 cohort 均值 z_g=(1/|D_g|)Σz_d 给新设备初始化，让刚激活账户首屏即可用 ANN 出结果。</p>
-<h2>3. 核心技术贡献</h2>
-<p>（1）&quot;非对称&quot;是核心而非小技巧：只让有交互的设备侧吃图结构、无历史的内容侧被强制学纯特征→协同空间映射，从而绕开&quot;新内容必须即时独立 embedding 且可 ANN&quot;的线上约束。（2）用&quot;代理近邻检索&quot;做隐式图补全：不合成假边，而是在学到的 embedding 空间里检索暖门近邻当桥，可解释、模块化，且推广决策不污染观测交互图。（3）设备冷启动用人口属性 cohort 均值做首触表征，让刚激活的新设备也能首屏出可用推荐。（4）时序监督分离：用一年历史做上下文、只取截止前最后 K 天做监督标签，既防标签泄漏又保留长程行为上下文。</p>
-<h2>4. 实验结果分析</h2>
-<p>数据为 Tubi 一年观看日志，365 天回看、最小观看时长 r_min 过滤，训练边 E_train={(d,c,τ,r)|t0−365≤τ≤t0, r≥r_min}，图规模数亿设备节点/数十万内容节点/数十亿时序边。内容特征含 title 文本、类型、genre、语言、年份、时长、分级、演职员、外部评分/票数，以及&quot;基于脚本/元数据的 LLM 语义 embedding&quot;。评测全部用线上 A/B，指标为 TVT（日均观看时长）、Qualified View Days、homepage 5 分钟转化。结果按四阶段渐进上线（Table 1）：V1（GNN+语义替换为 CF-aware embedding）全局 TVT +0.10%、冷标题推广速度 +13%；V2（+推广决策标定）+0.16%；V3（+内容特征补全，特征覆盖较前提升约 10%）+0.42%，是单阶段最大增益；V4（+代理补全与长尾语义增强）+0.17%。设备冷启动 A/B：Qualified view days +0.29%、capped 日 TVT +0.39%、homepage 5 分钟转化 +0.43%。作者承认这四个变体是&quot;连续上线迭代&quot;而非隔离离线消融，但在真实服务条件下提供了对冷启动管线的实用消融——逐级贡献中，特征丰富（genre/预算/票房/LLM embedding 覆盖）贡献最大（约 +0.26 个百分点），明显超过最初&quot;语义→CF 替换&quot;的 +0.10%，表明数据覆盖的边际收益高于架构复杂度。值得注意的是 V4 加入代理补全后整体 TVT 反而从 +0.42% 回落到 +0.17%，提示代理近邻主要利好长尾，对大盘是权衡而非纯增益。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确：（1）特征覆盖是关键经验约束——初期 LLM embedding 与外部元数据（评分/票数/预算/票房）覆盖不全，本质是表征质量问题，关键特征缺失则映射可用信息少；（2）为训练可扩展性，每个训练实例只保留最近 K 条内容交互（有界历史采样），可能损失超长程行为；（3）embedding 维度需经验调——10 月实验把输出维度翻倍以容纳更丰富元数据/脚本语义，说明容量规划要迭代；（4）没给非对称架构的表征容量或收敛性理论分析。消融为渐进上线而非隔离组件移除，单组件归因不够干净，跨阶段还混入了特征覆盖变化的影响，难以判定增益究竟来自架构还是数据。</p>
-<h2>6. 工业实践意义</h2>
-<p>对内容平台/UGC 社区冷启动有直接借鉴：一是&quot;浅塔强制特征映射&quot;——给无历史的新内容/新作者一侧禁用 ID embedding 与邻居聚合，逼内容编码器学到协同感知表征，避免临时拼凑 ID 向量导致召回塌陷；二是特征覆盖比架构复杂度更值钱——本文最大单阶段收益（+0.42% TVT）来自把特征覆盖提升约 10%，而非换更复杂模型，提示优先补元数据与 LLM 语义；三是代理近邻做隐式补全，比合成假边更可解释、可模块化，且不污染线上交互图，但要注意它主要利好长尾、对大盘是权衡；四是设备/用户冷启动可用人口属性 cohort 均值做首触；五是一年上下文+最后 K 天监督的时序切分可防泄漏。工程上整套建在 Kumo GNN 平台、产出可 ANN 的独立 embedding，符合大规模检索服务约束。社区里&quot;新帖/新问答/新用户&quot;冷启动可直接套这套非对称双塔思路：用户侧用行为图、内容侧只用文本/类目/作者等固有特征，再用代理近邻把新内容挂到行为相近的老内容上做推广，同时用 A/B 而非离线指标验收冷启动收益。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-2606-06225"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:2606.05537" data-paper-id="arxiv:2606.05537" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 3.75</span></div>
@@ -219,60 +159,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

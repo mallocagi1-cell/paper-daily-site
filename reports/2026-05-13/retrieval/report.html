@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-retrieval">
@@ -64,58 +64,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>向量召回的瓶颈已经从算法转移到访存与并发调度。论文的核心洞察是不要把多核 CPU 当成对称扁平资源，而要显式建模 CCD 拓扑+查询负载。对社区搜索向量召回非常有借鉴价值：通过线程亲和+按热度路由 query 到同一 CCD，可在零模型改动下大幅降低 p99 延迟，是低成本的工程级优化。</div>
     <div class="foot">Yuchen Huang, Baiteng Ma, Yiping Sun, Yang Shi, Xiao Chen, Xiaocheng Zhong, Zhiyong Wang, ... · 2026-05-12 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2605.10090" id="dr-arxiv-oai-arXiv-org-2605-10090">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 8 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>向量近邻搜索 (ANNS) 是搜索引擎、推荐系统与广告服务的底座组件。近年来 CCD-based 多核 CPU 因极致性价比，已经在小红书等大规模在线服务中几乎完全取代单 chiplet CPU 用于 in-memory 向量检索。但作者在生产环境观察到一个反直觉的现象：仅增加核数并不能线性提升 ANNS 吞吐。具体数据显示：96 核 EPYC 上 HNSW 吞吐仅达理想值的约 82%；IVF 在 2-12 个 CCD 上仅获 1.6×–2.8× 加速 (远低于线性 6×)。</p>
-<p>根因在于 CCD-based 架构每个 CCD 独立持有 L3 cache，跨 CCD 共享则要走 IO die。生产流量呈强 Zipfian 分布：少量节点/聚簇承担绝大多数访问，单表 traffic 量级在数十 MB 到数千 MB 间相差一到几个量级，每个表的搜索时间也存在明显的&quot;长尾&quot;。如果朴素地把任务均匀分发到所有核心，会同时把多个&quot;热&quot;任务塞到同一 CCD，导致 L3 缓存互相驱逐 (cache pollution)，热数据反复进出，使得堆核数边际收益快速衰减。这一矛盾对小红书的搜索/推荐/广告——每秒千万级 QPS、毫秒级延迟约束——直接转化为吞吐瓶颈与 p999 抖动。</p>
-<h2>2. 方法详解</h2>
-<p>论文提出 CCD-Level 感知的线程编排框架，包含三大组件：</p>
-<p><strong>(a) 统一任务提交接口</strong>：暴露 <code>submit(search_functor, query, Mapping_ID)</code>。<code>search_functor</code> 是可插拔回调，支持 HNSW (按 table 粒度) 与 IVF (按 cluster 粒度) 两类索引；<code>Mapping_ID</code> 抽象掉具体索引类型，由 dispatcher 通过 <code>pickCcd(id)</code> 决定路由目标 CCD。HNSW 单查询提交为 inter-query 并行，IVF 单查询会被拆分为多 cluster 任务做 intra-query 并行。</p>
-<p><strong>(b) 负载感知任务派发器 (热-冷配对)</strong>。核心算法：先用历史流量估计每个 table/cluster 的访存量 T̂ — HNSW 用 T_HNSW ≈ N·(B_v + M·s_id)，IVF 用 T_IVF ≈ S_i·B_v。然后对所有 item 按 T̂ 降序排序，维护单 CCD 目标负载 μ = Σ T̂ / m，采用双端扫描算法把&quot;最热&quot;与&quot;最冷&quot;项目配对，将每对绑定到当前负载最轻的 CCD。设计原则：<strong>避免 hot-hot 同 CCD 共置</strong> (会互相驱逐 L3)，<strong>主动 hot-cold 配对</strong> (热数据稳定驻留 cache，冷数据顺便用闲置带宽)。</p>
-<p><strong>(c) 窗口化重映射 + 双快照原子切换</strong>：每分钟 (可调) 后台 workload monitor 汇总 traffic，构造下一个 mapping 并预热，待旧 epoch 任务全部退役后做原子指针交换。这样在流量漂移时既能持续自适应，又不会因重配置带来抖动。</p>
-<p><strong>(d) CCD 感知任务窃取</strong>：work-stealing 队列分层进行——本地核心 pop → 同 CCD 邻核 steal → 最后才允许跨 CCD steal。理由是同 CCD 共享 L3，工作集天然温热；跨 CCD 偷任务意味着完全重新载入 cache，会显著恶化延迟。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，<strong>首次系统化把 CCD 拓扑作为 ANNS 调度的一等公民</strong>。以往工业 ANNS 优化集中在 SIMD 距离计算、压缩、索引结构，论文证明在多 chiplet 平台上访存调度已成主导因素 — 同样的 HNSW 算法仅靠调度策略就能拿到 3.7× 吞吐提升。</p>
-<p>第二，<strong>热-冷配对 mapping 算法</strong>。这是从 Zipfian 流量统计直接得出的&quot;两阶最优&quot;近似：单 CCD 的负载尽量均衡、单 CCD 内热度方差尽量大。这种&quot;均匀均值 + 极化方差&quot;的目标函数对所有按热度倾斜的工作负载都有普适价值，远超 ANNS 本身。</p>
-<p>第三，<strong>双快照原子重映射</strong>。把&quot;在线状态切换&quot;从一个分布式难题降为单机原子指针操作，零下线、零抖动，是工程上极优雅的一步。</p>
-<p>第四，<strong>层级 work-stealing</strong>。把 cache 局部性的约束写进 stealing 策略，使得在轻负载下仍能保持高利用率，重负载下能避免 cache 灾难，与 mapping 策略形成双层防御。</p>
-<h2>4. 实验结果分析</h2>
-<p>测试硬件覆盖 4 代 EPYC 96-core (12 CCD / 32MB L3) 与 2 代 EPYC 48-core (12 CCD / 16MB L3)，workload 用小红书生产真实数据：60 张 HNSW 表 (每张 1M-10M 向量、维度 64-256) + 15 张 IVF 表 (10K-15M 向量、nlist 128-8192)，重放约 100 万 HNSW 与 110 万 IVF 请求。</p>
-<p>基线对比 V0 (round-robin / FAISS OpenMP)、V1 (bthread work-stealing 无拓扑感知)、V2 (本文方案)。关键结果：</p>
-<ul>
-<li><strong>吞吐</strong>：96 核 HNSW V2 &gt;100 KQPS，远超 V1/V0；IVF 35 KQPS vs V1 25 KQPS、V0 10 KQPS — 总体最高 3.7×；</li>
-<li><strong>延迟</strong>：p50 与 p999 均降低 30%–90%；</li>
-<li><strong>L3 cache miss rate</strong>：下降 6%–30%；</li>
-<li><strong>CPU stall</strong>：减少 20%–80%；</li>
-<li><strong>跨 CCD steal 占比</strong>：HNSW 从 V1 的 ~75% 压到 V2 的 &lt;10%；IVF 从 ~80% 压到 ~5%。</li>
-</ul>
-<p>最有力的归因证据是 Fig 19b：V1 与 V0 cache miss 接近，说明朴素 work-stealing 并未带来 cache 优势——只有把拓扑写进 stealing 策略后才生效。Fig 12/7 的 ablation 显示静态 mapping 在流量漂移下退化明显，分钟级 remap 是不可或缺的。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者声明的局限：(1) 访存估计公式忽略 metadata，且 IVF per-cluster 归因不一定完美反映 locality；(2) 重映射窗口大小无原则化指南，需按业务调参；(3) 仅覆盖 HNSW/IVF，NSG、Vamana 等其他索引未测；(4) 优化针对 AMD CCD 设计，Intel Sapphire Rapids 等 mesh-based 架构能否复用未验证；(5) 单机 scope，分布式向量检索未涉及；(6) 与向量量化的集成是未来工作。</p>
-<p>其它隐含局限：snapshot swap 期间的瞬时一致性窗口对在线请求的影响未量化；workload monitor 自身的统计开销没单独报告；与已有 OLAP 上的 chiplet 调度工作未做横向对比。</p>
-<h2>6. 工业实践意义</h2>
-<p>对搜索/推荐工程团队，这篇论文的可直接借鉴价值非常高。<strong>第一，立即可用的优化方向</strong>：如果你在 AMD EPYC 上跑 HNSW/IVF，且只用默认线程池或 OpenMP，单单换成&quot;按热度路由 + 同 CCD 优先 steal&quot;就能拿到 30%-90% 的延迟下降与最高 3.7× 吞吐，且<strong>完全不动模型、不动索引结构、不动召回算法</strong>——是性价比极高的工程级优化。</p>
-<p><strong>第二，方法论层面</strong>：作者揭示了向量召回的瓶颈正在从算法移向系统访存。下一阶段优化的重点不是更好的 PQ 或更复杂的 graph index，而是 cache 友好的数据布局 + 拓扑感知的并发调度。这对社区搜索的向量召回服务、UGC 帖子 embedding 检索同样适用。</p>
-<p><strong>第三，部署考量</strong>：minute 级 remap 在小红书量级 (千万 QPS) 落地稳定，意味着方案对中等规模也足够鲁棒。对于自建向量数据库的团队，热度统计 + 双 buffer mapping 可以做成一个通用插件，独立于具体索引实现。</p>
-<p><strong>第四，对 LLM 时代搜索的延伸</strong>：当 LLM-as-reranker 把延迟预算挤压到几毫秒时，召回层 p999 的每一毫秒都更关键，CCD-aware 调度有可能成为 next-gen 在线检索系统的标配。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2605-10090"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-retrieval" id="paper-arxiv:oai:arXiv.org:2605.10848" data-paper-id="arxiv:oai:arXiv.org:2605.10848" data-card>
@@ -240,60 +189,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

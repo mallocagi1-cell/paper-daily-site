@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · AI 搜索 AI Search" href="https://paper-daily.com/feeds/ai-search.xml" />
 </head>
 <body class="t-agentic">
@@ -65,54 +65,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>社区搜索的多跳问答可先缓存帖子证据向量，用便宜的覆盖检测控制昂贵验证调用，再由验证器决定能否停止。语义接近不等于事实支持，因此不能让向量阈值直接批准回答；上线时应同时统计引用正确率、额外检索轮数和端到端延迟，不能把调用降幅当作延迟降幅。</div>
     <div class="foot">Daeyoung Roh, Donghee Han · 2026-09-03 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2609.26086" id="dr-arxiv-oai-arXiv-org-2609-26086">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h1>CoVeR：把检索是否完成的检查拆成便宜筛选与昂贵验证</h1>
-<p>原文：https://arxiv.org/html/2609.26086 。以下方法、数据与局限来自论文正文第 3–7 节及附录；工业落地建议是针对社区 UGC 搜索的分析，不是论文报告的线上收益。</p>
-<h2>1. 问题与动机</h2>
-<p>多步搜索 Agent 不仅要生成查询，还要决定什么时候已有足够证据。始终运行到最大预算能避免部分过早停止，却浪费检索和生成；每轮让验证模型检查证据，可以提前停止，但会反复处理不断增长的材料。CoVeR 关注的是后一个环节的重复支出：当前轮次如果明显缺少某个推理跳所需证据，再调用一次验证器通常只会得到“继续搜索”。</p>
-<p>作者将验证任务拆开：识别明显不完整的状态，和确认所有主张都得到支持。前者可以用句向量近邻作为廉价信号，后者必须理解实体、关系与证据内容。实验显示这种不对称很关键：生成主张的覆盖分数在三个数据集上的 AUROC 只有 0.686、0.680、0.760，不能承担完整的停止判断。论文由此构造单向门控：可以推迟验证，但不能自行宣布证据充分。这与根据问题复杂度预先确定预算不同，它在每轮观察已收集的证据，选择哪次验证值得执行。</p>
-<h2>2. 方法详解</h2>
-<p>主实验以 Self-Ask 为宿主，生成模型是 Qwen2.5-3B-Instruct，扩展实验换成 7B。每个问题最多运行 6 轮检索，每轮在包含正确材料及干扰材料的 BM25 句子索引中取 top-3。问题先分解成一组预期主张，通常约 2 个；主张可以来自模型生成，真实支撑句只用于理想条件诊断，不能在部署时使用。</p>
-<p>冻结 E5 编码器把主张目标文本与证据句转换成向量。对每个主张，找已检索句子中最高的余弦相似度，用 1 减去它作为缺口；再取所有主张缺口的最大值作为当前状态的覆盖缺口。这是一个“最缺证据的主张”聚合，而不是所有句子的平均相关性。证据向量可以缓存，新一轮只补充新增句子的向量和点积。</p>
-<p>若状态缺口大于阈值，跳过验证并继续检索；否则调用原有验证器，由它决定是否停止。预算耗尽仍按宿主流程回答，门控本身没有增加事实正确性保证。阈值采用留一数据集验证：在另外两个数据集各自 train-600 的数据上选择最大节省率，同时要求停止轮次一致率至少 0.90、覆盖安全性不低于原验证器。三个折都选出 0.16。该一致率约束属于训练侧选择条件，不应声称所有测试集都达到 0.90。</p>
-<p>主验证器来自作者并行研究 HALT，是 Qwen2.5-3B 加 LoRA；附录给出 rank 16、alpha 32、dropout 0.05，覆盖七类投影模块，4-bit NF4 加载并使用 bf16 计算。它分别计算 Match、Partial、Null 三种标签的平均 token 对数概率，以最大者作判定，而非再设一个概率阈值。输入明确包含问题、候选答案、预期主张、页面与目标角色及证据句。新增片段经句切分，每块最多 12 句、每句至少 20 字符，仅检查尚未匹配的主张。CoVeR 不重新训练该验证器，其训练数据规模、优化器、批大小和训练步数在本次读到的验证器卡中没有完整提供，不能补造这些参数。</p>
-<p>可选扩展是约 92.1 万参数的 MLP：从问题向量预测多个主张向量槽位，以生成主张向量为余弦损失目标，并用小分类头预测槽位数。它去掉门控侧的 LLM 主张生成，但如果下游验证器仍消费主张文本，就不能说整条链路都不需要生成文本。另一扩展是在验证器内部优先核验缺口最大的主张，只在逐条计算时能提前短路；批量执行时不能直接兑现这部分节省。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，论文提供了保持停止决策权不变的单向门控接口。相似度只用于证明“值得继续找”，最终停止仍由原验证器批准。这使方法可以接入训练式验证器、提示式裁判和公开 NLI 模型，而不要求为每个下游模型重新学习停止策略。它解决的是无用调用，不是验证器自身的事实理解错误。</p>
-<p>第二，作者比较了同一接口下多种低成本信号。HotpotQA 在停止一致率至少 0.90 的描述性前沿上，向量覆盖可省 62.2% 调用，词重合省 51.2%，BM25 省 20.2%，句数规则为 0%。将便宜信号用逻辑回归组合也只有 43.5%。因此有用的不只是降低调用预算，还包括识别具体哪些轮次可以略过；相同预算的随机跳过使 HotpotQA 和 2Wiki 停止一致率分别下降 6.4、7.0 个百分点。</p>
-<p>第三，门控与验证器的错误互补性被单独检验。对训练式验证器，覆盖分数往往也被错误实体的相似证据欺骗，不能有效纠正其错误停止；更换为波动较大的提示裁判或 NLI 模型后，门控有时能否决过早停止，但这不是普遍收益。论文把路由节省与错误纠正分开报告，避免将二者混成一种能力。</p>
-<h2>4. 实验结果分析</h2>
-<p>主评测分别使用 HotpotQA 1,000 题、2Wiki 1,000 题和去重后的 MuSiQue 911 题。EM 由固定 Qwen2.5-3B 抽取器在停止处读取累计证据，三个系统共用评估接口。下表 EM 为百分比，调用降幅以始终验证系统为基线。</p>
-<table><thead><tr><th>数据集</th><th>完整预算 EM</th><th>始终验证 EM</th><th>CoVeR EM</th><th>验证调用减少</th></tr></thead><tbody><tr><td>HotpotQA</td><td>30.60</td><td>30.50</td><td>30.40</td><td>62.2%</td></tr><tr><td>2Wiki</td><td>18.40</td><td>18.50</td><td>18.70</td><td>67.8%</td></tr><tr><td>MuSiQue</td><td>8.01</td><td>8.12</td><td>8.12</td><td>93.0%</td></tr></tbody></table>
-<p>两个主要数据集与始终验证的差值分别为 −0.10、+0.20 个百分点，显示大部分验证调用可移除而不出现明显质量损失。但 EM 绝对值不高，样本量也不足以分辨所有小于 1 个百分点的变化，不能把“差异很小”写成确定无损。测试停止轮次一致率依次为 0.910、0.886、0.976，2Wiki 测试值低于训练选阈时的 0.90 条件，说明停止策略相似和最终答案相似是两个指标。</p>
-<p>MuSiQue 需要独立解读：验证器只在 2.6% 的循环中触发停止，大多数轨迹无论用哪种方法都会耗尽预算。93% 调用降幅主要体现这种饱和状态下跳过检查仍安全，不是可外推到一般搜索系统的节省倍数。论文将 62–68% 作为主要结果是合理的，因为那两个数据集确实存在有意义的停止选择。</p>
-<p>消融进一步说明向量匹配不能替代验证。真实支撑句作为理想目标时 AUROC 为 0.892、0.895、0.831，模型生成目标时降到 0.686、0.680、0.760；两类目标来自不同标签运行，作者明确提示这不是严格受控消融。若直接用部署时可得的缺口分数停止，为满足覆盖安全性，停止节省几乎归零。五种冻结编码器检查中，较大的 e5-large 没有稳定超过 e5-base，而 bge/gte 家族损失了 12–25 个百分点的调用削减；对证据取最大相似度也优于平均或 softmax 聚合。</p>
-<p>迁移方面，7B 生成主张设置没有重新调阈值；蒸馏头在 400/400/384 题上的调用削减为 61.2%、65.8%、91.5%。公开 NLI 裁判在 HotpotQA 的某设置下，门控 EM 为 26.0%、纯裁判为 23.3%，差值按原始精度统计为 +2.8 个百分点，说明特定裁判的过早停止确实可能被门控抑制。这个结果不应替换主实验，更不能宣传为所有验证器都能提升答案质量。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确限定证据主要来自一种 Self-Ask 脚手架与三个多跳问答集。主实验使用包含正确材料的封闭池，开放语料检查只有 HotpotQA 一个点，而且该点使用真实主张的验证器，因此离完整开放网络搜索还有距离。冻结 E5 的预训练偏向维基百科，换到社区短文本、缩写、反讽或多语言混写，覆盖分数可能失效。</p>
-<p>轨迹使用单个 seed 13，bootstrap 衡量问题样本的不确定性，未覆盖生成随机性。比较或聚合问题的主张分解可能失败，但没有被充分量化；HALT 权重并非本文可发布的资产，复现主要依赖公开裁判替代或缓存证据。作者还承认覆盖分数与训练式验证器的错误相关，不能保证纠正后者。成本统计主要是调用、主张判定对与输入 token，未把所有门控计算纳入通用收益宣称。这些都是在社区环境试验前应重新测量的部分。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区搜索，适合优先试验的是复杂问答分支：检索多个帖子、核验不同用户提供的信息、再生成带引用的答案。可把问题分成待核验的主张，在每轮召回后增量计算覆盖缺口；只有疑似接近完成时才调用较贵的证据验证模型。证据应保留帖子作者、发布时间和引用位置，避免语义接近的旧帖替代当前条件下真正有效的证据。</p>
-<p>建议先做同查询、同语料快照、同模型和同最大预算的离线对照，记录答案正确率、引用支持率、停止轮次、检索 nDCG、验证成本及端到端耗时，再用小流量测试 CTR 与用户继续追问比例。UGC 中短句可能缺少实体上下文，不能照搬 0.16 阈值；应在独立标注集上检验短文本编码器和分句策略，保留“没有依据就继续找”的方向性。</p>
-<p>最重要的成本边界来自附录实际计时：特定 4-bit 生成栈中解码占每轮生成时间约 95%，即使前缀缓存命中 85%，每轮也只减少 0.02–0.04 秒。组合验证器计时后，CoVeR 相对始终验证在 HotpotQA、2Wiki 的端到端变化是 +0.12 秒和 +0.71 秒，置信区间跨零；MuSiQue 才出现约 −2.46 秒。也就是说省掉验证可能被额外检索生成抵消。部署决策应依据本地生成与验证成本的平衡，尤其不能把 62–68% 调用削减直接写成同比例的整体加速。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2609-26086"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>9 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-agentic" id="paper-arxiv:oai:arXiv.org:2609.26780" data-paper-id="arxiv:oai:arXiv.org:2609.26780" data-card>
@@ -237,60 +190,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>

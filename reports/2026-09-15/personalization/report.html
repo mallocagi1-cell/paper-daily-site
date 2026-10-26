@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../css/pages.css?v=bee433569a" />
+  <link rel="stylesheet" href="../../../css/pages.css?v=a780493452" />
 <link rel="alternate" type="application/rss+xml" title="Paper Daily · 全部方向" href="https://paper-daily.com/feed.xml" /><link rel="alternate" type="application/rss+xml" title="Paper Daily · 个性化推荐 Personalization" href="https://paper-daily.com/feeds/personalization.xml" />
 </head>
 <body class="t-personalization">
@@ -65,56 +65,7 @@
     <div class="pq"><small>KEY INSIGHT · 对业务意味着什么</small>可借鉴的设计是把用户历史编码与候选打分解耦，同时通过遮蔽近期行为避免压缩表示只记住短期兴趣。社区 UGC 搜索可缓存用户长期主题，再与当前 query 和候选帖子交互；应以 nDCG、CTR 和缓存更新成本联合评估，不能直接把广告 GMV 收益视为搜索收益。正文未清晰呈现作者单位，因此机构字段留空。</div>
     <div class="foot">Chengkai Huang, Yubin Sheng, Liang Guo, Haoxi Liu, Junwei Pan, Shangyu Zhang, Zhixiang Fen... · 2026-09-11 · arXiv</div>
   </div>
-  <div class="lead-dr">
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2609.12375" id="dr-arxiv-oai-arXiv-org-2609-12375">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 10 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>ChronicleRec 研究的是长期用户兴趣如何进入在线排序。工业系统通常有两条路线：按候选从历史里取相关行为，或者提前把历史压成少量向量。前者让同一用户的历史随候选重复计算；后者若把所有查询 token 堆在序列末尾，并允许它们读取全部历史，容易得到彼此相似的全局摘要。作者因此把目标改为保留时间结构的用户表示：每个摘要应明确对应历史中的一个时间位置。</p>
-<p>论文的动机有实证支持。KuaiRand 上只看最近 100 个行为的 Short-Attn GAUC 为 0.5307，全历史注意力为 0.5601，说明短窗口确实丢失可预测信号。但全注意力训练消耗 49.1 GB 显存和 2997.0 分钟，直接扩展历史成本很高。该工作的对象是 CTR/CVR 用户建模，不是生成物品 ID；即便使用预训练、token 和 Transformer，也应归入个性化赛道。</p>
-<p>对社区 UGC 搜索而言，长期主题、作者偏好可能补足当前查询的歧义，但必须保留 query 的主导作用。论文没有直接验证搜索 nDCG，广告收益只能支持用户表示的价值，不能证明跨业务迁移必然成立。</p>
-<h2>2. 方法详解</h2>
-<p>输入为按时间排列的行为 embedding 和有效位置 mask。压缩器不读取候选物品，因此对同一用户可以只计算一次，再由不同候选共享缓存结果。第一步按远、中、近三个区间做不同强度的聚合：近期保留原始分辨率，中期适度合并，远期强力合并。窗口内只对有效行为求平均，分母至少为 1；空窗口继续标记为无效，避免左侧 padding 进入用户表示。</p>
-<p>正文给出的默认设置为保留最近 100 条行为，中段长度 400，池化 kernel/stride 为 8/4，远段为 10/10。由于窗口对应关系可以预先确定，实现上用向量化 gather 和 pooling，减少动态切分成本。这一步不是等距抽样：它明确把更多表示容量留给近期行为。</p>
-<p>第二步把 11 个可学习查询 token 插入压缩后的时间序列，靠近现在的锚点更密。四层、四头因果 Transformer 只允许每个位置读取自己及其之前的内容。查询位置的输出就是 Chronicle Tokens。对于短历史用户，遥远锚点之前可能全是 padding，作者仍保留 self-position 可见，防止 attention softmax 接收到整行无效输入。该细节应在复现时显式检查。</p>
-<p>第三步采用多时间跨度分支。各分支分别遮蔽最近 0、100、300、600、1000 个行为，每个分支有自己的查询 token 与编码器，从而迫使部分分支仅依靠更久远的历史。分支权重依次为 1.0、0.5、0.4、0.3、0.2，输出加权后拼接。Chronicle Alignment 用各分支的轻量 target-attention head 预测当前标签，损失为归一化分支权重加权的 BCE 之和；推理时去掉辅助预测头。</p>
-<p>最后使用共享排序头读取这些 token：候选 embedding 作为查询提取兴趣向量，再与候选表示拼接送入 MLP。compress-only 模式只用压缩记忆；hybrid 模式把它作为近期原始行为的前缀。训练先进行对齐预训练，再加载到排序模型，压缩器可以冻结或继续微调。</p>
-<p>实验模型维度为 64，视频、作者、标签 embedding 维度分别为 64、16、16，dropout 为 0.1，预测头为两层四头注意力。Adam 学习率为 0.001，weight decay 为 0.000001；KuaiRand/AdLive batch size 分别为 256/512，最多训练三个 epoch 并早停。论文给出显存与时间对比，但正文没有明确 GPU 型号，不能据此推算本地机器的绝对训练时长。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，压缩输出保留了时间锚点。末尾查询即使数量很多，也可能反复提取同一段最强信号；交错查询配合因果 mask，让不同位置有不同的历史可见范围。AdLive 上交错因果配置 GAUC 为 0.8034，末尾因果为 0.7890，差值 0.0144，说明仅换注意力方向而不改变 token 放置并不足够。</p>
-<p>第二，远近历史的容量分配进入了结构。近细远粗池化既减少计算，也避免平均压缩把最近兴趣抹平；移除此模块后 AdLive GAUC 从 0.8034 降到 0.7958。这里的改进不是单纯增加参数，而是在共享排序头条件下改变历史如何被编码。</p>
-<p>第三，多跨度监督使远期信息承担独立预测责任。对部分分支遮蔽近期窗口，可减轻所有分支都依赖最近点击的倾向；去掉多分支后 GAUC 为 0.7962，去掉 Chronicle Alignment 后降到 0.7948，是所列消融中降幅最大的情况。该结果支持“压缩旧历史时仍要对齐当前决策”，而不是只重建历史本身。</p>
-<p>第四，压缩结果可以跨候选缓存。它把昂贵的用户历史理解与在线候选相关性计算分开，允许接入既有排序模型。线上实现把 Chronicle Tokens 同时加入 MixFormer 的非序列与序列通路，不需要整体替换主干。</p>
-<h2>4. 实验结果分析</h2>
-<p>以下为正文表 2 的用户分组 GAUC。两套数据都保留相同预测头，主要比较历史编码策略。</p>
-<table><thead><tr><th>方法</th><th>KuaiRand</th><th>Tencent AdLive</th></tr></thead><tbody><tr><td>Short-Attn</td><td>0.5307</td><td>0.7950</td></tr><tr><td>VISTA</td><td>0.5518</td><td>0.7995</td></tr><tr><td>ChronicleRec</td><td>0.5536</td><td>0.8010</td></tr><tr><td>Hybrid-ChronicleRec</td><td>0.5541</td><td>0.8030</td></tr><tr><td>Multi-ChronicleRec</td><td>0.5580</td><td>0.8034</td></tr><tr><td>Full-Attn</td><td>0.5601</td><td>0.8071</td></tr></tbody></table>
-<p>多分支模型在 KuaiRand 上距全注意力仅 0.0021，但没有超过全注意力；应把结论表述为以较低成本接近上界，而非全面优于所有基线。AdLive 上 hybrid 到多分支只增加 0.0004，提示分支收益可能依数据而变，不能不看成本直接采用最大配置。</p>
-<p>KuaiRand 包含 27,285 位用户，约 3.22 亿交互，原始平均历史长度约 11,812；训练却截断到 2048。AdLive 有 199,914 位采样用户、约 2.14 亿交互，训练上限为 4000。这里的“终身”是建模目标，并不意味着实验完整读取了所有历史。两套离线任务使用点击标签，线上则为朋友圈广告 pCVR，指标与场景并非完全一致。</p>
-<p>消融中，移除近期感知合并、因果 mask、多分支、深监督、对齐目标，AdLive GAUC 分别下降 0.0076、0.0074、0.0072、0.0039、0.0086。另一个诊断遮蔽最近 1000 个行为后，KuaiRand GAUC 仍有 0.5499，高于只读最近窗口的 0.5307。这支持远期偏好具有独立信号，但两种设置的输入信息量不同，不应理解为远期行为一般比近期行为更重要。</p>
-<p>效率表中基础 ChronicleRec 为 28.0 GB、620.3 分钟，多分支为 34.8 GB、855.1 分钟。约 4.8 倍训练加速对应基础版本相对全注意力，不能附到多分支最佳精度上作为同一配置的联合成绩。线上七天 A/B 的 GMV 相对提升为 1.61%，95% 区间为 0.678%–2.547%；作者报告该区间排除零，但未给出可迁移到其他平台的延迟绝对值。</p>
-<h2>5. 局限与未来方向</h2>
-<p>正文没有独立的 limitations 章节，也没有明确列出完整未来工作计划。作者明确展示的边界包括：压缩表示仍未达到全注意力精度，多分支会增加显存和训练时间，近期行为仍是最强预测信号。这些结果限定了方法适用范围，不能把压缩解释成无损替代。</p>
-<p>以下是本次阅读提出的复现问题，而非作者已经验证的结论。首先，用户缓存的刷新频率、增量更新成本和陈旧缓存造成的精度损失没有充分量化；其次，token 可缓存不代表线上没有网络传输、存储和候选注意力成本；最后，页面含有未清理的会议模板与图注占位文字，作者单位也未清晰呈现，复现应以公式和实验表为依据，不据占位模板判断正式发表会议信息。</p>
-<h2>6. 工业实践意义</h2>
-<p>社区搜索可以先把历史阅读、点击、收藏按时间编码成用户侧 token，再在已有相关性排序上增加候选感知分支。第一轮实验宜比较近期 100 条、均匀压缩、近细远粗压缩三个配置，在相同候选、相同预测头、相同训练时段下观察 nDCG 与 CTR；只有基础压缩确有收益，再增加分支和对齐预训练。</p>
-<p>评估应按历史长度、用户活跃度、兴趣漂移程度分桶。短历史用户要检查全 padding 与 self-position 的数值行为；突然改变兴趣的用户要检查旧偏好是否压过当前查询；长期活跃用户则重点观察多分支是否降低兴趣摘要冗余。相关性分数、长期偏好分数和当前 query 信号的融合需要独立调试，不能只追逐点击。</p>
-<p>上线前应测量 token 缓存体积、更新周期、缓存命中率、P99 延迟，以及模型版本变更时的表示兼容性。正文在线 GMV 结果证明该路径在一个大规模广告系统上可行，但没有证明任意 UGC 搜索平台都能复制收益。更稳妥的工程目标是把长期历史的候选级重复计算改成用户级复用，并在相关性护栏下验证增益。</p>
-<p>来源：<a href="https://arxiv.org/html/2609.12375" target="_blank" rel="noopener">论文全文</a>，重点依据第 3 节、第 4 节与表 1–6。上述业务迁移方案为本次阅读的建议。</p></div>
-  </div>
-</div></div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2609-12375"></span>
 </section>
 <div class="secT"><h3>今日其余入选</h3><span>2 篇 · 按综合排名</span></div><div class="grid">
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2609.11943" data-paper-id="arxiv:oai:arXiv.org:2609.11943" data-card>
@@ -125,58 +76,7 @@
   <div class="ins"><div class="xp "><div class="xp-body"><p><b class="lab">INSIGHT</b>社区搜索若采用瀑布流，单条卡片 CTR 最优可能损害整页浏览，可先学习标题、封面和版式相对帖子基础分的增量，再约束展示面积。论文把创意分支与主排序并行，适合复用现有排序服务；迁移时需同时观察整页互动、相关性和尾延迟，并用随机探索缓解新封面的反馈稀疏问题。</p></div><button type="button" class="xp-btn" aria-expanded="false">展开全文 &#9662;</button></div></div>
   <div class="foot">Yu Hao, Yuchun Li, Peimeng Sui, Meilin Liu, Tianyuan Cui, Hao Li, Zicong Zhou, Akanksha Baid</div>
   <div class="foot"><span>arXiv</span><span>·</span><span>2026-07-21</span><span>·</span><span class="score-detail">Relevance 5 · Novelty 4 · Practical 4 · Evidence 5 · Timely 2</span></div>
-  
-<div class="deep-read-inline deep-read-has-content" data-deep-read data-paper-id="arxiv:oai:arXiv.org:2609.11943" id="dr-arxiv-oai-arXiv-org-2609-11943">
-  <div class="deep-read-toggle-row">
-    <button type="button" class="deep-read-trigger completed" data-deep-toggle aria-expanded="false">
-      <span class="deep-read-trigger-icon">&#9660;</span>
-      <span>&#128214; 展开深度解读 · 9 分钟</span>
-    </button>
-    
-  </div>
-  <div class="deep-read-section" hidden>
-    <div class="deep-read-header-bar">
-      <button type="button" class="deep-read-trigger expanded" data-deep-collapse>
-        <span class="deep-read-trigger-icon">&#9650;</span>
-        <span>收起深度解读</span>
-      </button>
-      
-    </div>
-    <div class="deep-read-content"><h2>1. 问题与动机</h2>
-<p>PinDCO 解决广告内部的创意选择：同一广告可能有多张图片、多种标题和布局，应该给当前用户展示哪个组合？生成式图片工具使候选数量迅速增加，但本文的核心不是生成图片，而是个性化预测与在线分配。直接把所有创意扩展成主排序候选会增加计算量；把创意选择串在主排序后又会增加关键路径延迟。</p>
-<p>Pinterest 的瀑布流还带来整页外部性。列宽固定，较高的广告会把下面的内容推远，即使单广告 CTR 上升，也可能减少其他广告和自然内容的互动。因此系统必须同时处理创意效果、屏幕面积、探索反馈和服务效率。正文在线结果显示，轻量选择和 Peri-CR 虽然提高广告 CTR，成功会话指标却分别下降 0.24% 和 0.12%，直接说明局部最优不保证整页体验改善。</p>
-<p>对 UGC 社区搜索，这与封面、标题、摘要长度和卡片高度的选择有关。同一帖子有多个呈现方式时，点击差异可能来自呈现而不是内容相关性，应避免让创意偏差污染主相关性模型。本报告采用 arXiv 元数据的首次发表日期 2026-07-21，RSS 的 9 月 14 日通告只作为发现时间，未当作新发表日期。</p>
-<h2>2. 方法详解</h2>
-<p>PinDCO 在既有广告召回和主排序旁增加一条并行创意分支。广告服务根据广告 ID 从键值库读取最小创意元数据，通过本地轻量模型先做预筛，再调用独立 CCFN 服务评分。随后用像素感知模块修正分数，最后执行探索策略确定真正展示的创意。因为分支与主排序并行，其耗时可以被主排序部分隐藏，但这要求在获知最终获胜广告之前为多个广告处理创意，吞吐成本仍然需要控制。</p>
-<p>CCFN 包含特征编码、组件专属塔和融合层。连续特征按分布裁剪、白化或取对数，离散特征查 embedding；图像、标题、布局进入各自组件塔，通用特征进入 Shared 组并提供给各塔。融合层学习不同组件的交互，输出创意相对广告基础预测的 delta logit。这个增量与主广告模型的 logit 相加，再用用户真实互动标签监督，使小模型集中学习同一广告内部的呈现差异。</p>
-<p>模型输入包括预先计算的图文向量、颜色与产品面积等人工特征、用户画像与购物意图、上下文，以及历史点击率和计数等经验特征。经验统计采用粗细多尺度分桶：细桶更个性化却容易稀疏，粗桶更稳定。不同组件塔还使用不同 dropout 等超参数，以缓解图像塔尚未拟合充分、简单布局塔已经过拟合的问题。</p>
-<p>像素模块 PAM 用候选与原始创意的相对纵横比作为面积代理。正文定义相对比值 r，惩罚 P(r)=clip(1−tanh(k(r−1)),0,1)，最终分数 S=O×P(r)。k 控制对更高创意的惩罚强度。离线回放已有创意分数和尺寸，模拟选中结果，依据目标平均尺寸调 k。实现时应统一纵横比方向与分数域；不能只凭变量名把宽高比和高宽比混用，也不能未经核对就直接乘到未校准 logit 上。</p>
-<p>探索采用 epsilon-greedy：当前最高分创意以 1−epsilon 概率获选，其他 n−1 个创意分享 epsilon。随机展示产生反馈，既训练预测模型，也更新经验统计，从而给新创意获得数据的机会。本文没有公布 epsilon、具体塔宽、batch size、优化器、训练步数和硬件，因此无法给出完全逐参数可复现的训练配方；已披露数据来自数月生产广告日志，并进行负例下采样与预测校准。</p>
-<p>服务上，预筛只读取本地元数据，避免额外模型 RPC；极端情况下只保留一个创意并绕过后续重模型。模型服务器按创意 ID 分片请求，使同一创意稳定路由到同一机器，提高本地缓存命中率。动态分批把多个广告的创意展平后分成可调大小的小批次，缓解一个巨型请求被慢候选拖住的问题。</p>
-<h2>3. 核心技术贡献</h2>
-<p>第一，增量预测把主广告质量与创意变化分工。系统不要求轻量 CCFN 重学完整广告 CTR，只学习相对基础预测的变化，因此可以用更浅网络和更少特征。组件专属塔进一步承认不同模态学习复杂度不一致。相比直接共用全部特征和训练节奏，这是一项适合已有生产排序系统的增量改造。</p>
-<p>第二，展示面积被明确纳入决策。PAM 不要求更小创意总是胜出，而是要求更高创意的互动收益足够抵偿挤占。表 5 中多创意广告子集，加入 PAM 后 CTR 相对提升从 9.8% 变为 9.5%，平均纵横比增幅从 7.21% 降为 5.22%，保留大部分点击收益并限制版面膨胀。</p>
-<p>第三，探索数据和个性化分配形成反馈闭环。去掉探索数据的消融保持数据量不变，因此差异不能简单归因于更多样本；它反映了样本覆盖和选择偏差的重要性。模型面对不断更新的创意资产时，历史热门创意的数据优势可能形成自我强化，探索能为新资产提供反馈机会。</p>
-<p>第四，本地剪枝、按创意分片缓存和动态分批使大规模候选评分可运行。论文将服务工程作为整个方法的一部分，并分别报告尾延迟消融，避免只展示离线模型分数而不解释生产成本。不过它没有公布绝对 QPS 或毫秒延迟，不能据其规模描述推导硬件采购量。</p>
-<h2>4. 实验结果分析</h2>
-<p>下表来自正文在线比较，数字均为相对 No-CR 基线的变化。</p>
-<table><thead><tr><th>方法</th><th>广告 CTR</th><th>成功会话</th></tr></thead><tbody><tr><td>Lightweight-Only</td><td>+1.49%</td><td>−0.24%</td></tr><tr><td>Peri-CR</td><td>+1.70%</td><td>−0.12%</td></tr><tr><td>PinDCO</td><td>+3.09%</td><td>+0.04%</td></tr></tbody></table>
-<p>成功会话包含点击、保存或社交互动等成功动作，并同时覆盖广告与自然内容。PinDCO 的主要价值在于更高广告 CTR 同时保住整页指标；+0.04% 幅度很小，正文没有提供其置信区间，不应把它夸大为显著的整体体验跃升。表中也没有支持长期留存改善的数据。</p>
-<p>离线 PR-AUC 相对提升分别为轻量模型 0.111%、Peri-CR 0.163%、CCFN 0.171%；ROC-AUC 分别为 0.027%、0.043%、0.046%。这些是相对百分比变化，不是 AUC 绝对百分点。CCFN 比 Peri-CR 更好，但离线增幅本身很小，因此不能仅据在线差距就把所有收益归因于网络结构；线上使用的是包含探索、面积约束和服务策略的完整系统。</p>
-<p>CCFN 消融去掉探索数据后，PR-AUC/ROC-AUC 提升变为 0.164%/0.042%；去掉组件专属 dropout 后变为 0.163%/0.043%。两者都退化，说明数据策略与优化细节分别贡献效果，但正文没有提供独立置信区间，也没有穷尽组件交互。</p>
-<p>服务消融以完整 PinDCO 为基线：去掉动态分批，P99 增加 87%、P90 增加 114%；去掉缓存，P99 增加 9.6%、P90 增加 12.8%。这是“移除后增加”，不能直接写成“引入后降低 87%”，二者分母不同。动态分批对尾延迟的贡献远大于缓存，说明此类创意展开请求不仅受特征读取影响，也受批大小和并行调度影响。</p>
-<p>PAM 的 9.5% CTR 提升只针对具有多个创意的 DCO 广告子集，平台整体对应 3.09%，两者应分别呈现。论文还按查询兴趣与购物意图分析不同创意的分配模式，用案例说明个性化结果具有合理性；这些可视化不能替代分桶收益和统计检验。</p>
-<h2>5. 局限与未来方向</h2>
-<p>作者明确提出两项扩展：当前实验主要聚焦图像与布局，未来随着创意生成扩展增加组件类型；PAM 使用简单 tanh 惩罚，其他函数形式留待研究。尺寸代理依赖固定列宽，作者提到可扩展到列宽变化场景，但正文没有给出该场景实验。因而在列表式搜索或混合列宽页面，不能照搬参数。</p>
-<p>以下为本次阅读指出的证据缺口。生产数据不能公开复现，模型超参数和流量分配细节不完整；成功会话只是一种即时指标，无法代表长期满意度。探索策略没有给出 regret、冷启动时间或不同用户分桶的完整代价曲线。轻量预筛可能提前丢掉潜力创意，实际系统需要监控漏筛和探索覆盖，不能只看后续 CCFN 的准确率。</p>
-<h2>6. 工业实践意义</h2>
-<p>对社区 UGC 搜索，可先把主排序限定为帖子与 query 的相关性，再增加封面和摘要的呈现增量模型。训练标签应记录实际展示的创意版本、位置、尺寸、用户上下文与曝光概率，否则无法区分内容偏好和界面偏差。若线上只有一个固定封面，先建立创意版本日志和实验能力比直接增加网络规模更有价值。</p>
-<p>瀑布流可以采用面积约束，但护栏应包括整页互动、自然结果点击、nDCG 和退出率，而不能只有单条卡片 CTR。短文本搜索尤其要防止“更大更吸睛”盖过“更相关”。离线 replay 可以筛选尺寸惩罚参数的范围，最终仍需在线实验确认其对相邻结果的影响。</p>
-<p>服务试验宜按顺序拆开：先用本地元数据剪枝建立成本基线，再接小型 delta 模型，最后测缓存与分批。监测对象包括候选数分布、单请求展开数、批大小、缓存命中率和 P99。创意探索必须与日志采样策略一致，避免上线后经验统计偏差逐步放大。</p>
-<p>本文值得借鉴的是把个性化、整页约束和服务成本放在同一实验闭环中；它没有给出一个所有业务都适用的 CTR 模型。对于资源有限的社区平台，应先验证呈现方式确实存在可学习差异，再决定是否承担多塔与独立服务的复杂度。</p>
-<p>来源：<a href="https://arxiv.org/html/2609.11943" target="_blank" rel="noopener">论文全文</a>，重点依据第 3–4 节及表 1–5。论文标示 CC BY 4.0；业务迁移建议为本次阅读的分析。</p></div>
-  </div>
-</div>
+  <span class="dr-anchor" id="dr-arxiv-oai-arXiv-org-2609-11943"></span>
 </article>
 <article class="card t-personalization" id="paper-arxiv:oai:arXiv.org:2609.12842" data-paper-id="arxiv:oai:arXiv.org:2609.12842" data-card>
   <div class="top"><span class="n">03</span><span class="sb" title="综合分"><span class="dots" aria-hidden="true"><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class="e"></i></span> 4.10</span></div>
@@ -220,60 +120,7 @@
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){measure()});
 })();
 </script>
-<script>
-(function(){
-  function setExpanded(root, open){
-    var btn = root.querySelector('[data-deep-toggle]');
-    var section = root.querySelector('.deep-read-section');
-    if (!btn || !section) return;
-    var row = btn.closest('.deep-read-toggle-row') || btn;
-    if (open) {
-      row.hidden = true;
-      section.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var c0 = root.closest('[data-card]'); if (c0) c0.classList.add('dr-open');
-    } else {
-      row.hidden = false;
-      section.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-      var c1 = root.closest('[data-card]'); if (c1) c1.classList.remove('dr-open');
-      var rect = root.closest('[data-card]') || root;
-      if (rect) {
-        var r = rect.getBoundingClientRect();
-        if (r.top < 60) window.scrollTo(0, window.scrollY + r.top - 64);
-      }
-    }
-  }
-  function openFromHash(){
-    var h = (location.hash || '').slice(1);
-    if (!h || h.indexOf('dr-') !== 0) return;
-    var el = document.getElementById(h);
-    if (!el) return;
-    setExpanded(el, true);
-    var card = el.closest('[data-card]') || el;
-    window.scrollTo(0, window.scrollY + card.getBoundingClientRect().top - 72);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromHash);
-  else openFromHash();
-  window.addEventListener('hashchange', openFromHash);
-  document.addEventListener('click', function(ev){
-    var t = ev.target;
-    if (!t || !t.closest) return;
-    var toggle = t.closest('[data-deep-toggle]');
-    if (toggle) {
-      var root = toggle.closest('[data-deep-read]');
-      if (root) setExpanded(root, true);
-      return;
-    }
-    var collapse = t.closest('[data-deep-collapse]');
-    if (collapse) {
-      var root2 = collapse.closest('[data-deep-read]');
-      if (root2) setExpanded(root2, false);
-    }
-  });
-})();
-</script>
-<script src="../../../js/lightbox.js?v=bee433569a" defer></script>
-<script src="../../../js/search.js?v=bee433569a" defer></script>
+<script src="../../../js/lightbox.js?v=a780493452" defer></script>
+<script src="../../../js/search.js?v=a780493452" defer></script>
 </body>
 </html>
