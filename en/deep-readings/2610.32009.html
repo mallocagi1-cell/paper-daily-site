@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning — Deep dive | Paper Daily</title>
+  <meta name="description" content="Deep dive: GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning. Mixture-of-experts (MoE) models activate only a few experts per…" />
+  <link rel="canonical" href="https://paper-daily.com/en/deep-readings/2610.32009.html" />
+  <meta property="og:site_name" content="Paper Daily" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning — Deep dive | Paper Daily" />
+  <meta property="og:description" content="Deep dive: GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning. Mixture-of-experts (MoE) models activate only a few experts per…" />
+  <meta property="og:url" content="https://paper-daily.com/en/deep-readings/2610.32009.html" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning — Deep dive | Paper Daily" />
+  <meta name="twitter:description" content="Deep dive: GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning. Mixture-of-experts (MoE) models activate only a few experts per…" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning","inLanguage":"en","datePublished":"2026-10-26","url":"https://paper-daily.com/en/deep-readings/2610.32009.html"}</script>
+  <link rel="alternate" hreflang="zh-CN" href="https://paper-daily.com/deep-readings/2610.32009.html" />
+  <link rel="alternate" hreflang="x-default" href="https://paper-daily.com/deep-readings/2610.32009.html" />
+  <link rel="alternate" hreflang="en" href="https://paper-daily.com/en/deep-readings/2610.32009.html" />
+  <script>(function(){try{var t=localStorage.getItem('pd-theme');if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();(function(){try{var l=location;if(/\/index\.html$/.test(l.pathname))history.replaceState(history.state,'',l.pathname.replace(/index\.html$/,'')+l.search+l.hash)}catch(e){}})();</script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-QGGC9ELS2R"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-QGGC9ELS2R',{anonymize_ip:true,send_page_view:false});gtag('event','page_view',{page_location:location.href,page_title:document.title});</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:wght@600;700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../css/pages.css?v=67d690351c" />
+</head>
+<body class="lang-en t-infra">
+<div class="navwrap"><div class="wrap"><nav class="nav" aria-label="Main">
+  <a class="hb" href="../../en/" title="Daily GenAI papers for search &amp; recommendation engineers — scored, summarized, deep-read.">Paper <span>Daily</span></a>
+  <div class="hl">
+  <a id="nav-reports" href="../../en/">Today</a>
+  <a id="nav-weekly" href="../../en/#/weekly">&#127942; Weekly</a>
+  <a id="nav-deep-readings" href="../../en/deep-readings/">&#128214; Deep dives</a>
+  <a id="nav-archive" href="../../en/#/archive">Archive</a>
+  </div>
+  <div class="hm"><a class="lang-tg" href="../../deep-readings/2610.32009.html" hreflang="zh-CN" lang="zh-CN" title="中文版">中文</a>
+  <button type="button" class="tg" id="theme-toggle" aria-pressed="false" title="Toggle dark mode">&#9680;<span class="tg-l"> Dark</span></button></div>
+</nav></div></div>
+<main id="main">
+<div class="wrap">
+  <div class="rhead">
+    <a class="back" href="../#/2026-10-26/infra">&#8592; Infra · 2026-10-26</a>
+    <div class="k">&#128214; DEEP DIVE · INFRA</div>
+    <h1>GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning</h1>
+    <div class="by">Carson Cary, Yukai Jin, Yihao Huang, Zhankai Ye, Fangyi Li, Ting Hua, Xin Liu, Shangqian Gao</div>
+  </div>
+  <div class="rmeta"><span><b>26 min</b>read</span><span><b>4.10</b>score</span></div>
+  <div class="rbody"><nav class="toc" id="toc"></nav>
+    <article class="long deep-read-article" id="article"><p>Mixture-of-experts (MoE) models activate only a few experts per token, so compute is cheap, but every expert&#x27;s parameters must stay in GPU memory, and memory is usually the first thing that blocks deployment. This paper proposes GS-MoE, which needs no retraining and compresses experts along two axes at once: similar experts are grouped and share one input and one output projection per group, with each expert keeping only a small private matrix; and inside each expert, unimportant intermediate neurons are removed, with the kept neurons used to approximate what the removed ones contributed. <strong class="hl">On DeepSeek-MoE-16B with 60% of parameters removed, average accuracy on 7 reasoning tasks stays at about 90% of the original model, versus 73% for the baseline D2-MoE</strong>.</p>
+<p>My take: teams deploying fine-grained MoE models (many small experts, such as the DeepSeek and Qwen2 MoE models) on memory-constrained machines should look at this. It needs one forward pass to collect statistics and one GPU to compress, and the code is public, so the cost is low. Two caveats: it does not win on Mixtral, which has few large experts; and the paper&#x27;s own breakdown shows most of the gain comes from the neuron-removal half, while the group-sharing half adds little in most settings.</p>
+<h2>What problem does it solve?</h2>
+<p>An MoE model replaces a feed-forward layer with dozens of parallel experts, and a router picks a few for each token. DeepSeek-MoE-16B has 64 experts per layer and uses 6 per token. Compute drops, but the other 58 experts must remain in memory because the next token may need them.</p>
+<p>Existing compression methods fall into roughly three types. The first removes or merges whole experts, and quality drops quickly as more are removed. The second makes all experts share one low-rank basis, as in MoE-SVD; but with one shared subspace per layer, any direction unique to an expert that falls outside it can never be represented. The third is D2-MoE, which stores one shared base weight plus a compressed difference per expert, again tying the whole layer together. There are also methods that only remove neurons inside experts, which ignore what experts have in common, so each expert still stores its own weights.</p>
+<p>The authors&#x27; starting point: similarity among experts is not layer-wide but local, with some experts resembling each other. So experts should first be grouped, share within the group, use different subspaces across groups, and have their internal redundancy compressed too.</p>
+<h2>Method: group sharing plus neuron removal</h2>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-26/infra/2610.32009/GS-MoE-Method.png" alt="Figure 1 from the paper: the structure of GS-MoE. Left is an uncompressed expert with one up projection and one down projection. Right, after compression, experts are split into G equal-size groups; each group shares an input projection P↑ and an output projection P↓, and each expert keeps only its own small matrices A↑ and A↓. Hatched cells are removed parts: different groups have different shared dimensions, and different experts keep different numbers of neurons." loading="lazy" decoding="async"><figcaption>Figure 1 from the paper: the structure of GS-MoE. Left is an uncompressed expert with one up projection and one down projection. Right, after compression, experts are split into G equal-size groups; each group shares an input projection P↑ and an output projection P↓, and each expert keeps only its own small matrices A↑ and A↓. Hatched cells are removed parts: different groups have different shared dimensions, and different experts keep different numbers of neurons.</figcaption></figure>
+<p>After compression an expert computes in four steps: the input is multiplied by the group&#x27;s shared input projection into a lower dimension. Then it is multiplied by the expert&#x27;s own small matrix to get the kept intermediate activations. After the activation function, the expert&#x27;s other small matrix maps it back to the low dimension. Finally it is multiplied by the group&#x27;s shared output projection back to the model dimension. Memory savings come from two places: shared projections are stored once per group, and private matrices are small because both sides shrink.</p>
+<p>There are four stages.</p>
+<p>First, neuron selection. The authors run calibration data through the original model, record statistics of each expert&#x27;s intermediate activations, and score each neuron with a ridge leverage score that measures how irreplaceable it is: a neuron whose activation is well represented by a combination of other neurons scores low and can be removed. All neurons of all experts in a layer are ranked together and the top K are kept, so different experts keep different widths. K is set by the overall budget, described in the fourth stage.</p>
+<p>Second, fitting projections. The output side has a closed-form solution: sum the output covariances of the experts in the group, and the leading eigenvectors form the shared output projection. The input side has none, because experts see different input distributions. The authors average the group&#x27;s input covariances, weighted by the number of tokens routed to each expert, and treat that as the group&#x27;s input distribution. The goal is that after the low-dimensional projection, each expert&#x27;s pre-activation values for its kept neurons can still be reconstructed. Under the averaged distribution this has an approximate solution. For each expert, take the kept rows of its up projection and compute their transpose times themselves, a model-dimension square matrix (so different kept widths do not change its size). Sum these with token weights, multiply on both sides by the square root of the averaged input covariance, take the leading eigenvectors, multiply by the inverse square root and orthonormalize. With the shared projection fixed, each expert&#x27;s private matrix is a least-squares fit on that expert&#x27;s own input covariance. Removed neurons are compensated with the Nyström approximation, a classic method for reconstructing a full covariance matrix from a few kept columns: from the recorded intermediate-activation covariance, compute a linear map that predicts the full intermediate activation from the kept neurons, and fold that map into the private down matrix. The down projection then reads only kept neurons yet approximates the contribution of all of them.</p>
+<p>Third, grouping. The authors derive a score for how much an expert&#x27;s reconstruction error drops inside a candidate subspace. They fit a subspace for each expert alone, then put expert i into expert j&#x27;s subspace, reconstruct expert i&#x27;s kept pre-activations and outputs, add the two errors (the output term is scaled by the fraction of up-projection output energy retained after neuron removal, to balance the two terms), and measure the drop from the no-reconstruction error. Dividing by the drop expert i gets in its own subspace gives a ratio; one minus it is the dissimilarity. With a 64×64 dissimilarity matrix, balanced clustering produces equal-size groups.</p>
+<p>Fourth, capacity allocation. Each layer gets an importance score: for each token routed to an expert, the expert&#x27;s output norm times the routing weight divided by the input norm, averaged over that expert&#x27;s tokens and summed over the layer&#x27;s experts. The target compression ratio gives the overall retained fraction R of expert parameters; a hyperparameter ν (0.45 to 0.55 by default) sets the width retention to R to the power ν, and the shared-dimension retention follows as R divided by the width retention plus the shared-projection overhead. Removal is spread across layers by a softmax over negative log importance, so less important layers lose more. Within a layer, eigenvalue sums decide each group&#x27;s shared dimension under the layer budget.</p>
+<p>The whole process takes one forward pass over 512 Alpaca samples of 2048 tokens each, fits on one GPU, and involves no training afterward.</p>
+<h2>Does grouping actually help?</h2>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-26/infra/2610.32009/deepseek-l22-dissim.png" alt="Figure 2(c) from the paper: pairwise dissimilarity among the 64 experts of DeepSeek-MoE-16B layer 22; darker means more similar. The horizontal axis is the subspace fitted to each expert, the vertical axis the expert evaluated, and white boxes are the final 8 groups. Inside the boxes colors are clearly darker, so grouped experts really do share subspaces well; a few rows are bright throughout, experts that resemble no one." loading="lazy" decoding="async"><figcaption>Figure 2(c) from the paper: pairwise dissimilarity among the 64 experts of DeepSeek-MoE-16B layer 22; darker means more similar. The horizontal axis is the subspace fitted to each expert, the vertical axis the expert evaluated, and white boxes are the final 8 groups. Inside the boxes colors are clearly darker, so grouped experts really do share subspaces well; a few rows are bright throughout, experts that resemble no one.</figcaption></figure>
+<p>The authors ablated this on DeepSeek-MoE-16B at 60% compression using only group sharing, without neuron removal. Without grouping, WikiText-2 perplexity is 29.49; with score-based grouping it falls to 25.23, because similar experts lose less when sharing a subspace. Adding per-group dimension allocation lowers it a further 0.57 on average across three datasets. Without grouping, dimension allocation alone brings no consistent gain.</p>
+<p>Grouping has a side benefit: if a token&#x27;s selected experts fall in the same group, the shared projection is computed once. With 8 groups each token touches only 3.68 groups on average, about 19% fewer than random grouping.</p>
+<h2>Results</h2>
+<p>The authors compare against MoE-SVD, D2-MoE, TD-MoE and others on three models, using average accuracy over 7 zero-shot reasoning tasks and perplexity on WikiText-2 and PTB (another language-modeling test set). Compression ratio is the reduction in total model parameters.</p>
+<div class="tbl"><table><thead><tr><th>Model and ratio</th><th>Original</th><th>D2-MoE</th><th>GS-MoE</th></tr></thead><tbody><tr><td>DeepSeek-MoE-16B, 40%</td><td>0.56</td><td>0.49</td><td>0.54</td></tr><tr><td>DeepSeek-MoE-16B, 60%</td><td>0.56</td><td>0.41</td><td>0.50</td></tr><tr><td>Qwen2-57B-A14B, 40%</td><td>0.59</td><td>0.58</td><td>0.59</td></tr><tr><td>Mixtral-8x7B, 40%</td><td>0.63</td><td>0.57</td><td>0.57</td></tr><tr><td>Mixtral-8x7B, 60%</td><td>0.63</td><td>0.52</td><td>0.50</td></tr></tbody></table></div>
+<p>On the two fine-grained models GS-MoE leads clearly: 0.50 versus 0.41 on DeepSeek at 60%; Qwen2 at 60% still averages 0.59, equal to the original, while the next best, TD-MoE, reaches 0.52. On Mixtral, with only 8 large experts, it ties D2-MoE and is slightly worse at 60%, which suggests the advantage comes from many fine-grained experts.</p>
+<p>Perplexity is more mixed. On DeepSeek at 60%, GS-MoE scores 22.21 on PTB versus 27.73 for D2-MoE, 20% lower, which is the source of the abstract&#x27;s out-of-domain claim; but on WikiText-2 it scores 17.55, clearly worse than D2-MoE&#x27;s 11.67. Which method is better depends on the metric you look at.</p>
+<p>On speed, 60%-compressed Mixtral on a B200 runs at 374.77 tokens per second with GS-MoE without grouping, 3.32 times D2-MoE, because D2-MoE must reconstruct residuals for every expert. Going from 1 to 8 groups lowers DeepSeek throughput by only 9.6%.</p>
+<h2>Limitations as I see them</h2>
+<p>First, the two halves contribute unevenly. The appendix tests group sharing only and neuron removal only: on Qwen2 and Mixtral, neuron removal alone is nearly as good as the full method; only on DeepSeek at 60% is the full method clearly better (0.503 versus 0.487). In many settings, Nyström neuron removal alone gets most of the gain.</p>
+<p>Second, it does not suit models with few large experts. The authors acknowledge that Mixtral&#x27;s large intermediate size and 8 experts make lowering the subspace dimension more damaging and leave little to group.</p>
+<p>Third, evaluation covers only language modeling and multiple-choice reasoning, with no generation, long context or code, and no combination with quantization. In practice MoE deployments more often quantize or offload rarely used experts to CPU memory; the paper does not compare against those.</p>
+<h2>How a team could try it</h2>
+<ol>
+<li>Confirm your model is a fine-grained MoE with around 64 experts or more.</li>
+<li>Run only the neuron-removal part first and measure the loss at 40% compression on your own evaluation set; it is the cheapest step.</li>
+<li>To reach around 60%, add group sharing and check generation quality, not just perplexity.</li>
+<li>Increase the number of groups gradually and measure throughput at each step, since more groups mean more shared projections and slightly lower speed.</li>
+</ol>
+<h2>Bottom line</h2>
+<p><strong class="hl">Experts in fine-grained MoE models are locally similar; grouping them to share subspaces and then removing redundant neurons cuts 60% of parameters without training while keeping most reasoning ability, but most of the gain comes from neuron removal and it does not win on models with few experts.</strong></p>
+<div class="tbl"><table><thead><tr><th>Dimension</th><th>Assessment</th></tr></thead><tbody><tr><td>Problem importance</td><td>Medium-high. MoE memory footprint directly blocks deployment</td></tr><tr><td>Novelty</td><td>Medium. The grouping score and capacity allocation are new; the components are existing tools</td></tr><tr><td>Evidence</td><td>Medium. Three models, several ratios, ablations and throughput; perplexity and accuracy disagree; no generation tasks</td></tr><tr><td>Engineering cost</td><td>Low. No training, one forward pass, one GPU, public code</td></tr><tr><td>Worth trying</td><td>Yes for teams deploying fine-grained MoE under memory limits; start with neuron removal</td></tr></tbody></table></div></article>
+    <aside class="aside"><div class="box"><h6>Scores</h6><svg class="radar" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="五维评分：Relevance 4，Novelty 4，Practical 4，Evidence 4，Timely 5"><polygon class="rg" points="90.0,62.8 115.87,81.59 105.99,112.01 74.01,112.01 64.13,81.59"/><polygon class="rg" points="90.0,49.2 128.8,77.39 113.98,123.01 66.02,123.01 51.2,77.39"/><polygon class="rg" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 38.26,73.19"/><polygon class="rg" points="90.0,22.0 154.67,68.99 129.97,145.01 50.03,145.01 25.33,68.99"/><polygon class="rp" points="90.0,35.6 141.74,73.19 121.98,134.01 58.02,134.01 25.33,68.99"/><text x="90.0" y="10.04" text-anchor="middle">相关 4</text><text x="168.9" y="67.36" text-anchor="middle">新颖 4</text><text x="138.76" y="160.12" text-anchor="middle">实用 4</text><text x="41.24" y="160.12" text-anchor="middle">证据 4</text><text x="11.1" y="67.36" text-anchor="middle">时效 5</text></svg></div><a class="btn" href="https://arxiv.org/abs/2610.32009" target="_blank" rel="noopener">Original paper &#8599;</a></aside>
+  </div>
+</div>
+</main>
+<div class="wrap"><footer class="site-foot"><span>Paper Daily · English edition</span><span>·</span><span><a href="../../deep-readings/2610.32009.html">中文版</a></span><span class="site-count" id="busuanzi_container_site_pv" style="display:none">Site views <span id="busuanzi_value_site_pv"></span> · Visitors <span id="busuanzi_value_site_uv"></span></span></footer></div>
+<script defer src="https://events.vercount.one/js"></script><script>(function(){var c=document.getElementById('busuanzi_container_site_pv');if(!c||!window.MutationObserver)return;function n(k){var e=document.getElementById('busuanzi_value_'+k);return e?(e.textContent||'').trim():''}new MutationObserver(function(){if(c.style.display!=='none'&&!(/^[1-9][0-9]*$/.test(n('site_pv'))&&/^[0-9]+$/.test(n('site_uv'))))c.style.display='none'}).observe(c,{attributes:true,attributeFilter:['style']})})();</script>
+<script>
+(function(){
+  var root=document.documentElement;
+  function label(){var b=document.getElementById('theme-toggle');if(!b)return;var d=root.getAttribute('data-theme')==='dark';
+    b.innerHTML=(d?'&#9681;':'&#9680;')+'<span class="tg-l"> '+(d?'Light':'Dark')+'</span>';b.setAttribute('aria-pressed',d?'true':'false');}
+  function set(t,store){root.setAttribute('data-theme',t);if(store){try{localStorage.setItem('pd-theme',t)}catch(e){}}label();}
+  document.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#theme-toggle');
+    if(b)set(root.getAttribute('data-theme')==='dark'?'light':'dark',true);});
+  try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(e){
+    var s=null;try{s=localStorage.getItem('pd-theme')}catch(x){}if(s!=='light'&&s!=='dark')set(e.matches?'dark':'light',false);});}catch(e){}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',label);else label();
+})();
+</script>
+<script src="../../js/lightbox.js?v=67d690351c" defer></script>
+</body>
+</html>

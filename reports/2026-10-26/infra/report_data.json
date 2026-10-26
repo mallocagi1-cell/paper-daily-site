@@ -1,0 +1,472 @@
+{
+  "date": "2026-10-26",
+  "track": "infra",
+  "scenario": "今天基础设施赛道 10 篇，集中在三件事。第一是推理时的 KV cache 存取：KVStream 让本地盘和共享存储一起读，Tensormesh 推出企业版缓存平台。第二是压缩模型：BiLoCo 用二值低秩修正补 FP4 的精度，GS-MoE 免训练压缩混合专家模型。第三是降低训练和推理成本，包括 HyScale 加速稀疏注意力训练，以及 Spotify 把生成式推荐的三种推理统一到 TensorRT-LLM。",
+  "scenario_status": "done",
+  "stats": {
+    "papers_scored": 43,
+    "papers_selected": 10,
+    "score_min": 2.9,
+    "score_max": 4.3
+  },
+  "papers": [
+    {
+      "id": "arxiv:2610.31827",
+      "title": "KVStream: Adaptive Parallel Storage Management for KV Caching in Large-Scale LLM Serving",
+      "authors": "Avinash Maurya, Jaiaid Mobin, Jie Ye, M. Mustafa Rafique, Franck Cappello, Bogdan Nicolae",
+      "abstract": "Long-context LLM serving for agentic, coding, and document workloads reuses prefixes whose key-value (KV) cache outgrows GPU and host memory, putting storage I/O on the critical path of the inference step for retrieving prefixes. A single node-local NVMe absorbs all retrievals, while the parallel file system or cloud file store that nodes already mount carries almost no inference traffic. We cast prefix retrieval as aggregate-bandwidth scheduling across these tiers and present KVStream, a KV cache engine that batches a step's reads, defers writes behind the forward pass, replicates each chunk on every tier, and lets each tier adaptively claim the next unread chunks once it is free. Our performance model shows this routing attains the aggregate-bandwidth bound without prediction or tuning, whereas any static split misses it by a margin that grows as per-tier bandwidths drift or fluctuate. It also predicts that the time-to-first-token (TTFT) gain grows with load, as faster retrieval drains the queue, and disappears when host memory or arrival order keeps reuse in cache. Plugged into LMCache and evaluated on four models, six datasets, and up to 128 GPUs, KVStream retrieves within 5% of the bound, delivers up to 1.49$\\times$ higher offline throughput than LMCache, and lowers mean TTFT by up to 6.1$\\times$ under bursty arrivals.",
+      "url": "https://arxiv.org/abs/2610.31827",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-26",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.DC",
+        "categories": [
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-10-26",
+        "created": "2026-10-22"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 4.3,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.35,
+      "company": [],
+      "rank": 1,
+      "summary": "长上下文推理会反复用到同一段前缀，比如系统提示、整份文档、代码仓库和多轮会话历史。这些前缀的 KV cache 早已放不进 GPU 显存和主机内存，只能落到硬盘上，下次命中再读回来，读盘就卡在了每一步推理的关键路径上。现有系统只读节点本地的 NVMe，集群早已挂载的并行文件系统却几乎闲着。这篇论文做了 KVStream：每块 KV 在本地盘和共享存储各写一份，==读的时候两边同时读，谁先读完谁接着领下一批==。接进 LMCache 实测，离线吞吐最高是 LMCache 的 1.49 倍，突发流量下平均 TTFT 最多快 6.1 倍。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.31827",
+        "title": "KVStream: Adaptive Parallel Storage Management for KV Caching in Large-Scale LLM Serving",
+        "status": "completed",
+        "content": "长上下文推理会反复用到同一段前缀，比如系统提示、整份文档、代码仓库和多轮会话历史。这些前缀的 KV cache 早已放不进 GPU 显存和主机内存，只能落到硬盘上，下次命中再读回来，读盘就卡在了每一步推理的关键路径上。现有系统只读节点本地的 NVMe，集群早已挂载的并行文件系统却几乎闲着。这篇论文做了 KVStream（从多层存储并行读回 KV cache 的引擎）：每块 KV 在本地盘和共享存储各写一份，读的时候两边同时读，谁先读完谁接着领下一批。接进 LMCache 实测，==离线吞吐最高是 LMCache 的 1.49 倍，突发流量下平均 TTFT 最多快 6.1 倍==。\n\n我的判断：做长上下文推理服务、尤其是 agent 和代码助手这类多轮会话的团队值得读。它的价值不在某个新算法，而在一个很实际的观察：GPU 节点旁边本来就有第二条存储通道，只是没人在推理时用它。做法也简单，不需要预测哪些前缀会被用到，也不需要调切分比例。代价是每块 KV 要写两遍，所以它只在“读得多、写得少”的场景里划算，论文把它变慢的情况也测了出来。\n\n## 它到底在解决什么问题？\n\n先说清楚场景。推理引擎（vLLM、SGLang）会把算过的前缀 KV 缓存起来，下一个请求如果用到同一段前缀，就不用重算。LMCache 是一个开源的 KV cache 连接器，它把放不下的 KV 按每 256 个 token 切成一块，存到主机内存和本地硬盘上，命中时再读回 GPU。\n\n问题在于前缀的总量太大。作者的测试机每个节点 4 张 GPU，扣掉模型权重后约剩 140 GB 放 KV，主机内存 512 GB。14B 模型在几个文档数据集上要缓存的不重复前缀有 0.5 到 1 TB，是 GPU 能放下的 3.3 到 7.2 倍。到了 110B 模型，这个量接近 2 TB。所以大量前缀只能放在硬盘上。\n\n![论文图 5：LMCache 在 70B 模型上处理一个推理步的时间线。一步里批了 7 个请求，每个请求的存储读取（600 到 1300 毫秒）一个接一个排队，前一个读完后一个才开始，整步光读盘就花了 4.7 秒。](figs/2610.31827/m5_retrieval_serialization_v2.png)\n\n读盘有多慢？上图是一个具体例子：70B 模型的一步里有 7 个请求，LMCache 一个请求一个请求地读，每个要 600 到 1300 毫秒，整步光读盘就花了 4.7 秒。而且前向计算要等这一步所有请求的 KV 都到齐才能开始，先读完一个请求没有任何好处。作者在 LooGLE 数据集上拆了总耗时，四种模型大小下读盘都占了 LMCache 总时间的 80% 到 88%。即便这样，从盘上读回来仍比重算快，大模型上最多快 2.2 倍，因为重算的成本随模型层数涨，读盘只随字节数涨。\n\n## 为什么只读本地盘不够\n\n作者先做了一组测量，结论有三条。\n\n第一，第二条通道一直闲着。超算集群和云上的 GPU 节点通常都挂着一个共享的并行文件系统（下文简称 PFS，比如 Lustre 或云上的托管文件系统）。单独测读速度，本地 NVMe 只比 PFS 快 2.2 倍（测试机 1）和 3.2 倍（测试机 2）。但推理时 PFS 除了加载模型权重之外几乎没有流量，这份带宽相当于白送。\n\n第二，同一块盘又读又写会互相干扰。每一步刚算出的新 KV 要写盘，下一步要读的旧 KV 也在同一块盘上。读写各 512 GB 同时进行，比分开做慢 6%（测试机 1）和 27%（测试机 2）。所以按“空闲时测出的带宽”去分配读取量，到真跑推理时就不准了。\n\n第三，单块数据的读取延迟有很长的尾巴。测试机 2 上，本地 NVMe 单独读时中位数 123 毫秒、P99 是 216 毫秒；一旦读写混在一起，P99 涨到 898 毫秒。PFS 的中位数是 102 毫秒，P99 却有 795 毫秒，因为整个集群的作业都在用它。这说明每一层存储能给的带宽，在不同推理步之间一直在变。\n\n## KVStream 的四个做法\n\n![论文图 4：(a) 多个计算节点共享同一个并行文件系统。(b) 单个节点内部，4 张 GPU 通过两条互不重叠的通道分别连到本地 NVMe 和并行文件系统。(c) 同一个前向计算里，第 i 步的前缀写盘和第 i+1 步的前缀读盘交错进行，同一节点的所有 GPU 都在抢这两层存储。](figs/2610.31827/arch.png)\n\n针对上面的问题，KVStream 做了四件事。\n\n第一个改动是整步一起读：不再一个请求一个请求地读，而是把这一步所有请求要读的块放进同一个读队列，一次性提交。NVMe 只有在很多读请求同时在飞的时候才能跑满，排成一队一个一个读会浪费它的并行能力。读回来的块也是到一块就往 GPU 送一块，不再等。\n\n第二个改动是把写盘往后推：新算出的 KV 先放在主机内存里，等下一步前向计算开始后再写盘。前向计算期间盘是空闲的，所以写操作基本不会挡住读。\n\n第三个改动是每块写两份：每块 KV 在本地 NVMe 和 PFS 上各存一份。这样读的时候任何一块都可以从任何一层读，不需要提前猜哪块会被用到、该放在哪。存储容量通常是 TB 级，多存一份不是大问题，代价是写的字节数翻倍。\n\n第四个改动是两头往中间读、谁快谁多读：把这一步要读的块排成一列，NVMe 从头往后读，PFS 从尾往前读，每次领 m 块。哪一层先读完手上这批，就马上领下一批，两边在中间某处会合。快的那层自然多读，慢的那层自然少读，不需要测带宽，也不需要调比例。会合处可能有几块被两边都读了，因为内容相同，先到的那份直接用，另一份丢掉即可。\n\n实现上，KVStream 是一个用 io_uring 做异步读写的 C++ 库，读和写用两个独立的队列，作为 LMCache 的存储后端接入。所以 vLLM 这类已经接了 LMCache 的引擎不用改代码。\n\n## 两头往中间读：一个手算例子\n\n为什么不干脆按固定比例切，比如 75% 从 NVMe 读、25% 从 PFS 读？论文举了一个例子，这里把它算一遍。\n\n假设一步要读 12 GB，NVMe 读速 3 GB/s，PFS 读速 1 GB/s。两层加起来是 4 GB/s，所以理论上最快 3 秒读完，这就是论文说的“总带宽下限”。按 75:25 切，NVMe 读 9 GB 用 3 秒，PFS 读 3 GB 也用 3 秒，正好同时读完。\n\n现在 NVMe 因为同时在写盘，慢到 2 GB/s。固定切分下它读 9 GB 要 4.5 秒，PFS 早就读完闲着了。总带宽是 3 GB/s，理论最快 4 秒，所以固定切分慢了 12.5%。如果反过来是 PFS 被别的作业抢了带宽，掉到 0.5 GB/s，它读那 3 GB 要 6 秒，比只用 NVMe 读完 12 GB（4 秒）还慢。\n\n两头往中间读就没有这个问题。NVMe 从头读、PFS 从尾读，哪边慢了，会合点就自动往那边偏，两边总是差不多同时读完。论文用一个简单的模型证明了这种读法在每一步都能贴着总带宽下限，只差最后一批 m 块的零头。==固定切分只在带宽比例恰好等于切分比例时最优，带宽一变就吃亏==，而推理时带宽一直在变。\n\n## 实验怎么做\n\n实验用了两台超算集群的测试机：测试机 1 每节点 4 张 H100，测试机 2 每节点 4 张 A100，各自挂着一个共享文件系统，节点本地都有 NVMe。模型从 14B 到 110B 共 4 个，都用 TP=4，这样能覆盖“重算便宜”和“读盘便宜”两头的情况。\n\n离线测试用三个长文档数据集：LooGLE（长文档问答）、NarrativeQA（整本小说阅读理解，平均每个请求 4.6 万 token）和 CUAD（法律合同条款抽取）。在线测试用三条真实流量：阿里云百炼上一个 Qwen 代码生成集群的约 7000 个请求、Chutes 平台的 agent 会话，以及 SWE-bench 上的编程 agent 会话。这些数据里 80% 到 96% 的 prompt token 能命中缓存的前缀。\n\n对比方法有：只用 GPU 和主机内存、放不下就重算（下文叫“只用内存”）；LMCache 加本地 NVMe；Mooncake 的 KV 存储；SGLang 自带的分层缓存 HiCache。LMCache 是最强的基线，后面大部分对比都以它为准。\n\n## 结果一：离线吞吐\n\n| 模型 | 相对 LMCache 的吞吐 |\n|---|---:|\n| 14B | 1.17 倍 |\n| 32B | 1.37 倍 |\n| 70B | 1.48 倍 |\n| 110B | 1.49 倍 |\n\n![论文图 16：测试机 1 上 LooGLE 数据集的离线吞吐，横轴是模型大小。KVStream 在每个规模上都高于 LMCache 和只用内存的基线，模型越大差距越明显。](figs/2610.31827/g01_model_scaling_throughput_v2.png)\n\n在 LooGLE 上，模型越大，KVStream 的优势越明显。原因有两个：大模型每个 token 的 KV 更大，内存里放得下的前缀更少，更多读取落到盘上；而且重算的成本随层数增长得比 KV 大小更快，70B 模型参数是 14B 的 5 倍，每个 token 的 KV 只多 1 倍。\n\n吞吐为什么能提高，看读速就明白了。一个节点上 LMCache 从 NVMe 读出 6.0 到 6.7 GB/s；KVStream 从 NVMe 读得差不多，又从 PFS 多读了 2.8 到 4.9 GB/s，合计 8.1 到 11.8 GB/s。两边从盘上读的总量差不多，所以提速完全来自并行读。换数据集看，32B 模型在 CUAD 上只快了 1.05 倍，因为 CUAD 的请求最短，平均 1.1 万 token，读盘占一步的比例本来就小。\n\n## 结果二：固定切分到底差多少\n\n![论文图 21：测试机 2 上 32B 模型跑 LooGLE，横轴是 NVMe 实际承担的读取比例，纵轴是比总带宽下限慢了多少。固定切分（橙色）呈 V 形，最好的一档也慢 8%，最差慢近 68%；KVStream（绿色方块）落在下限附近。](figs/2610.31827/eval_bound_share.png)\n\n作者在测试机 2 上用 32B 模型专门检验上一节的推论。在没有其他作业干扰的文件系统上，固定切分比总带宽下限慢的幅度呈 V 形：切分比例刚好对上平均带宽比例时最好，也要慢 8.0%，切偏了最多慢 67.7%。KVStream 不用调比例，始终在下限的 4.3% 以内。这说明即便把固定比例调到最好，因为每一步的带宽都在变，它也只能在平均意义上对上。\n\n再让另一个作业往 PFS 上打周期性、突发或持续的流量，模拟集群里别人的作业。这时固定切分最好也要慢 11.8% 到 23.6%，KVStream 仍然在 4.3% 以内。这说明即使把固定比例调到最优，只要共享存储上有别人在跑，它就会吃亏。\n\n## 结果三：在线服务里，排队把小收益放大\n\n在线场景看的是 TTFT（首 token 延迟），它等于请求自己处理的时间加上排队等前面请求的时间。读盘快一点，不仅这一批请求早完成，排在后面的请求也早开始，所以负载越高，收益越大。\n\n在 SWE-bench 编程 agent 流量上，以 1 秒 TTFT 为目标，KVStream 有 84% 的请求达标，LMCache 是 70%，其余基线都在 55% 以下。这说明多读一层存储带来的提速，用户端能直接感受到。\n\n在代码生成流量上，请求到达率从低到中到高，KVStream 相对 LMCache 的平均 TTFT 提速从 1.07 倍涨到 1.61 倍，再到 3.12 倍。但单看每个请求的读盘时间，它只比 LMCache 少 15% 到 22%。差别在排队：高负载下 LMCache 平均有 128 个请求在等，KVStream 只有 54.3 个。所以 TTFT 的大幅改善主要来自队列排得更快，而不是单次读得多快。\n\n![论文图 14：SWE-bench 编程 agent 流量下，请求到达越来越“扎堆”时（横轴是到达间隔的变异系数），各方法的平均 TTFT（柱）和 P90 TTFT（线）。KVStream 在每一档都最低，变异系数为 4 时相对 LMCache 的优势最大。](figs/2610.31827/o2_burstiness_v2.png)\n\n流量越扎堆，排队效应越明显。作者用到达间隔的变异系数衡量“扎堆程度”，真实生产流量约为 4.3。在变异系数为 4 时，KVStream 的平均 TTFT 比 LMCache 快 6.07 倍；扎堆到 8 这种超出真实流量的极端情况，优势缩小到 1.17 倍。\n\n扩展到更多节点也成立。测试机 2 上从 4 个节点扩到 32 个节点（128 张 GPU），每个副本都有自己的 NVMe，但所有副本共享同一个 PFS。KVStream 在每个规模上仍比 LMCache 吞吐高 1.23 到 1.36 倍，因为每个节点各自按完成情况分配读取，PFS 拥挤时自然多读本地盘，节点之间不用协调。\n\n## 什么时候它没用，甚至更慢\n\n这部分是我觉得论文最有用的地方，因为作者把自己方法吃亏的情况也测了出来。\n\n第一，主机内存放得下时没用。在 Chutes 流量上，主机内存从每卡 40 GB 加到 80 GB，几乎所有复用都能在内存里命中，盘上的读取量降了 98.6%。这时 KVStream 相对 LMCache 是 0.98 倍，略慢一点，因为它还在多写一份。\n\n第二，请求顺序决定了要读多少。同一条代码生成流量，如果同一会话的几轮请求挨着来，大部分前缀还在内存里，KVStream 只快 1.05 倍。如果多个会话轮流交错，每一轮之间夹着别人的大量 KV，它就能快 3.12 倍。在线服务通常必须按到达顺序处理，不能为了缓存命中去重排请求，所以后一种情况更常见。\n\n第三，复用率低时会变慢。作者人为降低 SWE-bench 流量的前缀复用率：复用率 88% 时 KVStream 快 6.0 倍，77% 时两者持平（0.97 倍），降到 4% 时只有 0.81 倍。因为复用越少，要写的新 KV 越多、要读回的越少，写两份的成本就压过了并行读的收益。\n\n## 拆开看每一步贡献了多少\n\n| 配置 | 离线吞吐（token/秒，70B） | 在线平均 TTFT（秒，32B） |\n|---|---:|---:|\n| 只用内存 | 18513 | 340.7 |\n| LMCache（本地 NVMe） | 31977 | 31.1 |\n| ＋整步一起读 | 32115 | 20.2 |\n| ＋写盘往后推 | 32177 | 19.8 |\n| ＋第二层存储、固定切分 | 39631 | 122.1 |\n| ＋谁快谁多读（完整 KVStream） | 47210 | 13.0 |\n\n离线吞吐几乎全靠第二层存储：只有一块 NVMe 时，怎么排读写都受它的带宽限制，前两步改动不到 1%。加上 PFS 并按 70:30 固定切分，吞吐到了 LMCache 的 1.24 倍，换成谁快谁多读后到 1.48 倍。\n\n在线这一列有个反直觉的结果：固定切分反而把 TTFT 拖到 122.1 秒，比 LMCache 还慢得多。原因是这一档在线实验的固定切分不存两份：每个前缀的前 80% 块只放在 NVMe，后 20% 块只放在 PFS。固定切分在每块写入时就定下它放哪层，之后不再搬动。每轮新对话追加的块总在当时前缀的最末尾，按位置算归到后 20% 那一段，所以新写入的块大多只存在 PFS 上。结果 PFS 承担了 47% 的读取，却只有 15% 的带宽，成了瓶颈。这说明在多层存储里，按位置或按比例提前分配数据很容易出错，读的时候动态分配才稳。\n\n## 我认为它的局限\n\n第一，写入量翻倍是实打实的成本。作者在模拟器里试过两个折中：某一层变慢后才补写副本，写入量只有 1.19 倍，但读取比下限慢 12% 到 74%，因为副本补上时这一步已经卡住了；只让每个前缀的一部分块（固定 40%）存两份，写入量是 1.43 倍，读取最多只比下限慢 5%。所以如果你的存储写带宽紧张，部分复制是值得先试的方向。\n\n第二，收益高度依赖负载形态。它最适合长 prompt、短输出、多会话交错、内存放不下的场景。输出很长时，解码时间稀释了读盘的占比，按 Amdahl 定律提速有上限：输出从 16 到 256 token，离线优势在 1.19 到 1.37 倍之间。\n\n第三，实验都在超算集群上，共享存储是专门的高性能并行文件系统。云上换成托管文件系统或对象存储，带宽和延迟特性可能差很多，需要自己测。另外节点之间不协调，同一个前缀在 PFS 上可能被多个节点各存一份，浪费容量和写带宽，作者把跨节点共享留给了以后。\n\n## 一个团队可以怎么试\n\n1. 先确认读盘是不是你的瓶颈：统计每一步里从盘上读 KV 的时间占比。如果主机内存已经能放下大部分复用前缀，这套方法帮不上忙。\n2. 看看节点上有没有第二条独立的存储通道，比如共享文件系统、第二块 NVMe 或远端 NVMe，并分别测它们在推理负载下的读写带宽。\n3. 如果已经在用 LMCache，接入成本最低；没有 LMCache 的话，“两头往中间读、谁先读完谁领下一批”这个调度逻辑本身也很容易移植到自己的 KV 存储层。\n4. 上线前用自己的真实流量回放，重点看高峰期和突发流量下的 TTFT，以及复用率低的业务会不会变慢。\n\n## 一句话结论\n\n==长上下文推理的 KV 读盘瓶颈，不一定要靠更快的盘解决，把集群里闲着的共享存储一起用起来，再让每层存储按实际速度自己领活，就能稳定贴近总带宽的上限。==\n\n| 维度 | 评价 |\n|---|---|\n| 问题重要性 | 高。agent 和代码助手的长会话让 KV cache 远超内存，读盘已经成为瓶颈 |\n| 方法创新性 | 中。每个机制都不新，组合起来并配上性能模型，解释得很清楚 |\n| 实验证据 | 高。4 个模型、6 个数据集、最多 128 张 GPU，还测了变慢的情况 |\n| 工程成本 | 中低。作为 LMCache 后端接入，推理引擎不用改；写入量翻倍 |\n| 是否值得尝试 | 值得。长会话、多用户交错、内存放不下的推理服务可以优先评估 |",
+        "content_html": "<p>长上下文推理会反复用到同一段前缀，比如系统提示、整份文档、代码仓库和多轮会话历史。这些前缀的 KV cache 早已放不进 GPU 显存和主机内存，只能落到硬盘上，下次命中再读回来，读盘就卡在了每一步推理的关键路径上。现有系统只读节点本地的 NVMe，集群早已挂载的并行文件系统却几乎闲着。这篇论文做了 KVStream（从多层存储并行读回 KV cache 的引擎）：每块 KV 在本地盘和共享存储各写一份，读的时候两边同时读，谁先读完谁接着领下一批。接进 LMCache 实测，<strong class=\"hl\">离线吞吐最高是 LMCache 的 1.49 倍，突发流量下平均 TTFT 最多快 6.1 倍</strong>。</p>\n<p>我的判断：做长上下文推理服务、尤其是 agent 和代码助手这类多轮会话的团队值得读。它的价值不在某个新算法，而在一个很实际的观察：GPU 节点旁边本来就有第二条存储通道，只是没人在推理时用它。做法也简单，不需要预测哪些前缀会被用到，也不需要调切分比例。代价是每块 KV 要写两遍，所以它只在“读得多、写得少”的场景里划算，论文把它变慢的情况也测了出来。</p>\n<h2>它到底在解决什么问题？</h2>\n<p>先说清楚场景。推理引擎（vLLM、SGLang）会把算过的前缀 KV 缓存起来，下一个请求如果用到同一段前缀，就不用重算。LMCache 是一个开源的 KV cache 连接器，它把放不下的 KV 按每 256 个 token 切成一块，存到主机内存和本地硬盘上，命中时再读回 GPU。</p>\n<p>问题在于前缀的总量太大。作者的测试机每个节点 4 张 GPU，扣掉模型权重后约剩 140 GB 放 KV，主机内存 512 GB。14B 模型在几个文档数据集上要缓存的不重复前缀有 0.5 到 1 TB，是 GPU 能放下的 3.3 到 7.2 倍。到了 110B 模型，这个量接近 2 TB。所以大量前缀只能放在硬盘上。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.31827/m5_retrieval_serialization_v2.png\" alt=\"论文图 5：LMCache 在 70B 模型上处理一个推理步的时间线。一步里批了 7 个请求，每个请求的存储读取（600 到 1300 毫秒）一个接一个排队，前一个读完后一个才开始，整步光读盘就花了 4.7 秒。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 5：LMCache 在 70B 模型上处理一个推理步的时间线。一步里批了 7 个请求，每个请求的存储读取（600 到 1300 毫秒）一个接一个排队，前一个读完后一个才开始，整步光读盘就花了 4.7 秒。</figcaption></figure>\n<p>读盘有多慢？上图是一个具体例子：70B 模型的一步里有 7 个请求，LMCache 一个请求一个请求地读，每个要 600 到 1300 毫秒，整步光读盘就花了 4.7 秒。而且前向计算要等这一步所有请求的 KV 都到齐才能开始，先读完一个请求没有任何好处。作者在 LooGLE 数据集上拆了总耗时，四种模型大小下读盘都占了 LMCache 总时间的 80% 到 88%。即便这样，从盘上读回来仍比重算快，大模型上最多快 2.2 倍，因为重算的成本随模型层数涨，读盘只随字节数涨。</p>\n<h2>为什么只读本地盘不够</h2>\n<p>作者先做了一组测量，结论有三条。</p>\n<p>第一，第二条通道一直闲着。超算集群和云上的 GPU 节点通常都挂着一个共享的并行文件系统（下文简称 PFS，比如 Lustre 或云上的托管文件系统）。单独测读速度，本地 NVMe 只比 PFS 快 2.2 倍（测试机 1）和 3.2 倍（测试机 2）。但推理时 PFS 除了加载模型权重之外几乎没有流量，这份带宽相当于白送。</p>\n<p>第二，同一块盘又读又写会互相干扰。每一步刚算出的新 KV 要写盘，下一步要读的旧 KV 也在同一块盘上。读写各 512 GB 同时进行，比分开做慢 6%（测试机 1）和 27%（测试机 2）。所以按“空闲时测出的带宽”去分配读取量，到真跑推理时就不准了。</p>\n<p>第三，单块数据的读取延迟有很长的尾巴。测试机 2 上，本地 NVMe 单独读时中位数 123 毫秒、P99 是 216 毫秒；一旦读写混在一起，P99 涨到 898 毫秒。PFS 的中位数是 102 毫秒，P99 却有 795 毫秒，因为整个集群的作业都在用它。这说明每一层存储能给的带宽，在不同推理步之间一直在变。</p>\n<h2>KVStream 的四个做法</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.31827/arch.png\" alt=\"论文图 4：(a) 多个计算节点共享同一个并行文件系统。(b) 单个节点内部，4 张 GPU 通过两条互不重叠的通道分别连到本地 NVMe 和并行文件系统。(c) 同一个前向计算里，第 i 步的前缀写盘和第 i+1 步的前缀读盘交错进行，同一节点的所有 GPU 都在抢这两层存储。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 4：(a) 多个计算节点共享同一个并行文件系统。(b) 单个节点内部，4 张 GPU 通过两条互不重叠的通道分别连到本地 NVMe 和并行文件系统。(c) 同一个前向计算里，第 i 步的前缀写盘和第 i+1 步的前缀读盘交错进行，同一节点的所有 GPU 都在抢这两层存储。</figcaption></figure>\n<p>针对上面的问题，KVStream 做了四件事。</p>\n<p>第一个改动是整步一起读：不再一个请求一个请求地读，而是把这一步所有请求要读的块放进同一个读队列，一次性提交。NVMe 只有在很多读请求同时在飞的时候才能跑满，排成一队一个一个读会浪费它的并行能力。读回来的块也是到一块就往 GPU 送一块，不再等。</p>\n<p>第二个改动是把写盘往后推：新算出的 KV 先放在主机内存里，等下一步前向计算开始后再写盘。前向计算期间盘是空闲的，所以写操作基本不会挡住读。</p>\n<p>第三个改动是每块写两份：每块 KV 在本地 NVMe 和 PFS 上各存一份。这样读的时候任何一块都可以从任何一层读，不需要提前猜哪块会被用到、该放在哪。存储容量通常是 TB 级，多存一份不是大问题，代价是写的字节数翻倍。</p>\n<p>第四个改动是两头往中间读、谁快谁多读：把这一步要读的块排成一列，NVMe 从头往后读，PFS 从尾往前读，每次领 m 块。哪一层先读完手上这批，就马上领下一批，两边在中间某处会合。快的那层自然多读，慢的那层自然少读，不需要测带宽，也不需要调比例。会合处可能有几块被两边都读了，因为内容相同，先到的那份直接用，另一份丢掉即可。</p>\n<p>实现上，KVStream 是一个用 io_uring 做异步读写的 C++ 库，读和写用两个独立的队列，作为 LMCache 的存储后端接入。所以 vLLM 这类已经接了 LMCache 的引擎不用改代码。</p>\n<h2>两头往中间读：一个手算例子</h2>\n<p>为什么不干脆按固定比例切，比如 75% 从 NVMe 读、25% 从 PFS 读？论文举了一个例子，这里把它算一遍。</p>\n<p>假设一步要读 12 GB，NVMe 读速 3 GB/s，PFS 读速 1 GB/s。两层加起来是 4 GB/s，所以理论上最快 3 秒读完，这就是论文说的“总带宽下限”。按 75:25 切，NVMe 读 9 GB 用 3 秒，PFS 读 3 GB 也用 3 秒，正好同时读完。</p>\n<p>现在 NVMe 因为同时在写盘，慢到 2 GB/s。固定切分下它读 9 GB 要 4.5 秒，PFS 早就读完闲着了。总带宽是 3 GB/s，理论最快 4 秒，所以固定切分慢了 12.5%。如果反过来是 PFS 被别的作业抢了带宽，掉到 0.5 GB/s，它读那 3 GB 要 6 秒，比只用 NVMe 读完 12 GB（4 秒）还慢。</p>\n<p>两头往中间读就没有这个问题。NVMe 从头读、PFS 从尾读，哪边慢了，会合点就自动往那边偏，两边总是差不多同时读完。论文用一个简单的模型证明了这种读法在每一步都能贴着总带宽下限，只差最后一批 m 块的零头。<strong class=\"hl\">固定切分只在带宽比例恰好等于切分比例时最优，带宽一变就吃亏</strong>，而推理时带宽一直在变。</p>\n<h2>实验怎么做</h2>\n<p>实验用了两台超算集群的测试机：测试机 1 每节点 4 张 H100，测试机 2 每节点 4 张 A100，各自挂着一个共享文件系统，节点本地都有 NVMe。模型从 14B 到 110B 共 4 个，都用 TP=4，这样能覆盖“重算便宜”和“读盘便宜”两头的情况。</p>\n<p>离线测试用三个长文档数据集：LooGLE（长文档问答）、NarrativeQA（整本小说阅读理解，平均每个请求 4.6 万 token）和 CUAD（法律合同条款抽取）。在线测试用三条真实流量：阿里云百炼上一个 Qwen 代码生成集群的约 7000 个请求、Chutes 平台的 agent 会话，以及 SWE-bench 上的编程 agent 会话。这些数据里 80% 到 96% 的 prompt token 能命中缓存的前缀。</p>\n<p>对比方法有：只用 GPU 和主机内存、放不下就重算（下文叫“只用内存”）；LMCache 加本地 NVMe；Mooncake 的 KV 存储；SGLang 自带的分层缓存 HiCache。LMCache 是最强的基线，后面大部分对比都以它为准。</p>\n<h2>结果一：离线吞吐</h2>\n<table><thead><tr><th>模型</th><th>相对 LMCache 的吞吐</th></tr></thead><tbody><tr><td>14B</td><td>1.17 倍</td></tr><tr><td>32B</td><td>1.37 倍</td></tr><tr><td>70B</td><td>1.48 倍</td></tr><tr><td>110B</td><td>1.49 倍</td></tr></tbody></table>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.31827/g01_model_scaling_throughput_v2.png\" alt=\"论文图 16：测试机 1 上 LooGLE 数据集的离线吞吐，横轴是模型大小。KVStream 在每个规模上都高于 LMCache 和只用内存的基线，模型越大差距越明显。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 16：测试机 1 上 LooGLE 数据集的离线吞吐，横轴是模型大小。KVStream 在每个规模上都高于 LMCache 和只用内存的基线，模型越大差距越明显。</figcaption></figure>\n<p>在 LooGLE 上，模型越大，KVStream 的优势越明显。原因有两个：大模型每个 token 的 KV 更大，内存里放得下的前缀更少，更多读取落到盘上；而且重算的成本随层数增长得比 KV 大小更快，70B 模型参数是 14B 的 5 倍，每个 token 的 KV 只多 1 倍。</p>\n<p>吞吐为什么能提高，看读速就明白了。一个节点上 LMCache 从 NVMe 读出 6.0 到 6.7 GB/s；KVStream 从 NVMe 读得差不多，又从 PFS 多读了 2.8 到 4.9 GB/s，合计 8.1 到 11.8 GB/s。两边从盘上读的总量差不多，所以提速完全来自并行读。换数据集看，32B 模型在 CUAD 上只快了 1.05 倍，因为 CUAD 的请求最短，平均 1.1 万 token，读盘占一步的比例本来就小。</p>\n<h2>结果二：固定切分到底差多少</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.31827/eval_bound_share.png\" alt=\"论文图 21：测试机 2 上 32B 模型跑 LooGLE，横轴是 NVMe 实际承担的读取比例，纵轴是比总带宽下限慢了多少。固定切分（橙色）呈 V 形，最好的一档也慢 8%，最差慢近 68%；KVStream（绿色方块）落在下限附近。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 21：测试机 2 上 32B 模型跑 LooGLE，横轴是 NVMe 实际承担的读取比例，纵轴是比总带宽下限慢了多少。固定切分（橙色）呈 V 形，最好的一档也慢 8%，最差慢近 68%；KVStream（绿色方块）落在下限附近。</figcaption></figure>\n<p>作者在测试机 2 上用 32B 模型专门检验上一节的推论。在没有其他作业干扰的文件系统上，固定切分比总带宽下限慢的幅度呈 V 形：切分比例刚好对上平均带宽比例时最好，也要慢 8.0%，切偏了最多慢 67.7%。KVStream 不用调比例，始终在下限的 4.3% 以内。这说明即便把固定比例调到最好，因为每一步的带宽都在变，它也只能在平均意义上对上。</p>\n<p>再让另一个作业往 PFS 上打周期性、突发或持续的流量，模拟集群里别人的作业。这时固定切分最好也要慢 11.8% 到 23.6%，KVStream 仍然在 4.3% 以内。这说明即使把固定比例调到最优，只要共享存储上有别人在跑，它就会吃亏。</p>\n<h2>结果三：在线服务里，排队把小收益放大</h2>\n<p>在线场景看的是 TTFT（首 token 延迟），它等于请求自己处理的时间加上排队等前面请求的时间。读盘快一点，不仅这一批请求早完成，排在后面的请求也早开始，所以负载越高，收益越大。</p>\n<p>在 SWE-bench 编程 agent 流量上，以 1 秒 TTFT 为目标，KVStream 有 84% 的请求达标，LMCache 是 70%，其余基线都在 55% 以下。这说明多读一层存储带来的提速，用户端能直接感受到。</p>\n<p>在代码生成流量上，请求到达率从低到中到高，KVStream 相对 LMCache 的平均 TTFT 提速从 1.07 倍涨到 1.61 倍，再到 3.12 倍。但单看每个请求的读盘时间，它只比 LMCache 少 15% 到 22%。差别在排队：高负载下 LMCache 平均有 128 个请求在等，KVStream 只有 54.3 个。所以 TTFT 的大幅改善主要来自队列排得更快，而不是单次读得多快。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.31827/o2_burstiness_v2.png\" alt=\"论文图 14：SWE-bench 编程 agent 流量下，请求到达越来越“扎堆”时（横轴是到达间隔的变异系数），各方法的平均 TTFT（柱）和 P90 TTFT（线）。KVStream 在每一档都最低，变异系数为 4 时相对 LMCache 的优势最大。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 14：SWE-bench 编程 agent 流量下，请求到达越来越“扎堆”时（横轴是到达间隔的变异系数），各方法的平均 TTFT（柱）和 P90 TTFT（线）。KVStream 在每一档都最低，变异系数为 4 时相对 LMCache 的优势最大。</figcaption></figure>\n<p>流量越扎堆，排队效应越明显。作者用到达间隔的变异系数衡量“扎堆程度”，真实生产流量约为 4.3。在变异系数为 4 时，KVStream 的平均 TTFT 比 LMCache 快 6.07 倍；扎堆到 8 这种超出真实流量的极端情况，优势缩小到 1.17 倍。</p>\n<p>扩展到更多节点也成立。测试机 2 上从 4 个节点扩到 32 个节点（128 张 GPU），每个副本都有自己的 NVMe，但所有副本共享同一个 PFS。KVStream 在每个规模上仍比 LMCache 吞吐高 1.23 到 1.36 倍，因为每个节点各自按完成情况分配读取，PFS 拥挤时自然多读本地盘，节点之间不用协调。</p>\n<h2>什么时候它没用，甚至更慢</h2>\n<p>这部分是我觉得论文最有用的地方，因为作者把自己方法吃亏的情况也测了出来。</p>\n<p>第一，主机内存放得下时没用。在 Chutes 流量上，主机内存从每卡 40 GB 加到 80 GB，几乎所有复用都能在内存里命中，盘上的读取量降了 98.6%。这时 KVStream 相对 LMCache 是 0.98 倍，略慢一点，因为它还在多写一份。</p>\n<p>第二，请求顺序决定了要读多少。同一条代码生成流量，如果同一会话的几轮请求挨着来，大部分前缀还在内存里，KVStream 只快 1.05 倍。如果多个会话轮流交错，每一轮之间夹着别人的大量 KV，它就能快 3.12 倍。在线服务通常必须按到达顺序处理，不能为了缓存命中去重排请求，所以后一种情况更常见。</p>\n<p>第三，复用率低时会变慢。作者人为降低 SWE-bench 流量的前缀复用率：复用率 88% 时 KVStream 快 6.0 倍，77% 时两者持平（0.97 倍），降到 4% 时只有 0.81 倍。因为复用越少，要写的新 KV 越多、要读回的越少，写两份的成本就压过了并行读的收益。</p>\n<h2>拆开看每一步贡献了多少</h2>\n<table><thead><tr><th>配置</th><th>离线吞吐（token/秒，70B）</th><th>在线平均 TTFT（秒，32B）</th></tr></thead><tbody><tr><td>只用内存</td><td>18513</td><td>340.7</td></tr><tr><td>LMCache（本地 NVMe）</td><td>31977</td><td>31.1</td></tr><tr><td>＋整步一起读</td><td>32115</td><td>20.2</td></tr><tr><td>＋写盘往后推</td><td>32177</td><td>19.8</td></tr><tr><td>＋第二层存储、固定切分</td><td>39631</td><td>122.1</td></tr><tr><td>＋谁快谁多读（完整 KVStream）</td><td>47210</td><td>13.0</td></tr></tbody></table>\n<p>离线吞吐几乎全靠第二层存储：只有一块 NVMe 时，怎么排读写都受它的带宽限制，前两步改动不到 1%。加上 PFS 并按 70:30 固定切分，吞吐到了 LMCache 的 1.24 倍，换成谁快谁多读后到 1.48 倍。</p>\n<p>在线这一列有个反直觉的结果：固定切分反而把 TTFT 拖到 122.1 秒，比 LMCache 还慢得多。原因是这一档在线实验的固定切分不存两份：每个前缀的前 80% 块只放在 NVMe，后 20% 块只放在 PFS。固定切分在每块写入时就定下它放哪层，之后不再搬动。每轮新对话追加的块总在当时前缀的最末尾，按位置算归到后 20% 那一段，所以新写入的块大多只存在 PFS 上。结果 PFS 承担了 47% 的读取，却只有 15% 的带宽，成了瓶颈。这说明在多层存储里，按位置或按比例提前分配数据很容易出错，读的时候动态分配才稳。</p>\n<h2>我认为它的局限</h2>\n<p>第一，写入量翻倍是实打实的成本。作者在模拟器里试过两个折中：某一层变慢后才补写副本，写入量只有 1.19 倍，但读取比下限慢 12% 到 74%，因为副本补上时这一步已经卡住了；只让每个前缀的一部分块（固定 40%）存两份，写入量是 1.43 倍，读取最多只比下限慢 5%。所以如果你的存储写带宽紧张，部分复制是值得先试的方向。</p>\n<p>第二，收益高度依赖负载形态。它最适合长 prompt、短输出、多会话交错、内存放不下的场景。输出很长时，解码时间稀释了读盘的占比，按 Amdahl 定律提速有上限：输出从 16 到 256 token，离线优势在 1.19 到 1.37 倍之间。</p>\n<p>第三，实验都在超算集群上，共享存储是专门的高性能并行文件系统。云上换成托管文件系统或对象存储，带宽和延迟特性可能差很多，需要自己测。另外节点之间不协调，同一个前缀在 PFS 上可能被多个节点各存一份，浪费容量和写带宽，作者把跨节点共享留给了以后。</p>\n<h2>一个团队可以怎么试</h2>\n<ol>\n<li>先确认读盘是不是你的瓶颈：统计每一步里从盘上读 KV 的时间占比。如果主机内存已经能放下大部分复用前缀，这套方法帮不上忙。</li>\n<li>看看节点上有没有第二条独立的存储通道，比如共享文件系统、第二块 NVMe 或远端 NVMe，并分别测它们在推理负载下的读写带宽。</li>\n<li>如果已经在用 LMCache，接入成本最低；没有 LMCache 的话，“两头往中间读、谁先读完谁领下一批”这个调度逻辑本身也很容易移植到自己的 KV 存储层。</li>\n<li>上线前用自己的真实流量回放，重点看高峰期和突发流量下的 TTFT，以及复用率低的业务会不会变慢。</li>\n</ol>\n<h2>一句话结论</h2>\n<p><strong class=\"hl\">长上下文推理的 KV 读盘瓶颈，不一定要靠更快的盘解决，把集群里闲着的共享存储一起用起来，再让每层存储按实际速度自己领活，就能稳定贴近总带宽的上限。</strong></p>\n<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>高。agent 和代码助手的长会话让 KV cache 远超内存，读盘已经成为瓶颈</td></tr><tr><td>方法创新性</td><td>中。每个机制都不新，组合起来并配上性能模型，解释得很清楚</td></tr><tr><td>实验证据</td><td>高。4 个模型、6 个数据集、最多 128 张 GPU，还测了变慢的情况</td></tr><tr><td>工程成本</td><td>中低。作为 LMCache 后端接入，推理引擎不用改；写入量翻倍</td></tr><tr><td>是否值得尝试</td><td>值得。长会话、多用户交错、内存放不下的推理服务可以优先评估</td></tr></tbody></table>",
+        "slug": "2610.31827",
+        "chars": 6476,
+        "minutes": 17
+      }
+    },
+    {
+      "id": "web:spotify-tensorrt-inference",
+      "title": "Advancing Generative Recommendation Inference: our collaboration with NVIDIA on TensorRT LLM",
+      "url": "https://engineering.atspotify.com/2026/10/advancing-generative-recommendation-inference-our-collaboration-with-nvidia-on-tensorrt-llm",
+      "published": "2026-10-01",
+      "discovered_at": "2026-10-26",
+      "abstract": "Our goal was clear: close the feature gaps in TensorRT LLM.",
+      "authors": [],
+      "company": [
+        "Spotify",
+        "NVIDIA"
+      ],
+      "source": "web_search",
+      "date_precision": "month; conservative first-day lower bound",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 3,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 3
+      },
+      "total_score": 4.2,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.35,
+      "rank": 2,
+      "summary": "Spotify 和 NVIDIA 把生成式播客推荐原本分散在两套推理引擎上的工作统一到 TensorRT-LLM 后，在 Qwen3-1.7B 上，束搜索的成本最多降低 54%，打分的成本最多降低 7%。Spotify 用语义 ID 做推荐，线上一个请求要用到三种推理：用束搜索生成候选、给一批现成候选逐个打分、把用户向量作为一个额外的 token 塞进 prompt。原来这三件事分散在 vLLM 和 SGLang 两套推理引擎里，vLLM 的束搜索又跑不满 GPU，只好退而用低档显卡。两家把缺的功能补进了 TensorRT-LLM，==三件事统一到一个引擎里跑==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "Spotify",
+          "logo": "logos/spotify.png",
+          "hue": 58
+        },
+        {
+          "name": "NVIDIA",
+          "logo": "logos/nvidia.png",
+          "hue": 277
+        }
+      ],
+      "deep_reading": {
+        "paper_id": "web:spotify-tensorrt-inference",
+        "title": "Advancing Generative Recommendation Inference: our collaboration with NVIDIA on TensorRT LLM",
+        "status": "completed",
+        "content": "Spotify 用语义 ID 做播客的生成式推荐，线上一个请求要用到三种推理：用 beam search 生成候选、给一批现成候选逐个打分、把用户向量作为一个 soft token 塞进 prompt。原来这三件事分散在 vLLM 和 SGLang 两套推理引擎里，vLLM 的 beam search 又跑不满 GPU，只好退而用低档显卡。Spotify 和 NVIDIA 把缺的功能补进了 TensorRT-LLM，三件事统一到一个引擎。==在 Qwen3-1.7B 上，beam search 的成本最多降低 54%，打分的成本最多降低 7%==。\n\n我的判断：已经或准备把生成式推荐搬上线的团队值得读。它不是一篇方法论文，而是一份很具体的工程记录：生成式推荐需要的推理功能，和聊天场景很不一样，主流开源引擎各自只支持一部分。这篇文章把需求拆得很清楚，也给出了补齐之后的吞吐对比。最有参考价值的是三个需求本身，几乎所有用语义 ID 做召回、用大模型做排序的团队都会碰到。\n\n## 背景：一个推荐请求要用到哪几种推理\n\n2026 年 1 月，Spotify 在播客推荐上线了基于大模型的生成式召回。做法沿用了 PLUM（一篇把预训练大模型改造成生成式推荐模型的论文）的思路：每个播客用一串语义 ID 表示，模型读完用户信息后，一个 token 一个 token 地生成这串编码，生成出来的编码再映射回具体的播客。\n\n![Spotify 博客配图：用户向量变成 soft token 的过程。第一步，prompt 里放一个占位 token，旁边是从向量库取出的用户向量；第二步，普通 token 照常查词表得到向量，用户向量经过一层学出来的线性变换投影到模型的隐藏维度，替换掉占位 token 的位置；第三步，带着这个个性化 token 做第一次前向计算，输出就带上了用户偏好。](figs/web_spotify-tensorrt-inference/softtoken.png)\n\n要把这套系统做成能服务多个页面的线上服务，推理引擎得同时支持三件事。\n\n第一件是 beam search。生成编码时不能只走一条最可能的路径，要同时保留若干条分数最高的前缀，每一步扩展、剪枝，最后留下的多条完整编码就是候选播客。所以引擎不仅要支持 beam search，还要能一次把多条 beam 的结果都返回，而不是只返回最好的一条。\n\n第二件是候选打分。有时候候选已经有了，只需要大模型判断哪个更好。做法是把候选放进 prompt，读出模型对“是”或“否”这类标签 token 的对数概率，按概率排序。\n\n第三件是个性化。推荐必须知道是谁在听，而 Spotify 已有一套成熟的稠密用户向量。如何把这个向量交给大模型，是另一个需要引擎支持的功能。\n\n## beam search 为什么在 vLLM 里跑不满 GPU\n\n一月份上线时用的是 vLLM。它是最常用的开源推理引擎之一，普通的补全请求做得很好，但 beam search 的实现比较弱。文章点出了两个原因：一是 vLLM 的 beam search 在核心 GPU 引擎之外实现，很多调度工作落在 CPU 上，CPU 成了瓶颈；二是会重复计算没填满的 KV 块，给 GPU 加了额外的活。我的理解是：beam search 在引擎外面实现，每扩展一步，相当于把每条 beam 当成新请求重新提交；vLLM 的前缀缓存只复用填满的 KV 块，所以每条 beam 末尾那个没填满的块里已有的 token，每一步都要再算一遍。\n\n结果是高端 GPU 用不满。为了控制成本，Spotify 上线时选择了较低档的显卡，让系统停在一个更合适的负载点上。这是一个很典型的取舍：引擎跑不满高端卡，那就换便宜的卡，单位成本反而更低。\n\n## 一次给很多候选打分\n\n候选打分最直接的做法是“展开”：每个候选单独发一个请求，各自取出标签概率，最后汇总排序。候选一多，请求数就跟着翻倍，同一段用户前缀也要算很多遍。\n\n![Spotify 博客配图：多候选打分的做法。第一步，把用户前缀（系统提示、用户画像、历史）和 N 个候选用分隔符拼成一条序列，用户前缀的 KV 只算一次；第二步，用注意力掩码隔离，每个候选只能看到用户前缀和它自己，看不到别的候选；第三步，在每个候选末尾读出“是”和“否”两个标签的对数概率，换算成分数后排序。](figs/web_spotify-tensorrt-inference/scoring.png)\n\nSGLang 里有一个更高效的做法，文章提到领英的工程团队也参与了贡献，这里叫它多候选打分。上图把它画得很清楚：用户前缀和所有候选拼成一条序列，通过注意力掩码让每个候选只看用户前缀和它自己，一次前向计算就把所有候选打完分。这样既省掉了“一个候选一个请求”的开销，计算量又只随候选数线性增长。所以 Spotify 打分时用的是 SGLang。\n\n## 用户向量怎么进 prompt：三种做法\n\n文章比较了三种把用户信息交给大模型的方法，这部分对做大模型推荐的人很有参考价值。\n\n第一种是把用户的收听和互动历史直接写成文字放进 prompt。问题是要把一个用户描述准确，文字会非常长，prompt 一长，延迟就超出请求预算，GPU 用量也上去了。所以这种做法只在小范围用，比如只放用户最近几次实时收听。\n\n第二种是给用户也做语义 ID，和 PLUM 论文的思路一样：在词表里加入表示用户的 token，几个 token 就能代表一个用户，prompt 很短，推理端也不用任何特殊支持。模型要用扩展后的词表微调。早期结果不错，但文章说这条路还需要更多实验，暂时没上线。\n\n第三种效果最好，叫 soft token，来自 Spotify Research 的“Embedding to Prefix”方法。思路是学一个投影，把已有的用户向量映射到大模型的向量空间，变成一个 token 那么大的向量。微调时两部分一起训练：投影层（一层线性变换）端到端地学，大模型本身只更新一部分权重，让它学会利用这个向量。推理时先把用户向量投影过去，插到 prompt 里，再做第一次前向计算。上面的配图就是这个过程。播客推荐用的就是这种方法，Spotify 也在把它推广到内部大模型的其他任务上。\n\n这种做法的好处是能复用推荐系统多年积累的用户向量，又不会让 prompt 变长。代价是推理引擎必须允许你在前向计算前替换某个位置的向量，而大部分引擎默认只接受 token ID。\n\n## 把三件事搬到 TensorRT-LLM\n\n上线之后，生成式推荐要从播客扩到更多内容和页面，一个高效、好维护的推理栈变得更重要。Spotify 和 NVIDIA 合作的目标很明确：把高效 beam search、打分和用户 soft token 统一到一个引擎里。\n\nTensorRT-LLM 的 beam search 硬件利用率更高，但一开始缺两样东西：SGLang 那样的打分接口，以及 vLLM 那样的 soft token 注入和多条 beam 结果返回。双方补进了下面几项，都已进入正式版本：\n\n| 新增功能 | 首次进入的版本 | 解决的需求 |\n|---|---|---|\n| beam search 一次返回多条结果 | v1.2.0rc3 | 生成式召回要拿到多条候选编码 |\n| trtllm-serve 支持仓库外的自定义模型 | v1.2.0rc4 | 能挂自己的模型扩展 |\n| 通过 image_embeds 参数传入多模态向量 | v1.3.0rc0 | 借这个口子传用户向量 |\n| Python 接口支持多候选打分 | v1.3.0rc20 | 一次前向给一批候选打分 |\n\nbeam search 在 TensorRT-LLM 里是在采样器内部实现的，减少了 CPU 端的开销，再配合“重叠调度”（CPU 准备下一步时 GPU 不停），GPU 利用率更高。原来 C++ 写的采样器也换成了更灵活、更多依赖 PyTorch 的设计，新采样器上的 beam search 比旧实现快了不少。\n\nsoft token 是用“仓库外模型”功能做的。Spotify 在 NVIDIA 的帮助下写了一个 Qwen3 扩展插件：用户向量借多模态请求参数传进来，插件负责投影和替换占位 token。这个做法很巧，因为多模态模型本来就要在 prompt 里插入图片向量，复用这条通路就不用改引擎核心。\n\n打分则在 Python 接口上做了和 SGLang 打分接口等价的扩展。目前还需要自己写一层服务，负责高效的分词和请求批处理。\n\n## 性能：两张基准图怎么读\n\n![Spotify 博客配图：beam 宽度 30 时的延迟和吞吐，TensorRT-LLM 1.3.0rc21（蓝）对比 vLLM 0.26.0（紫），显卡是 RTX PRO 6000 Blackwell 服务器版，prompt 长 2000 token，只解码 5 个 token。左边两张图横轴是实际达到的 QPS，纵轴是延迟；右边是饱和 QPS，1.7B 模型 33.2 对 15.0，4B 模型 13.5 对 8.2。](figs/web_spotify-tensorrt-inference/beam_perf.png)\n\n先看 beam search。测试条件很贴近生成式召回：prompt 2000 token，只生成 5 个 token（一串语义 ID 很短），beam 宽度 30。读图时看延迟曲线在哪个 QPS 开始陡升，那就是系统扛不住的点。vLLM 在 1.7B 模型上大约 15 QPS 就开始失控，TensorRT-LLM 能撑到 33 QPS 左右。\n\n| 场景 | 模型 | TensorRT-LLM 饱和吞吐 | 对比引擎饱和吞吐 |\n|---|---|---:|---:|\n| beam search（对比 vLLM） | Qwen3-1.7B | 33.2 QPS | 15.0 QPS |\n| beam search（对比 vLLM） | Qwen3-4B | 13.5 QPS | 8.2 QPS |\n| 多候选打分（对比 SGLang） | Qwen3-1.7B | 12.5 次/秒 | 12.0 次/秒 |\n| 多候选打分（对比 SGLang） | Qwen3-4B | 5.3 次/秒 | 4.9 次/秒 |\n\n![Spotify 博客配图：多候选打分的延迟和吞吐，TensorRT-LLM（蓝）对比 SGLang 0.5.16（棕），每次给 500 个候选打分，prompt 长 2000 token，每个候选 10 个 token。右边饱和吞吐几乎持平，1.7B 模型 12.5 对 12.0，4B 模型 5.3 对 4.9。](figs/web_spotify-tensorrt-inference/scoring_perf.png)\n\n再看打分。每次给 500 个候选打分，两个引擎的饱和吞吐几乎一样，TensorRT-LLM 只略高一点。这说明打分这件事 SGLang 本来就做得很好，迁移过去的主要收益不是更快，而是不用再单独维护一套引擎。\n\n## 成本\n\n文章给的结论是：在 Qwen3-1.7B 上，beam search 负载的成本最多降低 54%，打分负载最多降低 7%。这和上面的饱和吞吐大致对得上：同一张卡能扛的 beam search 请求多了一倍多，每个请求分摊的 GPU 成本自然少一半左右；打分吞吐只高几个百分点，成本也只省一点。\n\n更值得注意的是间接收益。vLLM 时代只能用低档卡，引擎能跑满高端卡之后，选卡的余地也大了。三件事放进同一个引擎，部署、监控、升级都只需要维护一套。\n\n## 我认为的局限\n\n第一，这是公司工程博客，基准是在固定条件下测的：每个速率点 1000 个请求，并发上限 64，每个 prompt 都不一样、不复用 KV cache。真实线上流量里，同一用户的前缀常常能复用，结果可能不同，需要用自己的流量回放验证。\n\n第二，对比对象的版本和参数是固定的。vLLM、SGLang 迭代都很快，beam search 的实现也在改，半年后再测差距可能变小。读者应该把它当成“当时的瓶颈在哪里”的记录，而不是引擎之间的定论。\n\n第三，打分目前需要自己写服务层，soft token 需要写模型插件。对没有专门推理团队的公司，迁移成本不低。\n\n## 一个团队可以怎么试\n\n1. 先盘点自己的生成式推荐需要哪些推理功能：多条 beam 返回、批量候选打分、向量注入，各自现在由哪个引擎承担。\n2. 用自己的 prompt 长度、beam 宽度和解码长度测 beam search 的饱和 QPS。生成式召回解码很短、beam 很宽，和聊天负载差别很大，通用基准不能直接参考。\n3. 如果要把用户向量交给大模型，可以先试 soft token：复用多模态的向量输入通路，通常比改引擎核心容易。\n4. 打分场景如果已经在用 SGLang 且够用，不必急着迁移；beam search 是更值得优先优化的地方。\n\n## 一句话结论\n\n==生成式推荐的推理需求和聊天不一样，beam search、批量打分、向量注入缺一不可；把它们补齐并统一到一个能跑满 GPU 的引擎里，beam search 的成本能降一半左右。==\n\n| 维度 | 评价 |\n|---|---|\n| 问题重要性 | 高。生成式推荐上线后，推理成本和引擎功能缺口是绕不开的问题 |\n| 方法创新性 | 中。主要是工程整合，soft token 复用多模态通路的做法值得借鉴 |\n| 实验证据 | 中。有清楚的吞吐和延迟基准，成本降幅来自真实业务，但测试条件固定 |\n| 工程成本 | 中高。要写模型插件和打分服务层，适合有推理团队的公司 |\n| 是否值得尝试 | 值得。用语义 ID 做生成式召回、beam search 成本高的团队可以优先评估 |",
+        "content_html": "<p>Spotify 用语义 ID 做播客的生成式推荐，线上一个请求要用到三种推理：用 beam search 生成候选、给一批现成候选逐个打分、把用户向量作为一个 soft token 塞进 prompt。原来这三件事分散在 vLLM 和 SGLang 两套推理引擎里，vLLM 的 beam search 又跑不满 GPU，只好退而用低档显卡。Spotify 和 NVIDIA 把缺的功能补进了 TensorRT-LLM，三件事统一到一个引擎。<strong class=\"hl\">在 Qwen3-1.7B 上，beam search 的成本最多降低 54%，打分的成本最多降低 7%</strong>。</p>\n<p>我的判断：已经或准备把生成式推荐搬上线的团队值得读。它不是一篇方法论文，而是一份很具体的工程记录：生成式推荐需要的推理功能，和聊天场景很不一样，主流开源引擎各自只支持一部分。这篇文章把需求拆得很清楚，也给出了补齐之后的吞吐对比。最有参考价值的是三个需求本身，几乎所有用语义 ID 做召回、用大模型做排序的团队都会碰到。</p>\n<h2>背景：一个推荐请求要用到哪几种推理</h2>\n<p>2026 年 1 月，Spotify 在播客推荐上线了基于大模型的生成式召回。做法沿用了 PLUM（一篇把预训练大模型改造成生成式推荐模型的论文）的思路：每个播客用一串语义 ID 表示，模型读完用户信息后，一个 token 一个 token 地生成这串编码，生成出来的编码再映射回具体的播客。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/web_spotify-tensorrt-inference/softtoken.png\" alt=\"Spotify 博客配图：用户向量变成 soft token 的过程。第一步，prompt 里放一个占位 token，旁边是从向量库取出的用户向量；第二步，普通 token 照常查词表得到向量，用户向量经过一层学出来的线性变换投影到模型的隐藏维度，替换掉占位 token 的位置；第三步，带着这个个性化 token 做第一次前向计算，输出就带上了用户偏好。\" loading=\"lazy\" decoding=\"async\"><figcaption>Spotify 博客配图：用户向量变成 soft token 的过程。第一步，prompt 里放一个占位 token，旁边是从向量库取出的用户向量；第二步，普通 token 照常查词表得到向量，用户向量经过一层学出来的线性变换投影到模型的隐藏维度，替换掉占位 token 的位置；第三步，带着这个个性化 token 做第一次前向计算，输出就带上了用户偏好。</figcaption></figure>\n<p>要把这套系统做成能服务多个页面的线上服务，推理引擎得同时支持三件事。</p>\n<p>第一件是 beam search。生成编码时不能只走一条最可能的路径，要同时保留若干条分数最高的前缀，每一步扩展、剪枝，最后留下的多条完整编码就是候选播客。所以引擎不仅要支持 beam search，还要能一次把多条 beam 的结果都返回，而不是只返回最好的一条。</p>\n<p>第二件是候选打分。有时候候选已经有了，只需要大模型判断哪个更好。做法是把候选放进 prompt，读出模型对“是”或“否”这类标签 token 的对数概率，按概率排序。</p>\n<p>第三件是个性化。推荐必须知道是谁在听，而 Spotify 已有一套成熟的稠密用户向量。如何把这个向量交给大模型，是另一个需要引擎支持的功能。</p>\n<h2>beam search 为什么在 vLLM 里跑不满 GPU</h2>\n<p>一月份上线时用的是 vLLM。它是最常用的开源推理引擎之一，普通的补全请求做得很好，但 beam search 的实现比较弱。文章点出了两个原因：一是 vLLM 的 beam search 在核心 GPU 引擎之外实现，很多调度工作落在 CPU 上，CPU 成了瓶颈；二是会重复计算没填满的 KV 块，给 GPU 加了额外的活。我的理解是：beam search 在引擎外面实现，每扩展一步，相当于把每条 beam 当成新请求重新提交；vLLM 的前缀缓存只复用填满的 KV 块，所以每条 beam 末尾那个没填满的块里已有的 token，每一步都要再算一遍。</p>\n<p>结果是高端 GPU 用不满。为了控制成本，Spotify 上线时选择了较低档的显卡，让系统停在一个更合适的负载点上。这是一个很典型的取舍：引擎跑不满高端卡，那就换便宜的卡，单位成本反而更低。</p>\n<h2>一次给很多候选打分</h2>\n<p>候选打分最直接的做法是“展开”：每个候选单独发一个请求，各自取出标签概率，最后汇总排序。候选一多，请求数就跟着翻倍，同一段用户前缀也要算很多遍。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/web_spotify-tensorrt-inference/scoring.png\" alt=\"Spotify 博客配图：多候选打分的做法。第一步，把用户前缀（系统提示、用户画像、历史）和 N 个候选用分隔符拼成一条序列，用户前缀的 KV 只算一次；第二步，用注意力掩码隔离，每个候选只能看到用户前缀和它自己，看不到别的候选；第三步，在每个候选末尾读出“是”和“否”两个标签的对数概率，换算成分数后排序。\" loading=\"lazy\" decoding=\"async\"><figcaption>Spotify 博客配图：多候选打分的做法。第一步，把用户前缀（系统提示、用户画像、历史）和 N 个候选用分隔符拼成一条序列，用户前缀的 KV 只算一次；第二步，用注意力掩码隔离，每个候选只能看到用户前缀和它自己，看不到别的候选；第三步，在每个候选末尾读出“是”和“否”两个标签的对数概率，换算成分数后排序。</figcaption></figure>\n<p>SGLang 里有一个更高效的做法，文章提到领英的工程团队也参与了贡献，这里叫它多候选打分。上图把它画得很清楚：用户前缀和所有候选拼成一条序列，通过注意力掩码让每个候选只看用户前缀和它自己，一次前向计算就把所有候选打完分。这样既省掉了“一个候选一个请求”的开销，计算量又只随候选数线性增长。所以 Spotify 打分时用的是 SGLang。</p>\n<h2>用户向量怎么进 prompt：三种做法</h2>\n<p>文章比较了三种把用户信息交给大模型的方法，这部分对做大模型推荐的人很有参考价值。</p>\n<p>第一种是把用户的收听和互动历史直接写成文字放进 prompt。问题是要把一个用户描述准确，文字会非常长，prompt 一长，延迟就超出请求预算，GPU 用量也上去了。所以这种做法只在小范围用，比如只放用户最近几次实时收听。</p>\n<p>第二种是给用户也做语义 ID，和 PLUM 论文的思路一样：在词表里加入表示用户的 token，几个 token 就能代表一个用户，prompt 很短，推理端也不用任何特殊支持。模型要用扩展后的词表微调。早期结果不错，但文章说这条路还需要更多实验，暂时没上线。</p>\n<p>第三种效果最好，叫 soft token，来自 Spotify Research 的“Embedding to Prefix”方法。思路是学一个投影，把已有的用户向量映射到大模型的向量空间，变成一个 token 那么大的向量。微调时两部分一起训练：投影层（一层线性变换）端到端地学，大模型本身只更新一部分权重，让它学会利用这个向量。推理时先把用户向量投影过去，插到 prompt 里，再做第一次前向计算。上面的配图就是这个过程。播客推荐用的就是这种方法，Spotify 也在把它推广到内部大模型的其他任务上。</p>\n<p>这种做法的好处是能复用推荐系统多年积累的用户向量，又不会让 prompt 变长。代价是推理引擎必须允许你在前向计算前替换某个位置的向量，而大部分引擎默认只接受 token ID。</p>\n<h2>把三件事搬到 TensorRT-LLM</h2>\n<p>上线之后，生成式推荐要从播客扩到更多内容和页面，一个高效、好维护的推理栈变得更重要。Spotify 和 NVIDIA 合作的目标很明确：把高效 beam search、打分和用户 soft token 统一到一个引擎里。</p>\n<p>TensorRT-LLM 的 beam search 硬件利用率更高，但一开始缺两样东西：SGLang 那样的打分接口，以及 vLLM 那样的 soft token 注入和多条 beam 结果返回。双方补进了下面几项，都已进入正式版本：</p>\n<table><thead><tr><th>新增功能</th><th>首次进入的版本</th><th>解决的需求</th></tr></thead><tbody><tr><td>beam search 一次返回多条结果</td><td>v1.2.0rc3</td><td>生成式召回要拿到多条候选编码</td></tr><tr><td>trtllm-serve 支持仓库外的自定义模型</td><td>v1.2.0rc4</td><td>能挂自己的模型扩展</td></tr><tr><td>通过 image_embeds 参数传入多模态向量</td><td>v1.3.0rc0</td><td>借这个口子传用户向量</td></tr><tr><td>Python 接口支持多候选打分</td><td>v1.3.0rc20</td><td>一次前向给一批候选打分</td></tr></tbody></table>\n<p>beam search 在 TensorRT-LLM 里是在采样器内部实现的，减少了 CPU 端的开销，再配合“重叠调度”（CPU 准备下一步时 GPU 不停），GPU 利用率更高。原来 C++ 写的采样器也换成了更灵活、更多依赖 PyTorch 的设计，新采样器上的 beam search 比旧实现快了不少。</p>\n<p>soft token 是用“仓库外模型”功能做的。Spotify 在 NVIDIA 的帮助下写了一个 Qwen3 扩展插件：用户向量借多模态请求参数传进来，插件负责投影和替换占位 token。这个做法很巧，因为多模态模型本来就要在 prompt 里插入图片向量，复用这条通路就不用改引擎核心。</p>\n<p>打分则在 Python 接口上做了和 SGLang 打分接口等价的扩展。目前还需要自己写一层服务，负责高效的分词和请求批处理。</p>\n<h2>性能：两张基准图怎么读</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/web_spotify-tensorrt-inference/beam_perf.png\" alt=\"Spotify 博客配图：beam 宽度 30 时的延迟和吞吐，TensorRT-LLM 1.3.0rc21（蓝）对比 vLLM 0.26.0（紫），显卡是 RTX PRO 6000 Blackwell 服务器版，prompt 长 2000 token，只解码 5 个 token。左边两张图横轴是实际达到的 QPS，纵轴是延迟；右边是饱和 QPS，1.7B 模型 33.2 对 15.0，4B 模型 13.5 对 8.2。\" loading=\"lazy\" decoding=\"async\"><figcaption>Spotify 博客配图：beam 宽度 30 时的延迟和吞吐，TensorRT-LLM 1.3.0rc21（蓝）对比 vLLM 0.26.0（紫），显卡是 RTX PRO 6000 Blackwell 服务器版，prompt 长 2000 token，只解码 5 个 token。左边两张图横轴是实际达到的 QPS，纵轴是延迟；右边是饱和 QPS，1.7B 模型 33.2 对 15.0，4B 模型 13.5 对 8.2。</figcaption></figure>\n<p>先看 beam search。测试条件很贴近生成式召回：prompt 2000 token，只生成 5 个 token（一串语义 ID 很短），beam 宽度 30。读图时看延迟曲线在哪个 QPS 开始陡升，那就是系统扛不住的点。vLLM 在 1.7B 模型上大约 15 QPS 就开始失控，TensorRT-LLM 能撑到 33 QPS 左右。</p>\n<table><thead><tr><th>场景</th><th>模型</th><th>TensorRT-LLM 饱和吞吐</th><th>对比引擎饱和吞吐</th></tr></thead><tbody><tr><td>beam search（对比 vLLM）</td><td>Qwen3-1.7B</td><td>33.2 QPS</td><td>15.0 QPS</td></tr><tr><td>beam search（对比 vLLM）</td><td>Qwen3-4B</td><td>13.5 QPS</td><td>8.2 QPS</td></tr><tr><td>多候选打分（对比 SGLang）</td><td>Qwen3-1.7B</td><td>12.5 次/秒</td><td>12.0 次/秒</td></tr><tr><td>多候选打分（对比 SGLang）</td><td>Qwen3-4B</td><td>5.3 次/秒</td><td>4.9 次/秒</td></tr></tbody></table>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/web_spotify-tensorrt-inference/scoring_perf.png\" alt=\"Spotify 博客配图：多候选打分的延迟和吞吐，TensorRT-LLM（蓝）对比 SGLang 0.5.16（棕），每次给 500 个候选打分，prompt 长 2000 token，每个候选 10 个 token。右边饱和吞吐几乎持平，1.7B 模型 12.5 对 12.0，4B 模型 5.3 对 4.9。\" loading=\"lazy\" decoding=\"async\"><figcaption>Spotify 博客配图：多候选打分的延迟和吞吐，TensorRT-LLM（蓝）对比 SGLang 0.5.16（棕），每次给 500 个候选打分，prompt 长 2000 token，每个候选 10 个 token。右边饱和吞吐几乎持平，1.7B 模型 12.5 对 12.0，4B 模型 5.3 对 4.9。</figcaption></figure>\n<p>再看打分。每次给 500 个候选打分，两个引擎的饱和吞吐几乎一样，TensorRT-LLM 只略高一点。这说明打分这件事 SGLang 本来就做得很好，迁移过去的主要收益不是更快，而是不用再单独维护一套引擎。</p>\n<h2>成本</h2>\n<p>文章给的结论是：在 Qwen3-1.7B 上，beam search 负载的成本最多降低 54%，打分负载最多降低 7%。这和上面的饱和吞吐大致对得上：同一张卡能扛的 beam search 请求多了一倍多，每个请求分摊的 GPU 成本自然少一半左右；打分吞吐只高几个百分点，成本也只省一点。</p>\n<p>更值得注意的是间接收益。vLLM 时代只能用低档卡，引擎能跑满高端卡之后，选卡的余地也大了。三件事放进同一个引擎，部署、监控、升级都只需要维护一套。</p>\n<h2>我认为的局限</h2>\n<p>第一，这是公司工程博客，基准是在固定条件下测的：每个速率点 1000 个请求，并发上限 64，每个 prompt 都不一样、不复用 KV cache。真实线上流量里，同一用户的前缀常常能复用，结果可能不同，需要用自己的流量回放验证。</p>\n<p>第二，对比对象的版本和参数是固定的。vLLM、SGLang 迭代都很快，beam search 的实现也在改，半年后再测差距可能变小。读者应该把它当成“当时的瓶颈在哪里”的记录，而不是引擎之间的定论。</p>\n<p>第三，打分目前需要自己写服务层，soft token 需要写模型插件。对没有专门推理团队的公司，迁移成本不低。</p>\n<h2>一个团队可以怎么试</h2>\n<ol>\n<li>先盘点自己的生成式推荐需要哪些推理功能：多条 beam 返回、批量候选打分、向量注入，各自现在由哪个引擎承担。</li>\n<li>用自己的 prompt 长度、beam 宽度和解码长度测 beam search 的饱和 QPS。生成式召回解码很短、beam 很宽，和聊天负载差别很大，通用基准不能直接参考。</li>\n<li>如果要把用户向量交给大模型，可以先试 soft token：复用多模态的向量输入通路，通常比改引擎核心容易。</li>\n<li>打分场景如果已经在用 SGLang 且够用，不必急着迁移；beam search 是更值得优先优化的地方。</li>\n</ol>\n<h2>一句话结论</h2>\n<p><strong class=\"hl\">生成式推荐的推理需求和聊天不一样，beam search、批量打分、向量注入缺一不可；把它们补齐并统一到一个能跑满 GPU 的引擎里，beam search 的成本能降一半左右。</strong></p>\n<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>高。生成式推荐上线后，推理成本和引擎功能缺口是绕不开的问题</td></tr><tr><td>方法创新性</td><td>中。主要是工程整合，soft token 复用多模态通路的做法值得借鉴</td></tr><tr><td>实验证据</td><td>中。有清楚的吞吐和延迟基准，成本降幅来自真实业务，但测试条件固定</td></tr><tr><td>工程成本</td><td>中高。要写模型插件和打分服务层，适合有推理团队的公司</td></tr><tr><td>是否值得尝试</td><td>值得。用语义 ID 做生成式召回、beam search 成本高的团队可以优先评估</td></tr></tbody></table>",
+        "slug": "web-spotify-tensorrt-inference",
+        "chars": 4902,
+        "minutes": 13
+      }
+    },
+    {
+      "id": "arxiv:2610.32243",
+      "title": "BiLoCo: Binary Low-Rank Corrections for Post-Training Quantization",
+      "authors": "David Jin, Beshr IslamBouli, Tarushii Goel, Han Guo, Yoon Kim",
+      "abstract": "Post-training quantization (PTQ) to FP4 has emerged as a key technique for reducing large language model inference cost, especially on Blackwell GPUs, which offer native FP4 tensor core support. Direct PTQ to FP4, however, still leaves a noticeable accuracy gap. Recent work on SVDQuant mitigates the errors introduced through FP4 quantization for diffusion models by adding high-precision low-rank corrections obtained via SVD. However, this high-precision low-rank correction requires many bits per rank, and it runs on the same tensor cores as the main FP4 GEMM. We introduce BiLoCo, a low-rank correction method whose left and right factors are stored as binary ${\\{\\pm 1\\}}$ sign vectors rather than as BF16 numbers. The signed format uses $16{\\times}$ less storage per rank-one component, and since the correction now consists of additions/subtractions, this can be run on CUDA cores concurrently with the FP4 tensor-core GEMM. On 4B--72B LLMs, BiLoCo matches or improves memory-matched SVDQuant for PTQ. We implement BiLoCo on B300 as a fused single kernel, where the FP4 GEMM runs on tensor cores, the bit-packed correction on the CUDA cores of the same launch, and the two are combined in the GEMM epilogue. With batch size $1$, the fused kernel is at most $11\\%$ slower than the FP4-only GEMM for every rank up to $512$. At rank $128$, it is at most $20\\%$ slower up to batch size $8$.",
+      "url": "https://arxiv.org/abs/2610.32243",
+      "source": "arxiv",
+      "published": "2026-10-23",
+      "discovered_at": "2026-10-26",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-10-26",
+        "created": "2026-10-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "company": [],
+      "rank": 3,
+      "summary": "把大模型训练完直接量化到 FP4，在 Blackwell GPU 上能用原生的 FP4 矩阵乘提速，但精度会掉一截。常见补法 SVDQuant 是另存一个 BF16 的低秩修正项，它既占存储，又要和主计算抢同一批张量核心。这篇麻省理工的论文提出 BiLoCo（二值低秩修正），把修正项里的向量全部换成正负 1，==修正只剩加减法，可以放到平时闲着的 CUDA 核心上，和矩阵乘同时跑==。同样的存储能放下 16 倍的秩，困惑度持平或更好。单条请求时，整个算子只比纯 FP4 慢 6% 到 11%。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.32243",
+        "title": "BiLoCo: Binary Low-Rank Corrections for Post-Training Quantization",
+        "status": "completed",
+        "content": "把大模型训练完直接量化到 FP4，在 Blackwell GPU 上能用原生的 FP4 矩阵乘提速，但精度会掉一截。常见补法 SVDQuant 是另存一个 BF16 的低秩修正项，它既占存储，又要和主计算抢同一批 tensor core。这篇麻省理工的论文提出 BiLoCo（二值低秩修正），把修正项里的向量全部换成 +1 和 −1，修正只剩加减法，可以放到平时闲着的 CUDA core 上，和 FP4 矩阵乘同时跑。==同样的存储能放下 16 倍的秩，在 4B 到 72B 的模型上困惑度持平或更好；batch 为 1 时，整个算子只比纯 FP4 慢 6% 到 11%==。\n\n我的判断：做大模型推理部署、正在评估 FP4 的团队值得读。它的出发点很实在：解码时矩阵乘的瓶颈是从显存读权重，tensor core 在等数据，CUDA core 干脆空着，那就把修正项设计成正好适合 CUDA core 的形式。方法本身不复杂，代码也公开了。但它只在小 batch 的解码场景里划算，batch 一大优势就没了，这一点要先想清楚。\n\n## 它到底在解决什么问题？\n\n训练后量化（PTQ）是指模型训练完不再微调，直接把权重和激活压到低精度。Blackwell 系列 GPU 原生支持 NVFP4 格式的矩阵乘：每 16 个数共用一个 FP8 缩放因子，每个数只有 4 位，平均每个权重约 4.5 位。存储和计算都是低精度，所以很省。\n\n问题是 4 位能表示的值太少，只有 0、±0.5、±1、±1.5、±2、±3、±4、±6 这 15 个。一个块里只要有几个特别大的数，缩放因子就得迁就它们，其余数的误差都会变大。所以直接量化到 NVFP4 之后，模型的困惑度会明显上升。\n\n一个自然的补法是把权重拆成两部分：权重约等于 R 加上一个低秩矩阵，其中 R 用 4 位存，低秩矩阵，用更高精度存，专门吸收 4 位表示不了的那些大方向。SVDQuant 就是这么做的，它用 SVD 取出秩 32 的 BF16 修正项。但这个修正项有两个代价：一是每个秩要存两条 BF16 向量，位数不少；二是它也是一个矩阵乘，要在 tensor core 上和 FP4 主计算抢资源。\n\n## 核心思路：修正项只用 +1 和 −1\n\n![论文图 1：BiLoCo 的推理过程。上面一路在 tensor core 上做 FP4 矩阵乘，输入是量化后的激活和残差权重 R；下面一路在 CUDA core 上做修正：先用 ±1 的右向量 V 对输入做带符号求和，再乘上系数 α，最后用 ±1 的左向量 U 展开。两路结果在矩阵乘的收尾阶段加在一起，输出 BF16。](figs/2610.32243/biloco_teaser.png)\n\nBiLoCo 把修正项写成 r 个秩一矩阵之和，每个秩一矩阵是一个系数 α 乘以两条只含 +1 和 −1 的向量。推理时要算的是 α·u·(v·x)。其中 v·x 只需要加减法：v 的某一位是 +1 就加上 x 对应的数，是 −1 就减去。\n\n举个手算的例子。假设 x 是 [0.5, −1.2, 2.0, 0.3]，v 是 [+1, −1, +1, −1]，那么 v·x = 0.5 + 1.2 + 2.0 − 0.3 = 3.4，全程没有乘法。再乘上系数 α，用 u 的正负号把这个数加到或减到输出的各个位置上即可。\n\n这样做在存储上很划算。不计系数，一对 ±1 向量每个数只占 1 位，而一对 BF16 向量每个数占 16 位，所以同样的存储能放 16 倍的秩。以一个 5120×5120 的矩阵为例，BF16 秩 32 的修正项和二值秩 512 的修正项都约是 5.2 百万位，而 FP4 权重本身约 1.2 亿位，所以修正项只多占约 4% 的存储。\n\n## 秩多一些，比每个秩精确一些更好吗？\n\n存储一样时，是用少量高精度的秩，还是大量低精度的秩？这取决于权重矩阵的奇异值分布。如果前几个方向特别大，少量高精度秩就够了；如果分布比较平，很多方向都重要，那么秩多更有用。\n\n作者在三个模型上抽了 189 个投影矩阵来测，结果说明前面的奇异值分布很平：排第一的奇异值只比排第三十二的大一倍左右。作者的衡量方式是：把低秩部分的所有元素平方求和再开根号，除以原矩阵同样算出的值，得到一个比例，比例越高说明低秩部分抓住的东西越多。按这个比例，二值秩 512 覆盖了 47% 到 53%，BF16 秩 32 只覆盖 26% 到 29%。\n\n![论文图 2：在 Qwen3-4B 的 63 个投影矩阵上，低秩部分占原矩阵大小的比例（纵轴）随存储预算（横轴）的变化。蓝线是 BiLoCo（二值秩等于预算），红线是 SVDQuant（BF16 秩等于预算除以 16），两者存储相同。每个预算下蓝线都更高，预算为 512 时高出 24.2 个百分点。](figs/2610.32243/capture_vs_rank.png)\n\n上图把这个对比画在了不同的存储预算上，每一档二值修正都更高。这说明在大模型权重上，把有限的存储花在“覆盖更多方向”上，比花在“每个方向更精确”上更值。\n\n## 二值向量怎么找\n\n最优的二值分解不能直接用 SVD 得到。作者沿用了一个已有的贪心做法，一次找一个秩一分量：\n\n1. 先令残差 R 等于原权重 W。\n2. 随机初始化一条 ±1 向量 v，然后交替更新：u 取 Rv 的正负号，v 取 Rᵀu 的正负号，重复 5 次就基本稳定了。\n3. 算出让误差最小的系数 α，把 α·u·vᵀ 从残差里减掉，再找下一个分量。\n4. 所有分量找完后，联合重新求一遍所有系数，因为各分量之间有重叠，单独求的系数不是最优。\n5. 剩下的残差量化成 NVFP4。\n\n整个过程很快：秩 512 时，在一张 B300 上处理 Qwen3-4B 约 1 分钟，Qwen3-32B 约 5 分钟。\n\n## 算子怎么做到“几乎不加时间”\n\n光有加减法还不够，关键是让它和 FP4 矩阵乘真正同时跑。作者在 B300 上写了一个融合算子，B300 有 148 个流式多处理器（SM，GPU 上独立调度的计算单元）。\n\n算子启动时，一部分线程块照常做 FP4 矩阵乘，每块负责输出的一个 128×64 的小块。剩下没分到矩阵乘的线程块在 CUDA core 上算修正项的中间结果 z = α·(v·x)，写到显存里的一个缓冲区。矩阵乘线程块里负责收尾的那组线程，在主循环期间本来就闲着，它们等 z 写好后，用 u 展开成这个输出块的修正值，在写回结果之前加上去。和“先跑矩阵乘、再单独启动一个修正算子”的做法相比，它只启动一次，也不需要另开一个计算流，修正值直接在写回前加上，不用把整份输出写出去再读回来相加；唯一多出的显存读写是 z 这个很小的缓冲区。\n\n为什么修正项几乎不占时间？因为它读的数据很少。秩 128 时，修正项只需读约 0.16 MiB 的符号位，而 FP4 主计算要读约 12.5 MiB 的权重，相差 80 倍。读数据几乎不花时间，修正的耗时于是落在四个必须依次完成的步骤上：沿输入维度把加减法累加完、把 z 写进缓冲区、矩阵乘线程块等到 z 可用、再用 u 展开。只要这四步在矩阵乘主循环结束前做完，修正就完全藏在主计算后面。\n\n## 结果一：精度\n\n| 模型 | BF16 原模型 | 直接 NVFP4 | SVDQuant 秩 32 | BiLoCo 秩 512 |\n|---|---:|---:|---:|---:|\n| Qwen3-4B | 14.22 | 15.13 | 15.07 | 14.94 |\n| Llama-3-8B | 6.27 | 7.00 | 6.92 | 6.84 |\n| Qwen3-14B | 8.89 | 9.36 | 9.19 | 9.17 |\n| Qwen3-32B | 7.85 | 8.23 | 8.18 | 8.16 |\n| Qwen2.5-72B | 3.92 | 4.29 | 4.23 | 4.23 |\n\n上表是 WikiText-2 上的困惑度，越低越好，BiLoCo 和 SVDQuant 占用相同的存储。BiLoCo 在 4B、8B、14B 上，WikiText-2 和 C4 两个数据集都更好，32B 和 72B 上持平或略好。如果只用四分之一的存储（秩 128），BiLoCo 比 SVDQuant 最多差 0.05。\n\n困惑度的差距看着不大，更能说明问题的是和原模型输出分布的差距。作者在 200 篇 FineWeb 文档上逐个 token 算了量化模型和 BF16 原模型的 KL 散度，既看平均值，也看第 99 百分位，也就是把所有 token 的 KL 从小到大排好后，排在 99% 位置的那个值。BiLoCo 在全部 5 个模型上第 99 百分位的 KL 都更低，比如 Qwen3-14B 上是 0.130 对 0.167，低了 22%。这说明它不只是平均情况好一点，在最容易出错的那些 token 上改善更明显。\n\n下游任务的提升就小得多了：WinoGrande 和 HellaSwag 的平均准确率，和同样存储的 SVDQuant 相比，在四个 Qwen 模型上高 0.1 到 0.7 个点，在 Llama-3-8B 上低 0.3 个点。\n\n## 结果二：速度\n\n测试形状是 K = N = 5120，接近 14B 模型注意力投影层的大小，对比基准是同一次运行里最快的纯 FP4 算子。\n\n| batch 大小 | 秩 128 的额外耗时 | 秩 512 的额外耗时 |\n|---|---:|---:|\n| 1 | 8% | 11% |\n| 2 | 8% | 15% |\n| 4 | 11% | 44% |\n| 8 | 15% | 74% |\n| 16 | 55% | 204% |\n\nbatch 为 1 时，从秩 16 到秩 512，额外耗时都在 6% 到 11% 之间，也就是 0.34 到 0.64 微秒。但修正项的工作量随 batch 和秩一起增长，而 FP4 矩阵乘在 batch 不超过 128 时耗时几乎不变，因为它的时间花在读权重上。所以 batch 一大，修正就藏不住了。如果把可接受的额外耗时定在 20% 以内，秩 128 最多到 batch 8，秩 512 只到 batch 2。\n\n还有一个容易被忽略的结论：在同一个算子里放一个同样秩的 BF16 稠密修正，耗时和二值修正一样。所以二值格式的好处不是算得更快，而是同样的字节能买到更高的秩。\n\n## 我认为的局限\n\n第一，适用范围窄。它只在小 batch 解码时划算，线上服务如果 batch 常在 16 以上，额外耗时会翻倍甚至更多，作者自己也建议这时改用 tensor core 上的修正。\n\n第二，算子不支持 MLP 的 gate 和 up 投影。这两层输出太宽，需要的输出块数超过了 B300 的 SM 数，而这个算子要求所有矩阵乘线程块同时在跑。这两层恰好是模型里参数最多的部分，所以全模型的端到端提速还需要别的办法补上。\n\n第三，速度只测了单个算子，没有给出整个模型的端到端解码延迟。精度上的提升也偏小，下游任务只差零点几个点，困惑度改善最明显的是小模型。\n\n## 一个团队可以怎么试\n\n1. 先确认你的部署场景是不是小 batch 解码，比如端侧、低并发的私有部署或对延迟敏感的单用户服务。\n2. 用公开代码对你的模型跑一遍量化，几分钟就能出结果，先看困惑度和 KL 散度相对直接 NVFP4 的改善。\n3. 如果精度改善明显，再在你常用的 batch 范围内测算子耗时，挑一个在 20% 额外耗时以内的秩。\n4. 对 gate 和 up 投影，可以先保留 SVDQuant 式的修正或直接量化，其余层用 BiLoCo。\n\n## 一句话结论\n\n==解码时 tensor core 在等显存、CUDA core 在闲着，把 FP4 的修正项做成只需加减法的 ±1 向量，就能用同样的存储换来 16 倍的秩，在小 batch 下几乎不加时间。==\n\n| 维度 | 评价 |\n|---|---|\n| 问题重要性 | 中高。FP4 是 Blackwell 上降推理成本的主要手段，精度损失是落地障碍 |\n| 方法创新性 | 中。分解算法沿用已有工作，新意在于把修正项格式和硬件空闲单元对上 |\n| 实验证据 | 中。5 个模型的困惑度、KL 和下游任务，加单算子测速；缺端到端延迟 |\n| 工程成本 | 中。代码公开，量化几分钟；融合算子依赖 B300 且不覆盖所有层 |\n| 是否值得尝试 | 小 batch 解码、在用 Blackwell 部署 FP4 的团队值得一试 |",
+        "content_html": "<p>把大模型训练完直接量化到 FP4，在 Blackwell GPU 上能用原生的 FP4 矩阵乘提速，但精度会掉一截。常见补法 SVDQuant 是另存一个 BF16 的低秩修正项，它既占存储，又要和主计算抢同一批 tensor core。这篇麻省理工的论文提出 BiLoCo（二值低秩修正），把修正项里的向量全部换成 +1 和 −1，修正只剩加减法，可以放到平时闲着的 CUDA core 上，和 FP4 矩阵乘同时跑。<strong class=\"hl\">同样的存储能放下 16 倍的秩，在 4B 到 72B 的模型上困惑度持平或更好；batch 为 1 时，整个算子只比纯 FP4 慢 6% 到 11%</strong>。</p>\n<p>我的判断：做大模型推理部署、正在评估 FP4 的团队值得读。它的出发点很实在：解码时矩阵乘的瓶颈是从显存读权重，tensor core 在等数据，CUDA core 干脆空着，那就把修正项设计成正好适合 CUDA core 的形式。方法本身不复杂，代码也公开了。但它只在小 batch 的解码场景里划算，batch 一大优势就没了，这一点要先想清楚。</p>\n<h2>它到底在解决什么问题？</h2>\n<p>训练后量化（PTQ）是指模型训练完不再微调，直接把权重和激活压到低精度。Blackwell 系列 GPU 原生支持 NVFP4 格式的矩阵乘：每 16 个数共用一个 FP8 缩放因子，每个数只有 4 位，平均每个权重约 4.5 位。存储和计算都是低精度，所以很省。</p>\n<p>问题是 4 位能表示的值太少，只有 0、±0.5、±1、±1.5、±2、±3、±4、±6 这 15 个。一个块里只要有几个特别大的数，缩放因子就得迁就它们，其余数的误差都会变大。所以直接量化到 NVFP4 之后，模型的困惑度会明显上升。</p>\n<p>一个自然的补法是把权重拆成两部分：权重约等于 R 加上一个低秩矩阵，其中 R 用 4 位存，低秩矩阵，用更高精度存，专门吸收 4 位表示不了的那些大方向。SVDQuant 就是这么做的，它用 SVD 取出秩 32 的 BF16 修正项。但这个修正项有两个代价：一是每个秩要存两条 BF16 向量，位数不少；二是它也是一个矩阵乘，要在 tensor core 上和 FP4 主计算抢资源。</p>\n<h2>核心思路：修正项只用 +1 和 −1</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.32243/biloco_teaser.png\" alt=\"论文图 1：BiLoCo 的推理过程。上面一路在 tensor core 上做 FP4 矩阵乘，输入是量化后的激活和残差权重 R；下面一路在 CUDA core 上做修正：先用 ±1 的右向量 V 对输入做带符号求和，再乘上系数 α，最后用 ±1 的左向量 U 展开。两路结果在矩阵乘的收尾阶段加在一起，输出 BF16。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 1：BiLoCo 的推理过程。上面一路在 tensor core 上做 FP4 矩阵乘，输入是量化后的激活和残差权重 R；下面一路在 CUDA core 上做修正：先用 ±1 的右向量 V 对输入做带符号求和，再乘上系数 α，最后用 ±1 的左向量 U 展开。两路结果在矩阵乘的收尾阶段加在一起，输出 BF16。</figcaption></figure>\n<p>BiLoCo 把修正项写成 r 个秩一矩阵之和，每个秩一矩阵是一个系数 α 乘以两条只含 +1 和 −1 的向量。推理时要算的是 α·u·(v·x)。其中 v·x 只需要加减法：v 的某一位是 +1 就加上 x 对应的数，是 −1 就减去。</p>\n<p>举个手算的例子。假设 x 是 [0.5, −1.2, 2.0, 0.3]，v 是 [+1, −1, +1, −1]，那么 v·x = 0.5 + 1.2 + 2.0 − 0.3 = 3.4，全程没有乘法。再乘上系数 α，用 u 的正负号把这个数加到或减到输出的各个位置上即可。</p>\n<p>这样做在存储上很划算。不计系数，一对 ±1 向量每个数只占 1 位，而一对 BF16 向量每个数占 16 位，所以同样的存储能放 16 倍的秩。以一个 5120×5120 的矩阵为例，BF16 秩 32 的修正项和二值秩 512 的修正项都约是 5.2 百万位，而 FP4 权重本身约 1.2 亿位，所以修正项只多占约 4% 的存储。</p>\n<h2>秩多一些，比每个秩精确一些更好吗？</h2>\n<p>存储一样时，是用少量高精度的秩，还是大量低精度的秩？这取决于权重矩阵的奇异值分布。如果前几个方向特别大，少量高精度秩就够了；如果分布比较平，很多方向都重要，那么秩多更有用。</p>\n<p>作者在三个模型上抽了 189 个投影矩阵来测，结果说明前面的奇异值分布很平：排第一的奇异值只比排第三十二的大一倍左右。作者的衡量方式是：把低秩部分的所有元素平方求和再开根号，除以原矩阵同样算出的值，得到一个比例，比例越高说明低秩部分抓住的东西越多。按这个比例，二值秩 512 覆盖了 47% 到 53%，BF16 秩 32 只覆盖 26% 到 29%。</p>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.32243/capture_vs_rank.png\" alt=\"论文图 2：在 Qwen3-4B 的 63 个投影矩阵上，低秩部分占原矩阵大小的比例（纵轴）随存储预算（横轴）的变化。蓝线是 BiLoCo（二值秩等于预算），红线是 SVDQuant（BF16 秩等于预算除以 16），两者存储相同。每个预算下蓝线都更高，预算为 512 时高出 24.2 个百分点。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 2：在 Qwen3-4B 的 63 个投影矩阵上，低秩部分占原矩阵大小的比例（纵轴）随存储预算（横轴）的变化。蓝线是 BiLoCo（二值秩等于预算），红线是 SVDQuant（BF16 秩等于预算除以 16），两者存储相同。每个预算下蓝线都更高，预算为 512 时高出 24.2 个百分点。</figcaption></figure>\n<p>上图把这个对比画在了不同的存储预算上，每一档二值修正都更高。这说明在大模型权重上，把有限的存储花在“覆盖更多方向”上，比花在“每个方向更精确”上更值。</p>\n<h2>二值向量怎么找</h2>\n<p>最优的二值分解不能直接用 SVD 得到。作者沿用了一个已有的贪心做法，一次找一个秩一分量：</p>\n<ol>\n<li>先令残差 R 等于原权重 W。</li>\n<li>随机初始化一条 ±1 向量 v，然后交替更新：u 取 Rv 的正负号，v 取 Rᵀu 的正负号，重复 5 次就基本稳定了。</li>\n<li>算出让误差最小的系数 α，把 α·u·vᵀ 从残差里减掉，再找下一个分量。</li>\n<li>所有分量找完后，联合重新求一遍所有系数，因为各分量之间有重叠，单独求的系数不是最优。</li>\n<li>剩下的残差量化成 NVFP4。</li>\n</ol>\n<p>整个过程很快：秩 512 时，在一张 B300 上处理 Qwen3-4B 约 1 分钟，Qwen3-32B 约 5 分钟。</p>\n<h2>算子怎么做到“几乎不加时间”</h2>\n<p>光有加减法还不够，关键是让它和 FP4 矩阵乘真正同时跑。作者在 B300 上写了一个融合算子，B300 有 148 个流式多处理器（SM，GPU 上独立调度的计算单元）。</p>\n<p>算子启动时，一部分线程块照常做 FP4 矩阵乘，每块负责输出的一个 128×64 的小块。剩下没分到矩阵乘的线程块在 CUDA core 上算修正项的中间结果 z = α·(v·x)，写到显存里的一个缓冲区。矩阵乘线程块里负责收尾的那组线程，在主循环期间本来就闲着，它们等 z 写好后，用 u 展开成这个输出块的修正值，在写回结果之前加上去。和“先跑矩阵乘、再单独启动一个修正算子”的做法相比，它只启动一次，也不需要另开一个计算流，修正值直接在写回前加上，不用把整份输出写出去再读回来相加；唯一多出的显存读写是 z 这个很小的缓冲区。</p>\n<p>为什么修正项几乎不占时间？因为它读的数据很少。秩 128 时，修正项只需读约 0.16 MiB 的符号位，而 FP4 主计算要读约 12.5 MiB 的权重，相差 80 倍。读数据几乎不花时间，修正的耗时于是落在四个必须依次完成的步骤上：沿输入维度把加减法累加完、把 z 写进缓冲区、矩阵乘线程块等到 z 可用、再用 u 展开。只要这四步在矩阵乘主循环结束前做完，修正就完全藏在主计算后面。</p>\n<h2>结果一：精度</h2>\n<table><thead><tr><th>模型</th><th>BF16 原模型</th><th>直接 NVFP4</th><th>SVDQuant 秩 32</th><th>BiLoCo 秩 512</th></tr></thead><tbody><tr><td>Qwen3-4B</td><td>14.22</td><td>15.13</td><td>15.07</td><td>14.94</td></tr><tr><td>Llama-3-8B</td><td>6.27</td><td>7.00</td><td>6.92</td><td>6.84</td></tr><tr><td>Qwen3-14B</td><td>8.89</td><td>9.36</td><td>9.19</td><td>9.17</td></tr><tr><td>Qwen3-32B</td><td>7.85</td><td>8.23</td><td>8.18</td><td>8.16</td></tr><tr><td>Qwen2.5-72B</td><td>3.92</td><td>4.29</td><td>4.23</td><td>4.23</td></tr></tbody></table>\n<p>上表是 WikiText-2 上的困惑度，越低越好，BiLoCo 和 SVDQuant 占用相同的存储。BiLoCo 在 4B、8B、14B 上，WikiText-2 和 C4 两个数据集都更好，32B 和 72B 上持平或略好。如果只用四分之一的存储（秩 128），BiLoCo 比 SVDQuant 最多差 0.05。</p>\n<p>困惑度的差距看着不大，更能说明问题的是和原模型输出分布的差距。作者在 200 篇 FineWeb 文档上逐个 token 算了量化模型和 BF16 原模型的 KL 散度，既看平均值，也看第 99 百分位，也就是把所有 token 的 KL 从小到大排好后，排在 99% 位置的那个值。BiLoCo 在全部 5 个模型上第 99 百分位的 KL 都更低，比如 Qwen3-14B 上是 0.130 对 0.167，低了 22%。这说明它不只是平均情况好一点，在最容易出错的那些 token 上改善更明显。</p>\n<p>下游任务的提升就小得多了：WinoGrande 和 HellaSwag 的平均准确率，和同样存储的 SVDQuant 相比，在四个 Qwen 模型上高 0.1 到 0.7 个点，在 Llama-3-8B 上低 0.3 个点。</p>\n<h2>结果二：速度</h2>\n<p>测试形状是 K = N = 5120，接近 14B 模型注意力投影层的大小，对比基准是同一次运行里最快的纯 FP4 算子。</p>\n<table><thead><tr><th>batch 大小</th><th>秩 128 的额外耗时</th><th>秩 512 的额外耗时</th></tr></thead><tbody><tr><td>1</td><td>8%</td><td>11%</td></tr><tr><td>2</td><td>8%</td><td>15%</td></tr><tr><td>4</td><td>11%</td><td>44%</td></tr><tr><td>8</td><td>15%</td><td>74%</td></tr><tr><td>16</td><td>55%</td><td>204%</td></tr></tbody></table>\n<p>batch 为 1 时，从秩 16 到秩 512，额外耗时都在 6% 到 11% 之间，也就是 0.34 到 0.64 微秒。但修正项的工作量随 batch 和秩一起增长，而 FP4 矩阵乘在 batch 不超过 128 时耗时几乎不变，因为它的时间花在读权重上。所以 batch 一大，修正就藏不住了。如果把可接受的额外耗时定在 20% 以内，秩 128 最多到 batch 8，秩 512 只到 batch 2。</p>\n<p>还有一个容易被忽略的结论：在同一个算子里放一个同样秩的 BF16 稠密修正，耗时和二值修正一样。所以二值格式的好处不是算得更快，而是同样的字节能买到更高的秩。</p>\n<h2>我认为的局限</h2>\n<p>第一，适用范围窄。它只在小 batch 解码时划算，线上服务如果 batch 常在 16 以上，额外耗时会翻倍甚至更多，作者自己也建议这时改用 tensor core 上的修正。</p>\n<p>第二，算子不支持 MLP 的 gate 和 up 投影。这两层输出太宽，需要的输出块数超过了 B300 的 SM 数，而这个算子要求所有矩阵乘线程块同时在跑。这两层恰好是模型里参数最多的部分，所以全模型的端到端提速还需要别的办法补上。</p>\n<p>第三，速度只测了单个算子，没有给出整个模型的端到端解码延迟。精度上的提升也偏小，下游任务只差零点几个点，困惑度改善最明显的是小模型。</p>\n<h2>一个团队可以怎么试</h2>\n<ol>\n<li>先确认你的部署场景是不是小 batch 解码，比如端侧、低并发的私有部署或对延迟敏感的单用户服务。</li>\n<li>用公开代码对你的模型跑一遍量化，几分钟就能出结果，先看困惑度和 KL 散度相对直接 NVFP4 的改善。</li>\n<li>如果精度改善明显，再在你常用的 batch 范围内测算子耗时，挑一个在 20% 额外耗时以内的秩。</li>\n<li>对 gate 和 up 投影，可以先保留 SVDQuant 式的修正或直接量化，其余层用 BiLoCo。</li>\n</ol>\n<h2>一句话结论</h2>\n<p><strong class=\"hl\">解码时 tensor core 在等显存、CUDA core 在闲着，把 FP4 的修正项做成只需加减法的 ±1 向量，就能用同样的存储换来 16 倍的秩，在小 batch 下几乎不加时间。</strong></p>\n<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>中高。FP4 是 Blackwell 上降推理成本的主要手段，精度损失是落地障碍</td></tr><tr><td>方法创新性</td><td>中。分解算法沿用已有工作，新意在于把修正项格式和硬件空闲单元对上</td></tr><tr><td>实验证据</td><td>中。5 个模型的困惑度、KL 和下游任务，加单算子测速；缺端到端延迟</td></tr><tr><td>工程成本</td><td>中。代码公开，量化几分钟；融合算子依赖 B300 且不覆盖所有层</td></tr><tr><td>是否值得尝试</td><td>小 batch 解码、在用 Blackwell 部署 FP4 的团队值得一试</td></tr></tbody></table>",
+        "slug": "2610.32243",
+        "chars": 4314,
+        "minutes": 11
+      }
+    },
+    {
+      "id": "arxiv:2610.32009",
+      "title": "GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning",
+      "authors": "Carson Cary, Yukai Jin, Yihao Huang, Zhankai Ye, Fangyi Li, Ting Hua, Xin Liu, Shangqian Gao",
+      "abstract": "Mixture-of-Experts (MoE) models reduce computation through sparse activation, but storing their expert parameters remains a major memory bottleneck. We introduce GS-MoE, a training-free compression framework that addresses redundancy across and within experts through two compression axes: shared-subspace rank and expert intermediate width. Groupwise low-rank representations capture shared structure across experts while retaining expert-specific projections, and Nyström-based neuron compression reduces intermediate width within each expert. For fixed shared subspaces, we derive per-expert reconstruction-error reductions from the reconstruction objective and use them to guide expert grouping. Budgets are allocated hierarchically using a gradient-free layer-importance score to guide the allocation of rank and width budgets across layers, which eigenvalues and leverage then distribute as non-uniform ranks across groups and intermediate widths across experts. Experiments demonstrate the complementary benefits of compression along both axes, particularly at high compression rates on fine-grained MoE models. On DeepSeek-MoE-16B-Base, at a 60% reduction in total model parameters, GS-MoE retains approximately 90% of the uncompressed model's average reasoning performance, compared with 73% for D$^2$-MoE, while achieving 20% lower out-of-domain perplexity. We provide a code implementation at: https://github.com/cbacary/GS-MoE",
+      "url": "https://arxiv.org/abs/2610.32009",
+      "source": "arxiv",
+      "published": "2026-10-23",
+      "discovered_at": "2026-10-26",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-10-26",
+        "created": "2026-10-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "company": [],
+      "rank": 4,
+      "summary": "混合专家模型（MoE）每个 token 只激活少数几个专家，算得省，但所有专家的参数都得放在显存里，部署时最先卡住的往往是显存。这篇论文提出 GS-MoE，不需要任何再训练，从两个方向同时压缩专家：一是把相似的专家分成组，==组内共用一对输入和输出投影，每个专家只保留一个小的私有矩阵==；二是在每个专家内部删掉那些能被其他神经元组合替代的中间神经元。在 DeepSeek-MoE-16B 上去掉 60% 的参数后，推理任务的平均准确率还保留了原模型的约 90%，对比方法 D2-MoE 只保留了 73%。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [],
+      "deep_reading": {
+        "paper_id": "arxiv:2610.32009",
+        "title": "GS-MoE: Training-Free MoE Compression via Groupwise Subspace Sharing and Pruning",
+        "status": "completed",
+        "content": "混合专家模型（MoE）每个 token 只激活少数几个专家，算得省，但所有专家的参数都得放在显存里，部署时最先卡住的往往是显存。这篇论文提出 GS-MoE，不需要任何再训练，从两个方向同时压缩专家：一是把相似的专家分成组，组内共用一对输入和输出投影，每个专家只保留一个小的私有矩阵；二是在每个专家内部删掉不重要的中间神经元，并用保留下来的神经元近似还原被删掉的部分。==在 DeepSeek-MoE-16B 上去掉 60% 的参数后，7 项推理任务的平均准确率还保留了原模型的约 90%，对比方法 D2-MoE 只保留了 73%==。\n\n我的判断：在显存紧张的机器上部署细粒度 MoE（专家多、每个专家小，比如 DeepSeek 和 Qwen2 的 MoE 版本）的团队值得看。它只需一次前向收集统计量、一张卡就能压缩，代码公开，成本很低。但要注意两点：它在专家少而大的 Mixtral 上并不占优；而且论文自己的拆解实验显示，大部分收益来自“删神经元”这一半，“分组共享”这一半的增益在多数设置下不大。\n\n## 它到底在解决什么问题？\n\nMoE 模型把一层前馈网络换成几十个并列的“专家”，每个 token 由路由器挑出其中几个来算。比如 DeepSeek-MoE-16B 每层有 64 个专家，每个 token 只用 6 个。计算量因此下降，但另外 58 个专家的参数仍然要常驻显存，因为下一个 token 可能就要用到它们。\n\n已有的压缩方法大致有三类。第一类直接删掉或合并整个专家，删多了效果掉得很快。第二类让所有专家共用一套低秩基底，比如 MoE-SVD；但整层只有一个共用的子空间，某个专家独特的方向如果不在里面，就再也表示不出来。第三类是 D2-MoE（共享一份基础权重、每个专家只存压缩后的差值），也是把整层绑在一起。另外还有只删专家内部神经元的做法，它不利用专家之间的共性，每个专家仍然各存各的。\n\n作者的出发点是：专家之间的共性不是整层统一的，而是一部分专家彼此相似。那就应该先分组，组内共享，组和组之间各用各的子空间，同时把专家内部的冗余也一起压掉。\n\n## 方法：分组共享加删神经元\n\n![论文图 1：GS-MoE 的结构。左边是未压缩的专家，一个上投影矩阵和一个下投影矩阵。右边是压缩后，专家被分成 G 个大小相同的组，每组共用一个输入投影 P↑ 和一个输出投影 P↓，组内每个专家只保留自己的小矩阵 A↑ 和 A↓；斜线格子表示被删掉的部分，可以看到不同组的共享维度不同，不同专家保留的神经元数也不同。](figs/2610.32009/GS-MoE-Method.png)\n\n压缩后，一个专家的计算变成四步：输入先乘组共享的输入投影，压到一个较低的维度；再乘这个专家自己的小矩阵，得到保留下来的中间激活；过激活函数后，乘这个专家自己的另一个小矩阵回到低维；最后乘组共享的输出投影，回到模型维度。显存的节省来自两处：共享投影一组只存一份，私有矩阵因为两边都变小而很小。\n\n具体有四个环节。\n\n第一步是挑神经元。作者用一批校准数据跑一遍原模型，记录每个专家中间激活的统计量，再用一个叫岭杠杆分数的指标衡量每个神经元有多“不可替代”：一个神经元的激活如果能被其他神经元的组合很好地表示，分数就低，可以删。一层里所有专家的神经元放在一起排序，取前 K 个，所以不同专家保留的宽度不一样。K 由总预算决定，见后面第四步。\n\n第二步是求投影。输出那一侧有闭式解：组内各专家输出的协方差加起来，取前几个特征向量就是共享输出投影。输入那一侧没有闭式解，因为各专家看到的输入分布不同。作者的做法是：先把组内各专家的输入协方差按路由到它的 token 数加权平均，当作整组共用的输入分布，在这个平均分布下求共享输入投影。目标是：输入经过低维投影后，组内每个专家保留神经元的激活前的值仍能被重建出来。在平均分布下这有近似解：对每个专家，用它保留下来的那几行上投影矩阵，算出“转置乘自身”，得到一个模型维度乘模型维度的方阵（所以各专家保留的神经元数不同也不影响大小）；把这些方阵按 token 数加权求和，左右各乘一次平均输入协方差的平方根，对结果取前若干个特征向量，再乘上协方差平方根的逆并正交化，就是共享输入投影；共享投影固定后，再用每个专家自己的输入协方差做一次最小二乘，求出它的私有矩阵，让它在自己的输入上重建保留神经元的激活误差最小。被删掉的神经元，用 Nyström 近似（用保留下来的那几列来还原整个协方差矩阵的经典方法）补偿：根据校准时记录的中间激活协方差，算出一个线性映射，用保留神经元的激活预测完整的中间激活；再把这个映射乘进下投影的私有矩阵。这样下投影只读保留的神经元，输出却近似于原来全部神经元的贡献。\n\n第三步是分组。作者推出了一个打分：给定一个候选子空间，某个专家放进去后重建误差能降低多少。具体做法是：先为每个专家单独拟合一个子空间，然后把专家 i 放进专家 j 的子空间里，重建专家 i 保留神经元的激活前值和专家 i 的输出，两项误差相加（删神经元会让激活前值那一项变小，所以输出那一项要乘一个系数来平衡；系数等于删神经元后，所有专家上投影输出的能量保留下来的比例），算出总误差比“什么都不重建”时降低了多少；再除以专家 i 放进自己子空间时的降低量。这个比值越接近 1，说明 j 的子空间几乎和 i 自己的一样好用，1 减去这个比值就是两者的不相似度。有了 64×64 的不相似度矩阵，再做大小均衡的聚类，每组专家数相同。\n\n第四步是分配容量。层与层之间，先给每层打一个重要性分数：对路由到某个专家的每个 token，取专家输出向量的长度，乘以路由权重，再除以输入向量的长度；在该专家的所有 token 上取平均，再把这一层所有专家的平均值加起来。预算分配分三步。先由目标压缩比算出专家参数整体要保留的比例 R，再用一个超参数 ν 把它拆成“宽度保留比例取 R 的 ν 次方”，ν 默认在 0.45 到 0.55 之间。共享维度的保留比例再由 R 反推：压缩后每多保留一维共享维度，要同时付出共享投影和所有私有矩阵各一列的参数，所以共享维度保留比例等于 R 除以“宽度保留比例加上共享投影的开销比例”，开销比例是组数乘模型维度，再除以专家数乘中间维度。然后把需要删掉的宽度和维度按重要性分摊到各层：对每层分数取对数后加负号，除以一个温度，再做 softmax 得到各层的删减份额；因为加了负号，分数越低的层份额越大，删得越多。最后各层宽度不动，把各层的共享维度乘同一个系数，让全模型保留的专家参数正好等于 R；层内先按前面的神经元分数定好每个专家的宽度，再分配各组的共享维度：第二步求投影时用到的那些矩阵，其前 t 个特征值之和衡量“给这一组 t 维能降低多少误差”。在这一层的参数预算内，作者让各组的这个和加起来最大，每组维度限定在平均值的 0.35 倍到 2.5 倍之间，用二分搜索拉格朗日乘子近似求解，剩余预算再贪心补齐。\n\n整个过程只需要一次前向收集统计量，用的是 512 条 Alpaca 样本、每条 2048 个 token，一张 GPU 即可完成，压缩后不做任何训练。\n\n## 分组真的有用吗？\n\n![论文图 2(c)：DeepSeek-MoE-16B 第 22 层 64 个专家两两之间的不相似度，颜色越深越相似。横轴是按每个专家拟合的子空间，纵轴是被评估的专家，白框是最终分出的 8 个组。框内颜色明显更深，说明聚到一组的专家确实更适合共用一个子空间；也有几行整行偏亮，对应和谁都不太像的专家。](figs/2610.32009/deepseek-l22-dissim.png)\n\n作者在 DeepSeek-MoE-16B、60% 压缩、只做分组共享不删神经元的设置下做了消融。不分组时 WikiText-2 困惑度是 29.49；按打分分组后降到 25.23，因为组内专家更相似，共享子空间损失更小。再加上组间的维度分配，三个数据集上平均又降了 0.57。如果不分组，单做维度分配基本没有改善。\n\n分组还有一个副作用：同一个 token 选中的几个专家如果落在同一组，共享投影只需算一次。在 8 组的设置下，每个 token 平均只触发 3.68 个组，比随机分组少约 19%。\n\n## 实验结果\n\n作者在三个模型上和 MoE-SVD、D2-MoE、TD-MoE 等方法比较，指标是 7 个零样本推理任务的平均准确率，以及 WikiText-2 和 PTB（另一个语言建模测试集）上的困惑度。压缩比指整个模型参数量的减少比例。\n\n| 模型与压缩比 | 原模型 | D2-MoE | GS-MoE |\n|---|---:|---:|---:|\n| DeepSeek-MoE-16B，40% | 0.56 | 0.49 | 0.54 |\n| DeepSeek-MoE-16B，60% | 0.56 | 0.41 | 0.50 |\n| Qwen2-57B-A14B，40% | 0.59 | 0.58 | 0.59 |\n| Mixtral-8x7B，40% | 0.63 | 0.57 | 0.57 |\n| Mixtral-8x7B，60% | 0.63 | 0.52 | 0.50 |\n\n上表是 7 项任务的平均准确率。在两个细粒度模型上 GS-MoE 优势明显：DeepSeek 60% 压缩时 0.50 对 0.41；Qwen2 在 60% 压缩时平均准确率仍是 0.59，和原模型持平，第二好的 TD-MoE 只有 0.52。但在只有 8 个大专家的 Mixtral 上，它和 D2-MoE 打平，60% 时还略差，说明它的优势主要来自专家多而细的结构。\n\n困惑度的情况更复杂。DeepSeek 60% 压缩时，GS-MoE 在 PTB 上是 22.21，比 D2-MoE 的 27.73 低 20%，这是摘要里“域外困惑度低 20%”的来源；但在 WikiText-2 上它是 17.55，明显差于 D2-MoE 的 11.67。所以“哪个更好”取决于你看哪项指标。\n\n速度上，60% 压缩的 Mixtral 在 B200 上，GS-MoE 不分组时每秒 374.77 个 token，是 D2-MoE 的 3.32 倍，因为 D2-MoE 每个专家要额外还原残差。分组数从 1 加到 8，DeepSeek 上吞吐只降了 9.6%。\n\n## 我认为的局限\n\n第一，两部分的贡献不均衡。附录里把方法拆成“只分组共享”和“只删神经元”分别测：在 Qwen2 和 Mixtral 上，只删神经元的版本和完整方法几乎一样；只有在 DeepSeek 60% 压缩时，完整方法才明显更好（0.503 对 0.487）。也就是说，很多场景下只用 Nyström 删神经元就能拿到大部分收益。\n\n第二，专家少而大的模型不适用。作者自己也承认，Mixtral 的中间维度大、专家只有 8 个，降子空间维度伤害更大，分组也没什么可分的。\n\n第三，只评测了语言建模和多选推理题，没有生成类任务、长文本和代码，也没有和量化方法组合测试。实际部署中 MoE 更常见的做法是量化或把冷门专家放到内存里，这篇没有与之比较。\n\n## 一个团队可以怎么试\n\n1. 先确认你的模型是细粒度 MoE，专家数在 64 个左右或更多。\n2. 先只跑“删神经元”的部分，在你自己的评测集上看 40% 压缩时的损失，这一步最便宜。\n3. 如果要压到 60% 左右，再加上分组共享，同时检查生成质量，而不只是困惑度。\n4. 分组数从小往大试，每一档都测吞吐，因为组越多共享投影越多，速度会略降。\n\n## 一句话结论\n\n==细粒度 MoE 的专家之间有局部相似性，先分组共享、再删冗余神经元，可以不经训练压掉 60% 的参数而保住大部分推理能力；但大部分收益来自删神经元，专家少的模型上不占优。==\n\n| 维度 | 评价 |\n|---|---|\n| 问题重要性 | 中高。MoE 的显存占用是部署的直接障碍 |\n| 方法创新性 | 中。分组打分和容量分配是新的，各个组件都是已有工具 |\n| 实验证据 | 中。三个模型、多个压缩比，有消融和吞吐；困惑度和准确率结论不一致，缺生成任务 |\n| 工程成本 | 低。不训练，一次前向，单卡完成，代码公开 |\n| 是否值得尝试 | 在显存受限环境部署细粒度 MoE 的团队可以试，先从删神经元开始 |",
+        "content_html": "<p>混合专家模型（MoE）每个 token 只激活少数几个专家，算得省，但所有专家的参数都得放在显存里，部署时最先卡住的往往是显存。这篇论文提出 GS-MoE，不需要任何再训练，从两个方向同时压缩专家：一是把相似的专家分成组，组内共用一对输入和输出投影，每个专家只保留一个小的私有矩阵；二是在每个专家内部删掉不重要的中间神经元，并用保留下来的神经元近似还原被删掉的部分。<strong class=\"hl\">在 DeepSeek-MoE-16B 上去掉 60% 的参数后，7 项推理任务的平均准确率还保留了原模型的约 90%，对比方法 D2-MoE 只保留了 73%</strong>。</p>\n<p>我的判断：在显存紧张的机器上部署细粒度 MoE（专家多、每个专家小，比如 DeepSeek 和 Qwen2 的 MoE 版本）的团队值得看。它只需一次前向收集统计量、一张卡就能压缩，代码公开，成本很低。但要注意两点：它在专家少而大的 Mixtral 上并不占优；而且论文自己的拆解实验显示，大部分收益来自“删神经元”这一半，“分组共享”这一半的增益在多数设置下不大。</p>\n<h2>它到底在解决什么问题？</h2>\n<p>MoE 模型把一层前馈网络换成几十个并列的“专家”，每个 token 由路由器挑出其中几个来算。比如 DeepSeek-MoE-16B 每层有 64 个专家，每个 token 只用 6 个。计算量因此下降，但另外 58 个专家的参数仍然要常驻显存，因为下一个 token 可能就要用到它们。</p>\n<p>已有的压缩方法大致有三类。第一类直接删掉或合并整个专家，删多了效果掉得很快。第二类让所有专家共用一套低秩基底，比如 MoE-SVD；但整层只有一个共用的子空间，某个专家独特的方向如果不在里面，就再也表示不出来。第三类是 D2-MoE（共享一份基础权重、每个专家只存压缩后的差值），也是把整层绑在一起。另外还有只删专家内部神经元的做法，它不利用专家之间的共性，每个专家仍然各存各的。</p>\n<p>作者的出发点是：专家之间的共性不是整层统一的，而是一部分专家彼此相似。那就应该先分组，组内共享，组和组之间各用各的子空间，同时把专家内部的冗余也一起压掉。</p>\n<h2>方法：分组共享加删神经元</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.32009/GS-MoE-Method.png\" alt=\"论文图 1：GS-MoE 的结构。左边是未压缩的专家，一个上投影矩阵和一个下投影矩阵。右边是压缩后，专家被分成 G 个大小相同的组，每组共用一个输入投影 P↑ 和一个输出投影 P↓，组内每个专家只保留自己的小矩阵 A↑ 和 A↓；斜线格子表示被删掉的部分，可以看到不同组的共享维度不同，不同专家保留的神经元数也不同。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 1：GS-MoE 的结构。左边是未压缩的专家，一个上投影矩阵和一个下投影矩阵。右边是压缩后，专家被分成 G 个大小相同的组，每组共用一个输入投影 P↑ 和一个输出投影 P↓，组内每个专家只保留自己的小矩阵 A↑ 和 A↓；斜线格子表示被删掉的部分，可以看到不同组的共享维度不同，不同专家保留的神经元数也不同。</figcaption></figure>\n<p>压缩后，一个专家的计算变成四步：输入先乘组共享的输入投影，压到一个较低的维度；再乘这个专家自己的小矩阵，得到保留下来的中间激活；过激活函数后，乘这个专家自己的另一个小矩阵回到低维；最后乘组共享的输出投影，回到模型维度。显存的节省来自两处：共享投影一组只存一份，私有矩阵因为两边都变小而很小。</p>\n<p>具体有四个环节。</p>\n<p>第一步是挑神经元。作者用一批校准数据跑一遍原模型，记录每个专家中间激活的统计量，再用一个叫岭杠杆分数的指标衡量每个神经元有多“不可替代”：一个神经元的激活如果能被其他神经元的组合很好地表示，分数就低，可以删。一层里所有专家的神经元放在一起排序，取前 K 个，所以不同专家保留的宽度不一样。K 由总预算决定，见后面第四步。</p>\n<p>第二步是求投影。输出那一侧有闭式解：组内各专家输出的协方差加起来，取前几个特征向量就是共享输出投影。输入那一侧没有闭式解，因为各专家看到的输入分布不同。作者的做法是：先把组内各专家的输入协方差按路由到它的 token 数加权平均，当作整组共用的输入分布，在这个平均分布下求共享输入投影。目标是：输入经过低维投影后，组内每个专家保留神经元的激活前的值仍能被重建出来。在平均分布下这有近似解：对每个专家，用它保留下来的那几行上投影矩阵，算出“转置乘自身”，得到一个模型维度乘模型维度的方阵（所以各专家保留的神经元数不同也不影响大小）；把这些方阵按 token 数加权求和，左右各乘一次平均输入协方差的平方根，对结果取前若干个特征向量，再乘上协方差平方根的逆并正交化，就是共享输入投影；共享投影固定后，再用每个专家自己的输入协方差做一次最小二乘，求出它的私有矩阵，让它在自己的输入上重建保留神经元的激活误差最小。被删掉的神经元，用 Nyström 近似（用保留下来的那几列来还原整个协方差矩阵的经典方法）补偿：根据校准时记录的中间激活协方差，算出一个线性映射，用保留神经元的激活预测完整的中间激活；再把这个映射乘进下投影的私有矩阵。这样下投影只读保留的神经元，输出却近似于原来全部神经元的贡献。</p>\n<p>第三步是分组。作者推出了一个打分：给定一个候选子空间，某个专家放进去后重建误差能降低多少。具体做法是：先为每个专家单独拟合一个子空间，然后把专家 i 放进专家 j 的子空间里，重建专家 i 保留神经元的激活前值和专家 i 的输出，两项误差相加（删神经元会让激活前值那一项变小，所以输出那一项要乘一个系数来平衡；系数等于删神经元后，所有专家上投影输出的能量保留下来的比例），算出总误差比“什么都不重建”时降低了多少；再除以专家 i 放进自己子空间时的降低量。这个比值越接近 1，说明 j 的子空间几乎和 i 自己的一样好用，1 减去这个比值就是两者的不相似度。有了 64×64 的不相似度矩阵，再做大小均衡的聚类，每组专家数相同。</p>\n<p>第四步是分配容量。层与层之间，先给每层打一个重要性分数：对路由到某个专家的每个 token，取专家输出向量的长度，乘以路由权重，再除以输入向量的长度；在该专家的所有 token 上取平均，再把这一层所有专家的平均值加起来。预算分配分三步。先由目标压缩比算出专家参数整体要保留的比例 R，再用一个超参数 ν 把它拆成“宽度保留比例取 R 的 ν 次方”，ν 默认在 0.45 到 0.55 之间。共享维度的保留比例再由 R 反推：压缩后每多保留一维共享维度，要同时付出共享投影和所有私有矩阵各一列的参数，所以共享维度保留比例等于 R 除以“宽度保留比例加上共享投影的开销比例”，开销比例是组数乘模型维度，再除以专家数乘中间维度。然后把需要删掉的宽度和维度按重要性分摊到各层：对每层分数取对数后加负号，除以一个温度，再做 softmax 得到各层的删减份额；因为加了负号，分数越低的层份额越大，删得越多。最后各层宽度不动，把各层的共享维度乘同一个系数，让全模型保留的专家参数正好等于 R；层内先按前面的神经元分数定好每个专家的宽度，再分配各组的共享维度：第二步求投影时用到的那些矩阵，其前 t 个特征值之和衡量“给这一组 t 维能降低多少误差”。在这一层的参数预算内，作者让各组的这个和加起来最大，每组维度限定在平均值的 0.35 倍到 2.5 倍之间，用二分搜索拉格朗日乘子近似求解，剩余预算再贪心补齐。</p>\n<p>整个过程只需要一次前向收集统计量，用的是 512 条 Alpaca 样本、每条 2048 个 token，一张 GPU 即可完成，压缩后不做任何训练。</p>\n<h2>分组真的有用吗？</h2>\n<figure class=\"dr-fig\"><img data-fig=\"1\" src=\"figs/2026-10-26/infra/2610.32009/deepseek-l22-dissim.png\" alt=\"论文图 2(c)：DeepSeek-MoE-16B 第 22 层 64 个专家两两之间的不相似度，颜色越深越相似。横轴是按每个专家拟合的子空间，纵轴是被评估的专家，白框是最终分出的 8 个组。框内颜色明显更深，说明聚到一组的专家确实更适合共用一个子空间；也有几行整行偏亮，对应和谁都不太像的专家。\" loading=\"lazy\" decoding=\"async\"><figcaption>论文图 2(c)：DeepSeek-MoE-16B 第 22 层 64 个专家两两之间的不相似度，颜色越深越相似。横轴是按每个专家拟合的子空间，纵轴是被评估的专家，白框是最终分出的 8 个组。框内颜色明显更深，说明聚到一组的专家确实更适合共用一个子空间；也有几行整行偏亮，对应和谁都不太像的专家。</figcaption></figure>\n<p>作者在 DeepSeek-MoE-16B、60% 压缩、只做分组共享不删神经元的设置下做了消融。不分组时 WikiText-2 困惑度是 29.49；按打分分组后降到 25.23，因为组内专家更相似，共享子空间损失更小。再加上组间的维度分配，三个数据集上平均又降了 0.57。如果不分组，单做维度分配基本没有改善。</p>\n<p>分组还有一个副作用：同一个 token 选中的几个专家如果落在同一组，共享投影只需算一次。在 8 组的设置下，每个 token 平均只触发 3.68 个组，比随机分组少约 19%。</p>\n<h2>实验结果</h2>\n<p>作者在三个模型上和 MoE-SVD、D2-MoE、TD-MoE 等方法比较，指标是 7 个零样本推理任务的平均准确率，以及 WikiText-2 和 PTB（另一个语言建模测试集）上的困惑度。压缩比指整个模型参数量的减少比例。</p>\n<table><thead><tr><th>模型与压缩比</th><th>原模型</th><th>D2-MoE</th><th>GS-MoE</th></tr></thead><tbody><tr><td>DeepSeek-MoE-16B，40%</td><td>0.56</td><td>0.49</td><td>0.54</td></tr><tr><td>DeepSeek-MoE-16B，60%</td><td>0.56</td><td>0.41</td><td>0.50</td></tr><tr><td>Qwen2-57B-A14B，40%</td><td>0.59</td><td>0.58</td><td>0.59</td></tr><tr><td>Mixtral-8x7B，40%</td><td>0.63</td><td>0.57</td><td>0.57</td></tr><tr><td>Mixtral-8x7B，60%</td><td>0.63</td><td>0.52</td><td>0.50</td></tr></tbody></table>\n<p>上表是 7 项任务的平均准确率。在两个细粒度模型上 GS-MoE 优势明显：DeepSeek 60% 压缩时 0.50 对 0.41；Qwen2 在 60% 压缩时平均准确率仍是 0.59，和原模型持平，第二好的 TD-MoE 只有 0.52。但在只有 8 个大专家的 Mixtral 上，它和 D2-MoE 打平，60% 时还略差，说明它的优势主要来自专家多而细的结构。</p>\n<p>困惑度的情况更复杂。DeepSeek 60% 压缩时，GS-MoE 在 PTB 上是 22.21，比 D2-MoE 的 27.73 低 20%，这是摘要里“域外困惑度低 20%”的来源；但在 WikiText-2 上它是 17.55，明显差于 D2-MoE 的 11.67。所以“哪个更好”取决于你看哪项指标。</p>\n<p>速度上，60% 压缩的 Mixtral 在 B200 上，GS-MoE 不分组时每秒 374.77 个 token，是 D2-MoE 的 3.32 倍，因为 D2-MoE 每个专家要额外还原残差。分组数从 1 加到 8，DeepSeek 上吞吐只降了 9.6%。</p>\n<h2>我认为的局限</h2>\n<p>第一，两部分的贡献不均衡。附录里把方法拆成“只分组共享”和“只删神经元”分别测：在 Qwen2 和 Mixtral 上，只删神经元的版本和完整方法几乎一样；只有在 DeepSeek 60% 压缩时，完整方法才明显更好（0.503 对 0.487）。也就是说，很多场景下只用 Nyström 删神经元就能拿到大部分收益。</p>\n<p>第二，专家少而大的模型不适用。作者自己也承认，Mixtral 的中间维度大、专家只有 8 个，降子空间维度伤害更大，分组也没什么可分的。</p>\n<p>第三，只评测了语言建模和多选推理题，没有生成类任务、长文本和代码，也没有和量化方法组合测试。实际部署中 MoE 更常见的做法是量化或把冷门专家放到内存里，这篇没有与之比较。</p>\n<h2>一个团队可以怎么试</h2>\n<ol>\n<li>先确认你的模型是细粒度 MoE，专家数在 64 个左右或更多。</li>\n<li>先只跑“删神经元”的部分，在你自己的评测集上看 40% 压缩时的损失，这一步最便宜。</li>\n<li>如果要压到 60% 左右，再加上分组共享，同时检查生成质量，而不只是困惑度。</li>\n<li>分组数从小往大试，每一档都测吞吐，因为组越多共享投影越多，速度会略降。</li>\n</ol>\n<h2>一句话结论</h2>\n<p><strong class=\"hl\">细粒度 MoE 的专家之间有局部相似性，先分组共享、再删冗余神经元，可以不经训练压掉 60% 的参数而保住大部分推理能力；但大部分收益来自删神经元，专家少的模型上不占优。</strong></p>\n<table><thead><tr><th>维度</th><th>评价</th></tr></thead><tbody><tr><td>问题重要性</td><td>中高。MoE 的显存占用是部署的直接障碍</td></tr><tr><td>方法创新性</td><td>中。分组打分和容量分配是新的，各个组件都是已有工具</td></tr><tr><td>实验证据</td><td>中。三个模型、多个压缩比，有消融和吞吐；困惑度和准确率结论不一致，缺生成任务</td></tr><tr><td>工程成本</td><td>低。不训练，一次前向，单卡完成，代码公开</td></tr><tr><td>是否值得尝试</td><td>在显存受限环境部署细粒度 MoE 的团队可以试，先从删神经元开始</td></tr></tbody></table>",
+        "slug": "2610.32009",
+        "chars": 4540,
+        "minutes": 12
+      }
+    },
+    {
+      "id": "arxiv:2610.32057",
+      "title": "HyScale: Scaling Long-Context Training for Learned Sparse Attention",
+      "authors": "Yangsheng Deng, Xinjing Huang, Yulong Wang, Yunzhuo Liu, Jun Hu, Shuyong Tang, Junchi Zeng, Mingji Han, Ray Ying, Key Zhang, Luo Mai",
+      "abstract": "We present HyScale, a long-context training system for learned sparse attention. Learned sparse attention is a promising architecture for million-token contexts, widely adopted in production since DeepSeek-V3.2. Selection, however, grows into the training bottleneck. For each query, it scores every previous token whereas sparse attention reads only $k$; worse, current systems materialize a full score table and repeat selection during recomputation. Our key insight is that the output of selection is not an activation, but rather a set of indices. Building on it, HyScale introduces HyTopK and selection replay. HyTopK finds each query's exact top-$k$ on the fly without a score table, while selection replay reuses forward-pass selection in recomputation. Together with holistic system optimizations tackling end-to-end training challenges, HyScale speeds up GLM-5.1 training on 1M-token sequences by 2.07$\\times$ over Megatron-LM on 512 H20 GPUs. It also speeds up the CSA layers of DeepSeek-V4-Flash and the QSA layers of Qwen3.8-Flash-Next by 2.01$\\times$ and 1.57$\\times$ at 1M tokens on 32 H800 GPUs.",
+      "url": "https://arxiv.org/abs/2610.32057",
+      "source": "arxiv",
+      "published": "2026-10-23",
+      "discovered_at": "2026-10-26",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.AI",
+        "categories": [
+          "cs.AI",
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-10-26",
+        "created": "2026-10-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "company": [],
+      "rank": 5,
+      "summary": "学出来的稀疏注意力让每个查询只读最相关的 k 个历史 token，是百万 token 上下文的热门架构；但挑出这 k 个 token 的选择步骤要给之前所有 token 打分，训练时反而成了瓶颈，在 Megatron-LM 里训练长序列时它占了每步近一半的时间。HyScale 的关键观察是，==选择的结果只是一组下标，不必存整张分数表，也不必在重算时再选一遍==。它边打分边求出精确的前 k 个，反向重算时直接复用前向选出的下标。在 512 张 H20 GPU 上训练百万 token 序列，端到端比 Megatron-LM 快 2.07 倍。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.31818",
+      "title": "Nested Sparsity for Scalable Pretraining and Continual Learning",
+      "authors": "Tianzhe Chu, Druv Pai, Yi Ma",
+      "abstract": "Mixture-of-experts (MoE) transformers, the standard backbone for modern large-scale deep learning, employ conditional computation: only a sparse subset of model weights is used in each forward pass. In MoE transformers, this sparsity arises in the MoE operator, which generalizes the multi-layer perceptron in the classical transformer. In this work, we explore an alternative mechanism for conditional computation that analogously generalizes the attention operator. The sparsity induced by this mechanism naturally nests (i.e., hierarchically composes) with the sparsity induced by the MoE operator. We show that a transformer employing this nested sparsity mechanism, which we call Nestor, performs better than a conventional MoE transformer at equal compute and equal sparsity in language model pretraining. We also show that Nestor is well-suited for continual pretraining: it can be adapted to longer contexts more effectively than conventional MoEs, as well as adapt more efficiently to new domains while forgetting less on old domains. Furthermore, we demonstrate that these benefits persist as model size, dataset size, and context length grow. Our results demonstrate the potential of alternative conditional computation mechanisms for deep neural network architectures. Code and checkpoints are available on GitHub at https://github.com/Ma-Lab-Berkeley/Nestor .",
+      "url": "https://arxiv.org/abs/2610.31818",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-26",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-10-26",
+        "created": "2026-10-22"
+      },
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 4
+      },
+      "total_score": 3.7,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.7,
+      "company": [],
+      "rank": 6,
+      "summary": "混合专家模型（MoE）只把前馈层做成稀疏的，注意力层仍是所有 token 共用一套参数、看完整的上下文。这篇论文提出 Nestor，把注意力也拆成几组参数各自独立的注意力模块，称为列：路由器给每个 token 选出其中几列，==每列只在分到同一列的 token 之间算注意力，列里再各挂一组专家==。预训练的扩展规律实验显示，要达到 Nestor 的验证损失，同样稀疏度的普通 MoE 需要多花 13% 到 29% 的训练算力，模型变大后这个差距没有缩小。拿去新领域继续训练时，它学到的和 MoE 差不多，忘掉的更少。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2610.31768",
+      "title": "Efficient Omni-modal Large Language Model Inference via Per-Query Modality Selection",
+      "authors": "Shuqi Liu, Yuzhou Cao, Luke Ong",
+      "abstract": "Omni-modal large language models (Omni-LLMs) can jointly process a broad range of modalities, such as text, audio, and video, enabling stronger multimodal understanding and reasoning capabilities, but often at substantial inference cost. We observe that the benefit of additional modalities varies across queries, indicating that a fixed modality configuration can be inefficient. Motivated by this, we study query-wise modality selection, which keeps the underlying Omni-LLM fixed while adaptively selecting which modalities to provide for each query. We formulate the problem as an accuracy-cost optimization problem and develop a cost-sensitive learning approach for modality selection. We evaluate our approach on WorldSense using Qwen2.5-Omni and Qwen3-Omni under three inference-cost measures: input tokens, latency, and monetary cost. Across both models, query-wise modality selection consistently improves the accuracy-cost trade-off and can even outperform the standard setting in which all available modalities are provided to the Omni-LLM. For Qwen2.5-Omni, our cost-sensitive approach matches or exceeds this full-modality accuracy while requiring only approximately 41% of the input tokens, 39% of the latency, and 61% of the monetary cost.",
+      "url": "https://arxiv.org/abs/2610.31768",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-26",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-10-26",
+        "created": "2026-10-22"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.65,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.7,
+      "company": [],
+      "rank": 7,
+      "summary": "全模态大模型能同时读文字、听音频、看视频，但视频很贵：在 WorldSense 基准上，只给文字和音频时每题约三千个输入 token，加上视频就涨到约四万。很多问题其实不需要看视频。这篇论文不改模型，只决定每个问题要输入哪些模态，==把这个选择当作准确率和成本之间的权衡来学==：选择器是一个线性层，只看问题文字的 BGE-M3 向量，决定要不要加视频；训练时的目标是答错的损失加上按权重计入的推理成本。在 Qwen2.5-Omni 上，它的准确率持平或超过把全部模态都输入的做法，输入 token 只要约 41%，延迟只要约 39%。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": []
+    },
+    {
+      "id": "web:tensormesh-platform-20261014",
+      "title": "Tensormesh Launches Tensormesh Platform to Cut LLM Inference Costs by Reusing KV Cache at Enterprise Scale",
+      "url": "https://tensormesh.ai/newsroom/tensormesh-platform-launch-llm-inference-kv-cache/",
+      "published": "2026-10-14",
+      "discovered_at": "2026-10-26",
+      "abstract": "This multi-tier, scalable KV cache management software deploys across infrastructure with an enterprise Kubernetes deployment.",
+      "authors": [],
+      "company": [
+        "Tensormesh"
+      ],
+      "source": "web_search",
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 3
+      },
+      "total_score": 3.45,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.5,
+      "rank": 8,
+      "summary": "大模型推理会反复重算同一段上下文，既浪费 GPU 时间，又拖慢首个 token 的返回。开源 KV cache 项目 LMCache 的团队 Tensormesh 为此发布了企业版平台 Tensormesh Platform，==把 KV cache 当成一层需要管理的数据来运营==：在显存、主机内存和存储之间自动分层缓存，既复用提示开头的前缀，也能用 CacheBlend 复用提示中间的片段，适合检索增强生成；集群里的机器还能直接互相拉取 KV cache。平台部署在企业自己的 Kubernetes 集群上，带数据安全、实时监控、高可用、缓存策略和多租户隔离等生产功能。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "Tensormesh",
+          "logo": null,
+          "hue": 15
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2610.31945",
+      "title": "Kolibri: A Sovereign European Model on the Pareto Frontier",
+      "authors": "Aleph Alpha, :, Moritz Althaus, Artur Baranowski, Michael Barlow, Fabien C. Y. Benureau, Felix Berkenkamp, Amrita Bhattacherjee, Lukas Blübaum, Duncan Blythe, Augustijn de Boer, Bastian Boll, Thomas F. Burns, Björn Deiseroth, Niko Dürr, Béni Balázs Egressy, Niklas Finken, Niklas Freymuth, Fabian Gebhart, Max Hammer, Bastian Harren, Andreas Hartel, Johann Higl, Steffen Hirschmann, Pablo Iyu Guerrero, Yasser Jadidi, Andreas Jagusch, Mitja Kleider, Markus Klein, Jonas Knupp, Murali Kondragunta, Garwin Lechner, Dominik Lê-Kellner, Jurek Leonhardt, Jiaze Li, Sohir Maskey, Omar Mehio, Pit Neitemeier, Letitia Parcalabescu, Alejandro Petry Pacheco, Pranav Ragupathy, Martin Reinhardt, Peter Rodenkirch Nfissi, Dylan Rodriquez, Leonard Salewski, Raziye Sari, Jordan Sassoon, Ivo Schaper, Ilhan Scheer, Frank Schneider, Philipp Scholl, Lukas Schott, Eric Schreiber, Pablo Schumacher, Alessio Serra, Philipp Siedler, Prabhu Teja Sivaprasad, Mohamed Soliman, Till Speicher, Volker Stampa, Simon Thel, Serge Thilges, Irina Vidal Migallón, Denis Waßmann, Samuel Weinbach, Sascha Wirges, Michael Wüthrich, Alexei Zacharov",
+      "abstract": "This report introduces Kolibri, an English-German mixture-of-experts transformer with 78.1B total parameters and 3.46B active parameters per token, released as open weights under the Apache 2.0 licence. We built Kolibri for sovereign and specialised deployment, with a particular focus on German and on regulated domains such as public administration, industry, and aerospace. To support these settings, we control the full model-development process, including data, architecture, training infrastructure, post-training, and evaluation. We train Kolibri on 24T tokens across pre-training, mid-training, and long-context extension, with German accounting for more than 20% of the data mix by bytes. To reach this share, we complement German datasets with more than 2T German tokens that we curate from the web with our own pipeline and generate synthetically. Post-training combines supervised fine-tuning on curated German and English data with reinforcement learning on more than 1.2M internally curated tasks, which cover reasoning, tool use, instruction following, code, and retrieval. The model activates 4.4% of its parameters per token, and among the open models evaluated in this report, it lies on the Pareto frontier of quality and serving cost in English and German. Kolibri builds on Kolibri Origin, an earlier iteration that validated our full pipeline at scale. Both models come from our Model Factory, which connects data, experimentation, training, evaluation, and deployment through version-controlled workflows.",
+      "url": "https://arxiv.org/abs/2610.31945",
+      "source": "arxiv",
+      "published": "2026-10-22",
+      "discovered_at": "2026-10-26",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "categories": [
+          "cs.CL",
+          "cs.AI",
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-10-26",
+        "created": "2026-10-22"
+      },
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 4
+      },
+      "total_score": 3.35,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.4,
+      "company": [
+        "Aleph Alpha"
+      ],
+      "rank": 9,
+      "summary": "欧洲的公共部门、工业和航天等受监管行业，需要能自己掌控、德语又好的开源大模型。Kolibri 是一个英德双语的混合专家模型，总参数 781 亿，每个 token 只激活约 35 亿，以开源许可公开权重。==团队从数据、架构、训练设施到后训练和评测全流程自己掌控==，还自建管线从网上整理并合成了 2 万亿以上的德语 token，让德语在训练数据里占到相当比例。在报告比较的开源模型里，它在英语和德语上都处在质量和推理成本的最优边界上，也就是同等成本下质量最好的一档。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "Aleph Alpha",
+          "logo": "logos/aleph-alpha.png",
+          "hue": 143
+        }
+      ]
+    },
+    {
+      "id": "web:pai-modeldistill",
+      "title": "人工智能平台 PAI：模型蒸馏（ModelDistill）",
+      "url": "https://www.alibabacloud.com/help/zh/pai/model-distillation-overview",
+      "published": "2026-09-29",
+      "discovered_at": "2026-10-26",
+      "abstract": "PAI 模型蒸馏（ModelDistill）提供一站式的模型蒸馏服务，支持通用蒸馏和多种场景化蒸馏模板。",
+      "authors": [],
+      "company": [
+        "Alibaba"
+      ],
+      "source": "web_search",
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 2,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 3
+      },
+      "total_score": 2.9,
+      "track_fit": "core",
+      "track_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 2.9,
+      "rank": 10,
+      "summary": "想把大模型的能力迁到便宜的小模型上，又不想自己搭流程，阿里云人工智能平台 PAI 的模型蒸馏服务 ModelDistill 把这件事做成了不用写代码的托管服务。它用黑盒蒸馏：==先让教师模型生成高质量的训练数据，再用这些数据对学生模型做 SFT==，学生模型可选 LoRA、QLoRA 或全参微调。除了通用模板，还有指令跟随、思维链推理、智能体工具调用、文生视频和代码智能体等场景模板。文档也提醒，蒸馏一定会损失一些效果，简单的分类和文本匹配任务直接微调小模型可能更划算。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "Alibaba",
+          "logo": "logos/alibaba.png",
+          "hue": 324
+        }
+      ]
+    }
+  ],
+  "code_projects": [],
+  "warnings": [
+    "Crawler network DNS failure: HF, Semantic Scholar, conferences, RSS, GitHub and HF projects unavailable; arXiv OAI cache used (ARXIV_GATE OK).",
+    "git pull --rebase failed: pre-existing unstaged changes; preserved.",
+    "Some current arXiv URLs could not be verified via Web; original OAI metadata retained.",
+    "Spotify date precision is month; conservative 2026-10-01 lower bound.",
+    "Blog abstract fields contain original source excerpts; articles have no formal paper abstract.",
+    "PAI ModelDistill selected below min_score to satisfy 70% source cap.",
+    "Card fulltext fetch deferred (DNS unavailable); queue preserves abstracts.",
+    "Venue verification API unavailable; no unverified venue badges added."
+  ],
+  "scenario_by": "grok-bot"
+}
