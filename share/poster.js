@@ -5,8 +5,9 @@
    with the rest of the title as subtitle (else the whole title; wrapped or shrunk, never cut with an ellipsis),
    author-organisation row (curated logo or text chip), then LEFT 核心结论 + 关键数字 | RIGHT 方法框架 figure.
    The figure (share/fig/<slug>.webp) is trimmed of its background border again here, scaled to fill its slot, and its
-   card hugs the image. Very wide figures (>= 2:1) may instead span the full width under the 核心结论 | 关键数字 block,
-   whichever arrangement gives the figure more area. 核心结论 = the first of p.takes that fits; never an ellipsis.
+   card hugs the image. 2026-10-27: ALWAYS this arrangement when a figure exists (any figure shape, 0-3 key numbers);
+   the old "wide" variant (numbers in the right column, figure as a strip underneath) is gone. window.PDPoster.last
+   reports the drawn geometry so the layout sweep (poster_layout_check.py) can verify it. 核心结论 = the first of p.takes that fits; never an ellipsis.
    No figure (or it fails to load): the v1 single-column key-numbers layout with the same header, pills and org row.
    Figure and logos are same-origin files, fetched only here (when a poster is generated). */
 (function(){
@@ -75,13 +76,26 @@ function layout(ctx,D,o){ /* v1 (no figure): returns the y where content ends; d
    y+=rh+(i<pts.length-1?18:0)})}
  return y+g}
 /* ---- v2 parts ---- */
-function pill(ctx,x,y,txt,fill,d){ctx.font=F(24,fill?'sansb':'sans');var w=ctx.measureText(txt).width+32;if(!d)return w;
- if(fill){ctx.fillStyle=fill;rr(ctx,x,y,w,42,21);ctx.fill();ctx.fillStyle='#fff'}
- else{ctx.strokeStyle=LINE;ctx.lineWidth=2;rr(ctx,x+1,y+1,w-2,40,20);ctx.stroke();ctx.fillStyle=INK2}
- ctx.fillText(txt,x+16,y+9);return w}
-function pills(ctx,D,y,d){var t=D.p,x=P,iss=t.issue||(t.chips||[])[0]||'';
- if(iss){ctx.font=F(24,'sans');iss=ellip(ctx,iss,W-2*P-32-(t.venue?240:0));x+=pill(ctx,x,y,iss,null,d)+14}
- if(t.venue){ctx.font=F(24,'sansb');if(x+ctx.measureText(t.venue).width+32<=W-P)pill(ctx,x,y,t.venue,ACC,d)}return y+42}
+/* pills (2026-10-27, Felix): roomier padding (PX 28 = 1.75x the old 16; height 52 vs 42) and optical vertical
+   centring from real glyph metrics: both pills share ONE baseline, placed so the union ink box of both labels' body
+   glyphs (CJK full box, Latin cap/ascender height; descenders ignored) is centred -- same height, not top-heavy. */
+var PX=28,PH=52;
+function inkBox(ctx,txts){var a=0,dsc=0;txts.forEach(function(t){if(!t)return;[['sans',t[0]],['sansb',t[1]]].forEach(function(f){if(!f[1])return;
+  /* centre the body, not the descenders: CJK ink box and Latin cap height share a centre line, so drop g j p q y , ( ) [ ] */
+  var body=f[1].replace(/[gjpqy,;()\[\]（）]/g,'');if(!body.trim())return;
+  ctx.font=F(24,f[0]);var m=ctx.measureText(body);if(m.actualBoundingBoxAscent!=null){a=Math.max(a,m.actualBoundingBoxAscent);dsc=Math.max(dsc,m.actualBoundingBoxDescent)}})});
+ if(!a){a=24*0.86;dsc=24*0.14}return {a:a,d:dsc}}
+function pill(ctx,x,y,txt,fill,d,bl){ctx.font=F(24,fill?'sansb':'sans');var w=ctx.measureText(txt).width+2*PX;if(!d)return w;
+ if(fill){ctx.fillStyle=fill;rr(ctx,x,y,w,PH,PH/2);ctx.fill();ctx.fillStyle='#fff'}
+ else{ctx.strokeStyle=LINE;ctx.lineWidth=2;rr(ctx,x+1,y+1,w-2,PH-2,PH/2-1);ctx.stroke();ctx.fillStyle=INK2}
+ ctx.textBaseline='alphabetic';ctx.fillText(txt,x+PX,y+bl);ctx.textBaseline='top';return w}
+function pills(ctx,D,y,d){var t=D.p,x=P,iss=t.issue||(t.chips||[])[0]||'',vw=0;
+ if(t.venue){ctx.font=F(24,'sansb');vw=ctx.measureText(t.venue).width+2*PX}
+ if(iss){ctx.font=F(24,'sans');iss=ellip(ctx,iss,W-2*P-2*PX-(t.venue?Math.min(vw,300)+14:0))}
+ var ib=inkBox(ctx,[[iss,t.venue]]),bl=Math.round(PH/2+(ib.a-ib.d)/2);
+ if(d)window.PDPoster.pills={top:y,h:PH,baseline:y+bl,ink:[ib.a,ib.d],px:PX};
+ if(iss)x+=pill(ctx,x,y,iss,null,d,bl)+14;
+ if(t.venue&&x+vw<=W-P)pill(ctx,x,y,t.venue,ACC,d,bl);return y+PH}
 /* "来自 / FROM" + up to 4 organisations: 40px logo + name, or an outlined text chip; stops before the right margin */
 function orgRow(ctx,D,L,y,d){var os=(D.orgs||[]).slice(0,4),x=P,lg=(L&&L.logos)||[];if(!os.length)return y;
  ctx.font=F(21,'sansb');ctx.fillStyle=MUTE;x=d?spaced(ctx,D.p.l_from,x,y+11,3.8)+18:x+spacedW(ctx,D.p.l_from,3.8)+22;
@@ -144,32 +158,28 @@ function takeBlock(ctx,D,s,x,y,w,ks,d){var t=D.p;y=lab(ctx,t.l_take,x,y,d)+14;ct
 function numBlock(ctx,D,pts,x,y,w,d){var t=D.p;if(!pts.length)return y;y=lab(ctx,t.l_num,x,y,d)+16;
  pts.forEach(function(p,i){ctx.font=F(46,'disp');var num=ellip(ctx,p[0],w);if(d){ctx.fillStyle=ACC;ctx.fillText(num,x,y)}
   ctx.font=F(24,'sans');var ll=wrap(ctx,p[1],w,99);if(d){ctx.fillStyle=INK2;ll.forEach(function(l,j){ctx.fillText(l,x,y+54+j*32)})}y+=54+ll.length*32+(i<pts.length-1?16:0)});return y}
-/* B. o: s (takeaway text), ks, np, hl (header level), mode 'side' | 'wide', fw (max figure-card width, side), gap.
+/* B. o: s (takeaway text), ks, np, hl (header level), fw (max figure-card width), gap. Layout 'side' only.
    Returns {end, area} or null when it does not fit above the footer. */
 function layoutB(ctx,D,o){var d=o.draw,t=D.p,F0=o.F0,ar=F0.sw/F0.sh,g=o.gap||0,cw=W-2*P,pts=(o.pts||numsFor(t,o.s)).slice(0,o.np);
  var top=header(ctx,D,o,d),bottom=o.limit-SCH-30-g,iw,ih,r;
- if(o.mode==='side'){ /* LEFT 核心结论 + 关键数字 | RIGHT figure card filling the slot height (width capped at fw) */
-  var maxIH=bottom-(top+35)-2*FPAD-FCAP;iw=Math.min(o.fw-2*FPAD,maxIH*ar);ih=iw/ar;iw=Math.round(iw);ih=Math.round(ih);
-  var lw=cw-GAP-(iw+2*FPAD);if(lw<330||ih<120)return null;
-  var ly=takeBlock(ctx,D,o.s,P,top,lw,o.ks,d);if(pts.length)ly=numBlock(ctx,D,pts,P,ly+30,lw,d);
-  if(ly>bottom)return null;var fy=figCard(ctx,D,F0,W-P-(iw+2*FPAD),top,iw,ih,d);r=Math.max(ly,fy)}
- else{ /* wide: 核心结论 | 关键数字 side by side, then the figure card across the full width */
-  var nw=pts.length?Math.min(380,Math.max(260,cw*0.36)):0,tw=pts.length?cw-GAP-nw:cw;
-  var a=takeBlock(ctx,D,o.s,P,top,tw,o.ks,d),b=numBlock(ctx,D,pts,W-P-nw,top,nw,d),y2=Math.max(a,b)+34;
-  var mxI=bottom-(y2+35)-2*FPAD-FCAP;iw=Math.min(cw-2*FPAD,mxI*ar);ih=Math.round(iw/ar);iw=Math.round(iw);if(ih<140||iw<480)return null;
-  r=figCard(ctx,D,F0,P+Math.round((cw-iw-2*FPAD)/2),y2,iw,ih,d)}
+ /* LEFT 核心结论 + 关键数字 stacked | RIGHT figure card (width capped at fw, height capped by the slot) */
+ var maxIH=bottom-(top+35)-2*FPAD-FCAP;iw=Math.min(o.fw-2*FPAD,maxIH*ar);ih=iw/ar;iw=Math.round(iw);ih=Math.round(ih);
+ var cwid=iw+2*FPAD,lw=cw-GAP-cwid;if(lw<300||ih<60)return null;
+ var ly=takeBlock(ctx,D,o.s,P,top,lw,o.ks,d);if(pts.length)ly=numBlock(ctx,D,pts,P,ly+30,lw,d);
+ if(ly>bottom)return null;var fx=W-P-cwid,fy=figCard(ctx,D,F0,fx,top,iw,ih,d);r=Math.max(ly,fy);
+ if(d)window.PDPoster.last={layout:'B',figX:fx,figW:cwid,figH:ih,leftW:lw,nums:pts.length,take:o.s};
  if(r>bottom)return null;
  return {end:r,area:iw*ih,slack:bottom-r}}
-/* search: takeaway candidates in order (the highlighted finding first) -> 2, 1, 0 key numbers (strict priorities);
-   within those, every header size x arrangement x figure-card width x takeaway size is laid out and the one with the
-   largest figure wins, discounted for a smaller header or takeaway (B side-by-side preferred over the wide variant) */
+/* search: takeaway candidates in order (the highlighted finding first) -> 3, 2, 1, 0 key numbers (strict priorities);
+   within those, every header size x figure-card width x takeaway size is laid out and the one with the largest figure
+   wins, discounted for a smaller header or takeaway. A wide figure keeps the right column (it gets shorter, not wider). */
 var HF=[1,0.86,0.74];
 function planB(ctx,D,L,limit){var t=D.p,c=cands(t),ar=L.F0.sw/L.F0.sh;
- var fws=ar<1?[560,520,470,420,380]:[620,580,540,500,460,420,380],kss=D.lang==='zh'?[32,30,28,26]:[31,29,27,25];
- for(var ci=0;ci<c.length;ci++){var cp=numsFor(t,c[ci]);for(var np=Math.min(2,cp.length);np>=0;np--){var best=null,bs=0,modes=ar>=2.2&&np>0?['side','wide']:['side'];
-  for(var hl=0;hl<HDR.length;hl++)for(var mi=0;mi<modes.length;mi++)(modes[mi]==='side'?fws:[0]).forEach(function(fw){kss.forEach(function(ks){
-   var q={s:c[ci],pts:cp,ks:ks,np:np,hl:hl,mode:modes[mi],fw:fw,F0:L.F0,L:L,limit:limit},r=layoutB(ctx,D,q);if(!r)return;
-   var sc=r.area*HF[hl]*Math.pow(ks/kss[0],1.3)*(q.mode==='wide'?0.92:1);if(sc>bs){bs=sc;q.r=r;best=q}})});
+ var fws=ar<1?[560,520,470,420,380,340]:[580,560,540,500,460,420,380],kss=D.lang==='zh'?[32,30,28,26,24]:[31,29,27,25,23];
+ for(var ci=0;ci<c.length;ci++){var cp=numsFor(t,c[ci]);for(var np=Math.min(3,cp.length);np>=0;np--){var best=null,bs=0;
+  for(var hl=0;hl<HDR.length;hl++)fws.forEach(function(fw){kss.forEach(function(ks){
+   var q={s:c[ci],pts:cp,ks:ks,np:np,hl:hl,mode:'side',fw:fw,F0:L.F0,L:L,limit:limit},r=layoutB(ctx,D,q);if(!r)return;
+   var sc=r.area*HF[hl]*Math.pow(ks/kss[0],1.3);if(sc>bs){bs=sc;q.r=r;best=q}})});
   if(best)return best}}
  return null}
 function loadImg(src){return new Promise(function(res){if(!src)return res(null);var i=new Image();var to=setTimeout(function(){res(null)},15000);
@@ -183,14 +193,18 @@ function footer(ctx,D){var t=D.p,bits=qrBits(D),n=D.qr.n,m=Math.max(3,Math.min(5
  ctx.font=F(50,'disp');ctx.fillStyle=INK;ctx.fillText('Paper ',tx,cy-62);ctx.fillStyle=ACC;ctx.fillText('Daily',tx+ctx.measureText('Paper ').width,cy-62);
  ctx.font=F(22,'sans');ctx.fillStyle=MUTE;ctx.fillText(ellip(ctx,t.tag,maxw),tx,cy+2);
  ctx.font=F(20,'sans');ctx.fillText(ellip(ctx,t.durl,maxw),tx,cy+38);return top-30}
-function draw(D,L){var c=document.createElement('canvas');c.width=W;c.height=H;var ctx=c.getContext('2d');
+/* export resolution: the layout is in 1080x1440 units; the bitmap is SCALE x that (2160x2880), so text and the figure stay
+   crisp when the PNG is viewed full-screen or zoomed on a 3x phone (no CSS upscaling of a small bitmap) */
+var SCALE=2;
+function draw(D,L){var c=document.createElement('canvas');c.width=W*SCALE;c.height=H*SCALE;var ctx=c.getContext('2d');
+ ctx.scale(SCALE,SCALE);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
  ctx.textBaseline='top';ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);ctx.fillStyle=ACC;ctx.fillRect(0,0,W,18);
- var limit=footer(ctx,D)-36,np=D.p.pts.length,zh=D.lang==='zh',done=false;
+ var limit=footer(ctx,D)-36,np=D.p.pts.length,zh=D.lang==='zh',done=false;window.PDPoster.last={layout:L.fig?'v1-fallback':'v1',figX:null,px:[c.width,c.height]};
  if(L.fig){L.F0=trimFig(L.fig);var b=planB(ctx,D,L,limit);
   if(b){ /* spread the leftover height (only left when the figure is width-capped) over the header gaps */
    var gp=Math.max(0,Math.min(36,(b.r.slack||0)/3));if(gp>0){var q=Object.assign({},b,{gap:gp});if(layoutB(ctx,D,q))b=q}
    b.draw=true;layoutB(ctx,D,b);done=true}}
- if(!done){ /* v1: shrink until it fits -- fewer key numbers, smaller takeaway, smaller header */
+ if(!done){ if(L.fig)console.warn('PDPoster: figure present but layout B did not fit'); /* v1: shrink until it fits -- fewer key numbers, smaller takeaway, smaller header */
   var opts=[];[np,2,1,0].forEach(function(k){if(k<=np)[[0,zh?36:34],[1,zh?34:32],[2,zh?32:30]].forEach(function(a){opts.push({np:k,hl:a[0],ks:a[1],kmax:3,L:L})})});
   var o=Object.assign({last:true},opts[opts.length-1]);for(var i=0;i<opts.length;i++){if(layout(ctx,D,opts[i])<=limit){o=opts[i];break}}
   var slack=limit-layout(ctx,D,o);o.gap=Math.max(0,Math.min(44,slack/(o.np?3:2)));o.draw=true;layout(ctx,D,o)}

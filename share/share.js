@@ -60,16 +60,25 @@ function openSheet(btn){close();var dim=doc.createElement('div');dim.className='
 /* WeChat action: desktop -> QR popover; touch with system share -> system sheet; WeChat in-app -> hint */
 function wechat(btn){if(canSys())return sys();if(mobile()){close();if(WX)toast(T.wxHint);else copy();return}openPop(btn,true)}
 /* poster: lazy-load share/poster.js (+ its fonts) on first use */
-var pj=null,blobUrl=null;
+var pj=null,blobUrl=null,posterBlob=null;
+/* iOS (every iOS browser is WebKit): <a download> only drops the PNG into Files, so 下载图片 opens the share sheet
+   ("Save Image") when it can carry files, else the PNG in a new tab where long-press saves it */
+var IOS=/iP(hone|ad|od)/.test(UA)||(nav.platform==='MacIntel'&&nav.maxTouchPoints>1);
+function iosSave(){if(!posterBlob)return false;var f=null;try{f=new File([posterBlob],D.file,{type:'image/png'})}catch(e){}
+ if(f&&nav.canShare&&nav.share&&nav.canShare({files:[f]})){nav.share({files:[f]}).then(function(){ga('download_ios_share')},function(){});return true}
+ var w=window.open(blobUrl,'_blank');if(!w)location.href=blobUrl;ga('download_ios_tab');return true}
 function loadPoster(){if(pj)return pj;pj=new Promise(function(res,rej){var s=doc.createElement('script');s.src=D.js;s.async=true;
  s.onload=function(){window.PDPoster?res(window.PDPoster):rej(new Error('poster.js'))};s.onerror=function(){pj=null;rej(new Error('poster.js'))};doc.head.appendChild(s)});return pj}
 function poster(){close();ga('poster');var o=doc.createElement('div');o.className='pd-ps';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');o.setAttribute('aria-label',T.poster);
  o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button><div class="pd-ps-ld" role="status"><div class="pd-spin"></div>'+esc(T.loading)+'</div>';
  doc.body.appendChild(o);cur={nodes:[o],btn:null,focus:false};var me=cur;
- loadPoster().then(function(P){return P(D)}).then(function(blob){if(cur!==me)return;
-  if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=URL.createObjectURL(blob);
+ loadPoster().then(function(P){return P(D)}).then(function(blob){return new Promise(function(res){
+  /* the modal shows a data: URL <img> (not a canvas, not blob:): iOS WebKit only offers "Save image" on long-press for that */
+  var r=new FileReader();r.onload=function(){res([blob,r.result])};r.onerror=function(){res([blob,null])};r.readAsDataURL(blob)})})
+ .then(function(bd){var blob=bd[0];if(cur!==me)return;
+  if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=URL.createObjectURL(blob);posterBlob=blob;
   o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button>'
-   +'<img class="pd-ps-img" src="'+blobUrl+'" alt="'+esc(D.title)+'"><p>'+esc(mobile()||WX?T.save:T.saveDesk)+'</p>'
+   +'<img class="pd-ps-img" src="'+(bd[1]||blobUrl)+'" alt="'+esc(D.title)+'"><p>'+esc(mobile()||WX?T.save:T.saveDesk)+'</p>'
    +(WX?'':'<div class="pd-ps-acts"><a href="'+blobUrl+'" download="'+esc(D.file)+'" data-pd-act="download">'+IC.dl+esc(T.dl)+'</a></div>')
  }).catch(function(){if(cur!==me)return;
   o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button><p role="alert">'+esc(T.fail)+'</p>'
@@ -80,7 +89,7 @@ doc.addEventListener('click',function(ev){var t=ev.target.closest&&ev.target.clo
  if(!t){if(cur&&!ev.target.closest('.pd-pop,.pd-bs,.pd-ps'))close();return}
  var a=t.getAttribute('data-pd-share')||t.getAttribute('data-pd-act');
  if(a==='x'){ga('x');setTimeout(close,0);return}
- if(a==='download'){ga('download');return}
+ if(a==='download'){if(IOS&&iosSave()){ev.preventDefault();return}ga('download');return}
  ev.preventDefault();
  if(a==='menu'){if(cur&&cur.btn===t){close();return}mobile()?openSheet(t):openPop(t,false)}
  else if(a==='copy')copy();else if(a==='system')sys();else if(a==='wechat'){if(cur&&cur.btn===t){close();return}wechat(t)}
