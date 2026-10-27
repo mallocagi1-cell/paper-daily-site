@@ -45,7 +45,8 @@ function items(qrOnly){var h='';if(!qrOnly){
 function openPop(btn,qrOnly){close();var p=doc.createElement('div');p.className='pd-pop'+(qrOnly?' qr-only':'');p.setAttribute('role','dialog');p.setAttribute('aria-label',qrOnly?T.scan:T.head);
  p.innerHTML=items(qrOnly);doc.body.appendChild(p);var r=btn.getBoundingClientRect(),w=p.offsetWidth,sx=window.pageXOffset,sy=window.pageYOffset;
  var left=Math.max(12,Math.min(r.left+r.width/2-w/2,doc.documentElement.clientWidth-w-12));
- p.style.left=(left+sx)+'px';p.style.top=(r.bottom+sy+10)+'px';p.style.setProperty('--ax',(r.left+r.width/2-left-5)+'px');
+ var h=p.offsetHeight,up=r.bottom+10+h>window.innerHeight-8&&r.top-10-h>8;/* sidebar C card sits low: open upward */
+ if(up)p.className+=' up';p.style.left=(left+sx)+'px';p.style.top=(up?r.top+sy-10-h:r.bottom+sy+10)+'px';p.style.setProperty('--ax',(r.left+r.width/2-left-5)+'px');
  btn.setAttribute('aria-expanded','true');cur={nodes:[p],btn:btn,focus:true};if(qrOnly)ga('wechat_qr');
  var f=p.querySelector('.pd-sh-it');if(f)f.focus({preventScroll:true})}
 function openSheet(btn){close();var dim=doc.createElement('div');dim.className='pd-dim';dim.setAttribute('data-pd-act','close');
