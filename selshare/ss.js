@@ -1,11 +1,5 @@
-/* Paper Daily 划词分享 (select-to-share, Felix 2026-10-28: direction B "Hoot toolbar"). Generated into selshare/ss.js by
-   src/selshare.py; deep-dive pages only. Select text in the article ->
-     desktop: a cream toolbar above the selection (Hoot head; 「划得好！」 only on the first selection of a page load)
-     touch:   a bottom card (never near the selection, so the native iOS / Android menu keeps working)
-   Actions: 复制引用 (quote + title + deep link) / 分享到 X / 微信 (QR -> article) / 金句卡片 (canvas card, selshare/card.js,
-   loaded only when asked). Too long -> cut silently at a sentence end within the limit (else hard cut) + "…", the same text
-   for copy, X and card. Deep link = page URL + "#q<block>.<offset>.<chars>.<sum>" (own anchor, highlighted by this file
-   with the 「来自分享的引用 · 清除」 chip) + ":~:text=" (native text fragment). Ctrl/Cmd+C is never touched. */
+/* Paper Daily 划词分享 (select-to-share, Felix 2026-10-28, direction B). Built into selshare/ss.js by src/selshare.py,
+   which documents the behaviour; gates: selshare.check (static) + selshare_check.py (rendered). */
 (function(){
 var doc=document,S=doc.currentScript,dEl=doc.getElementById('pd-share-data'),A=doc.getElementById('article');
 if(!S||!dEl||!A||!window.getSelection)return;
@@ -19,7 +13,7 @@ var T=ZH?{copy:'复制引用',x:'分享到 X',wx:'微信',sys:'系统分享',car
   scan:'Scan with WeChat',scan2:'Opens this deep dive on your phone',land:'Shared quote',clear:'Clear',close:'Close',
   st:['Cream','Ink','Note'],dl:'Download',cimg:'Copy image',cimgd:'Image copied',save:'Long-press the image to save or send it',saveDesk:'Download it, or right-click to copy the image',
   loading:'Drawing the quote card…',fail:'Could not draw the card, please retry',retry:'Retry',from:'From the deep dive',dive:'deep dive'};
-var MIN=ZH?6:15,MINW=3,MAX=ZH?140:280;
+var MIN=ZH?10:15,MINW=4,MAX=ZH?140:280,SETTLE=550;
 var SKIP='pre,code,.katex-mathml,table,figure,figcaption,.toc-m,.r-narrow,.pd-rx,.pd-shB,.pd-shC,.rmeta,.pd-ss,.pd-ss-m,#discussion,button,svg,img,script,style';
 var BLK='p,li,blockquote,h2,h3,h4,dd,dt';
 var IC={
@@ -94,44 +88,68 @@ function doCopy(q){ga('copy');var txt=copyText(q);
 function qrSvg(){var n=D.qr.n,h=D.qr.d,p='',bits='';for(var i=0;i<h.length;i++)bits+=('000'+parseInt(h[i],16).toString(2)).slice(-4);
  for(var y=0;y<n;y++)for(var x=0;x<n;x++)if(bits[y*n+x]==='1')p+='M'+x+' '+y+'h1v1h-1z';
  return '<svg viewBox="-2 -2 '+(n+4)+' '+(n+4)+'" shape-rendering="crispEdges" aria-hidden="true"><path d="'+p+'" fill="currentColor"/></svg>'}
-/* ---- UI: one toolbar (desktop) or bottom card (touch) at a time */
-var ui=null,said=false,busy=0,wxPop=null;
-function hide(){if(wxPop){wxPop.remove();wxPop=null}if(ui){ui.remove();ui=null}}
+/* ---- UI: one dot, toolbar (desktop) or bottom card (touch) at a time */
+var ui=null,said=false,busy=0,wxPop=null,ign=0,off=false,down=0,downAt=0,quick=false,scrollAt=0,viaKey=false;
+function isDot(){return !!ui&&ui.classList.contains('pd-ss-dot')}
+function hide(why){if(wxPop){wxPop.remove();wxPop=null}if(ui){if(isDot()&&why!=='open'){ign++;if(ign>=2)off=true}ui.remove();ui=null}}
 function sayHtml(){if(said)return '';said=true;return '<span class="pd-ss-say" aria-hidden="true">'+esc(T.say)+'</span>'}
 function sysOk(){return !!nav.share&&touch()}
 function btns(q,m){var w=sysOk()?'<button type="button" data-ss="sys">'+(m?'<span>'+IC.sh+'</span>':IC.sh)+esc(T.sys)+'</button>':'<button type="button" data-ss="wx">'+(m?'<span>'+IC.wx+'</span>':IC.wx)+esc(T.wx)+'</button>';
  var x='<a data-ss="x" href="'+esc(xUrl(q))+'" target="_blank" rel="noopener">'+(m?'<span>'+IC.x+'</span>':IC.x)+esc(T.x)+'</a>';
  if(m)return '<button type="button" data-ss="copy"><span>'+IC.q+'</span>'+esc(T.copy)+'</button>'+x+w+'<button type="button" class="pri" data-ss="card"><span>'+IC.c+'</span>'+esc(T.card)+'</button>';
  return '<button type="button" data-ss="copy">'+IC.q+esc(T.copy)+'</button>'+x+w+'<button type="button" class="pri" data-ss="card">'+IC.c+esc(T.card)+'</button>'}
-function showDesk(q){hide();var rs=q.r.getClientRects(),f=null,l=null;for(var i=0;i<rs.length;i++)if(rs[i].width>1){if(!f)f=rs[i];l=rs[i]}if(!f)return;
+function lines(r){var rs=r.getClientRects(),o=[];for(var i=0;i<rs.length;i++)if(rs[i].width>1)o.push(rs[i]);return o}
+function showDot(q){hide('open');var rs=lines(q.r);if(!rs.length)return;var m=touch();
+ var t=mk('<button type="button" class="pd-ss-dot'+(m?' m':'')+'" data-ss="open" aria-label="'+esc(T.bar)+'" aria-haspopup="true">'+HOOT+'</button>');
+ doc.body.appendChild(t);ui=t;var vw=doc.documentElement.clientWidth,sx=pageXOffset,sy=pageYOffset;
+ if(m){var lo=rs[rs.length-1],hi=rs[0],bot=innerHeight-60-110;t.style.position='fixed';
+  if(lo.bottom>bot&&hi.top>170){t.style.top='calc(env(safe-area-inset-top) + 120px)'}else if(lo.bottom>bot){t.style.left='calc(14px + env(safe-area-inset-left))';t.style.right='auto'}
+  return}
+ var l=rs[rs.length-1],ar=A.getBoundingClientRect(),gap=Math.min(vw,ar.right+40)-ar.right,left,top=l.top+(l.height-28)/2;
+ /* beside the last line, in the column's right margin (never over text); narrow screens: just under the line end */
+ if(gap>=34)left=ar.right+4;else{left=Math.min(l.right-14,vw-36);top=l.bottom+3}
+ t.style.left=(left+sx)+'px';t.style.top=(top+sy)+'px'}
+function expand(kb){var q=cur;if(!q)return;ign=0;hide('open');touch()?showMob(q):showDesk(q);if(kb&&ui){var b=ui.querySelector('button,a');if(b)b.focus()}}
+function showDesk(q){hide('open');var rs=lines(q.r),f=rs[0],l=rs[rs.length-1];if(!f)return;
  var t=mk('<div class="pd-ss" role="toolbar" aria-label="'+esc(T.bar)+'"><span class="pd-ss-hh" aria-hidden="true">'+HOOT+'</span>'+sayHtml()+btns(q,false)+'</div>');
  doc.body.appendChild(t);ui=t;var w=t.offsetWidth,h=t.offsetHeight,sx=pageXOffset,sy=pageYOffset,ar=A.getBoundingClientRect(),vw=doc.documentElement.clientWidth;
  var cx=f===l?(f.left+f.right)/2:(f.left+Math.min(f.right,ar.right))/2,left=Math.max(Math.max(8,ar.left-24),Math.min(cx-w/2,Math.min(vw-8,ar.right+24)-w));
  var top=f.top-h-12,below=top<64;if(below){top=l.bottom+12;t.className+=' below'}
  t.style.left=(left+sx)+'px';t.style.top=(top+sy)+'px';t.style.setProperty('--ax',Math.max(18,Math.min(w-18,cx-left))+'px')}
-function showMob(q){hide();var t=mk('<div class="pd-ss-m" role="toolbar" aria-label="'+esc(T.bar)+'"><span class="pd-ss-hh" aria-hidden="true">'+HOOT+'</span>'+sayHtml()
+function showMob(q){hide('open');var t=mk('<div class="pd-ss-m" role="toolbar" aria-label="'+esc(T.bar)+'"><span class="pd-ss-hh" aria-hidden="true">'+HOOT+'</span>'+sayHtml()
   +'<button type="button" class="pd-ss-x" data-ss="close" aria-label="'+esc(T.close)+'">\u00d7</button><p class="pd-ss-pv">'+esc(q.quote)+'</p><div class="pd-ss-g">'+btns(q,true)+'</div></div>');
  doc.body.appendChild(t);ui=t;var rs=q.r.getClientRects(),l=rs.length?rs[rs.length-1]:null,top=t.getBoundingClientRect().top;
  if(l&&l.bottom>top-12){var dy=l.bottom-top+24,f=rs[0];if(f.top-dy>70)window.scrollBy(0,dy)}}
 var tm=0;
-function check(){var q=capture();if(!q){if(!busy||Date.now()-busy>800)hide();cur=null;return}
- if(cur&&ui&&cur.raw===q.raw&&cur.link===q.link)return;cur=q;touch()?showMob(q):showDesk(q)}
+function check(){if(down)return;if(Date.now()-scrollAt<300){later(320);return}
+ var q=capture();if(!q){if(!ui||isDot()||!busy||Date.now()-busy>800){hide('gone');cur=null}return}
+ if(cur&&ui&&cur.raw===q.raw&&cur.link===q.link)return;
+ if(ui&&!isDot())hide('open');
+ if(quick){quick=false;cur=null;hide('gone');return}
+ cur=q;if(off){hide('gone');return}showDot(q)}
 function later(ms){clearTimeout(tm);tm=setTimeout(check,ms)}
-doc.addEventListener('mouseup',function(e){if(e.target.closest&&e.target.closest('.pd-ss,.pd-ss-m,.pd-ss-ps,.pd-ss-wx'))return;later(10)});
-doc.addEventListener('keyup',function(e){if(e.shiftKey||/^(Shift|Arrow)/.test(e.key))later(120)});
-doc.addEventListener('selectionchange',function(){if(touch())later(420);else if(ui){var s=getSelection();if(!s||s.isCollapsed)later(60)}});
-doc.addEventListener('mousedown',function(e){if(e.target.closest&&e.target.closest('.pd-ss,.pd-ss-m,.pd-ss-wx'))e.preventDefault()});
-doc.addEventListener('pointerdown',function(e){if(e.target.closest&&e.target.closest('.pd-ss-m'))busy=Date.now()},true);
-window.addEventListener('resize',function(){if(ui&&!touch())hide()});
-window.addEventListener('keydown',function(e){if(e.key!=='Escape')return;if(ps){e.preventDefault();e.stopPropagation();closeSheet();return}
- if(ui){e.preventDefault();e.stopPropagation();hide()}},true);
+function inUi(e){return e.target.closest&&e.target.closest('.pd-ss,.pd-ss-m,.pd-ss-ps,.pd-ss-wx,.pd-ss-dot')}
+doc.addEventListener('mousedown',function(e){if(inUi(e)){if(!e.target.closest('.pd-ss-ps'))e.preventDefault();return}down=1;downAt=Date.now();if(ui&&!ps)hide('click')});
+doc.addEventListener('mouseup',function(e){var was=down;down=0;if(inUi(e))return;
+ /* a quick flick-drag (< 160 ms, not a double / triple click) is not a deliberate selection */
+ quick=!!was&&e.detail<2&&Date.now()-downAt<160;viaKey=false;later(SETTLE)});
+doc.addEventListener('keyup',function(e){if(e.shiftKey||/^(Shift|Arrow|Home|End|PageUp|PageDown)/.test(e.key)){quick=false;viaKey=true;later(SETTLE)}});
+doc.addEventListener('selectionchange',function(){if(touch()){quick=false;later(SETTLE+50);return}
+ var s=getSelection();if(s&&s.isCollapsed){if(ui)later(60)}else if(!down&&!viaKey&&isDot())later(SETTLE)});
+doc.addEventListener('pointerdown',function(e){if(e.target.closest&&e.target.closest('.pd-ss-m,.pd-ss-dot'))busy=Date.now()},true);
+window.addEventListener('scroll',function(){scrollAt=Date.now();if(isDot())hide('scroll')},{passive:true});
+window.addEventListener('resize',function(){if(ui&&!touch())hide('resize')});
+window.addEventListener('keydown',function(e){
+ if(e.key==='Tab'&&!e.shiftKey&&isDot()&&doc.activeElement!==ui){e.preventDefault();ui.focus();return}
+ if(e.key!=='Escape')return;if(ps){e.preventDefault();e.stopPropagation();closeSheet();return}
+ if(ui){e.preventDefault();e.stopPropagation();hide('esc')}},true);
 function openWx(btn){if(wxPop){wxPop.remove();wxPop=null;return}var p=mk('<div class="pd-ss-wx" role="dialog" aria-label="'+esc(T.scan)+'"><div class="pd-ss-qr">'+qrSvg()+'</div><div><b>'+esc(T.scan)+'</b><small>'+esc(T.scan2)+'</small></div></div>');
  doc.body.appendChild(p);wxPop=p;var r=btn.getBoundingClientRect(),u=ui.getBoundingClientRect(),w=p.offsetWidth,h=p.offsetHeight;
  var left=Math.max(8,Math.min(r.left+r.width/2-w/2,doc.documentElement.clientWidth-w-8)),top=u.top-h-12;if(top<8)top=u.bottom+12;
  p.style.left=(left+pageXOffset)+'px';p.style.top=(top+pageYOffset)+'px';p.style.setProperty('--ax',(r.left+r.width/2-left)+'px');ga('wechat_qr')}
 doc.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-ss]');if(!b)return;var a=b.getAttribute('data-ss'),q=cur;
  if(a==='x'){ga('x');setTimeout(hide,0);return}
- e.preventDefault();if(a==='close'){hide();return}
+ e.preventDefault();if(a==='open'){expand(e.detail===0);return}if(a==='close'){hide();return}
  if(a==='st'){renderCard(+b.getAttribute('data-i'));return}
  if(a==='psx'){closeSheet();return}
  if(a==='cimg'){copyImg();return}
@@ -186,6 +204,6 @@ function land(){var m=/^#q(\d+)\.(\d+)\.(\d+)\.([0-9a-z]+)/.exec(location.hash);
  go();setTimeout(go,350);window.PDSelShare.landed={ok:true,text:got};
  c.querySelector('button').addEventListener('click',function(){if(window.CSS&&CSS.highlights)CSS.highlights.delete('pd-ss-land');doc.documentElement.classList.remove('pd-ss-landed');doc.documentElement.classList.add('pd-ss-cleared');c.remove();
   try{history.replaceState(history.state,'',location.pathname+location.search)}catch(e){}})}
-window.PDSelShare={capture:capture,cut:cut,xText:xText,xw:xw,copyText:copyText,xUrl:xUrl,MAX:MAX,MIN:MIN,card:function(st){return loadCard().then(function(C){return C(opts(cur||capture(),st))})},landed:null};
+window.PDSelShare={state:function(){return {ign:ign,off:off,ui:ui&&ui.className}},capture:capture,cut:cut,xText:xText,xw:xw,copyText:copyText,xUrl:xUrl,MAX:MAX,MIN:MIN,card:function(st){return loadCard().then(function(C){return C(opts(cur||capture(),st))})},landed:null};
 if(doc.readyState==='complete')land();else window.addEventListener('load',land);
 })();
