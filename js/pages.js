@@ -541,7 +541,7 @@
         (DATA.weekly_top_n || 10) + TR("，附深度解读链接。", " papers per track each week, with deep-dive links.");
     } else if (route.archive) {
       t = TR("往期日报 · ", "Archive · ") + (DATA.days || []).length + TR(" 期 · Paper Daily", " issues · Paper Daily");
-    } else if (route.date) {
+    } else if (route.date && !route.home) {  // "/" keeps the branded home title (render() fills route.date for home too)
       t = route.date + (route.track ? " " + trackLabel(route.track) : "") + TR(" 论文日报 · Paper Daily", " papers · Paper Daily");
     }
     document.title = t;
@@ -596,8 +596,10 @@
       try { history.replaceState(history.state, "", want + location.search + frag); } catch (e) { /* ignore */ }
     }
   }
+  function homeIntro(on) { var e = document.getElementById("hoot-intro"); if (e) e.hidden = !on; }
   function render() {
     const route = parseRoute();
+    homeIntro(!!(route.home && !route.weekly && !route.archive && !route.focus));
     if (route.weekly) {
       setNavActive("weekly");
       renderWeekly(route);
