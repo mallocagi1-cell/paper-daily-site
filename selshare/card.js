@@ -110,7 +110,7 @@ function fonts(o){var k=o.lang+o.quote;if(fontsP[k])return fontsP[k];if(!documen
 window.PDQuoteCard=function(o){var zh=o.lang!=='en';o.pick=zh?'夜读鸮划了一句':"Hoot's pick";o.noteL=zh?'批注':'NOTE';o.from=zh?o.from:String(o.from).toUpperCase();
  o.before=o.before||'';o.after=o.after||'';o.sec=o.sec||'';
  return fonts(o).then(function(){var W=360,H=o.style==='ink'?450:480,cv=document.createElement('canvas');cv.width=W*SCALE;cv.height=H*SCALE;
-  var c=cv.getContext('2d');c.scale(SCALE,SCALE);c.imageSmoothingQuality='high';
+  var c=cv.getContext('2d');try{c.textRendering='geometricPrecision'}catch(e){}c.scale(SCALE,SCALE);c.imageSmoothingQuality='high';
   var r=(o.style==='ink'?ink:o.style==='note'?note:cream)(c,o,W,H);
   window.PDQuoteCard.last={style:o.style,px:[cv.width,cv.height],size:r.size,lines:r.lines,fit:r.fit,box:r.box};
   return new Promise(function(res,rej){if(!cv.toBlob)return rej(new Error('toBlob'));cv.toBlob(function(b){b?res(b):rej(new Error('blob'))},'image/png')})})};
