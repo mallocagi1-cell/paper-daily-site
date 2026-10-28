@@ -13,7 +13,10 @@ var T=ZH?{copy:'复制引用',x:'分享到 X',wx:'微信',sys:'系统分享',car
   scan:'Scan with WeChat',scan2:'Opens this deep dive on your phone',land:'Shared quote',clear:'Clear',close:'Close',
   st:['Cream','Ink','Note'],dl:'Download',cimg:'Copy image',cimgd:'Image copied',save:'Long-press the image to save or send it',saveDesk:'Download it, or right-click to copy the image',
   loading:'Drawing the quote card…',fail:'Could not draw the card, please retry',retry:'Retry',from:'From the deep dive',dive:'deep dive'};
-var MIN=ZH?10:15,MINW=4,MAX=ZH?140:280,SETTLE=550;
+var MIN=ZH?10:15,MINW=4,MAX=ZH?140:280,SETTLE=550,CAP=3500;
+/* backoff (Felix 2026-10-28 (3)): each ignored dot doubles the settle delay 550 -> 1.1 s -> 2.2 s -> 3.5 s (cap),
+   never off; a click / tap on the dot resets it. State lives in this page view only (a reload starts at 550 ms). */
+function wait(){return Math.min(SETTLE*Math.pow(2,ign),CAP)}
 var SKIP='pre,code,.katex-mathml,table,figure,figcaption,.toc-m,.r-narrow,.pd-rx,.pd-shB,.pd-shC,.rmeta,.pd-ss,.pd-ss-m,#discussion,button,svg,img,script,style';
 var BLK='p,li,blockquote,h2,h3,h4,dd,dt';
 var IC={
@@ -89,9 +92,9 @@ function qrSvg(){var n=D.qr.n,h=D.qr.d,p='',bits='';for(var i=0;i<h.length;i++)b
  for(var y=0;y<n;y++)for(var x=0;x<n;x++)if(bits[y*n+x]==='1')p+='M'+x+' '+y+'h1v1h-1z';
  return '<svg viewBox="-2 -2 '+(n+4)+' '+(n+4)+'" shape-rendering="crispEdges" aria-hidden="true"><path d="'+p+'" fill="currentColor"/></svg>'}
 /* ---- UI: one dot, toolbar (desktop) or bottom card (touch) at a time */
-var ui=null,said=false,busy=0,wxPop=null,ign=0,off=false,down=0,downAt=0,quick=false,scrollAt=0,viaKey=false;
+var ui=null,said=false,busy=0,wxPop=null,ign=0,down=0,downAt=0,quick=false,scrollAt=0,viaKey=false;
 function isDot(){return !!ui&&ui.classList.contains('pd-ss-dot')}
-function hide(why){if(wxPop){wxPop.remove();wxPop=null}if(ui){if(isDot()&&why!=='open'){ign++;if(ign>=2)off=true}ui.remove();ui=null}}
+function hide(why){if(wxPop){wxPop.remove();wxPop=null}if(ui){if(isDot()&&why!=='open'&&wait()<CAP)ign++;ui.remove();ui=null}}
 function sayHtml(){if(said)return '';said=true;return '<span class="pd-ss-say" aria-hidden="true">'+esc(T.say)+'</span>'}
 function sysOk(){return !!nav.share&&touch()}
 function btns(q,m){var w=sysOk()?'<button type="button" data-ss="sys">'+(m?'<span>'+IC.sh+'</span>':IC.sh)+esc(T.sys)+'</button>':'<button type="button" data-ss="wx">'+(m?'<span>'+IC.wx+'</span>':IC.wx)+esc(T.wx)+'</button>';
@@ -126,16 +129,16 @@ function check(){if(down)return;if(Date.now()-scrollAt<300){later(320);return}
  if(cur&&ui&&cur.raw===q.raw&&cur.link===q.link)return;
  if(ui&&!isDot())hide('open');
  if(quick){quick=false;cur=null;hide('gone');return}
- cur=q;if(off){hide('gone');return}showDot(q)}
+ cur=q;showDot(q)}
 function later(ms){clearTimeout(tm);tm=setTimeout(check,ms)}
 function inUi(e){return e.target.closest&&e.target.closest('.pd-ss,.pd-ss-m,.pd-ss-ps,.pd-ss-wx,.pd-ss-dot')}
 doc.addEventListener('mousedown',function(e){if(inUi(e)){if(!e.target.closest('.pd-ss-ps'))e.preventDefault();return}down=1;downAt=Date.now();if(ui&&!ps)hide('click')});
 doc.addEventListener('mouseup',function(e){var was=down;down=0;if(inUi(e))return;
  /* a quick flick-drag (< 160 ms, not a double / triple click) is not a deliberate selection */
- quick=!!was&&e.detail<2&&Date.now()-downAt<160;viaKey=false;later(SETTLE)});
-doc.addEventListener('keyup',function(e){if(e.shiftKey||/^(Shift|Arrow|Home|End|PageUp|PageDown)/.test(e.key)){quick=false;viaKey=true;later(SETTLE)}});
-doc.addEventListener('selectionchange',function(){if(touch()){quick=false;later(SETTLE+50);return}
- var s=getSelection();if(s&&s.isCollapsed){if(ui)later(60)}else if(!down&&!viaKey&&isDot())later(SETTLE)});
+ quick=!!was&&e.detail<2&&Date.now()-downAt<160;viaKey=false;later(wait())});
+doc.addEventListener('keyup',function(e){if(e.shiftKey||/^(Shift|Arrow|Home|End|PageUp|PageDown)/.test(e.key)){quick=false;viaKey=true;later(wait())}});
+doc.addEventListener('selectionchange',function(){if(touch()){quick=false;later(wait()+50);return}
+ var s=getSelection();if(s&&s.isCollapsed){if(ui)later(60)}else if(!down&&!viaKey&&isDot())later(wait())});
 doc.addEventListener('pointerdown',function(e){if(e.target.closest&&e.target.closest('.pd-ss-m,.pd-ss-dot'))busy=Date.now()},true);
 window.addEventListener('scroll',function(){scrollAt=Date.now();if(isDot())hide('scroll')},{passive:true});
 window.addEventListener('resize',function(){if(ui&&!touch())hide('resize')});
@@ -204,6 +207,6 @@ function land(){var m=/^#q(\d+)\.(\d+)\.(\d+)\.([0-9a-z]+)/.exec(location.hash);
  go();setTimeout(go,350);window.PDSelShare.landed={ok:true,text:got};
  c.querySelector('button').addEventListener('click',function(){if(window.CSS&&CSS.highlights)CSS.highlights.delete('pd-ss-land');doc.documentElement.classList.remove('pd-ss-landed');doc.documentElement.classList.add('pd-ss-cleared');c.remove();
   try{history.replaceState(history.state,'',location.pathname+location.search)}catch(e){}})}
-window.PDSelShare={state:function(){return {ign:ign,off:off,ui:ui&&ui.className}},capture:capture,cut:cut,xText:xText,xw:xw,copyText:copyText,xUrl:xUrl,MAX:MAX,MIN:MIN,card:function(st){return loadCard().then(function(C){return C(opts(cur||capture(),st))})},landed:null};
+window.PDSelShare={state:function(){return {ign:ign,delay:wait(),ui:ui&&ui.className}},capture:capture,cut:cut,xText:xText,xw:xw,copyText:copyText,xUrl:xUrl,MAX:MAX,MIN:MIN,card:function(st){return loadCard().then(function(C){return C(opts(cur||capture(),st))})},landed:null};
 if(doc.readyState==='complete')land();else window.addEventListener('load',land);
 })();
