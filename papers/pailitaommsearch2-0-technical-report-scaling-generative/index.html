@@ -142,7 +142,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>14 分钟</b>阅读时长</span>
-    <span><b>5410</b>字</span>
+    <span><b>5445</b>字</span>
     <span><b>4.50</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-10-29/">10-29 Generative 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -172,14 +172,14 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>数据规模上，代理数据是相似 24M、编辑 24M、搭配 12M，真实流量清洗后是 1M、8M、1M。作者做了两个对照：训练数据从 30% 加到 100%，宏平均优秀率从 46.32% 升到 49.03%；在全量数据上去掉真实流量，优秀率降 0.78 个点，再去掉质检又降 0.28 个点。这说明数据量仍是最大的杠杆，真实流量的贡献比质检大，而质检主要帮的是搭配类。</p>
 <h2 id="s4">Sample–Beam：让强化学习优化线上真正返回的那组候选</h2>
 <p>这是全文最核心、也最容易看不懂的一步。先说为什么需要它。标准 GRPO 对每个 query 采样若干条完整输出，每条都是逐 token 随机采样出来的。线上却不是这样：模型写完推理之后，SID 部分用宽度为 B 的 beam search 一次产出 B 个候选。随机采样出的一条 SID 和 beam 出来的前 B 名，分布并不一样，训练时奖励的东西就和线上返回的东西对不上。</p>
-<p>Sample–Beam 把一次采样拆成两段。对同一个 query，先随机采样 N 段推理；每段推理后面接一次 beam search，得到 B 个 SID。这样一组共有 N×B 条完整轨迹，每条由「推理 + 一个 SID」组成；每个合法 SID 唯一对应一件商品，奖励模型按对应意图的相关性标准，针对查询与各分支的候选分别打分。所有 N×B 个分数一起做组内归一化，得到每条轨迹的优势值，再用 GRPO 的截断目标更新推理 token 和 SID token。</p>
+<p>Sample–Beam 把一次采样拆成两段。对同一个 query，先随机采样 N 段推理；每段推理后面接一次 beam search，得到 B 个 SID。这样一组共有 N×B 条完整轨迹，每条都是「推理 + 一个 SID」。每个合法 SID 唯一对应一件商品。奖励模型按对应意图的标准，分别评估每个分支的候选与查询有多相关，并给出分数。所有 N×B 个分数一起做组内归一化，得到每条轨迹的优势值，再用 GRPO 的截断目标更新推理 token 和 SID token。</p>
 <p>用一个能手算的小例子看推理部分怎么被训练（示意，N=2，B=3）：</p>
 <div class="tbl"><table><thead><tr><th>推理段</th><th>3 个 beam 候选得分</th><th>减去组均值后的优势</th><th>优势之和</th></tr></thead><tbody><tr><td>推理 1：保留红色和衬衫品类，只改袖长</td><td>3、2、1</td><td>+1.67、+0.67、−0.33</td><td>+2.0</td></tr><tr><td>推理 2：找红色上衣</td><td>1、0、1</td><td>−0.33、−1.33、−0.33</td><td>−2.0</td></tr></tbody></table></div>
 <p>6 个分数的均值约为 1.33（示意，这里只减均值、省略除标准差）。推理 1 后面的 3 个候选整体更好，它的优势之和为正，这段推理的 token 被推高；推理 2 整体偏差，被压低。也就是说，<strong class="hl">一段推理的好坏由它引出的整组候选来评判</strong>，而不是由某一个随机采出的 SID 来评判，这和线上用户看到一整列商品的情况一致。</p>
 <p>作者也说明了它的代价：beam search 是确定性地挑前 B 名，不是从策略里随机采样，所以这个目标不是无偏的 on-policy 估计。它换来的是训练和服务的对齐，而不是更准的梯度。</p>
 <p>另一个设计是按意图加权采样。三类意图的数据量差别很大，如果按原始比例采，数据多的意图会主导更新，所以每类给一个采样权重。三类共享同一个模型，意图标签只用来决定采样比例和奖励评分标准，不进入线上推理。</p>
 <div class="tbl"><table><thead><tr><th>训练设置</th><th>相似优秀率</th><th>编辑优秀率</th><th>搭配优秀率</th><th>宏平均优秀率</th></tr></thead><tbody><tr><td>SFT</td><td>45.56%</td><td>35.43%</td><td>66.09%</td><td>49.03%</td></tr><tr><td>标准强化学习</td><td>46.79%</td><td>37.37%</td><td>73.93%</td><td>52.70%</td></tr><tr><td>Sample–Beam 强化学习</td><td>49.65%</td><td>40.48%</td><td>74.88%</td><td>55.00%</td></tr></tbody></table></div>
-<p>标准强化学习的收益主要在搭配类，提了 7.84 个点；Sample–Beam 在此基础上又给相似和编辑各加了约 3 个点，搭配只多 0.95 个点。作者认为，统一奖励优化和与线上 beam 解码一致的候选生成方式带来了互补的提升，Sample–Beam 的额外收益主要集中在相似和编辑类。</p>
+<p>标准强化学习的收益主要在搭配类，提了 7.84 个点；Sample–Beam 在此基础上又给相似和编辑各加了约 3 个点，搭配只多 0.95 个点。作者认为，统一强化学习带来了提升。Sample–Beam 让训练时也用线上那样的 beam 解码生成候选，两者的提升相互补充。Sample–Beam 的额外收益主要集中在相似和编辑类。</p>
 <h2 id="s5">推理长度和模型大小怎么选？</h2>
 <figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-29/generative/2610.36958/think_case.png" alt="论文图 2：同一批请求在三种推理长度下的输出。No-think 直接给结果，Low-think 只点出决定性的约束，High-think 多写了一段比较过程。" loading="lazy" decoding="async"><figcaption>论文图 2：同一批请求在三种推理长度下的输出。No-think 直接给结果，Low-think 只点出决定性的约束，High-think 多写了一段比较过程。</figcaption></figure>
 <div class="tbl"><table><thead><tr><th>模型</th><th>推理长度</th><th>宏平均优秀率</th><th>平均推理 token 数</th><th>响应时间（毫秒）</th></tr></thead><tbody><tr><td>0.8B</td><td>No-think</td><td>50.78%</td><td>0</td><td>136</td></tr><tr><td>0.8B</td><td>High-think</td><td>49.60%</td><td>51.7</td><td>326</td></tr><tr><td>2B</td><td>No-think</td><td>54.62%</td><td>0</td><td>210</td></tr><tr><td>2B</td><td>Low-think</td><td>55.13%</td><td>8.6</td><td>278</td></tr><tr><td>4B</td><td>High-think</td><td>55.41%</td><td>54.99</td><td>1,133</td></tr></tbody></table></div>
@@ -197,7 +197,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <ol>
 <li>先找出现有多路召回里最弱的那类关系（通常是搭配或跨品类），只针对它训练一个小的生成式召回模型，和老链路混排做 A/B。这样风险最小，也最容易看到收益。</li>
 <li>训练数据先用已有的商品关系造，按「便宜信号粗筛、大模型细筛、大模型质检」的顺序排，质检规则先用几千条人工标注校准，看它和人工的一致率能否到 90% 以上。</li>
-<li>强化学习阶段直接用 Sample–Beam：只要线上用 beam search 生成多个候选，训练时也用 beam search 生成 SID，逐候选评分后在所有分支间归一化奖励，再更新推理 token 和 SID token。判断是否有效，看前几名候选的人工满意率是否提升，而不只看评审分。</li>
+<li>强化学习阶段直接用 Sample–Beam：只要线上用 beam search 生成多个候选，训练时也用 beam search 生成 SID。先给每个候选打分，再把所有分支的奖励放在一起归一化，最后更新推理 token 和 SID token。判断是否有效，看前几名候选的人工满意率是否提升，而不只看评审分。</li>
 <li>推理长度先试最短的约束提取式推理，在小模型上如果加推理变差就关掉，把延迟预算留给更大的模型。</li>
 </ol>
 <h2 id="s9">一句话结论</h2>

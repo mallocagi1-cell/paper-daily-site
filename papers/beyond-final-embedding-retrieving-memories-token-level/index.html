@@ -139,7 +139,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>8 分钟</b>阅读时长</span>
-    <span><b>2851</b>字</span>
+    <span><b>2926</b>字</span>
     <span><b>4.00</b>综合分</span>
     <span class="pd-rk"><b>第 2 名</b><a href="../../2026-10-13/retrieval/">10-13 AI Search 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -160,9 +160,9 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>建索引时，每条记录只过一遍冻结的向量模型，存两样东西：整条记录的向量，以及最后一层里每个内容 token 的表示，每个 token 记下自己属于哪条记录。提示词、填充位置等不属于内容的 token 不存。</p>
 <p>查询时有两条通道：</p>
 <div class="tbl"><table><thead><tr><th>通道</th><th>怎么打分</th><th>覆盖哪些记录</th></tr></thead><tbody><tr><td>整条通道</td><td>查询向量和记录向量的点积</td><td>每条候选记录都有分</td></tr><tr><td>token 通道</td><td>每个查询 token 在全部记录的 token 里找最像的 64 个，按所属记录汇总</td><td>只有 token 被找到的记录有实分，其余用下限分</td></tr></tbody></table></div>
-<p>token 通道的关键是怎么对待没被找到的记录。对某个查询 token，一条记录如果有好几个 token 被找到，只取最高的相似度；如果一个都没被找到，不能当它是 0 分，因为“没进前 64 名”只说明它不会比第 64 名更像。作者用第 64 名的相似度（小于 0 时取 0）当这条记录在这个查询 token 上的分数；被找到的记录也至少拿这个分。最后把所有查询 token 上的分数取平均，得到这条记录的 token 分。</p>
-<p>两条通道的分数大小不同，融合前各自在当前候选集合里减去平均值、除以标准差，再按各占一半相加。</p>
-<p>可选的训练只改查询一侧：给每个查询 token 的表示加一个秩为 32 的低秩修正，加完后把长度缩回原来大小。这个修正写成两个小矩阵相乘，其中一个初始化为 0，所以训练开始时修正项为 0，和原模型完全一样。记录向量和 token 索引都不用重算。训练用了 1024 条样本。“找最像的 64 个”这一步不能求导，所以训练时换一种可求导的打分：每个查询 token 在每条候选记录里取最大相似度，再对查询 token 取平均，作为这条记录的分数。训练时把每条候选记录的分数除以温度 0.07 后做 softmax，得到每条记录的概率，目标是让这个问题所有相关记录（可以不止一条）的概率之和尽量大。</p>
+<p>token 通道的关键是怎么对待没被找到的记录。对某个查询 token，一条记录如果有好几个 token 被找到，只取最高的相似度；如果一个都没被找到，作者用近似搜索返回结果的尾部相似度来估计缺失的匹配分数。作者用第 64 名的相似度（小于 0 时取 0）当这条记录在这个查询 token 上的分数；被找到的记录也至少拿这个分。最后把所有查询 token 上的分数取平均，得到这条记录的 token 分。</p>
+<p>候选记录集合是为当前查询给定的输入。token 搜索只查这些记录，两条通道也给这个集合里的每条记录打分。融合前，两条通道分别用所有候选记录的分数计算平均值和标准差，把分数减去平均值、除以标准差，再按各占一半相加。</p>
+<p>可选的训练只改查询一侧：给每个查询 token 的表示加一个秩为 32 的低秩修正，加完后把长度缩回原来大小。这个修正写成两个小矩阵相乘，其中一个初始化为 0，所以训练开始时修正项为 0，和原模型完全一样。整条通道仍用原模型输出的查询向量。记录向量和 token 索引都不用重算。训练用了 1024 条样本。“找最像的 64 个”这一步不能求导，所以训练时换一种可求导的打分：每个查询 token 在每条候选记录里取最大相似度，再对查询 token 取平均，作为这条记录的分数。训练时把每条候选记录的分数除以温度 0.07 后做 softmax，得到每条记录的概率，目标是让这个问题所有相关记录（可以不止一条）的概率之和尽量大。</p>
 <h2 id="s3">实验结果</h2>
 <p>评测覆盖八个数据集：三个对话记忆数据集（LoCoMo、LongMemEval、REALTALK），以及企业可持续发展报告、科研论文问答、新冠问答和长文档检索。下表是 Qwen3-Embedding-4B 上八个数据集的平均值：</p>
 <div class="tbl"><table><thead><tr><th>设置</th><th>平均 Recall@10 (%)</th><th>平均 NDCG@10 (%)</th></tr></thead><tbody><tr><td>原始单向量</td><td>62.5</td><td>48.0</td></tr><tr><td>对每条记录直接求 token 最大相似度</td><td>67.8</td><td>54.3</td></tr><tr><td>本文，不训练</td><td>73.8</td><td>59.9</td></tr><tr><td>本文，加查询修正</td><td>75.7</td><td>62.3</td></tr><tr><td>加查询修正，但去掉整条通道</td><td>74.5</td><td>60.6</td></tr><tr><td>加查询修正，但 token 通道换成逐条求最大相似度</td><td>72.4</td><td>60.1</td></tr></tbody></table></div>
@@ -181,7 +181,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <h2 id="s5">局限和怎么用</h2>
 <ul>
 <li>每个查询 token 找更多邻居不一定更好。LoCoMo 上不训练的 Qwen-4B，邻居数超过 32 后反而下降。</li>
-<li>在融合方式相同且不做查询适配的对比中，Gemma 在 REALTALK 上、Llama-1B/3B 在 QASPER 上使用稀疏匹配的 NDCG@10 未优于 MaxSim。</li>
+<li>这组对比保持融合方式不变，也不训练查询修正。Gemma 在 REALTALK 上、Llama-1B/3B 在 QASPER 上，稀疏匹配的 NDCG@10 没有超过 MaxSim。</li>
 <li>融合前的标准化用的是每个查询自己的候选集合。如果实际系统先用别的方法粗召回再算 token 分，条件已经变了，需要单独测漏召回。</li>
 <li>没有线上实验，延迟数字来自小规模离线集合。</li>
 </ul>
