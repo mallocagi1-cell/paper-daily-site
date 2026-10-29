@@ -143,7 +143,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>12 分钟</b>阅读时长</span>
-    <span><b>4467</b>字</span>
+    <span><b>4525</b>字</span>
     <span><b>4.40</b>综合分</span>
     <span class="pd-rk"><b>第 3 名</b><a href="../../2026-10-29/infra/">10-29 Infra 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -156,7 +156,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>做长上下文推理和 RAG 服务的团队值得读。<strong class="hl">它解决的不是压缩效果，而是压缩结果能不能交给现成推理引擎</strong>，这是 KV 压缩从论文走到线上最常卡住的一步。核心思想一句话：偏置是和 query 无关的常数，key 的贡献和 query 成正比，只要找到一个方向让 query 在上面的投影几乎总是 1，常数就能用 key 的位移来模拟。需要注意的是，这个结论建立在“每个头保留同样多的 key”上；AM 原文给不同头分不同预算时效果更好，那种设置下折叠的优势变小。</p>
 <h2 id="s1">它到底在解决什么问题？</h2>
 <p>先看 AM 怎么压缩。文档读完之后，先让模型把整篇文档复述一遍，复述时每隔一个位置取一个 query 作为“参考 query”；每个注意力头按这些参考 query 给出的注意力，只保留最受关注的一小部分 key，比如 10%，再用最小二乘重新拟合这些 key 对应的 value，让压缩后的 attention 输出尽量接近原来的输出。</p>
-<p>为什么还要偏置？因为丢掉 90% 的 key 后，文档在 softmax 里分到的总权重变小了，后面问题里的 token 会显得更重要。用一个能心算的例子（示意）：文档有 1,000 个 token，每个 key 的分数都差不多，压到 100 个之后，文档在 softmax 分母里的总量少了 10 倍。给每个保留的 key 加一个偏置 ln 10 ≈ 2.3，相当于让它在 softmax 里算 10 份，文档的总权重就补回来了。AM 用非负最小二乘给每个保留 key 拟合这样一个权重，取对数后就是偏置，限制在 −3 到 3 之间。</p>
+<p>为什么还要偏置？因为丢掉 90% 的 key 后，文档在 softmax 里分到的总权重变小了，后面问题里的 token 会显得更重要。用一个能心算的例子（示意）：文档有 1,000 个 token，每个 key 的分数都差不多，压到 100 个之后，文档在 softmax 分母里的总量少了 10 倍。给每个保留的 key 加一个偏置 ln 10 ≈ 2.3，相当于让它在 softmax 里算 10 份，文档的总权重就补回来了。AM 拿一批参考 query 来求这个权重：用非负最小二乘让每个参考 query 在保留 key 上（乘上权重后）的 softmax 分母总量，尽量等于它原来在全部 key 上的总量。权重取对数后就是偏置，限制在 −3 到 3 之间。</p>
 <p>问题出在部署：</p>
 <div class="tbl"><table><thead><tr><th>方案</th><th>缓存里存什么</th><th>标准 kernel 能不能直接跑</th><th>代价</th></tr></thead><tbody><tr><td>AM 原样</td><td>key、value、每个 key 一个偏置</td><td>不能，要写带偏置的 kernel</td><td>每个引擎、每种 GPU、每种缓存布局都要写一遍</td></tr><tr><td>给 query 和 key 各加一维</td><td>维度变成 129</td><td>能，但要改 query 计算</td><td>vLLM 实际会按 136 或 256 维存，显存变大</td></tr><tr><td>直接丢掉偏置</td><td>key、value</td><td>能</td><td>失去文档权重的补偿</td></tr><tr><td>折叠（本文）</td><td>挪过的 key、重拟合的 value</td><td>能，维度不变</td><td>对少数 query 有近似误差</td></tr></tbody></table></div>
 <p>带偏置的 kernel 本身不慢，作者和其他工作测过，只比 FlashAttention-2 慢几个百分点。卡住部署的是可用性：分页缓存、前缀缓存、跨引擎的 KV 传输，传的都是普通的 key 和 value 块。</p>
@@ -209,14 +209,14 @@ M834 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">�
 <p>准确率之外，作者还看了答案分布和完整缓存的 KL 散度。在两个数据集一共 12 组都跑了 drop 的设置里，折叠的 KL 全部低于 drop，10 组超出噪声。这说明即使选中的答案相同，折叠后的模型对答案的把握也更接近原模型。</p>
 <p>要说明的是，这两个基准只能分辨约 4 到 5 分以上的差别，“分不出差别”不等于完全一样。</p>
 <h2 id="s4">放进 vLLM 之后</h2>
-<p>作者写了一个 KV connector（vLLM 提供的、可以按模块路径加载的插件接口），不改 vLLM 源码，把折叠好的 key 和 value 写进 vLLM 的分页块，vLLM 只需对问题部分做 prefill。在一张 T4 上用 Qwen3-4B 测 51 个问题，答案选项和 Hugging Face 实现完全一致。换成 Qwen3-14B 在 A100 上跑 LongBench 的 200 个样本，有 180 个的贪心解码输出与 Hugging Face 逐字相同，197 个第一个 token 相同。剩下的差异主要来自两种实现的浮点误差，因为完整提示本身在两边也不是完全一致。</p>
+<p>作者写了一个 KV connector（vLLM 提供的、可以按模块路径加载的插件接口），不改 vLLM 源码，把折叠好的 key 和 value 写进 vLLM 的分页块，vLLM 只需对问题部分做 prefill。在一张 T4 上用 Qwen3-4B 测 51 个问题，答案选项和 Hugging Face 实现完全一致。换成 Qwen3-14B 在 A100 上跑 LongBench 的 200 个样本，有 180 个的贪心解码输出与 Hugging Face 逐字相同，197 个第一个 token 相同。两边读的是同一份折叠后的缓存，剩下 20 个样本的差异主要来自两套实现的浮点误差。</p>
 <p>容量的变化最直观。T4 上每个请求生成 256 个 token 时：</p>
 <div class="tbl"><table><thead><tr><th>缓存</th><th>KV 池能同时装下的请求数</th><th>解码峰值（token/s）</th></tr></thead><tbody><tr><td>完整缓存</td><td>4</td><td>29</td></tr><tr><td>折叠，保留 10%</td><td>31</td><td>200</td></tr><tr><td>折叠，保留 5%</td><td>44</td><td>297</td></tr></tbody></table></div>
 <p>吞吐提升来自压缩本身，折叠的作用是让压缩后的缓存能在标准引擎上跑。同样批大小下，折叠缓存的解码速度是同长度普通提示的 97% 到 98%，说明挪过的 key 没有带来额外开销。</p>
 <h2 id="s5">我认为它的局限</h2>
 <p>第一，等预算的前提打了折扣。AM 原文给每个头分不同的预算，Qwen3-4B 在 QuALITY 保留 10% 时能到 71.3%，作者自己的等预算 AM 只有 63.7%。换成分头预算后，折叠在 10 组里有 9 组和 AM 持平，但 KL 不再优于 drop；在 Llama-3.1-8B 的 LongHealth 保留 5% 那一格，drop 反而比折叠准 7.8 分。而分头预算意味着每个头的缓存长度不同，vLLM 也不支持，这是折叠解决不了的另一个部署障碍。</p>
 <p>第二，离文档越远，近似越差。作者对每个注意力头算“折叠的输出误差 ÷ AM 的输出误差”，这个比值的中位数在各个距离都不超过 1.05，也就是典型的头只比 AM 差 5% 以内；但 query 离文档 4,000 个 token 以上时，把每个注意力头在每个 query 位置窗口上的结果算作一组，“额外误差”指折叠的误差比 AM 多出来的部分；在离文档远的这些组里，最差的十分之一承担了全部额外误差的 90% 到 96%，而且大多集中在前 7 层，原因是 query 在 u 上的投影均值漂离了 1。长对话、多轮追问时这个问题会变明显。</p>
-<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-29/infra/2610.36520/why_err.png" alt="论文图 2：在《傲慢与偏见》上压缩前 4,096 个 token，横轴是 query 离文档的距离，纵轴是中位数的头上 attention 输出的相对误差。折叠（默认版本）的曲线始终紧贴 AM。" loading="lazy" decoding="async"><figcaption>论文图 2：在《傲慢与偏见》上压缩前 4,096 个 token，横轴是 query 离文档的距离，纵轴是中位数的头上 attention 输出的相对误差。折叠（默认版本）的曲线始终紧贴 AM。</figcaption></figure>
+<figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-29/infra/2610.36520/why_err.png" alt="论文图 2：在《傲慢与偏见》上压缩前 4,096 个 token，横轴是 query 离文档的距离，纵轴是各个头 attention 输出相对误差的中位数。折叠（默认版本）的曲线始终紧贴 AM。" loading="lazy" decoding="async"><figcaption>论文图 2：在《傲慢与偏见》上压缩前 4,096 个 token，横轴是 query 离文档的距离，纵轴是各个头 attention 输出相对误差的中位数。折叠（默认版本）的曲线始终紧贴 AM。</figcaption></figure>
 <p>第三，偏置本身的价值依任务而定。LongBench 的四个问答任务上，drop 的 F1 是 30.1，折叠是 28.7，丢掉偏置只让 AM 少 0.7 分。在这类任务上，直接用 drop 更简单。</p>
 <h2 id="s6">一个搜索或 RAG 团队可以怎么试</h2>
 <p>第一步，先在自己的长文档上比较 keep 和 drop。drop 只需要重拟合 value，任何引擎都能跑。如果 drop 已经接近完整缓存，就不必再引入偏置。</p>

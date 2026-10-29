@@ -142,7 +142,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>13 分钟</b>阅读时长</span>
-    <span><b>5032</b>字</span>
+    <span><b>5080</b>字</span>
     <span><b>4.10</b>综合分</span>
     <span class="pd-rk"><b>第 4 名</b><a href="../../2026-10-29/">10-29 Generative 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -174,7 +174,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>这是全文最核心、收益也最大的部分。</p>
 <p>为什么要做？交叉熵只奖励正确的那个 token，对其他 token 一视同仁地压低。但在推荐里，没被点到的物品并不都一样差：用户买了面霜，另一款面霜大概率也是好推荐，而口红就不是。传统的序列模型（论文用的是 DuoRec）能给全部物品打出这种分数，问题是怎么把物品级的分数变成每一步 token 级的监督。</p>
 <p>怎么做？分三步：</p>
-<div class="tbl"><table><thead><tr><th>步骤</th><th>做什么</th></tr></thead><tbody><tr><td>老师打分</td><td>冻结的 DuoRec 给全部物品打分，做 softmax，得到老师对每个物品的偏好概率</td></tr><tr><td>拆到分叉</td><td>在正确答案的每个前缀上，把老师概率按「下一个 token 走哪个分叉」加总、再归一化，得到老师在这一步的分叉分布</td></tr><tr><td>学生对齐</td><td>学生在同一个前缀上，只在「真实存在物品的分叉」上重新归一化自己的概率，然后最小化和老师分叉分布的 KL</td></tr></tbody></table></div>
+<div class="tbl"><table><thead><tr><th>步骤</th><th>做什么</th></tr></thead><tbody><tr><td>老师打分</td><td>冻结的 DuoRec 给全部物品打分，做 softmax，得到老师对每个物品的偏好概率</td></tr><tr><td>拆到分叉</td><td>在正确答案的每个前缀上，把下一个 token 走同一个分叉的那些物品的老师概率加起来，再按这一步各分叉的总和换算成比例，得到老师认为下一步走每个分叉的概率</td></tr><tr><td>学生对齐</td><td>学生在同一个前缀上只看真实存在物品的那些分叉，把自己在这些分叉上的概率重新换算成加起来等于 1，再最小化它和老师分叉概率之间的 KL</td></tr></tbody></table></div>
 <p>最终损失是交叉熵加上这个 KL 乘以一个权重，权重在 0.8 到 1.0 之间效果最好。</p>
 <p>用一个能手算的例子看清楚。假设目录里只有 4 个物品，每个用两个 token 编码（示意）：</p>
 <div class="tbl"><table><thead><tr><th>物品</th><th>SID</th><th>老师概率（示意）</th></tr></thead><tbody><tr><td>面霜 A</td><td>(1, 1)</td><td>0.4</td></tr><tr><td>面霜 B</td><td>(1, 2)</td><td>0.1</td></tr><tr><td>口红 C</td><td>(2, 1)</td><td>0.3</td></tr><tr><td>口红 D</td><td>(2, 2)</td><td>0.2</td></tr></tbody></table></div>
@@ -184,7 +184,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <li>第 2 步，前缀为 (1)。只看 A 和 B：A 占 0.4 ÷ 0.5 = 0.8，B 占 0.1 ÷ 0.5 = 0.2。交叉熵要求选 2（也就是 B），所以蒸馏会告诉模型，在这一支下老师其实更看好 A。</li>
 </ul>
 <p><strong class="hl">交叉熵把模型钉在用户真实选择上，蒸馏则补上「其他分叉各有多好」的相对信息</strong>，两者互补。KL 对每个分叉 logit 的梯度正比于「学生概率减老师概率」，所以被学生低估的那个分叉会被直接往上推。</p>
-<p>为什么学生要在「真实存在的分叉」上重新归一化？因为词表里很多 token 在这个前缀下根本不对应任何物品。如果用全词表的概率去和老师比，损失里会多出一项「合法 token 总概率不够」的惩罚，它和老师无关，而且会偏向已经概率高的分叉。论文附录做了对照：用全词表概率的版本在 Beauty 上 NDCG@5 是 0.0382，重新归一化的版本是 0.0395。</p>
+<p>为什么学生只在真实存在物品的分叉上重新换算概率？因为词表里很多 token 在这个前缀下根本不对应任何物品。如果用全词表的概率去和老师比，损失里会多出一项「合法 token 总概率不够」的惩罚，它和老师无关，而且会偏向已经概率高的分叉。论文附录做了对照：用全词表概率的版本在 Beauty 上 NDCG@5 是 0.0382，重新归一化的版本是 0.0395。</p>
 <p>理论上，作者证明了两件事：物品的偏好概率可以精确拆成沿 SID 路径的各步条件概率之积；物品级的 KL 可以精确拆成各前缀上条件 KL 的加权和，权重是该前缀下的老师概率总量。实际训练只在正确答案的路径上算，所以它是这个完整分解的一个近似，作者在附录里也明确了二者的差别。</p>
 <figure class="dr-fig"><img data-fig="1" src="../../figs/2026-10-29/generative/2610.37584/Main_final.png" alt="论文图 2：REGER 两阶段流程。第一阶段输入物品 SID、生成语义邻居的 SID；第二阶段编码器用全局头和局部头，解码时交叉熵和偏好蒸馏一起训练。" loading="lazy" decoding="async"><figcaption>论文图 2：REGER 两阶段流程。第一阶段输入物品 SID、生成语义邻居的 SID；第二阶段编码器用全局头和局部头，解码时交叉熵和偏好蒸馏一起训练。</figcaption></figure>
 <h2 id="s6">这套方案真的更好吗？</h2>
@@ -204,7 +204,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>第三，调参点不少。局部和全局头的比例三个数据集各不相同（2:4、5:1、3:3），蒸馏权重在 0.8 到 1.0 之间变化，预训练检查点还要按推荐效果挑，因为每个超参都要按推荐效果单独调，换到新业务上调参成本不低。</p>
 <h2 id="s8">一个推荐团队可以怎么试</h2>
 <ol>
-<li>优先试偏好蒸馏。拿现有的召回或精排序列模型当老师，在正确答案的每个前缀上，把老师概率按分叉加总、归一化，和学生在合法分叉上的分布算 KL，权重从 0.5 到 1.0 扫一遍。</li>
+<li>优先试偏好蒸馏。拿现有的召回或精排序列模型当老师，在正确答案的每个前缀上，把老师给同一分叉下各物品的概率加起来换算成分叉概率，再和学生在合法分叉上的概率算 KL，权重从 0.5 到 1.0 扫一遍。</li>
 <li>物品很多时，老师不要对全目录打分，先只在老师的前几千个候选上做 softmax，其他分叉记为零，看效果是否保住。</li>
 <li>换老师前先做对比：同时看 Recall@5 和 Recall@50。如果长列表变好、头部变差，说明老师的排序精度不够，换更强的老师或调低权重。</li>
 <li>再试局部注意力头。它不加参数、只改掩码，先从局部和全局各一半开始。</li>
