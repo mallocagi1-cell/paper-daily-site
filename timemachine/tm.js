@@ -1,6 +1,8 @@
-/* 时光机 / Time Machine (2026-10-30). Topic page: map <-> panel split, stop cards, transfer lines, inline reader of
-   the canonical deep-dive page, pushState per stop (?stop=<arXiv id>&line=X&read=1). Overview: Hoot flies to the
-   island you pick. No third-party requests. */
+/* 时光机 / Time Machine (2026-10-31, 航图 C3 port). Topic page: a paper chart that climbs SW -> NE; Hoot flies the
+   dotted route on a broom (red trail = flown), stage islands light up as you go; the panel beside it resizes
+   (map <-> detail <-> inline reader of the canonical deep-dive page); pushState per stop
+   (?stop=<arXiv id>&line=X&read=1). Camera = SVG px size (--s) + the pane's scroll position: 全图 fits the whole chart,
+   否则 follow Hoot. Overview: Hoot flies to the island you pick. No third-party requests. */
 (function () {
   "use strict";
   var root = document.getElementById("tm");
@@ -33,17 +35,30 @@
   }
 
   var D = JSON.parse(document.getElementById("tm-data").textContent);
-  var T = D.t, S = D.stops, N = S.length;
+  var T = D.t, S = D.stops, N = S.length, W = D.W, H = D.H;
   try { localStorage.setItem("pd-tm-last", D.topic); } catch (e) {}
-  var svg = document.getElementById("tm-svg"), hoot = document.getElementById("tm-hoot");
+  var svg = document.getElementById("tm-svg"), hoot = document.getElementById("tm-hoot"), trail = document.getElementById("tm-trail");
+  var rot = hoot.querySelector(".tm-rot");
   var scroller = document.getElementById("tm-scroll");
   var sts = [].slice.call(svg.querySelectorAll(".tm-st"));
+  var isles = [].slice.call(svg.querySelectorAll(".tm-isle"));
+  var segs = [].slice.call(svg.querySelectorAll(".tm-segs path"));
   var cardsEl = document.getElementById("tm-cards"), reader = document.getElementById("tm-reader");
   var rbody = document.getElementById("tm-rbody"), toc = document.getElementById("tm-toc");
   var st = { i: N - 1, line: "", mode: "map" };
-  var pos = sts.map(function (a) { var c = a.querySelector(".tm-core"); return [+c.getAttribute("cx"), +c.getAttribute("cy")]; });
-  var hpos = sts.map(function (a, k) { return [pos[k][0], pos[k][1] + (a.getAttribute("data-side") === "up" ? 40 : -40)]; });
+  var pos = sts.map(function (a) { return [+a.getAttribute("data-x"), +a.getAttribute("data-y")]; });
+  var hoff = sts.map(function (a) { return [+a.getAttribute("data-hx"), +a.getAttribute("data-hy")]; });
+  var cum = [0];
+  segs.forEach(function (p) { cum.push(cum[cum.length - 1] + p.getTotalLength()); });
+  var LEN = cum[N - 1];
 
+  function pointAt(L) {
+    if (!segs.length || L <= 0) return { x: pos[0][0], y: pos[0][1] };
+    var k = 0;
+    while (k < segs.length - 1 && L > cum[k + 1]) k++;
+    var p = segs[k].getPointAtLength(Math.min(Math.max(0, L - cum[k]), segs[k].getTotalLength()));
+    return { x: p.x, y: p.y };
+  }
   function idx(id) { for (var k = 0; k < N; k++) if (S[k].id === id) return k; var n = parseInt(id, 10); return n >= 1 && n <= N && String(n) === id ? n - 1 : -1; }
   function onLine(k) { return !st.line || S[k].lines.indexOf(st.line) !== -1; }
   function step(d) { var k = st.i; do { k += d; } while (k >= 0 && k < N && !onLine(k)); return k >= 0 && k < N ? k : -1; }
@@ -57,7 +72,83 @@
     try { (replace ? history.replaceState : history.pushState).call(history, s, "", u); } catch (e) {}
   }
 
-  function render(fly) {
+  /* ---- camera: scale (SVG px size, screen-constant text via --s) + scroll position ---- */
+  var S_MIN = 0.8, cam = { s: 1, user: mobile() ? "follow" : "fit" }, camRaf = null;
+  function paneW() { return scroller.clientWidth || 1; }
+  function paneH() { return scroller.clientHeight || 1; }
+  function fitScale() { return Math.min(1.4, Math.max(S_MIN, Math.min(paneW() / W, paneH() / H))); }
+  function followScale() { return mobile() ? 1 : (st.mode === "read" ? 1 : 1.3); }
+  function camMode() { return st.mode === "map" ? cam.user : "follow"; }
+  function targetScale() { return camMode() === "fit" ? fitScale() : followScale(); }
+  function applyScale(s) {
+    cam.s = s;
+    svg.style.width = (W * s).toFixed(1) + "px"; svg.style.height = (H * s).toFixed(1) + "px";
+    svg.style.setProperty("--s", s.toFixed(4));
+    svg.classList.toggle("tm-far", s < 0.68);
+  }
+  var hootL = cum[N - 1], hootOff = hoff[N - 1].slice();
+  function hootPt() { var p = pointAt(hootL); return { x: p.x + hootOff[0], y: p.y + hootOff[1] }; }
+  function centre(smooth) {
+    var s = cam.s, fx, fy;
+    if (camMode() === "fit") { fx = W / 2; fy = H / 2; } else { var p = hootPt(); fx = p.x; fy = p.y; }
+    var x = fx * s - paneW() / 2, y = fy * s - paneH() / 2 + (mobile() && st.mode !== "map" ? paneH() * 0.28 : 0);
+    if (smooth && !RM && scroller.scrollTo) scroller.scrollTo({ left: x, top: y, behavior: "smooth" });
+    else { scroller.scrollLeft = x; scroller.scrollTop = y; }
+  }
+  function camTo(animate) {
+    var to = targetScale();
+    cancelAnimationFrame(camRaf); camRaf = null;
+    if (!animate || RM || Math.abs(to - cam.s) < 1e-3) { applyScale(to); centre(animate && !RM); return; }
+    var from = cam.s, t0 = performance.now(), dur = 480;
+    var stepf = function (now) {
+      var p = Math.min(1, (now - t0) / dur), e = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      applyScale(from + (to - from) * e); centre(false);
+      if (p < 1) camRaf = requestAnimationFrame(stepf); else camRaf = null;
+    };
+    camRaf = requestAnimationFrame(stepf);
+  }
+
+  /* ---- Hoot: on the broom between stops, standing by the flag at the last one; red trail = flown ---- */
+  var flying = false, raf = null;
+  function drawTrail(L) {
+    var d = "", stp = 6, n = Math.ceil(L / stp);
+    for (var k = 0; k <= n; k++) { var q = pointAt(Math.min(L, k * stp)); d += (k ? "L" : "M") + q.x.toFixed(1) + " " + q.y.toFixed(1); }
+    trail.setAttribute("d", L > 0 ? d : "");
+  }
+  function setHoot(L, off, ang, flip) {
+    hootL = L; hootOff = off;
+    var p = pointAt(L);
+    hoot.style.transform = "translate(" + (p.x + off[0]).toFixed(1) + "px," + (p.y + off[1]).toFixed(1) + "px)";
+    if (rot) rot.setAttribute("transform", "rotate(" + (ang || 0).toFixed(1) + ") scale(" + (flip ? -1 : 1) + " 1)");
+    drawTrail(L);
+  }
+  function land(k) { hoot.classList.toggle("tm-landed", k === N - 1); }
+  function fly(k, done) {
+    var from = hootL, to = cum[k], dist = Math.abs(to - from), o0 = hootOff.slice(), o1 = hoff[k];
+    cancelAnimationFrame(raf);
+    hoot.classList.remove("tm-landed");
+    if (RM || dist < 1) { flying = false; hoot.classList.remove("tm-flying"); setHoot(to, o1, 0, false); land(k); if (done) done(); return; }
+    var dur = Math.min(2200, 420 + dist * 0.55), t0 = performance.now(), dir = to >= from ? 1 : -1;
+    flying = true; hoot.classList.add("tm-flying");
+    var stepf = function (now) {
+      var t = Math.min(1, (now - t0) / dur), e = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      var L = from + (to - from) * e;
+      var a = pointAt(L), b = pointAt(Math.max(0, Math.min(LEN, L + dir * 10)));
+      var ang = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI, flip = dir < 0;
+      if (flip) ang -= 180;
+      var lift = Math.sin(Math.PI * t);
+      var off = [o0[0] * (1 - e) + o1[0] * e, o0[1] * (1 - e) + o1[1] * e];
+      off = [off[0] * (1 - lift), off[1] * (1 - lift) - 14 * lift];
+      setHoot(L, off, ang * 0.8 * Math.sin(Math.PI * Math.min(1, t * 1.15)), flip);
+      if (camMode() === "follow") centre(false);
+      if (t < 1) raf = requestAnimationFrame(stepf);
+      else { flying = false; hoot.classList.remove("tm-flying"); setHoot(to, o1, 0, false); land(k); if (done) done(); }
+    };
+    raf = requestAnimationFrame(stepf);
+  }
+  function jumpHoot() { cancelAnimationFrame(raf); flying = false; hoot.classList.remove("tm-flying"); setHoot(cum[st.i], hoff[st.i], 0, false); land(st.i); }
+
+  function render(move) {
     var s = S[st.i];
     root.setAttribute("data-mode", st.mode);
     sts.forEach(function (a, k) {
@@ -67,10 +158,9 @@
     });
     [].forEach.call(svg.querySelectorAll(".tm-line"), function (p) { p.classList.toggle("on", !st.line || p.getAttribute("data-line") === st.line); });
     svg.classList.toggle("tm-dim", !!st.line);
-    [].forEach.call(svg.querySelectorAll(".tm-trail path"), function (p) { p.classList.toggle("off", +p.getAttribute("data-k") > st.i); });
-    if (!fly || RM) hoot.style.transition = "none";
-    hoot.style.transform = "translate(" + hpos[st.i][0] + "px," + hpos[st.i][1] + "px)";
-    if (!fly || RM) { hoot.getBoundingClientRect(); hoot.style.transition = ""; }
+    [].forEach.call(document.querySelectorAll(".tm-lg"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-line") === st.line ? "true" : "false"); });
+    var stage = sts[st.i].getAttribute("data-stage");
+    isles.forEach(function (g) { g.classList.toggle("cur", g.getAttribute("data-stage") === stage); });
     [].forEach.call(cardsEl.querySelectorAll(".tm-card"), function (c) { c.hidden = +c.getAttribute("data-i") !== st.i; });
     var card = document.getElementById("stop-" + s.id);
     [].forEach.call(card.querySelectorAll(".tm-xb"), function (b) { b.classList.toggle("on", b.getAttribute("data-line") === st.line); });
@@ -97,21 +187,17 @@
     cardsEl.hidden = st.mode === "read";
     reader.hidden = st.mode !== "read";
     if (st.mode !== "read") cardsEl.scrollTop = 0;
-    centre(fly);
-  }
-  function centre(smooth) {
-    var x = pos[st.i][0] * (svg.getBoundingClientRect().width / +svg.getAttribute("width"));
-    var off = svg.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
-    var to = Math.max(0, off + x - scroller.clientWidth / 2);
-    if (smooth && !RM && scroller.scrollTo) scroller.scrollTo({ left: to, behavior: "smooth" });
-    else { scroller.style.scrollBehavior = "auto"; scroller.scrollLeft = to; scroller.style.scrollBehavior = ""; }
+    fitb.setAttribute("aria-pressed", camMode() === "fit" ? "true" : "false");
+    if (move === "fly") { camTo(true); fly(st.i); }
+    else if (move === "jump") { jumpHoot(); camTo(false); }
+    else camTo(true);
   }
 
   var fitb = document.getElementById("tm-fit");
-  if (fitb) fitb.addEventListener("click", function () {
-    var on = !svg.classList.contains("tm-fitall");
-    svg.classList.toggle("tm-fitall", on); fitb.setAttribute("aria-pressed", on ? "true" : "false");
-    centre(false);
+  fitb.addEventListener("click", function () {
+    if (st.mode !== "map") { st.mode = "map"; cam.user = "fit"; render(false); push(false); return; }
+    cam.user = cam.user === "fit" ? "follow" : "fit";
+    render(false);
   });
 
   function go(k, mode, opts) {
@@ -120,7 +206,7 @@
     if (!onLine(k) && !opts.keepLine) st.line = "";
     st.i = k;
     st.mode = mode || st.mode;
-    render(true);
+    render("fly");
     if (st.mode === "read") openReader();
     if (!opts.nopush) push(false);
   }
@@ -200,6 +286,14 @@
     var x = e.target.closest(".tm-xb");
     if (x) { var l = x.getAttribute("data-line"); st.line = st.line === l ? "" : l; render(false); push(false); }
   });
+  [].forEach.call(document.querySelectorAll(".tm-lg"), function (b) {
+    b.addEventListener("click", function () {
+      var l = b.getAttribute("data-line");
+      if (st.line === l) st.line = "";
+      else { st.line = l; if (S[st.i].lines.indexOf(l) === -1) { var k = -1; for (var j = 0; j < N; j++) if (S[j].lines.indexOf(l) !== -1) k = j; if (k >= 0) { st.i = k; render("fly"); push(false); return; } } }
+      render(false); push(false);
+    });
+  });
   function next() { var k = step(1); if (k >= 0) go(k, "detail", { keepLine: true }); }
   document.getElementById("tm-nextb").addEventListener("click", next);
   document.getElementById("tm-rnext").addEventListener("click", next);
@@ -215,14 +309,16 @@
     if (e.key === "ArrowRight" && st.mode !== "read") { var k = step(1); if (k >= 0) { e.preventDefault(); go(k, st.mode === "map" ? "map" : "detail", { keepLine: true }); } }
     else if (e.key === "ArrowLeft" && st.mode !== "read") { var j = step(-1); if (j >= 0) { e.preventDefault(); go(j, st.mode === "map" ? "map" : "detail", { keepLine: true }); } }
     else if (e.key === "Escape" && st.mode !== "map") { st.mode = st.mode === "read" ? "detail" : "map"; render(false); push(false); }
+    else if (e.key === "Home" && st.mode !== "read") { e.preventDefault(); go(0, st.mode, { keepLine: true }); }
+    else if (e.key === "End" && st.mode !== "read") { e.preventDefault(); go(N - 1, st.mode, { keepLine: true }); }
   });
   window.addEventListener("popstate", function (e) {
     var s = e.state;
-    if (!s) { fromUrl(); render(false); if (st.mode === "read") openReader(); return; }
-    st.i = s.i; st.line = s.line; st.mode = s.mode; render(true);
+    if (!s) { fromUrl(); render("jump"); if (st.mode === "read") openReader(); return; }
+    st.i = s.i; st.line = s.line; st.mode = s.mode; render("fly");
     if (st.mode === "read") openReader();
   });
-  window.addEventListener("resize", function () { centre(false); });
+  window.addEventListener("resize", function () { camTo(false); });
 
   function fromUrl() {
     var q = new URLSearchParams(location.search), k = idx(q.get("stop") || "");
@@ -232,10 +328,10 @@
     st.mode = q.get("read") === "1" ? "read" : (k >= 0 && q.get("view") !== "map" ? "detail" : "map");
   }
   fromUrl();
-  render(false);
+  render("jump");
   // first load: keep Hoot's station in view once fonts / layout settle (mobile scrolled away before)
-  window.addEventListener("load", function () { centre(false); });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { centre(false); });
+  window.addEventListener("load", function () { camTo(false); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { camTo(false); });
   if (st.mode === "read") openReader();
   try { history.replaceState({ i: st.i, line: st.line, mode: st.mode }, "", location.pathname + location.search); } catch (e) {}
 })();
