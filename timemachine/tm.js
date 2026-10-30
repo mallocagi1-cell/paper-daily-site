@@ -41,7 +41,7 @@
   var cardsEl = document.getElementById("tm-cards"), reader = document.getElementById("tm-reader");
   var rbody = document.getElementById("tm-rbody"), toc = document.getElementById("tm-toc");
   var st = { i: N - 1, line: "", mode: "map" };
-  var pos = sts.map(function (a) { var c = a.querySelector(".tm-c"); return [+c.getAttribute("cx"), +c.getAttribute("cy")]; });
+  var pos = sts.map(function (a) { var c = a.querySelector(".tm-core"); return [+c.getAttribute("cx"), +c.getAttribute("cy")]; });
   var hpos = sts.map(function (a, k) { return [pos[k][0], pos[k][1] + (a.getAttribute("data-side") === "up" ? 38 : -38)]; });
 
   function idx(id) { for (var k = 0; k < N; k++) if (S[k].id === id) return k; var n = parseInt(id, 10); return n >= 1 && n <= N && String(n) === id ? n - 1 : -1; }
@@ -105,6 +105,13 @@
     if (smooth && !RM && scroller.scrollTo) scroller.scrollTo({ left: to, behavior: "smooth" });
     else { scroller.style.scrollBehavior = "auto"; scroller.scrollLeft = to; scroller.style.scrollBehavior = ""; }
   }
+
+  var fitb = document.getElementById("tm-fit");
+  if (fitb) fitb.addEventListener("click", function () {
+    var on = !svg.classList.contains("tm-fitall");
+    svg.classList.toggle("tm-fitall", on); fitb.setAttribute("aria-pressed", on ? "true" : "false");
+    centre(false);
+  });
 
   function go(k, mode, opts) {
     if (k < 0 || k >= N) return;
