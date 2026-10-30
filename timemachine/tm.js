@@ -42,6 +42,7 @@
   var rbody = document.getElementById("tm-rbody"), toc = document.getElementById("tm-toc");
   var st = { i: N - 1, line: "", mode: "map" };
   var pos = sts.map(function (a) { var c = a.querySelector(".tm-c"); return [+c.getAttribute("cx"), +c.getAttribute("cy")]; });
+  var hpos = sts.map(function (a, k) { return [pos[k][0], pos[k][1] + (a.getAttribute("data-side") === "up" ? 38 : -38)]; });
 
   function idx(id) { for (var k = 0; k < N; k++) if (S[k].id === id) return k; var n = parseInt(id, 10); return n >= 1 && n <= N && String(n) === id ? n - 1 : -1; }
   function onLine(k) { return !st.line || S[k].lines.indexOf(st.line) !== -1; }
@@ -67,7 +68,7 @@
     [].forEach.call(svg.querySelectorAll(".tm-line"), function (p) { p.classList.toggle("on", !st.line || p.getAttribute("data-line") === st.line); });
     svg.classList.toggle("tm-dim", !!st.line);
     if (!fly || RM) hoot.style.transition = "none";
-    hoot.style.transform = "translate(" + pos[st.i][0] + "px," + pos[st.i][1] + "px)";
+    hoot.style.transform = "translate(" + hpos[st.i][0] + "px," + hpos[st.i][1] + "px)";
     if (!fly || RM) { hoot.getBoundingClientRect(); hoot.style.transition = ""; }
     [].forEach.call(cardsEl.querySelectorAll(".tm-card"), function (c) { c.hidden = +c.getAttribute("data-i") !== st.i; });
     var card = document.getElementById("stop-" + s.id);
@@ -101,7 +102,8 @@
     var x = pos[st.i][0] * (svg.getBoundingClientRect().width / +svg.getAttribute("width"));
     var off = svg.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
     var to = Math.max(0, off + x - scroller.clientWidth / 2);
-    if (smooth && !RM && scroller.scrollTo) scroller.scrollTo({ left: to, behavior: "smooth" }); else scroller.scrollLeft = to;
+    if (smooth && !RM && scroller.scrollTo) scroller.scrollTo({ left: to, behavior: "smooth" });
+    else { scroller.style.scrollBehavior = "auto"; scroller.scrollLeft = to; scroller.style.scrollBehavior = ""; }
   }
 
   function go(k, mode, opts) {
@@ -223,6 +225,9 @@
   }
   fromUrl();
   render(false);
+  // first load: keep Hoot's station in view once fonts / layout settle (mobile scrolled away before)
+  window.addEventListener("load", function () { centre(false); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { centre(false); });
   if (st.mode === "read") openReader();
   try { history.replaceState({ i: st.i, line: st.line, mode: st.mode }, "", location.pathname + location.search); } catch (e) {}
 })();
