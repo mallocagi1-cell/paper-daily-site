@@ -42,7 +42,7 @@
   var rbody = document.getElementById("tm-rbody"), toc = document.getElementById("tm-toc");
   var st = { i: N - 1, line: "", mode: "map" };
   var pos = sts.map(function (a) { var c = a.querySelector(".tm-core"); return [+c.getAttribute("cx"), +c.getAttribute("cy")]; });
-  var hpos = sts.map(function (a, k) { return [pos[k][0], pos[k][1] + (a.getAttribute("data-side") === "up" ? 38 : -38)]; });
+  var hpos = sts.map(function (a, k) { return [pos[k][0], pos[k][1] + (a.getAttribute("data-side") === "up" ? 40 : -40)]; });
 
   function idx(id) { for (var k = 0; k < N; k++) if (S[k].id === id) return k; var n = parseInt(id, 10); return n >= 1 && n <= N && String(n) === id ? n - 1 : -1; }
   function onLine(k) { return !st.line || S[k].lines.indexOf(st.line) !== -1; }
@@ -67,6 +67,7 @@
     });
     [].forEach.call(svg.querySelectorAll(".tm-line"), function (p) { p.classList.toggle("on", !st.line || p.getAttribute("data-line") === st.line); });
     svg.classList.toggle("tm-dim", !!st.line);
+    [].forEach.call(svg.querySelectorAll(".tm-trail path"), function (p) { p.classList.toggle("off", +p.getAttribute("data-k") > st.i); });
     if (!fly || RM) hoot.style.transition = "none";
     hoot.style.transform = "translate(" + hpos[st.i][0] + "px," + hpos[st.i][1] + "px)";
     if (!fly || RM) { hoot.getBoundingClientRect(); hoot.style.transition = ""; }
