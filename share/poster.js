@@ -249,8 +249,12 @@ function planA(ctx,D,L,limit){var t=D.p,c=cands(t),ar=L.F0.sw/L.F0.sh,best=null,
    if(!best||f>best.f){b.f=f;best=b}});
   if(best){if(best.r.blank<=BLANK_MAX){keep=best;break}if(!keep||best.r.blank<keep.r.blank-0.01*H)keep=best}}
  return keep}
-function loadImg(src){return new Promise(function(res){if(!src)return res(null);var i=new Image();var to=setTimeout(function(){res(null)},15000);
- i.onload=function(){clearTimeout(to);res(i.naturalWidth?i:null)};i.onerror=function(){clearTimeout(to);res(null)};i.src=src})}
+/* same-origin figure/logo cache: warmPoster / reopen must not re-fetch (Felix 2026-10-30 share-modal speed) */
+var imgCache={};
+function loadImg(src){return new Promise(function(res){if(!src)return res(null);if(imgCache[src])return res(imgCache[src]);
+ var i=new Image();var to=setTimeout(function(){res(null)},15000);
+ i.onload=function(){clearTimeout(to);var ok=i.naturalWidth?i:null;if(ok)imgCache[src]=ok;res(ok)};
+ i.onerror=function(){clearTimeout(to);res(null)};i.src=src})}
 function footer(ctx,D){var t=D.p,bits=qrBits(D),n=D.qr.n,m=Math.max(3,Math.min(5,Math.floor(168/n))),qs=n*m,pad=14,box=qs+2*pad;
  var top=H-P-box-34;ctx.fillStyle=INK;ctx.fillRect(P,top-30,W-2*P,2);
  var qx=W-P-box,qy=top;ctx.fillStyle='#fff';rr(ctx,qx,qy,box,box,10);ctx.fill();ctx.strokeStyle=LINE;ctx.lineWidth=2;rr(ctx,qx+1,qy+1,box-2,box-2,10);ctx.stroke();

@@ -60,8 +60,11 @@ function openSheet(btn){close();var dim=doc.createElement('div');dim.className='
  doc.body.appendChild(dim);doc.body.appendChild(s);if(btn)btn.setAttribute('aria-expanded','true');cur={nodes:[dim,s],btn:btn,focus:false}}
 /* WeChat action: desktop -> QR popover; touch with system share -> system sheet; WeChat in-app -> hint */
 function wechat(btn){if(canSys())return sys();if(mobile()){close();if(WX)toast(T.wxHint);else copy();return}openPop(btn,true)}
-/* poster: lazy-load share/poster.js (+ its fonts) on first use */
-var pj=null,blobUrl=null,posterBlob=null;
+/* poster: lazy-load share/poster.js (+ its fonts) on first use.
+   Speed (Felix 2026-10-30): show the modal shell immediately, paint one frame before heavy work, cache the
+   generated PNG so reopen is instant, prefetch script/fonts/fig on idle or poster-button hover, and show a
+   blob: <img> as soon as the canvas is ready (iOS still upgrades to data: for long-press "Save image"). */
+var pj=null,blobUrl=null,posterBlob=null,posterCache=null,warming=false;
 /* iOS (every iOS browser is WebKit): <a download> only drops the PNG into Files, so 下载图片 opens the share sheet
    ("Save Image") when it can carry files, else the PNG in a new tab where long-press saves it */
 var IOS=/iP(hone|ad|od)/.test(UA)||(nav.platform==='MacIntel'&&nav.maxTouchPoints>1);
@@ -70,31 +73,53 @@ function iosSave(){if(!posterBlob)return false;var f=null;try{f=new File([poster
  var w=window.open(blobUrl,'_blank');if(!w)location.href=blobUrl;ga('download_ios_tab');return true}
 function loadPoster(){if(pj)return pj;pj=new Promise(function(res,rej){var s=doc.createElement('script');s.src=D.js;s.async=true;
  s.onload=function(){window.PDPoster?res(window.PDPoster):rej(new Error('poster.js'))};s.onerror=function(){pj=null;rej(new Error('poster.js'))};doc.head.appendChild(s)});return pj}
+function paintPoster(o,blob,dataUrl){if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=URL.createObjectURL(blob);posterBlob=blob;
+ /* desktop/Android: blob: is enough to show + download. iOS long-press "Save image" needs data:; show blob first, swap when ready. */
+ var src=(IOS&&dataUrl)?dataUrl:blobUrl;
+ o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button>'
+  +'<img class="pd-ps-img" src="'+src+'" alt="'+esc(D.title)+'"><p>'+esc(mobile()||WX?T.save:T.saveDesk)+'</p>'
+  +(WX?'':'<div class="pd-ps-acts"><a href="'+blobUrl+'" download="'+esc(D.file)+'" data-pd-act="download">'+IC.dl+esc(T.dl)+'</a></div>');
+ if(IOS&&!dataUrl){var img=o.querySelector('.pd-ps-img'),r=new FileReader();
+  r.onload=function(){posterCache={blob:blob,dataUrl:r.result};if(img&&img.parentNode===o)img.src=r.result};
+  r.onerror=function(){posterCache={blob:blob,dataUrl:null}};r.readAsDataURL(blob)}
+ else posterCache={blob:blob,dataUrl:dataUrl||null}}
+function genPoster(){return loadPoster().then(function(P){return P(D)}).then(function(blob){
+ if(!IOS)return[blob,null];
+ return new Promise(function(res){var r=new FileReader();r.onload=function(){res([blob,r.result])};r.onerror=function(){res([blob,null])};r.readAsDataURL(blob)})})}
+function warmPoster(){if(posterCache||warming)return;warming=true;
+ /* prefetch poster.js + fonts + figure/logos via a real generate; result is cached for the first tap */
+ genPoster().then(function(bd){posterCache={blob:bd[0],dataUrl:bd[1]};if(!blobUrl){blobUrl=URL.createObjectURL(bd[0]);posterBlob=bd[0]}})
+ .catch(function(){}).then(function(){warming=false})}
 function poster(){close();ga('poster');var o=doc.createElement('div');o.className='pd-ps';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');o.setAttribute('aria-label',T.poster);
  o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button><div class="pd-ps-ld" role="status"><div class="pd-spin"></div>'+esc(T.loading)+'</div>';
  doc.body.appendChild(o);cur={nodes:[o],btn:null,focus:false};var me=cur;
- loadPoster().then(function(P){return P(D)}).then(function(blob){return new Promise(function(res){
-  /* the modal shows a data: URL <img> (not a canvas, not blob:): iOS WebKit only offers "Save image" on long-press for that */
-  var r=new FileReader();r.onload=function(){res([blob,r.result])};r.onerror=function(){res([blob,null])};r.readAsDataURL(blob)})})
- .then(function(bd){var blob=bd[0];if(cur!==me)return;
-  if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=URL.createObjectURL(blob);posterBlob=blob;
-  o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button>'
-   +'<img class="pd-ps-img" src="'+(bd[1]||blobUrl)+'" alt="'+esc(D.title)+'"><p>'+esc(mobile()||WX?T.save:T.saveDesk)+'</p>'
-   +(WX?'':'<div class="pd-ps-acts"><a href="'+blobUrl+'" download="'+esc(D.file)+'" data-pd-act="download">'+IC.dl+esc(T.dl)+'</a></div>')
- }).catch(function(){if(cur!==me)return;
-  o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button><p role="alert">'+esc(T.fail)+'</p>'
-   +'<div class="pd-ps-acts"><button type="button" data-pd-act="retry">'+esc(T.retry)+'</button></div>'})}
+ if(posterCache&&posterCache.blob){paintPoster(o,posterCache.blob,posterCache.dataUrl);return}
+ /* double rAF: let the loading shell paint before poster.js / FontFace / 2x canvas / planA block the main thread */
+ function go(){if(cur!==me)return;
+  /* if warm finished while we waited a frame, use it */
+  if(posterCache&&posterCache.blob){paintPoster(o,posterCache.blob,posterCache.dataUrl);return}
+  genPoster().then(function(bd){if(cur!==me)return;paintPoster(o,bd[0],bd[1])})
+  .catch(function(){if(cur!==me)return;
+   o.innerHTML='<button type="button" class="pd-ps-x" data-pd-act="close" aria-label="'+esc(T.close)+'">\u00d7</button><p role="alert">'+esc(T.fail)+'</p>'
+    +'<div class="pd-ps-acts"><button type="button" data-pd-act="retry">'+esc(T.retry)+'</button></div>'})}
+ requestAnimationFrame(function(){requestAnimationFrame(go)})}
+if(window.requestIdleCallback)requestIdleCallback(function(){warmPoster()},{timeout:4000});
+else setTimeout(warmPoster,2000);
+doc.addEventListener('pointerenter',function(ev){var t=ev.target.closest&&ev.target.closest('[data-pd-share="poster"]');if(t)warmPoster()},true);
 /* B card: on touch devices with a system share sheet, the WeChat button becomes 系统分享 */
 if(canSys())[].forEach.call(doc.querySelectorAll('[data-pd-share=wechat]'),function(b){b.setAttribute('data-pd-share','system');b.innerHTML=IC.share+esc(T.sys)});
 doc.addEventListener('click',function(ev){var t=ev.target.closest&&ev.target.closest('[data-pd-share],[data-pd-act]');
- if(!t){if(cur&&!ev.target.closest('.pd-pop,.pd-bs,.pd-ps'))close();return}
+ /* backdrop: .pd-ps IS the dimmed overlay (unlike .pd-bs which has a separate .pd-dim). Click on the overlay
+    element itself closes; clicks on the card (img / hint / acts / X) do not. Esc already closes below. */
+ if(!t){if(cur){if(ev.target.classList&&ev.target.classList.contains('pd-ps'))close();
+  else if(!ev.target.closest('.pd-pop,.pd-bs,.pd-ps'))close()}return}
  var a=t.getAttribute('data-pd-share')||t.getAttribute('data-pd-act');
  if(a==='x'){ga('x');setTimeout(close,0);return}
  if(a==='download'){if(IOS&&iosSave()){ev.preventDefault();return}ga('download');return}
  ev.preventDefault();
  if(a==='menu'){if(cur&&cur.btn===t){close();return}mobile()?openSheet(t):openPop(t,false)}
  else if(a==='copy')copy();else if(a==='system')sys();else if(a==='wechat'){if(cur&&cur.btn===t){close();return}wechat(t)}
- else if(a==='poster'||a==='retry')poster();else if(a==='close')close()});
+ else if(a==='retry'){posterCache=null;poster()}else if(a==='poster')poster();else if(a==='close')close()});
 /* capture phase + preventDefault: the site's keyboard nav (js/search.js) maps Esc to "back" on deep pages and skips handled events */
 window.addEventListener('keydown',function(e){if(e.key==='Escape'&&cur){e.preventDefault();e.stopPropagation();close()}},true);
 window.addEventListener('resize',function(){if(cur&&cur.nodes[0].className.indexOf('pd-pop')===0)close()});
