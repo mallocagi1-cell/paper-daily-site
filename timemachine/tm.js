@@ -173,6 +173,10 @@
       a.classList.toggle("on", onLine(k));
       if (k === st.i) a.setAttribute("aria-current", "step"); else a.removeAttribute("aria-current");
     });
+    // one marked stop only: keyboard focus on a station follows the current stop (roving focus), so a stop focused
+    // earlier (e.g. by a right-click, then Esc + arrow keys) never keeps a focus ring after the current stop moves on
+    var ae = document.activeElement;
+    if (ae && ae !== sts[st.i] && sts.indexOf(ae) !== -1) { try { sts[st.i].focus({ preventScroll: true }); } catch (e) { ae.blur(); } }
     [].forEach.call(svg.querySelectorAll(".tm-line"), function (p) { p.classList.toggle("on", !st.line || p.getAttribute("data-line") === st.line); });
     svg.classList.toggle("tm-dim", !!st.line);
     [].forEach.call(document.querySelectorAll(".tm-lg"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-line") === st.line ? "true" : "false"); });
@@ -291,8 +295,11 @@
   scroller.addEventListener("gesturechange", function (e) { e.preventDefault(); var sc = e.scale || 1; zoomBy(sc / gsc, e.clientX, e.clientY); gsc = sc; });
   scroller.addEventListener("gestureend", function (e) { e.preventDefault(); gCommit(); });
   var drag = null, dragged = false;
+  // a right / middle press neither drags nor focuses a station (the context menu still opens); Esc after it must not
+  // leave a focus ring on a stop that is not the current one
+  scroller.addEventListener("mousedown", function (e) { if (e.button !== 0 && e.target.closest && e.target.closest(".tm-st")) e.preventDefault(); });
   scroller.addEventListener("pointerdown", function (e) {
-    if (e.pointerType === "touch" || e.button !== 0) return;  // touch: native one-finger scroll
+    if (e.pointerType === "touch" || e.button !== 0 || !e.isPrimary) return;  // touch: native one-finger scroll
     drag = { x: e.clientX, y: e.clientY, l: scroller.scrollLeft, t: scroller.scrollTop, id: e.pointerId, on: false };
     dragged = false;
   });
@@ -337,6 +344,41 @@
   document.getElementById("tm-zreset").addEventListener("click", function () {
     cam.z = null; cam.user = mobile() ? "follow" : "fit"; root.removeAttribute("data-zoom"); render(false);
   });
+
+  /* ---- full screen: the map + reader container; Fullscreen API (webkit-prefixed for Safari), a fixed
+     full-viewport fallback where element full screen does not exist (iOS Safari). Esc: the browser leaves real full
+     screen itself; in the fallback our own Esc handler leaves it first, before Esc 收起. ---- */
+  var app = root.querySelector(".tm-app"), fsb = document.getElementById("tm-fs");
+  function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function fsOn() { return fsEl() === app || root.classList.contains("tm-fsx"); }
+  function fsSync() {
+    var on = fsOn(), lab = fsb.getAttribute(on ? "data-off" : "data-on");
+    root.classList.toggle("tm-fs", on);
+    fsb.setAttribute("aria-pressed", on ? "true" : "false"); fsb.setAttribute("aria-label", lab); fsb.setAttribute("title", lab);
+    requestAnimationFrame(function () { camTo(false); });
+  }
+  function fsx(on) { root.classList.toggle("tm-fsx", on); document.documentElement.classList.toggle("tm-fsx-on", on); fsSync(); }
+  function fsToggle() {
+    if (fsOn()) {
+      if (root.classList.contains("tm-fsx")) fsx(false);
+      else (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      return;
+    }
+    var rq = app.requestFullscreen || app.webkitRequestFullscreen;
+    if (!rq) { fsx(true); return; }
+    try {
+      var r = rq.call(app);
+      if (r && r.catch) r.catch(function () { fsx(true); });
+    } catch (e) { fsx(true); }
+  }
+  if (fsb && app) {
+    fsb.addEventListener("click", fsToggle);
+    document.addEventListener("fullscreenchange", fsSync);
+    document.addEventListener("webkitfullscreenchange", fsSync);
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && root.classList.contains("tm-fsx")) { e.stopImmediatePropagation(); fsx(false); }
+    }, true);
+  }
 
   function go(k, mode, opts) {
     if (k < 0 || k >= N) return;
