@@ -99,6 +99,7 @@
     else { scroller.scrollLeft = x; scroller.scrollTop = y; }
   }
   function camTo(animate) {
+    if (typeof gCommit === "function") gCommit();
     var to = targetScale();
     cancelAnimationFrame(camRaf); camRaf = null;
     if (!animate || RM || Math.abs(to - cam.s) < 1e-3) { applyScale(to); centre(animate && !RM); return; }
@@ -218,6 +219,7 @@
 
   /* ---- map-like pan / zoom: drag to pan, wheel / trackpad pinch / two-finger pinch zoom around the pointer ---- */
   function zoomAt(s, cx, cy) {  // cx, cy = client coords that stay fixed
+    gCommit();
     s = Math.min(Z_MAX, Math.max(zMin(), s));
     if (Math.abs(s - cam.s) < 1e-4) return;
     cancelAnimationFrame(camRaf); camRaf = null;
@@ -229,11 +231,65 @@
     root.setAttribute("data-zoom", s.toFixed(3));
   }
   function paneMid() { var r = scroller.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
+  /* Live gesture (trackpad pinch, Safari gesture*, touch pinch): a CSS transform on the SVG, rAF-batched, committed
+     to real size + scroll 140 ms after the last event (so no relayout per event). */
+  var G = null, gRaf = null, gT = null, panQ = [0, 0], pRaf = null;
+  function gBegin() {
+    if (G) return;
+    cancelAnimationFrame(camRaf); camRaf = null;
+    var r = svg.getBoundingClientRect();
+    G = { k: 1, tx: 0, ty: 0, ox: r.left, oy: r.top, cx: 0, cy: 0 };
+    svg.style.transformOrigin = "0 0"; svg.style.willChange = "transform";
+  }
+  function zoomBy(f, cx, cy) {  // multiply the live scale by f, keeping client point (cx, cy) fixed
+    gBegin();
+    var k = Math.min(Z_MAX / cam.s, Math.max(zMin() / cam.s, G.k * f));
+    f = k / G.k;
+    G.tx = cx - G.ox - (cx - G.ox - G.tx) * f; G.ty = cy - G.oy - (cy - G.oy - G.ty) * f;
+    G.k = k; G.cx = cx; G.cy = cy;
+    if (!gRaf) gRaf = requestAnimationFrame(function () { gRaf = null; if (G) svg.style.transform = "translate(" + G.tx + "px," + G.ty + "px) scale(" + G.k + ")"; });
+    clearTimeout(gT); gT = setTimeout(gCommit, 140);
+  }
+  function gCommit() {
+    clearTimeout(gT); cancelAnimationFrame(gRaf); gRaf = null;
+    if (!G) return;
+    var g = G; G = null;
+    svg.style.transform = "translate(" + g.tx + "px," + g.ty + "px) scale(" + g.k + ")";
+    var r = svg.getBoundingClientRect(), s = cam.s * g.k, ux = (g.cx - r.left) / s, uy = (g.cy - r.top) / s;
+    svg.style.transform = ""; svg.style.willChange = "";
+    cam.z = s; applyScale(s);
+    var r2 = svg.getBoundingClientRect();
+    scroller.scrollLeft += r2.left + ux * s - g.cx; scroller.scrollTop += r2.top + uy * s - g.cy;
+    fitb.setAttribute("aria-pressed", "false");
+    root.setAttribute("data-zoom", s.toFixed(3));
+  }
+  function panBy(dx, dy) {
+    if (G) { G.tx -= dx; G.ty -= dy; zoomBy(1, G.cx, G.cy); return; }
+    panQ[0] += dx; panQ[1] += dy;
+    if (!pRaf) pRaf = requestAnimationFrame(function () { pRaf = null; scroller.scrollLeft += panQ[0]; scroller.scrollTop += panQ[1]; panQ = [0, 0]; });
+  }
+  /* Wheel over the map (only there: the listener is on the pane, so page scroll elsewhere is never touched):
+     - ctrlKey (Chrome/Firefox/Safari trackpad pinch, also ctrl+mouse wheel): zoom at the cursor, exp(-deltaY/100).
+     - looks like a classic mouse wheel: zoom at the cursor. Heuristic: deltaMode 1/2 (line/page, Firefox mice), or
+       pixel mode with deltaX == 0, an integer |deltaY| >= 50 (Chrome/Safari notch = 100/120/±4n px) AND no trackpad-looking
+       event in the last 300 ms (trackpad streams: fractional or small deltas, usually some deltaX; momentum keeps it sticky).
+     - otherwise (two-finger trackpad scroll): pan both ways, like Google Maps / Figma. preventDefault also stops the
+       browser's back/forward swipe on horizontal scroll (plus overscroll-behavior: contain on the pane). */
+  var padT = 0;
   scroller.addEventListener("wheel", function (e) {
-    e.preventDefault();  // only fires over the map pane: page scroll elsewhere is untouched
-    var d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-    zoomAt(cam.s * Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
+    e.preventDefault();
+    var u = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? paneH() : 1, dx = e.deltaX * u, dy = e.deltaY * u, now = performance.now();
+    if (e.ctrlKey) { zoomBy(Math.exp(-Math.max(-50, Math.min(50, dy)) / 100), e.clientX, e.clientY); return; }
+    var mouse = e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50 && e.deltaY === Math.round(e.deltaY) && now - padT > 300);
+    if (mouse) { zoomBy(Math.exp(-Math.max(-240, Math.min(240, dy)) * 0.0015), e.clientX, e.clientY); return; }
+    padT = now;
+    panBy(dx, dy);
   }, { passive: false });
+  // Safari (macOS) pinch: gesture* events with a cumulative e.scale
+  var gsc = 1;
+  scroller.addEventListener("gesturestart", function (e) { e.preventDefault(); gsc = e.scale || 1; });
+  scroller.addEventListener("gesturechange", function (e) { e.preventDefault(); var sc = e.scale || 1; zoomBy(sc / gsc, e.clientX, e.clientY); gsc = sc; });
+  scroller.addEventListener("gestureend", function (e) { e.preventDefault(); gCommit(); });
   var drag = null, dragged = false;
   scroller.addEventListener("pointerdown", function (e) {
     if (e.pointerType === "touch" || e.button !== 0) return;  // touch: native one-finger scroll
@@ -246,9 +302,23 @@
     if (!drag.on && dx * dx + dy * dy < 36) return;  // 6px threshold: below it, it is a click
     if (!drag.on) { drag.on = true; dragged = true; cancelAnimationFrame(camRaf); camRaf = null; scroller.classList.add("tm-drag"); }
     e.preventDefault();
+    var now = performance.now(), dt = Math.max(1, now - (drag.pt || now - 16));
+    drag.vx = (e.clientX - (drag.px || e.clientX)) / dt; drag.vy = (e.clientY - (drag.py || e.clientY)) / dt;
+    drag.px = e.clientX; drag.py = e.clientY; drag.pt = now;
     scroller.scrollLeft = drag.l - dx; scroller.scrollTop = drag.t - dy;
   });
-  function endDrag() { if (drag) { scroller.classList.remove("tm-drag"); drag = null; setTimeout(function () { dragged = false; }, 0); } }
+  function endDrag() {
+    if (!drag) return;
+    var d = drag; scroller.classList.remove("tm-drag"); drag = null; setTimeout(function () { dragged = false; }, 0);
+    if (!d.on || RM || performance.now() - (d.pt || 0) > 80) return;
+    var vx = d.vx || 0, vy = d.vy || 0, t0 = performance.now();  // short glide, ~16 px/frame decays in ~300 ms
+    var glide = function (now) {
+      var dt = Math.min(32, now - t0); t0 = now; vx *= Math.pow(0.92, dt / 16); vy *= Math.pow(0.92, dt / 16);
+      if (Math.abs(vx) + Math.abs(vy) < 0.02 || drag) return;
+      scroller.scrollLeft -= vx * dt; scroller.scrollTop -= vy * dt; requestAnimationFrame(glide);
+    };
+    requestAnimationFrame(glide);
+  }
   window.addEventListener("pointerup", endDrag); window.addEventListener("pointercancel", endDrag);
   scroller.addEventListener("click", function (e) { if (dragged) { e.preventDefault(); e.stopPropagation(); dragged = false; } }, true);
   scroller.addEventListener("dragstart", function (e) { e.preventDefault(); });
@@ -259,9 +329,9 @@
     if (!pinch || e.touches.length !== 2) return;
     e.preventDefault();
     var t = e.touches;
-    zoomAt(pinch.s * tdist(t) / pinch.d, (t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+    var d = tdist(t); zoomBy(d / pinch.d, (t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2); pinch.d = d;
   }, { passive: false });
-  scroller.addEventListener("touchend", function (e) { if (e.touches.length < 2) pinch = null; }, { passive: true });
+  scroller.addEventListener("touchend", function (e) { if (e.touches.length < 2 && pinch) { pinch = null; gCommit(); } }, { passive: true });
   document.getElementById("tm-zin").addEventListener("click", function () { var m = paneMid(); zoomAt(cam.s * 1.4, m[0], m[1]); });
   document.getElementById("tm-zout").addEventListener("click", function () { var m = paneMid(); zoomAt(cam.s / 1.4, m[0], m[1]); });
   document.getElementById("tm-zreset").addEventListener("click", function () {
