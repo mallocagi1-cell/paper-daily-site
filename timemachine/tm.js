@@ -69,6 +69,8 @@
   }
   function push(replace) {
     var u = url(), s = { i: st.i, line: st.line, mode: st.mode };
+    if (!replace && location.pathname + location.search === u) replace = true;
+    lastGo = 0;   // any other history write ends a run of coalescing stop changes
     try { (replace ? history.replaceState : history.pushState).call(history, s, "", u); } catch (e) {}
   }
 
@@ -91,33 +93,69 @@
   }
   var hootL = cum[N - 1], hootOff = hoff[N - 1].slice();
   function hootPt() { var p = pointAt(hootL); return { x: p.x + hootOff[0], y: p.y + hootOff[1] }; }
-  function centre(smooth) {
+  // free = the user moved the view (drag / wheel / pinch / + -) since the last stop change: no automatic camera move
+  // (Hoot's flight, a panel opening / closing, a resize) takes it back; picking a stop or reset / 全图 clears it
+  var free = false;
+  function userMove() { free = true; cancelAnimationFrame(camRaf); camRaf = null; }
+  function centreXY() {
     var s = cam.s, fx, fy;
     if (camMode() === "fit") { fx = W / 2; fy = H / 2; } else { var p = hootPt(); fx = p.x; fy = p.y; }
-    var x = fx * s - paneW() / 2, y = fy * s - paneH() / 2 + (mobile() && st.mode !== "map" ? paneH() * 0.28 : 0);
-    if (smooth && !RM && scroller.scrollTo) scroller.scrollTo({ left: x, top: y, behavior: "smooth" });
-    else { scroller.scrollLeft = x; scroller.scrollTop = y; }
+    return [fx * s - paneW() / 2, fy * s - paneH() / 2 + (mobile() && st.mode !== "map" ? paneH() * 0.28 : 0)];
   }
+  function centre() { var c = centreXY(); scroller.scrollLeft = c[0]; scroller.scrollTop = c[1]; }
+  function viewC() { return [(scroller.scrollLeft + paneW() / 2) / cam.s, (scroller.scrollTop + paneH() / 2) / cam.s]; }
+  function setViewC(c) { scroller.scrollLeft = c[0] * cam.s - paneW() / 2; scroller.scrollTop = c[1] * cam.s - paneH() / 2; }
   function camTo(animate) {
     if (typeof gCommit === "function") gCommit();
     var to = targetScale();
     cancelAnimationFrame(camRaf); camRaf = null;
-    if (!animate || RM || Math.abs(to - cam.s) < 1e-3) { applyScale(to); centre(animate && !RM); return; }
-    var from = cam.s, t0 = performance.now(), dur = 480;
+    if (free) { if (Math.abs(to - cam.s) > 1e-3) { var c = viewC(); applyScale(to); setViewC(c); } return; }
+    if (!animate || RM) { applyScale(to); centre(); return; }
+    // the target is re-read every frame from the live pane size, so a panel opening / closing (the grid column
+    // animates for .45 s) never leaves the stop off-centre (Mac Maps sidebar behaviour)
+    var from = cam.s, x0 = scroller.scrollLeft, y0 = scroller.scrollTop, same = Math.abs(to - from) < 1e-3, t0 = performance.now(), dur = 480;
     var stepf = function (now) {
       var p = Math.min(1, (now - t0) / dur), e = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-      applyScale(from + (to - from) * e); centre(false);
-      if (p < 1) camRaf = requestAnimationFrame(stepf); else camRaf = null;
+      applyScale(from + (to - from) * e);
+      if (same) { var c = centreXY(); scroller.scrollLeft = x0 + (c[0] - x0) * e; scroller.scrollTop = y0 + (c[1] - y0) * e; }
+      else centre();
+      if (p < 1) camRaf = requestAnimationFrame(stepf);
+      else { camRaf = null; centre(); }
     };
     camRaf = requestAnimationFrame(stepf);
   }
+  // the pane changed size (panel transition, window resize, full screen, mobile URL bar): keep the focus point fixed on
+  // every frame -- the automatic target when the view is automatic, else the user's own view centre; a height-only
+  // change under 120 px (mobile URL bar) never moves the view
+  var lastPW = 0, lastPH = 0;
+  function paneResized() {
+    var w = paneW(), h = paneH(), ow = lastPW, oh = lastPH;
+    if (w === ow && h === oh) return;
+    lastPW = w; lastPH = h;
+    if (!ow || camRaf || (typeof G !== "undefined" && G)) return;
+    if (flying && !free && camMode() === "follow") return;   // the flight re-centres every frame
+    if (free || (w === ow && Math.abs(h - oh) < 120)) {
+      // keep the exact (unrounded) focus across the frames of one transition: re-reading it from the integer-rounded
+      // scroll position every frame would let it creep a few px
+      var c = rsC && scroller.scrollLeft === rsC[2] && scroller.scrollTop === rsC[3] && cam.s === rsC[4] ? rsC
+        : [(scroller.scrollLeft + ow / 2) / cam.s, (scroller.scrollTop + oh / 2) / cam.s];
+      if (!free && !cam.z) applyScale(targetScale());
+      setViewC(c);
+      rsC = [c[0], c[1], scroller.scrollLeft, scroller.scrollTop, cam.s];
+    } else { rsC = null; applyScale(targetScale()); centre(); }
+  }
+  var rsC = null;
 
   /* ---- Hoot: on the broom between stops, standing by the flag at the last one; red trail = flown ---- */
   var flying = false, raf = null;
+  // the route is sampled every 6 units once (lazily); a frame joins the cached prefix and appends the live point,
+  // instead of ~L/6 getPointAtLength calls per frame
+  var TRS = 6, trPts = null;
   function drawTrail(L) {
-    var d = "", stp = 6, n = Math.ceil(L / stp);
-    for (var k = 0; k <= n; k++) { var q = pointAt(Math.min(L, k * stp)); d += (k ? "L" : "M") + q.x.toFixed(1) + " " + q.y.toFixed(1); }
-    trail.setAttribute("d", L > 0 ? d : "");
+    if (!(L > 0)) { trail.setAttribute("d", ""); return; }
+    if (!trPts) { trPts = []; for (var k = 0; k * TRS < LEN; k++) { var q = pointAt(k * TRS); trPts.push(q.x.toFixed(1) + " " + q.y.toFixed(1)); } }
+    var m = Math.min(trPts.length, Math.floor(L / TRS) + 1), e = pointAt(L);
+    trail.setAttribute("d", "M" + trPts.slice(0, m).join("L") + "L" + e.x.toFixed(1) + " " + e.y.toFixed(1));
   }
   function setHoot(L, off, ang, flip) {
     hootL = L; hootOff = off;
@@ -157,7 +195,7 @@
       var off = [o0[0] * (1 - e) + o1[0] * e, o0[1] * (1 - e) + o1[1] * e];
       off = [off[0] * (1 - lift), off[1] * (1 - lift) - 14 * lift];
       setHoot(L, off, ang * 0.8 * Math.sin(Math.PI * Math.min(1, t * 1.15)), flip);
-      if (camMode() === "follow") centre(false);
+      if (camMode() === "follow" && !free) centre();
       if (t < 1) raf = requestAnimationFrame(stepf);
       else { flying = false; hoot.classList.remove("tm-flying"); setHoot(to, o1, 0, false); land(k); if (done) done(); }
     };
@@ -165,6 +203,7 @@
   }
   function jumpHoot() { cancelAnimationFrame(raf); flying = false; hoot.classList.remove("tm-flying"); setHoot(cum[st.i], hoff[st.i], 0, false); land(st.i); }
 
+  var lastCardI = -1, lastCardMode = "map";
   function render(move) {
     var s = S[st.i];
     root.setAttribute("data-mode", st.mode);
@@ -207,7 +246,8 @@
     document.getElementById("tm-handle").setAttribute("aria-expanded", st.mode === "map" ? "false" : "true");
     cardsEl.hidden = st.mode === "read";
     reader.hidden = st.mode !== "read";
-    if (st.mode !== "read") cardsEl.scrollTop = 0;
+    if (st.mode !== "read" && (st.i !== lastCardI || lastCardMode === "map")) cardsEl.scrollTop = 0;
+    lastCardI = st.i; lastCardMode = st.mode;
     fitb.setAttribute("aria-pressed", camMode() === "fit" ? "true" : "false");
     if (move === "fly") { camTo(true); fly(st.i); }
     else if (move === "jump") { jumpHoot(); camTo(false); }
@@ -216,14 +256,15 @@
 
   var fitb = document.getElementById("tm-fit");
   fitb.addEventListener("click", function () {
-    if (st.mode !== "map") { st.mode = "map"; cam.user = "fit"; render(false); push(false); return; }
+    free = false;
+    if (st.mode !== "map") { st.mode = "map"; cam.user = "fit"; render(false); push(true); return; }
     cam.user = cam.z || cam.user !== "fit" ? "fit" : "follow"; cam.z = null;
     render(false);
   });
 
   /* ---- map-like pan / zoom: drag to pan, wheel / trackpad pinch / two-finger pinch zoom around the pointer ---- */
   function zoomAt(s, cx, cy) {  // cx, cy = client coords that stay fixed
-    gCommit();
+    gCommit(); free = true;
     s = Math.min(Z_MAX, Math.max(zMin(), s));
     if (Math.abs(s - cam.s) < 1e-4) return;
     cancelAnimationFrame(camRaf); camRaf = null;
@@ -246,7 +287,7 @@
     svg.style.transformOrigin = "0 0"; svg.style.willChange = "transform";
   }
   function zoomBy(f, cx, cy) {  // multiply the live scale by f, keeping client point (cx, cy) fixed
-    gBegin();
+    userMove(); gBegin();
     var k = Math.min(Z_MAX / cam.s, Math.max(zMin() / cam.s, G.k * f));
     f = k / G.k;
     G.tx = cx - G.ox - (cx - G.ox - G.tx) * f; G.ty = cy - G.oy - (cy - G.oy - G.ty) * f;
@@ -268,6 +309,7 @@
     root.setAttribute("data-zoom", s.toFixed(3));
   }
   function panBy(dx, dy) {
+    userMove();
     if (G) { G.tx -= dx; G.ty -= dy; zoomBy(1, G.cx, G.cy); return; }
     panQ[0] += dx; panQ[1] += dy;
     if (!pRaf) pRaf = requestAnimationFrame(function () { pRaf = null; scroller.scrollLeft += panQ[0]; scroller.scrollTop += panQ[1]; panQ = [0, 0]; });
@@ -307,7 +349,7 @@
     if (!drag || e.pointerId !== drag.id) return;
     var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.on && dx * dx + dy * dy < 36) return;  // 6px threshold: below it, it is a click
-    if (!drag.on) { drag.on = true; dragged = true; cancelAnimationFrame(camRaf); camRaf = null; scroller.classList.add("tm-drag"); }
+    if (!drag.on) { drag.on = true; dragged = true; userMove(); scroller.classList.add("tm-drag"); }
     e.preventDefault();
     var now = performance.now(), dt = Math.max(1, now - (drag.pt || now - 16));
     drag.vx = (e.clientX - (drag.px || e.clientX)) / dt; drag.vy = (e.clientY - (drag.py || e.clientY)) / dt;
@@ -342,7 +384,7 @@
   document.getElementById("tm-zin").addEventListener("click", function () { var m = paneMid(); zoomAt(cam.s * 1.4, m[0], m[1]); });
   document.getElementById("tm-zout").addEventListener("click", function () { var m = paneMid(); zoomAt(cam.s / 1.4, m[0], m[1]); });
   document.getElementById("tm-zreset").addEventListener("click", function () {
-    cam.z = null; cam.user = mobile() ? "follow" : "fit"; root.removeAttribute("data-zoom"); render(false);
+    free = false; cam.z = null; cam.user = mobile() ? "follow" : "fit"; root.removeAttribute("data-zoom"); render(false);
   });
 
   /* ---- full screen: the map + reader container; Fullscreen API (webkit-prefixed for Safari), a fixed
@@ -380,15 +422,19 @@
     }, true);
   }
 
+  var lastGo = 0;
   function go(k, mode, opts) {
     if (k < 0 || k >= N) return;
     opts = opts || {};
     if (!onLine(k) && !opts.keepLine) st.line = "";
-    st.i = k;
+    var moved = k !== st.i, now = Date.now();
+    st.i = k; free = false;
     st.mode = mode || st.mode;
     render("fly");
     if (st.mode === "read") openReader();
-    if (!opts.nopush) push(false);
+    // a burst of stop changes (each within 1 s of the previous one, nothing else in between: held arrow keys, rapid
+    // next / prev clicks) coalesces into one history entry; slower changes still get one entry per stop
+    if (!opts.nopush) { push(moved && now - lastGo < 1000); if (moved) lastGo = now; }
   }
 
   /* ---- inline reader: the canonical deep-dive page's <article>, fetched same-origin ---- */
@@ -523,26 +569,28 @@
   document.getElementById("tm-rnext").addEventListener("click", next);
   document.getElementById("tm-next").addEventListener("click", function () { var k = step(1); if (k >= 0) go(k, st.mode === "read" ? "detail" : st.mode, { keepLine: true }); });
   document.getElementById("tm-prev").addEventListener("click", function () { var k = step(-1); if (k >= 0) go(k, st.mode === "read" ? "detail" : st.mode, { keepLine: true }); });
-  document.getElementById("tm-close").addEventListener("click", function () { st.mode = st.mode === "read" ? "detail" : "map"; render(false); push(false); });
-  document.getElementById("tm-handle").addEventListener("click", function () { st.mode = st.mode === "map" ? "detail" : "map"; render(false); push(false); });
-  document.getElementById("tm-rback").addEventListener("click", function () { st.mode = "detail"; render(false); push(false); });
+  // closing (×, collapse, back to the card, Esc) replaces the history entry: Back never reopens what was just closed
+  document.getElementById("tm-close").addEventListener("click", function () { st.mode = st.mode === "read" ? "detail" : "map"; render(false); push(true); });
+  document.getElementById("tm-handle").addEventListener("click", function () { var open = st.mode === "map"; st.mode = open ? "detail" : "map"; render(false); push(!open); });
+  document.getElementById("tm-rback").addEventListener("click", function () { st.mode = "detail"; render(false); push(true); });
   document.getElementById("tm-toc-b").addEventListener("click", function () { setToc(toc.hidden); });
   document.addEventListener("keydown", function (e) {
     if (e.target.closest && e.target.closest("input,textarea,[contenteditable]")) return;
     if (document.querySelector(".pd-search-overlay:not([hidden]), [role=dialog]:not([hidden])")) return;
     if (e.key === "ArrowRight" && st.mode !== "read") { var k = step(1); if (k >= 0) { e.preventDefault(); go(k, st.mode === "map" ? "map" : "detail", { keepLine: true }); } }
     else if (e.key === "ArrowLeft" && st.mode !== "read") { var j = step(-1); if (j >= 0) { e.preventDefault(); go(j, st.mode === "map" ? "map" : "detail", { keepLine: true }); } }
-    else if (e.key === "Escape" && st.mode !== "map") { st.mode = st.mode === "read" ? "detail" : "map"; render(false); push(false); }
+    else if (e.key === "Escape" && st.mode !== "map") { st.mode = st.mode === "read" ? "detail" : "map"; render(false); push(true); }
     else if (e.key === "Home" && st.mode !== "read") { e.preventDefault(); go(0, st.mode, { keepLine: true }); }
     else if (e.key === "End" && st.mode !== "read") { e.preventDefault(); go(N - 1, st.mode, { keepLine: true }); }
   });
   window.addEventListener("popstate", function (e) {
     var s = e.state;
     if (!s) { fromUrl(); render("jump"); if (st.mode === "read") openReader(); return; }
-    st.i = s.i; st.line = s.line; st.mode = s.mode; render("fly");
+    st.i = s.i; st.line = s.line; st.mode = s.mode; free = false; render("fly");
     if (st.mode === "read") openReader();
   });
-  window.addEventListener("resize", function () { camTo(false); });
+  if (window.ResizeObserver) { lastPW = paneW(); lastPH = paneH(); new ResizeObserver(paneResized).observe(scroller); }
+  else window.addEventListener("resize", function () { camTo(false); });
 
   function fromUrl() {
     var q = new URLSearchParams(location.search), k = idx(q.get("stop") || "");
