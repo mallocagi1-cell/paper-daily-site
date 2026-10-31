@@ -122,11 +122,24 @@
     if (rot) rot.setAttribute("transform", "rotate(" + (ang || 0).toFixed(1) + ") scale(" + (flip ? -1 : 1) + " 1)");
     drawTrail(L);
   }
-  function land(k) { hoot.classList.toggle("tm-landed", k === N - 1); }
+  function land(k) { hoot.classList.toggle("tm-landed", k === N - 1); placeFlag(k); }
+  // 你在这里 follows the current stop: planted where Hoot lands, hidden while Hoot is in the air
+  var flag = document.getElementById("tm-flag");
+  function placeFlag(k) {
+    if (!flag) return;
+    var a = sts[k], fs = +a.getAttribute("data-fs") || 1, x0 = 16 * fs, ln = flag.querySelector("line"), tx = flag.querySelector("text");
+    flag.setAttribute("transform", "translate(" + a.getAttribute("data-x") + " " + a.getAttribute("data-y") + ")");
+    flag.setAttribute("data-i", k);
+    ln.setAttribute("x1", x0); ln.setAttribute("x2", x0);
+    flag.querySelector("path").setAttribute("d", "M" + x0 + " -60 h" + 38 * fs + " l" + -8 * fs + " 9 l" + 8 * fs + " 9 h" + -38 * fs + " z");
+    tx.setAttribute("x", x0); tx.setAttribute("text-anchor", fs < 0 ? "end" : "start");
+    flag.classList.remove("tm-away");
+  }
   function fly(k, done) {
     var from = hootL, to = cum[k], dist = Math.abs(to - from), o0 = hootOff.slice(), o1 = hoff[k];
     cancelAnimationFrame(raf);
     hoot.classList.remove("tm-landed");
+    if (flag && dist >= 1) flag.classList.add("tm-away");
     if (RM || dist < 1) { flying = false; hoot.classList.remove("tm-flying"); setHoot(to, o1, 0, false); land(k); if (done) done(); return; }
     var dur = Math.min(2200, 420 + dist * 0.55), t0 = performance.now(), dir = to >= from ? 1 : -1;
     flying = true; hoot.classList.add("tm-flying");
@@ -231,16 +244,63 @@
       var art = doc.getElementById("article"), h1 = doc.querySelector("main h1");
       if (!art) throw new Error("no article");
       art = art.cloneNode(true);
-      [].forEach.call(art.querySelectorAll("script,style,.toc-m,.r-narrow,aside,.pd-shB,.pd-shC,.pd-rx,.pd-cm,#discussion,.pd-sh-acts,.vz-chip,.vz"), function (n) { n.remove(); });
+      [].forEach.call(art.querySelectorAll("script,style,.toc-m,.r-narrow,aside,.pd-shB,.pd-shC,.pd-rx,.pd-cm,#discussion,.pd-sh-acts"), function (n) { n.remove(); });
       [].forEach.call(art.querySelectorAll("[src],[href]"), function (n) {
         ["src", "href"].forEach(function (a) {
           var v = n.getAttribute(a);
           if (v && v.charAt(0) !== "#" && !/^(https?:|mailto:|data:)/.test(v)) n.setAttribute(a, new URL(v, abs).href.replace(location.origin, ""));
         });
       });
+      // prefix every id AND every reference to one (aria-*, #href, SVG url(#..)), or 图解 chips and figure markers break
       [].forEach.call(art.querySelectorAll("[id]"), function (n) { n.id = "tmr-" + n.id; });
       [].forEach.call(art.querySelectorAll('a[href^="#"]'), function (n) { n.setAttribute("href", "#tmr-" + n.getAttribute("href").slice(1)); });
+      [].forEach.call(art.querySelectorAll("[aria-controls],[aria-labelledby],[aria-describedby],[for]"), function (n) {
+        ["aria-controls", "aria-labelledby", "aria-describedby", "for"].forEach(function (a) {
+          var v = n.getAttribute(a); if (v) n.setAttribute(a, v.split(/\s+/).map(function (x) { return x && "tmr-" + x; }).join(" "));
+        });
+      });
+      [].forEach.call(art.querySelectorAll("svg *"), function (n) {
+        ["marker-start", "marker-mid", "marker-end", "fill", "stroke", "clip-path", "mask", "filter", "href", "xlink:href"].forEach(function (a) {
+          var v = n.getAttribute(a); if (!v) return;
+          if (/url\(#/.test(v)) n.setAttribute(a, v.replace(/url\(#/g, "url(#tmr-"));
+          else if ((a === "href" || a === "xlink:href") && v.charAt(0) === "#" && v.indexOf("#tmr-") !== 0) n.setAttribute(a, "#tmr-" + v.slice(1));
+        });
+      });
       art.removeAttribute("id");
+      return adopt(doc, abs).then(function () { if (st.i !== want || st.mode !== "read") return; place(doc, art, h1, abs); });
+    }).catch(function () {
+      if (st.i !== want) return;
+      rbody.innerHTML = '<p class="tm-loading">' + T.fail + ' <a href="' + href + '">' + T.open + " →</a></p>";
+    });
+  }
+  // The dive's own content stylesheets (KaTeX, Hoot 图解, ...) must be on this page, or figures fall back to UA styles
+  // (black SVG fills, bare links). Everything the dive links except what this page already has / the widgets stripped
+  // above (READER_SKIP in timemachine_check.py, keep in sync). Resolves once all are loaded, so nothing paints unstyled.
+  var SKIP = ["css/pages.css", "fonts.googleapis.com", "selshare/", "share/", "rx/"];
+  function adopt(doc, abs) {
+    var have = {}, waits = [];
+    [].forEach.call(document.querySelectorAll('link[rel~="stylesheet"]'), function (l) { have[new URL(l.href, location.href).pathname] = l; });
+    [].forEach.call(doc.querySelectorAll('head link[rel~="stylesheet"]'), function (l) {
+      var h = l.getAttribute("href"); if (!h || SKIP.some(function (k) { return h.indexOf(k) >= 0; })) return;
+      var u = new URL(h, abs); if (u.origin !== location.origin) return;
+      var e = have[u.pathname];
+      if (!e) { e = document.createElement("link"); e.rel = "stylesheet"; e.href = u.pathname + u.search; e.setAttribute("data-tm-dive", "");
+        have[u.pathname] = e; document.head.appendChild(e); }
+      if (!e.sheet) waits.push(new Promise(function (ok) { e.addEventListener("load", ok); e.addEventListener("error", ok); setTimeout(ok, 4000); }));
+    });
+    return Promise.all(waits);
+  }
+  // the dive's enhancement scripts that act on its content (Hoot 图解 toggles / sliders): re-run on the new article
+  var RUN = ["viz/viz.js"];
+  function rerun(doc, abs) {
+    [].forEach.call(doc.querySelectorAll("script[src]"), function (sc) {
+      var h = sc.getAttribute("src"); if (!RUN.some(function (k) { return h.indexOf(k) >= 0; })) return;
+      var u = new URL(h, abs); if (u.origin !== location.origin) return;
+      var old = document.querySelector('script[data-tm-run="' + u.pathname + '"]'); if (old) old.remove();
+      var e = document.createElement("script"); e.src = u.pathname + u.search; e.setAttribute("data-tm-run", u.pathname); document.body.appendChild(e);
+    });
+  }
+  function place(doc, art, h1, abs) {
       rbody.innerHTML = "";
       if (h1) { var t = document.createElement("h1"); t.className = "tm-rt"; t.textContent = h1.textContent; rbody.appendChild(t); }
       rbody.appendChild(art);
@@ -256,11 +316,8 @@
         toc.appendChild(a);
       });
       document.getElementById("tm-toc-b").hidden = !hs.length;
+      rerun(doc, abs);
       prog();
-    }).catch(function () {
-      if (st.i !== want) return;
-      rbody.innerHTML = '<p class="tm-loading">' + T.fail + ' <a href="' + href + '">' + T.open + " →</a></p>";
-    });
   }
   function setToc(on) { toc.hidden = !on; document.getElementById("tm-toc-b").setAttribute("aria-expanded", on ? "true" : "false"); }
   function prog() {
