@@ -78,8 +78,11 @@
   function paneH() { return scroller.clientHeight || 1; }
   function fitScale() { return Math.min(1.4, Math.max(S_MIN, Math.min(paneW() / W, paneH() / H))); }
   function followScale() { return mobile() ? 1 : (st.mode === "read" ? 1 : 1.3); }
-  function camMode() { return st.mode === "map" ? cam.user : "follow"; }
-  function targetScale() { return camMode() === "fit" ? fitScale() : followScale(); }
+  // cam.z = the user's own zoom (wheel / pinch / + -), kept across stops; null = automatic (fit / follow)
+  function camMode() { return cam.z ? "follow" : st.mode === "map" ? cam.user : "follow"; }
+  function targetScale() { return cam.z ? cam.z : camMode() === "fit" ? fitScale() : followScale(); }
+  var Z_MAX = 3;
+  function zMin() { return Math.min(S_MIN, fitScale()); }
   function applyScale(s) {
     cam.s = s;
     svg.style.width = (W * s).toFixed(1) + "px"; svg.style.height = (H * s).toFixed(1) + "px";
@@ -209,8 +212,60 @@
   var fitb = document.getElementById("tm-fit");
   fitb.addEventListener("click", function () {
     if (st.mode !== "map") { st.mode = "map"; cam.user = "fit"; render(false); push(false); return; }
-    cam.user = cam.user === "fit" ? "follow" : "fit";
+    cam.user = cam.z || cam.user !== "fit" ? "fit" : "follow"; cam.z = null;
     render(false);
+  });
+
+  /* ---- map-like pan / zoom: drag to pan, wheel / trackpad pinch / two-finger pinch zoom around the pointer ---- */
+  function zoomAt(s, cx, cy) {  // cx, cy = client coords that stay fixed
+    s = Math.min(Z_MAX, Math.max(zMin(), s));
+    if (Math.abs(s - cam.s) < 1e-4) return;
+    cancelAnimationFrame(camRaf); camRaf = null;
+    var r = svg.getBoundingClientRect(), px = (cx - r.left) / cam.s, py = (cy - r.top) / cam.s;
+    cam.z = s; applyScale(s);
+    var r2 = svg.getBoundingClientRect();
+    scroller.scrollLeft += r2.left + px * s - cx; scroller.scrollTop += r2.top + py * s - cy;
+    fitb.setAttribute("aria-pressed", "false");
+    root.setAttribute("data-zoom", s.toFixed(3));
+  }
+  function paneMid() { var r = scroller.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
+  scroller.addEventListener("wheel", function (e) {
+    e.preventDefault();  // only fires over the map pane: page scroll elsewhere is untouched
+    var d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    zoomAt(cam.s * Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
+  }, { passive: false });
+  var drag = null, dragged = false;
+  scroller.addEventListener("pointerdown", function (e) {
+    if (e.pointerType === "touch" || e.button !== 0) return;  // touch: native one-finger scroll
+    drag = { x: e.clientX, y: e.clientY, l: scroller.scrollLeft, t: scroller.scrollTop, id: e.pointerId, on: false };
+    dragged = false;
+  });
+  window.addEventListener("pointermove", function (e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.on && dx * dx + dy * dy < 36) return;  // 6px threshold: below it, it is a click
+    if (!drag.on) { drag.on = true; dragged = true; cancelAnimationFrame(camRaf); camRaf = null; scroller.classList.add("tm-drag"); }
+    e.preventDefault();
+    scroller.scrollLeft = drag.l - dx; scroller.scrollTop = drag.t - dy;
+  });
+  function endDrag() { if (drag) { scroller.classList.remove("tm-drag"); drag = null; setTimeout(function () { dragged = false; }, 0); } }
+  window.addEventListener("pointerup", endDrag); window.addEventListener("pointercancel", endDrag);
+  scroller.addEventListener("click", function (e) { if (dragged) { e.preventDefault(); e.stopPropagation(); dragged = false; } }, true);
+  scroller.addEventListener("dragstart", function (e) { e.preventDefault(); });
+  var pinch = null;
+  function tdist(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) || 1; }
+  scroller.addEventListener("touchstart", function (e) { if (e.touches.length === 2) pinch = { d: tdist(e.touches), s: cam.s }; }, { passive: true });
+  scroller.addEventListener("touchmove", function (e) {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    var t = e.touches;
+    zoomAt(pinch.s * tdist(t) / pinch.d, (t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+  }, { passive: false });
+  scroller.addEventListener("touchend", function (e) { if (e.touches.length < 2) pinch = null; }, { passive: true });
+  document.getElementById("tm-zin").addEventListener("click", function () { var m = paneMid(); zoomAt(cam.s * 1.4, m[0], m[1]); });
+  document.getElementById("tm-zout").addEventListener("click", function () { var m = paneMid(); zoomAt(cam.s / 1.4, m[0], m[1]); });
+  document.getElementById("tm-zreset").addEventListener("click", function () {
+    cam.z = null; cam.user = mobile() ? "follow" : "fit"; root.removeAttribute("data-zoom"); render(false);
   });
 
   function go(k, mode, opts) {
