@@ -451,9 +451,9 @@
   function go(date, track) { navigate(dayPath(date, track)); }
   function issueNo(idx) { const d = DATA.days[idx]; return d && d.issue_no ? d.issue_no : DATA.days.length - idx; } // counted from the oldest day; latest = day_count
 
-  function setMast(left, right) {
-    const a = document.getElementById("mast-issue"), b = document.getElementById("mast-date");
-    if (a) a.textContent = left;
+  // 2026-11-01 (Felix, option A): the nav issue label ("第 N 期" / "Issue N") is gone; the date bar keeps it.
+  function setMast(right) {
+    const b = document.getElementById("mast-date");
     if (b) b.textContent = right;
   }
   function setBodyTrack(track) {
@@ -508,7 +508,7 @@
       // 2026-10-26 (Felix: "存在的意义是什么"): the "standalone report ↗ · 深度解读 N 篇 →" row under the
       // report is gone; the old standalone report pages are now redirect stubs to /<date>/<track>/, 深度解读 is in the nav.
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>';
-    setMast(TR("第 ", "Issue ") + issueNo(r.idx) + TR(" 期", ""), dateLine(r.date));
+    setMast(dateLine(r.date));
     setBodyTrack(r.track);
   }
 
@@ -771,7 +771,7 @@
       '<div class="ribbon track-tabs" role="tablist">' + tabs + "</div>" +
       '<div id="report-body"><div class="empty-state"><span class="spinner"></span></div></div>';
       // 2026-10-26 (Felix): the weekly sort-rule row (adjusted_score … · 今日 → · 深度解读 →) is gone
-    setMast(TR("第 ", "Issue ") + (DATA.days.length || DATA.day_count || "") + TR(" 期", ""), dateLine(DATA.latest_date || ""));
+    setMast(dateLine(DATA.latest_date || ""));
     setBodyTrack(r.track);
   }
 
