@@ -257,7 +257,7 @@
       "track_fit": "core",
       "topic_fit_delta": 0,
       "rank": 1,
-      "summary": "Speculative decoding only pays off while the GPU has spare compute: the more requests share a batch, the fewer tokens the small drafter should guess for the big model each step. vLLM lets operators hand-write a table of how many tokens to guess at each batch size, but nothing checks whether that table is right, and users report speculation running slower than no speculation at all. TableTune times every batch size and every draft length on vLLM's own serving path and computes the highest-throughput table in minutes. Once in production, a plugin reads vLLM's counts of accepted guesses, combines them with the measured step times, recomputes how many useful tokens per second each draft length yields at each batch size, and rewrites the table with the best length. On a mixture-of-experts model, measured against the fastest fixed draft length at each load, the table from vLLM's documentation is up to 18% slower, while the measured table is at most 3% slower. This table should be measured, not copied from the docs.",
+      "summary": "The table in vLLM's documentation that sets how many tokens speculative decoding guesses per step at each batch size can visibly cut throughput on a different GPU or model. This paper gives a tool that measures the best table in minutes and keeps correcting it as traffic changes. Speculation only pays while the GPU has spare compute, so the more requests share a batch, the fewer tokens each step should guess. TableTune times every batch size and draft length on vLLM's own serving path and picks the highest-throughput table. Once in production, a plugin reads vLLM's counts of accepted guesses, combines them with the measured step times, and rewrites the table with the length that yields the most useful tokens per second at each batch size. On a mixture-of-experts model, against the fastest fixed draft length at each load, the documented table is up to 18% slower and the measured table at most 3% slower.",
       "key_insight": "",
       "card_status": "done",
       "company": [],
@@ -267,8 +267,8 @@
         "paper_id": "arxiv:2610.38968",
         "title": "TableTune: Measured, Self-Correcting Draft-Length Tables for Dynamic Speculative Decoding",
         "slug": "tabletune-measured-self-correcting-draft-length-tables",
-        "chars": 13000,
-        "minutes": 33
+        "chars": 13313,
+        "minutes": 34
       }
     },
     {
@@ -307,7 +307,7 @@
       "track_fit": "core",
       "topic_fit_delta": 0,
       "rank": 2,
-      "summary": "LLM serving usually treats host memory as a KV cache layer in front of the SSD, but after analyzing eight production request traces the authors find that this layer barely filters any reads. Reused blocks either come back only after a long gap, or belong to agent sessions of several gigabytes each that memory cannot hold, so the SSD always ends up on the read path. FlatCake puts memory and SSD at the same level and decides each block's home when it is created. Shared system prompts and short-reply chats go to memory, while multi-gigabyte agent sessions are written straight to the SSD. A session's blocks are stored contiguously and never move, and reads stream large chunks from the SSD straight into the GPU. Replaying a production Claude Code trace, the share of prefixes it reads back instead of recomputing holds at 94% as load rises, while Mooncake drops to 64%. KV storage for long agent sessions should be planned per session.",
+      "summary": "After analyzing eight production LLM request traces, the authors find that the common practice of treating host memory as a KV cache layer in front of the SSD barely filters any reads under these workloads. Reused blocks either come back only after a long gap, or belong to agent sessions of several gigabytes each that memory cannot hold, so the SSD always ends up on the read path. FlatCake puts memory and SSD at the same level and decides each block's home when it is created. Shared system prompts and short-reply chats go to memory, while multi-gigabyte agent sessions are written straight to the SSD. A session's blocks are stored contiguously and never move, and reads stream large chunks from the SSD straight into the GPU. Replaying a production Claude Code trace, the share of prefixes it reads back instead of recomputing holds at 94% as load rises, while Mooncake drops to 64%. KV storage for long agent sessions should be planned per session.",
       "key_insight": "",
       "card_status": "done",
       "company": [],
@@ -317,8 +317,8 @@
         "paper_id": "arxiv:2610.38355",
         "title": "FlatCake: A Flat KVCache Storage Architecture for LLM Serving",
         "slug": "flatcake-flat-kvcache-storage-architecture-llm-serving",
-        "chars": 12811,
-        "minutes": 33
+        "chars": 12648,
+        "minutes": 32
       }
     },
     {
@@ -446,11 +446,19 @@
       "track_fit": "core",
       "topic_fit_delta": 0,
       "rank": 5,
-      "summary": "In FSDP2 training, parameters and gradients are stored one tensor per parameter, but communication wants one flat buffer ordered by GPU, so every step copies data back and forth: gathered results are copied into parameter storage, and gradients are packed into large fp32 buffers. In training a 70B model, these copies alone take 6.4% of step time. The default NCCL communication also competes for the GPU's compute units and can slow a concurrent matrix multiply by up to 69%. TIDE sends and receives data directly at the parameters' storage locations, handing the data movement to copy engines, RDMA and NVSwitch, which use almost no compute units. Across three models, step time drops by up to 27.1% relative to stock FSDP2. Beyond raw communication speed, data layout and contention for compute decide training speed as well.",
+      "summary": "The Kling team's TIDE builds the layout conversion that FSDP2 performs every step directly into communication. Stock FSDP2 stores parameters and gradients one tensor per parameter, but NCCL only sends and receives one flat buffer ordered by GPU, so every step copies data back and forth. TIDE has communication read from where each parameter lives and write straight to where it must end up, with copy engines, RDMA and NVSwitch moving the data and no change to model code or compute kernels. Across three models, step time drops by up to 27.1% relative to stock FSDP2. ==Beyond raw communication speed, data layout and contention for compute decide training speed as well==.",
       "key_insight": "",
       "card_status": "done",
       "company": [],
-      "company_logos": []
+      "company_logos": [],
+      "deep_reading": {
+        "status": "completed",
+        "paper_id": "arxiv:2610.38228",
+        "title": "The Endgame of FSDP Communication: Layout-Aware Collectives on Copy Engines, RDMA, and NVSwitch",
+        "slug": "endgame-fsdp-communication-layout-aware-collectives-copy",
+        "chars": 14697,
+        "minutes": 37
+      }
     },
     {
       "id": "arxiv:2610.40305",
@@ -479,7 +487,15 @@
       "key_insight": "",
       "card_status": "done",
       "company": [],
-      "company_logos": []
+      "company_logos": [],
+      "deep_reading": {
+        "status": "completed",
+        "paper_id": "arxiv:2610.40305",
+        "title": "Rimuru: Unified Memory Management for Modern LLM Serving via Elastic Expert Offloading",
+        "slug": "rimuru-unified-memory-management-modern-llm-serving-elastic",
+        "chars": 16520,
+        "minutes": 42
+      }
     },
     {
       "id": "web:https://www.lmsys.org/blog/2026-10-26-cf-security/",
