@@ -192,6 +192,35 @@
   }
 
   // 📖 chip on cards / weekly rows: a link to the standalone deep-dive page when it exists (else a plain badge)
+  // cards with a deep dive show only the first 1-2 sentences (verbatim) + a link; mirrors seo.teaser() (2026-11-03)
+  function teaserText(text) {
+    const s = String(text || "").trim();
+    if (!s) return "";
+    let sents, limit;
+    if (IS_EN) {
+      limit = 280;
+      sents = s.match(/.+?(?:[.!?](?=\s+[A-Z0-9"'(\[])|$)/g) || [s];
+      sents = sents.map(function (x) { return x.trim(); }).filter(Boolean);
+    } else {
+      limit = 120;
+      sents = s.match(/[^。！？!?]*[。！？!?]+[”』」）)]*/g) || [];
+      const tail = s.slice(sents.join("").length).trim();
+      if (tail) sents.push(tail);
+    }
+    if (sents.length <= 1) return s;
+    let out = sents[0];
+    if (out.length + sents[1].length + (IS_EN ? 1 : 0) <= limit) out += (IS_EN ? " " : "") + sents[1];
+    if ((out.split("==").length - 1) % 2) { const i = out.lastIndexOf("=="); out = out.slice(0, i) + out.slice(i + 2); }
+    return out;
+  }
+  function summaryHtml(p, dr) {
+    if (dr && dr.slug) {
+      return hlText(escapeHtml(teaserText(p.summary))) + ' <a class="dr-read-link dive-more" href="' + deepPath(dr.slug) + '">' +
+        TR("阅读深度解读 &#8594;", "Read the deep dive &#8594;") + "</a>";
+    }
+    return hlText(escapeHtml(p.summary || ""));
+  }
+
   function deepChip(dr) {
     const m = readingMinutes(dr);
     const label = TR("&#128214; 深度解读", "&#128214; Deep dive") + (m ? " · " + m + TR(" 分钟", " min") : "");
@@ -309,7 +338,7 @@
       TR('<div class="k">LEAD STORY · 今日必读', '<div class="k">LEAD STORY · Must-read today') + (comp.length ? " · " + compHtml(p, 3).join(" / ") : "") + "</div>" +
       '<h2><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h2>" +
       (venueHtml(p) || subareaHtml(p, track) ? '<div class="lead-venue">' + venueHtml(p) + subareaHtml(p, track) + "</div>" : "") +
-      "<p>" + hlText(escapeHtml(p.summary || "")) + "</p></div>" +
+      "<p>" + summaryHtml(p, dr) + "</p></div>" +
       '<div class="btns">' + btns + "</div></div>" +
       '<div class="side"><div class="ring">' + radarSvg(p.scores, 170) +
       '<div><div class="big">' + fmt2(p.total_score) + TR('</div><div class="lbl">综合分 / 5', '</div><div class="lbl">Score / 5') + (adj !== null ? TR("<br>偏好调整 ", "<br>Adjusted ") + fmt2(adj) : "") + "</div></div></div>" +
@@ -333,7 +362,7 @@
       '<div class="top"><span class="n">' + pad2(p.rank || i + 1) + TR('</span><span class="sb" title="综合分">', '</span><span class="sb" title="Score">') + dots(p.total_score) + " " + fmt2(p.total_score) + "</span></div>" +
       '<h4><a href="' + escapeHtml(p.url || "#") + '" target="_blank" rel="noopener">' + escapeHtml(p.title || "Untitled") + "</a></h4>" +
       (chips ? "<div>" + chips + "</div>" : "") +
-      (p.summary ? "<p>" + hlText(escapeHtml(p.summary)) + "</p>" : "") +
+      (p.summary ? "<p>" + summaryHtml(p, dr) + "</p>" : "") +
       (ins ? '<div class="ins">' + xpBlock(ins) + "</div>" : "") +
       (p.authors ? '<div class="foot">' + escapeHtml(truncate(p.authors, 100)) + "</div>" : "") +
       '<div class="foot">' + foot + "</div>" +
