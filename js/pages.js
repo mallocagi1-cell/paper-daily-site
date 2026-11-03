@@ -1072,3 +1072,47 @@
 
   boot();
 })();
+
+/* CONCEPT_TIP_BEGIN — concept term popover (Felix 2026-11-03, owner t676u). Markup from deep_readings._inline:
+   <span class="ct" role="button" tabindex="0" aria-expanded="false" data-tip="…">词</span>. The explanation lives only
+   in data-tip, so selection / SELSHARE / Hoot anchors never see it. One floating popover is appended to <body>
+   (position:fixed) -> no layout shift. Click/tap/Enter/Space toggles; Esc, outside click, scroll or resize closes.
+   This block is also inlined into static deep pages by deep_reading_pages.TOC_JS. */
+(function(){
+  if (window.__pdCT) return; window.__pdCT = 1;
+  var pop = null, cur = null;
+  function close(){ if(!cur) return; cur.setAttribute('aria-expanded','false'); cur.removeAttribute('aria-describedby'); cur=null; if(pop) pop.hidden=true; }
+  function place(t){
+    var r=t.getBoundingClientRect(), vw=document.documentElement.clientWidth, w=Math.min(300, vw-24);
+    pop.style.width=w+'px';
+    var x=Math.max(12, Math.min(r.left + r.width/2 - w/2, vw - w - 12));
+    pop.style.left=x+'px'; pop.style.top='0px'; pop.hidden=false;
+    var h=pop.offsetHeight, y=r.bottom+8, up=false;
+    if(y+h>window.innerHeight-8 && r.top-h-8>8){ y=r.top-h-8; up=true; }
+    pop.style.top=y+'px'; pop.classList.toggle('up',up);
+    pop.style.setProperty('--ax', Math.max(14, Math.min(w-14, r.left + r.width/2 - x))+'px');
+  }
+  function open(t){
+    if(!pop){ pop=document.createElement('div'); pop.id='ct-pop'; pop.className='ct-pop'; pop.setAttribute('role','tooltip'); pop.hidden=true; document.body.appendChild(pop); }
+    if(cur && cur!==t) close();
+    cur=t; pop.textContent=t.getAttribute('data-tip')||'';
+    t.setAttribute('aria-expanded','true'); t.setAttribute('aria-describedby','ct-pop'); place(t);
+  }
+  function toggle(t){ if(cur===t) close(); else open(t); }
+  document.addEventListener('click', function(e){
+    var t=e.target.closest && e.target.closest('.ct');
+    if(t){
+      var s=window.getSelection && window.getSelection();
+      if(s && !s.isCollapsed && String(s).length>1) return;   // a drag-select ending on the term is SELSHARE's, not ours
+      e.preventDefault(); toggle(t); return;
+    }
+    if(pop && !pop.contains(e.target)) close();
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape' && cur){ var t=cur; e.preventDefault(); e.stopImmediatePropagation(); close(); t.focus(); return; }
+    var t=e.target.closest && e.target.closest('.ct');
+    if(t && (e.key==='Enter' || e.key===' ')){ e.preventDefault(); e.stopImmediatePropagation(); toggle(t); }
+  }, true);   // capture: our Esc must win over page-level Esc shortcuts while a popover is open
+  window.addEventListener('scroll', close, {passive:true}); window.addEventListener('resize', close);
+})();
+/* CONCEPT_TIP_END */
