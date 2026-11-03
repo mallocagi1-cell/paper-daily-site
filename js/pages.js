@@ -58,7 +58,14 @@
 
   // ---------- small helpers ----------
   // ==text== -> key-info highlight (bold + accent); apply after escaping
-  function hlText(s) { return String(s).replace(/==(?=\S)(.+?)(?<=\S)==/g, '<strong class="hl">$1</strong>'); }
+  // concept tip [[词|解释]] -> same span.ct as dive pages (seo.ct); runs on already-escaped text
+  const CT_RX = /\[\[([^\[\]|]+)\|([^\[\]]+)\]\]/g;
+  function ctText(s) {
+    return String(s).replace(CT_RX, function (_, w, t) {
+      return '<span class="ct" role="button" tabindex="0" aria-expanded="false" data-tip="' + t.trim() + '">' + w + "</span>";
+    });
+  }
+  function hlText(s) { return ctText(s).replace(/==(?=\S)(.+?)(?<=\S)==/g, '<strong class="hl">$1</strong>'); }
   function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -194,8 +201,13 @@
   // 📖 chip on cards / weekly rows: a link to the standalone deep-dive page when it exists (else a plain badge)
   // cards with a deep dive show only the first 1-2 sentences (verbatim) + a link; mirrors seo.teaser() (2026-11-03)
   function teaserText(text) {
-    const s = String(text || "").trim();
+    let s = String(text || "").trim();
     if (!s) return "";
+    const tips = [];  // protect concept tips (their explanations may contain sentence ends)
+    if (s.indexOf("[[") >= 0) {
+      s = s.replace(CT_RX, function (m) { tips.push(m); return "\ue000" + (tips.length - 1) + "\ue001"; });
+      if (tips.length) return teaserText(s).replace(/\ue000(\d+)\ue001/g, function (_, i) { return tips[+i]; });
+    }
     let sents, limit;
     if (IS_EN) {
       limit = 280;
