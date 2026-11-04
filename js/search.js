@@ -164,6 +164,52 @@
       (r.id ? "#paper-" + encodeURIComponent(r.id).replace(/%3A/gi, ":") : "");
   }
   function deepHref(r) { return r.deep ? LROOT + "papers/" + encodeURIComponent(r.deep) + "/" : ""; }
+  // EN fallback (2026-11-04, Felix): the EN index starts 2026-10-16; when an EN query finds < 3 papers, lazy-load the
+  // ZH index shards older than that (titles/authors are English) and offer up to 5 links to the ZH pages.
+  var Z = { p: null, rows: [], man: null, ready: false };
+  function zLoad() {
+    if (Z.p || !EN || !D.man) return;
+    var cut = D.man.earliest_date, zb = ROOT + "search-index/";
+    Z.p = fetch(zb + "manifest.json", { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (m) {
+        Z.man = m;
+        return Promise.all(m.shards.filter(function (s) { return s.from < cut; }).map(function (s) {
+          return fetch(zb + s.file + "?v=" + s.v).then(function (r) { return r.ok ? r.json() : []; }).then(function (arr) {
+            arr.forEach(function (a) {
+              var o = {}; m.fields.forEach(function (k, i) { o[k] = a[i]; });
+              if (o.date >= cut) return;
+              o.nt = norm(o.title); o.na = norm(o.authors); Z.rows.push(o);
+            });
+          }, function () {});
+        }));
+      }).then(function () { Z.ready = true; notify(); }, function () { Z.ready = true; });
+  }
+  function zFind(q) {
+    var ts = terms(q), seen = {}, out = [];
+    if (!ts.length || !Z.ready) return out;
+    Z.rows.forEach(function (r) {
+      for (var j = 0; j < ts.length; j++) if (find(r.nt, ts[j]) < 0 && find(r.na, ts[j]) < 0) return;
+      var k = r.id || r.nt; if (seen[k]) return; seen[k] = 1;
+      out.push({ r: r, th: count(r.nt, ts) });
+    });
+    out.sort(function (a, b) { return (b.th - a.th) || (a.r.date < b.r.date ? 1 : -1); });
+    return out.slice(0, 5);
+  }
+  function zHref(r) {
+    if (r.deep) return ROOT + "papers/" + encodeURIComponent(r.deep) + "/";
+    var first = Z.man && Z.man.first ? Z.man.first[r.date] : null;
+    return ROOT + r.date + "/" + (first === r.track ? "" : r.track + "/") + (r.id ? "#paper-" + encodeURIComponent(r.id).replace(/%3A/gi, ":") : "");
+  }
+  // returns "" or a small block (cls = list item class); triggers the lazy load when needed
+  function zBlock(q, n, cls) {
+    if (!EN || !q || n >= 3) return "";
+    if (!Z.p) zLoad();
+    var z = zFind(q);
+    if (!z.length) return "";
+    return '<li class="' + cls + ' zh-old"><p class="zh-old-h">Older papers (before ' + esc(D.man.earliest_date) + ') are in the Chinese edition:</p><ul>' +
+      z.map(function (x) { return '<li><a href="' + esc(zHref(x.r)) + '" lang="en">' + mark(x.r.title, terms(q), 0) + "</a> <small>" + esc(x.r.date) + "</small></li>"; }).join("") +
+      "</ul></li>";
+  }
   function srcLabel(u) {
     if (/arxiv\.org\//i.test(u)) return "arXiv";
     if (/openreview\.net\//i.test(u)) return "OpenReview";
@@ -285,6 +331,7 @@
     g.innerHTML = (st.q ? TR("论文 · ", "Papers · ") + res.length : TR("最新论文", "Latest papers")) + busy;
     l.innerHTML = res.length ? res.slice(0, MAXROWS).map(ovRow).join("")
       : (D.pending ? "" : '<li class="pk-empty">' + TR("没有找到匹配的论文 — 试试更短的关键词或放宽时间范围。", "No matching papers — try a shorter keyword or a wider range.") + "</li>");
+    if (!D.pending) l.innerHTML += zBlock(st.q, res.length, "pk-zh");
     var qs = params(st);
     all.setAttribute("href", LROOT + "search/" + (qs ? "?" + qs : ""));
     all.innerHTML = st.q ? TR("查看全部 " + res.length + " 条结果 →", "See all " + res.length + " results →") : TR("打开搜索页 →", "Open search page →");
@@ -656,6 +703,7 @@
     } else {
       listEl.innerHTML = res.slice(0, shown).map(item).join("");
     }
+    if (!D.pending) listEl.innerHTML += zBlock(state.q, res.length, "sq-zh");
     var left = res.length - shown;
     moreEl.hidden = left <= 0;
     if (left > 0) moreEl.textContent = TR("加载更多（还有 " + left + " 篇）", "Load more (" + left + " more)");
