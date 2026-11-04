@@ -227,8 +227,8 @@
   }
   function summaryHtml(p, dr) {
     if (dr && dr.slug) {
-      return hlText(escapeHtml(teaserText(p.summary))) + ' <a class="dr-read-link dive-more" href="' + deepPath(dr.slug) + '">' +
-        TR("阅读深度解读 &#8594;", "Read the deep dive &#8594;") + "</a>";
+      // the dive is linked once, by the 📖 chip under the title (card) / the 深度解读 button (lead); no inline link here (2026-11-04)
+      return hlText(escapeHtml(teaserText(p.summary)));
     }
     return hlText(escapeHtml(p.summary || ""));
   }
