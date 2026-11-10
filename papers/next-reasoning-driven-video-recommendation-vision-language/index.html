@@ -140,7 +140,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>11 分钟</b>阅读时长</span>
-    <span><b>4255</b>字</span>
+    <span><b>4231</b>字</span>
     <span><b>4.45</b>综合分</span>
     <span class="pd-rk"><b>第 2 名</b><a href="../../2026-07-30/personalization/">07-30 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -153,10 +153,10 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>短视频推荐擅长从共看、点击和语义相似中拟合“用户可能还会看什么”，却不一定理解“看完这个以后逻辑上应该看什么”。论文列出三种直接影响体验的失败：流行度偏置使热门相似视频压过真正续集，推荐多样性下降，以及叙事连续性断裂，例如用户看完 Part 1 却收不到 Part 2，或看完谜题、实验、教程后得不到答案与后续步骤。传统 Item-to-Item 图通常近似对称，无法表达 A→B 的方向和因果式后续需求；纯生成推荐又难以承担全库检索和在线延迟。</p>
 <p>NEXT 的动机是把推荐问题拆为“理解下一意图”和“在现有搜索栈中找到满足意图的内容”。模型不直接对全库逐项打分，而是将已观看视频转换成一个可检索的下一意图，再对搜索结果做逻辑验证，形成有方向的 NEXT Knowledge Graph（NKG）边。这样既利用视觉语言模型对 OCR、ASR、画面与事件关系的推理能力，又保留成熟搜索系统的规模化召回。论文进一步指出，离线 Precision/Recall/NDCG 会惩罚历史日志中没有出现但逻辑合理的新探索，因此最终必须依赖线上 A/B 验证。</p>
 <h2 id="s2">2. 方法详解</h2>
-<p>NKG 中每条边是 \(\langle v_{\text{trigger}},v_{\text{next}}\rangle\)，只有多模态证据、用户行为信号和 NEXT-8B 验证共同支持“B 是 A 的合理后续”时才写入。候选来源有四类：显式续集、VLM 意图搜索、行为信号和方向性 Swing；这些来源只提出边，不直接决定最终排序。显式路径从 OCR、ASR、创作者元数据和 “part two”“to be continued” 等线索提取置信度，按 \(S_{\text{series}}=w_{\text{ocr}}C_{\text{ocr}}+w_{\text{asr}}C_{\text{asr}}\) 融合，超过阈值便优先写入 \(V_{\text{part}n}\rightarrow V_{\text{part}n+1}\)。</p>
+<p>NKG 中每条边是 (\langle v_{\text{trigger}},v_{\text{next}}\rangle)，只有多模态证据、用户行为信号和 NEXT-8B 验证共同支持“B 是 A 的合理后续”时才写入。候选来源有四类：显式续集、VLM 意图搜索、行为信号和方向性 Swing；这些来源只提出边，不直接决定最终排序。显式路径从 OCR、ASR、创作者元数据和 “part two”“to be continued” 等线索提取置信度，按 (S_{\text{series}}=w_{\text{ocr}}C_{\text{ocr}}+w_{\text{asr}}C_{\text{asr}}) 融合，超过阈值便优先写入 (V_{\text{part}n}\rightarrow V_{\text{part}n+1})。</p>
 <p>隐式路径让 NEXT-8B 根据采样帧、OCR、ASR、实体、布局和场景证据生成紧凑查询，例如谜题答案、挑战结果、被提及实体的详情或未完故事的后续；查询进入既有视频搜索栈，模型随后比较触发证据、意图与候选，只保留能“回答、延续或解决”需求的候选，拒绝仅主题相似或视觉接近的内容。行为路径使用 Watch→Search、Watch→Creator Profile→Watch、Watch→Comment 等短时间窗高置信模式，把搜索词或“part 2?”评论变成检索支点。</p>
-<p>协同路径使用 Scene-Aware Reasoning Swing。它要求用户在会话窗口内先看 \(i\) 再看 \(j\)，候选共享 Semantic ID 前缀，并过滤低支持对；最终分数对有序共现用户对求和，以用户活跃度权重抑制重度用户，以时间衰减 \(\gamma^{|\Delta t|}\) 惩罚不一致转移，再由 NEXT-8B 验证。因此协同信号提供覆盖，VLM 保证方向和逻辑精度。</p>
-<p>NEXT-8B 是标准 8B 视觉语言架构，创新集中在三阶段后训练。第一阶段 Perception-Enhanced RL 让多模态策略 \(\pi_\theta\) 生成与问题无关的视觉证据 \(e\)，冻结的纯文本验证器 \(\phi\) 看不到原图，只依据 \(e\) 回答多个问题，平均正确率成为奖励；每个样本采样 \(K\) 个证据，使用组内相对优势的 GRPO，并加裁剪与相对参考策略的 KL 正则。这样奖励改善只能来自更准确的 OCR、实体、空间关系与场景证据，而不是验证器偷看图片。</p>
+<p>协同路径使用 Scene-Aware Reasoning Swing。它要求用户在会话窗口内先看 (i) 再看 (j)，候选共享 Semantic ID 前缀，并过滤低支持对；最终分数对有序共现用户对求和，以用户活跃度权重抑制重度用户，以时间衰减 (\gamma^{|\Delta t|}) 惩罚不一致转移，再由 NEXT-8B 验证。因此协同信号提供覆盖，VLM 保证方向和逻辑精度。</p>
+<p>NEXT-8B 是标准 8B 视觉语言架构，创新集中在三阶段后训练。第一阶段 Perception-Enhanced RL 让多模态策略 (\pi_\theta) 生成与问题无关的视觉证据 (e)，冻结的纯文本验证器 (\phi) 看不到原图，只依据 (e) 回答多个问题，平均正确率成为奖励；每个样本采样 (K) 个证据，使用组内相对优势的 GRPO，并加裁剪与相对参考策略的 KL 正则。这样奖励改善只能来自更准确的 OCR、实体、空间关系与场景证据，而不是验证器偷看图片。</p>
 <p>第二阶段 Distribution-Aligned SFT 混合 ChartQA、TableVQA、InfoVQA 等真实 DocVQA 数据与大 VLM 教师、多专家一致标注生成的稀有布局合成数据。自由问答有多个合法字符串时，从标签集合中选择与当前预测 Levenshtein 相似度最高的目标，降低格式差异对 ANLS 的干扰。第三阶段再次用 GRPO 做末端偏好对齐，奖励简洁格式、证据忠实性和“观察事实/推断意图”边界。</p>
 <p>论文披露 DocVQA 含 12,767 张图像、超过 50,000 个问题，任务评测用 ANLS；推荐迁移评测采样 1,000 个视频。生产 A/B 运行数周、规模约 1 亿用户。论文未报告训练 batch size、优化器超参数、学习率、GPU 数量、训练步数、帧采样率或合成数据规模，因此读者能重建算法流程，却不能严格复现训练预算与数据配方。</p>
 <h2 id="s3">3. 核心技术贡献</h2>
@@ -173,7 +173,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <div class="tbl"><table><thead><tr><th>线上指标</th><th>相对提升</th><th>统计结果</th></tr></thead><tbody><tr><td>Watch Time</td><td class="num">+0.53%</td><td>95% CI 不含 0，p&lt;0.05</td></tr><tr><td>Distinct Video Exposure</td><td class="num">+0.51%</td><td>95% CI 不含 0，p&lt;0.05</td></tr><tr><td>负反馈、安全、延迟护栏</td><td>无显著回退</td><td>通过</td></tr></tbody></table></div>
 <p>观看时长与不同视频曝光同步增长，是重要信号：NEXT 没有仅靠续集黏住用户，也扩展了相关内容覆盖。但论文未给出 NKG 边覆盖率、命中后插入比例、不同候选源的线上消融，也没有报告长期留存，因此无法判断收益主要来自显式续集、VLM 搜索、行为信号还是 Swing。</p>
 <h2 id="s5">5. 局限与未来方向</h2>
-<p>作者明确指出，全库视频的 8B VLM 分析仍然昂贵。即使放到离线/近线，内容库快速增长时，转移挖掘吞吐仍是瓶颈；未来计划通过蒸馏、推测解码和更激进批处理提高新内容响应速度。当前只做单跳 \(v_1\rightarrow v_{1.a}\)，作者希望扩展多步转移；边离线生成、线上只在小集合内个性化，未来需把实时行为更紧密地纳入边质量优化。连续沿一条逻辑链推荐还可能收窄曝光，因此需要把 NEXT 与惊喜性候选交错重排。</p>
+<p>作者明确指出，全库视频的 8B VLM 分析仍然昂贵。即使放到离线/近线，内容库快速增长时，转移挖掘吞吐仍是瓶颈；未来计划通过蒸馏、推测解码和更激进批处理提高新内容响应速度。当前只做单跳 (v_1\rightarrow v_{1.a})，作者希望扩展多步转移；边离线生成、线上只在小集合内个性化，未来需把实时行为更紧密地纳入边质量优化。连续沿一条逻辑链推荐还可能收窄曝光，因此需要把 NEXT 与惊喜性候选交错重排。</p>
 <p>论文没有把 LLM-as-a-judge 与人工评审相关性作为核心实验，1,000 视频评测也可能受评审模型偏好影响；线上增益虽然显著，却没有公布平台、国家、内容类型和用户分层。另一个未充分讨论的问题是“直接插入”对 feed 排序校准的影响：高精度 NKG 候选绕过完整候选竞争，若正反馈触发阈值或边新鲜度失准，可能造成过强的连播偏置。Semantic ID 前缀约束也可能错过跨主题但逻辑相关的后续内容。</p>
 <h2 id="s6">6. 工业实践意义</h2>
 <p>NEXT 最适合以增量召回通路试点，而不是替换现有推荐系统。社区 UGC 可先挑三类高价值场景：系列帖/教程续篇、问题—答案与事件后续、用户看帖后立即搜索或访问作者主页。离线从标题、正文、图片 OCR、视频 ASR 与评论中提取证据，生成“下一步需求”查询，复用现有搜索召回，再由较小多模态模型验证是否真正回答或延续触发内容；把通过验证的边存入带来源、分数、时间戳和过期策略的有向图。</p>

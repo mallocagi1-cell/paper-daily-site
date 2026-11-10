@@ -140,7 +140,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>8 分钟</b>阅读时长</span>
-    <span><b>2842</b>字</span>
+    <span><b>2836</b>字</span>
     <span><b>4.05</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-06-26/personalization/">06-26 Personalization 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -154,7 +154,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>工业推荐系统的用户建模长期依赖固定维度的稠密 embedding，作者指出其根本缺陷是&quot;固定维度向量带来的表达约束&quot;——容量有限、难以承载丰富的语义层次。近期一种替代方案是用 LLM 生成文本型用户画像 token，但它只捕捉话题层面的共现关系，无法刻画深层的序列行为动态，且生成的文本难以对齐（ground）到具体的物品属性。与此同时，基于 Semantic ID (SID) 的<strong>物品</strong> tokenization 已在生成式推荐中证明能提升泛化，但<strong>用户</strong>侧的离散 SID 表征几乎无人探索。TokenMinds 正是填补这一空白：把已在物品检索中验证的 PLUM 框架迁移到用户建模，论证&quot;离散 SID 用户 token&quot;在工业排序中是可行且有价值的，并通过统一长视频(LFV)/短视频(SFV)行为来降低多场景的训练与服务成本。</p>
 <h3>2. 方法详解</h3>
 <p>TokenMinds 采用 encoder-decoder seq2seq 架构：370M 参数的 MoE encoder + 370M 参数的 dense decoder，均由 PLUM 框架的 CPT(Continued Pre-Training) 检查点初始化。物品(视频)先用 RQ-VAE 编码为 L_full=8 层的层次化离散码字；用户建模时只取<strong>前 L 级前缀码</strong>(实验中 L=4)做粗粒度表征。Decoder 通过对 encoder 输出的 cross-attention 自回归生成 SID token，用 beam search 产出 B=40 条 SID 序列(LFV/SFV 各 20)。</p>
-<p>训练损失(Eq.1)对 decoder 最小化 −∑ r(W_i)·∑_j log P(SID_{i,j} | 历史, 目标, 已生成前缀)，其中 r(W_i) 是基于互动的奖励加权；encoder 仅通过 cross-attention 梯度间接受监督。两个关键设计：(a) <strong>look-ahead 采样</strong>——不预测&quot;下一个观看&quot;，而是从未来 24 小时窗口随机选最多 N=15 个目标；(b) <strong>多目标同时预测</strong>提升训练效率。输入侧把 hard token(分桶稠密特征/类别特征)与 soft token(独立 embedding 经 MLP 投影为 M 个，生产中 M=1)拼接，并用 \&lt;Search\&gt; token 把 S=10 条搜索 query 与观看序列交错，用 \&lt;LFV\&gt;/\&lt;SFV\&gt; condition token 区分场景，实现跨场景统一建模。最大输入 1024 token(约 1200 次观看+10 query)。稠密 embedding 由 encoder 输出做 last-token 或 mean pooling 得到 1152 维。框架基于内部 JAX + Pathways，按天持续训练(每日百万级样本)，batch size 以 8K 为锚点(并探索 4K/16K)。</p>
+<p>训练损失(Eq.1)对 decoder 最小化 −∑ r(W_i)·∑_j log P(SID_{i,j} | 历史, 目标, 已生成前缀)，其中 r(W_i) 是基于互动的奖励加权；encoder 仅通过 cross-attention 梯度间接受监督。两个关键设计：(a) <strong>look-ahead 采样</strong>——不预测&quot;下一个观看&quot;，而是从未来 24 小时窗口随机选最多 N=15 个目标；(b) <strong>多目标同时预测</strong>提升训练效率。输入侧把 hard token(分桶稠密特征/类别特征)与 soft token(独立 embedding 经 MLP 投影为 M 个，生产中 M=1)拼接，并用 &lt;Search&gt; token 把 S=10 条搜索 query 与观看序列交错，用 &lt;LFV&gt;/&lt;SFV&gt; condition token 区分场景，实现跨场景统一建模。最大输入 1024 token(约 1200 次观看+10 query)。稠密 embedding 由 encoder 输出做 last-token 或 mean pooling 得到 1152 维。框架基于内部 JAX + Pathways，按天持续训练(每日百万级样本)，batch size 以 8K 为锚点(并探索 4K/16K)。</p>
 <h3>3. 核心技术贡献</h3>
 <p>(1) <strong>双输出架构</strong>：单模型同时产出稠密连续 embedding 与离散 SID token，前者保证与既有稠密精排模型无缝兼容，后者带来语义对齐与可解释——二者在下游被验证为互补而非替代。(2) <strong>用户侧 SID tokenization 及下游适配</strong>：首次系统研究&quot;离散用户 token&quot;如何接入排序模型，比较了 Learnable Embedding(LE) 与 Prefix Embedding Mapping 等适配策略，发现 LE 适配收益最佳。(3) <strong>跨场景统一建模</strong>：用共享 SID 词表 + multi-context decoding 把 LFV 与 SFV 合进一个模型，相比两个独立模型大幅压缩上游算力。(4) <strong>工业级落地</strong>：在 YouTube 多个生产排序系统、面向数十亿用户全量上线，并配套异步服务基础设施。</p>
 <h3>4. 实验结果分析</h3>

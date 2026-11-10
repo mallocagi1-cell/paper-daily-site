@@ -397,8 +397,16 @@
     var on = fsOn(), lab = fsb.getAttribute(on ? "data-off" : "data-on");
     root.classList.toggle("tm-fs", on);
     fsb.setAttribute("aria-pressed", on ? "true" : "false"); fsb.setAttribute("aria-label", lab); fsb.setAttribute("title", lab);
-    requestAnimationFrame(function () { camTo(false); });
+    requestAnimationFrame(function () { fsTop(); camTo(false); });
   }
+  /* 2026-11-10: on a phone the reader sheet in full screen left a fixed 52px for the map toolbar; the English toolbar
+     wraps to two lines, so the sheet covered the exit-full-screen button. Measure the toolbar instead. */
+  function fsTop() {
+    var lg = root.querySelector(".tm-legend");
+    if (fsOn() && lg) root.style.setProperty("--tm-top", Math.ceil(lg.getBoundingClientRect().bottom + 4) + "px");
+    else root.style.removeProperty("--tm-top");
+  }
+  window.addEventListener("resize", function () { if (fsOn()) fsTop(); });
   function fsx(on) { root.classList.toggle("tm-fsx", on); document.documentElement.classList.toggle("tm-fsx-on", on); fsSync(); }
   function fsToggle() {
     if (fsOn()) {

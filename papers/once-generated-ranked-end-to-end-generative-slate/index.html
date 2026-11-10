@@ -140,7 +140,7 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
   </div>
   <div class="rmeta pd-sh-has">
     <span><b>13 分钟</b>阅读时长</span>
-    <span><b>4852</b>字</span>
+    <span><b>4816</b>字</span>
     <span><b>4.65</b>综合分</span>
     <span class="pd-rk"><b>第 1 名</b><a href="../../2026-08-20/">08-20 Generative 日报</a></span><button type="button" class="pd-sh-cell" data-pd-share="menu" aria-haspopup="dialog" aria-expanded="false" aria-label="分享这篇深度解读"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></b>分享</button>
   </div>
@@ -153,16 +153,16 @@ if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', init); el
 <p>这篇论文针对的是推荐系统中“先生成、再排序”的级联结构。传统链路先从海量物品中召回候选，再由排序和重排模型在候选集合内优化；一旦相关物品没有进入候选集，后续模型无法补救，而且召回、排序、重排使用不同目标，整体优化容易被阶段边界割裂。生成式推荐用 Semantic ID（SID）直接生成物品，理论上可以绕开候选集限制，但现有方法往往只用 next-token prediction 学单个 SID token，不能直接表达一个 slate 内物品的相互影响、位置关系和整体效用。</p>
 <p>论文进一步指出两个具体缺口。第一，已有 SID 多由内容语义量化得到，往往没有充分利用局部协同信号，长尾物品和行为稀疏物品的表示容易不稳定；第二，曝光顺序不等于用户偏好顺序，单纯模仿日志会把展示偏差固化到生成器中。作者因此把 slate 作为基本决策单位，在同一框架内处理物品表示、列表规划、位置解码和反馈对齐。论文在 KuaiRec 与快手工业数据上验证，并在快手 3% 生产流量上做线上 A/B，目标是同时改善相关性、列表质量与生成效率。</p>
 <h2 id="s2">2. 方法详解</h2>
-<p>OGR 由 TUSID、GL2P 和 SPA 三个部分组成。给定用户历史 \(H_u\)，每个物品先被编码为四层 SID，模型直接生成长度为 \(K=5\) 的有序 SID 列表，再通过 SID-to-item 映射得到最终 slate。离线实验使用最大历史长度 128、四层 codebook、每层 1,024 个 code，推理采用 beam width 20，运行在 NVIDIA L20 上。</p>
+<p>OGR 由 TUSID、GL2P 和 SPA 三个部分组成。给定用户历史 (H_u)，每个物品先被编码为四层 SID，模型直接生成长度为 (K=5) 的有序 SID 列表，再通过 SID-to-item 映射得到最终 slate。离线实验使用最大历史长度 128、四层 codebook、每层 1,024 个 code，推理采用 beam width 20，运行在 NVIDIA L20 上。</p>
 <h3>TUSID：推荐感知的统一 SID</h3>
-<p>TUSID 先做语义融合。多模态编码器从物品图像、音频和文本得到细粒度表示 \(e_i^M\)，共享文本编码器分别编码 Brand、Category、B-tags（供给侧内容特征）和 C-tags（需求侧用户价值）四类属性。以多模态向量作为 query、四类属性作为 key/value 做 cross-attention，再通过 sigmoid 门控残差融合：\(e_i^{sem}=e_i^M+g_i h_i^{attr}\)。门控让不同物品自适应决定属性补充强度，并用 SASRec 的 next-item 预测损失训练融合参数，同时加入残差范数正则，防止属性支路压过主语义表示。</p>
-<p>语义表示之后加入局部协同信息。作者在用户高质量正反馈训练前缀内建立物品共现：距离为 \(|p-q|\) 的上下文物品按 \(1/|p-q|\) 加权，近邻行为贡献更大。为了避免显式保存巨大物品—上下文矩阵，CCE 使用共享 bucket hash 和 sign hash 的 CountSketch，将每个物品压缩到固定维度；随后做 signed-log、归一化和随机投影。行为证据用贡献过的不同用户数 \(U_i\) 衡量，协同置信度为 \(\gamma_i=\log(1+U_i)/(\log(1+U_i)+\tau)\)，最终权重 \(\alpha_i=\alpha_{col}\gamma_i\)。统一向量采用 \([\sqrt{1-\alpha_i}e_i^{sem};\sqrt{\alpha_i}e_i^{col}]\) 拼接，再用 RQ-KMeans 递归量化为层次化 SID。这样热门物品可以利用协同结构，而冷启动物品在 \(U_i\) 很小时主要依赖内容语义。</p>
+<p>TUSID 先做语义融合。多模态编码器从物品图像、音频和文本得到细粒度表示 (e_i^M)，共享文本编码器分别编码 Brand、Category、B-tags（供给侧内容特征）和 C-tags（需求侧用户价值）四类属性。以多模态向量作为 query、四类属性作为 key/value 做 cross-attention，再通过 sigmoid 门控残差融合：(e_i^{sem}=e_i^M+g_i h_i^{attr})。门控让不同物品自适应决定属性补充强度，并用 SASRec 的 next-item 预测损失训练融合参数，同时加入残差范数正则，防止属性支路压过主语义表示。</p>
+<p>语义表示之后加入局部协同信息。作者在用户高质量正反馈训练前缀内建立物品共现：距离为 (|p-q|) 的上下文物品按 (1/|p-q|) 加权，近邻行为贡献更大。为了避免显式保存巨大物品—上下文矩阵，CCE 使用共享 bucket hash 和 sign hash 的 CountSketch，将每个物品压缩到固定维度；随后做 signed-log、归一化和随机投影。行为证据用贡献过的不同用户数 (U_i) 衡量，协同置信度为 (\gamma_i=\log(1+U_i)/(\log(1+U_i)+\tau))，最终权重 (\alpha_i=\alpha_{col}\gamma_i)。统一向量采用 ([\sqrt{1-\alpha_i}e_i^{sem};\sqrt{\alpha_i}e_i^{col}]) 拼接，再用 RQ-KMeans 递归量化为层次化 SID。这样热门物品可以利用协同结构，而冷启动物品在 (U_i) 很小时主要依赖内容语义。</p>
 <h3>GL2P：全局列表规划与流水线解码</h3>
-<p>GL2P 不直接把每个位置当作独立的 next-item 预测。历史编码器将层次 SID embedding 与时间 embedding 相加后编码；列表规划器以 BOS 和前面位置的 SID 聚合向量为输入，使用带因果 mask 的 Transformer decoder 生成每个位置的偏好表示 \(p_1,\ldots,p_K\)。位置 \(m\) 的 SID 解码器以 \(p_m\)、该物品已经生成的 SID 前缀和用户历史为条件生成四层 SID token。规划器生成 \(p_{m+1}\) 的同时，SID 解码器已经可以处理第 \(m\) 个物品，因此形成跨位置流水线：保留 slate 内依赖，又避免完整 slate 按物品串行生成。</p>
-<p>训练同时使用两条监督序列。曝光序列保留原始展示顺序，反馈序列按用户对每个物品的反馈重新排序，联合损失为 \(L_{sup}=L_{sid}^{eps}+\alpha L_{sid}^{fb}\)。前者提供日志结构稳定性，后者把点击、有效观看等反馈转成更接近偏好顺序的学习信号。</p>
+<p>GL2P 不直接把每个位置当作独立的 next-item 预测。历史编码器将层次 SID embedding 与时间 embedding 相加后编码；列表规划器以 BOS 和前面位置的 SID 聚合向量为输入，使用带因果 mask 的 Transformer decoder 生成每个位置的偏好表示 (p_1,\ldots,p_K)。位置 (m) 的 SID 解码器以 (p_m)、该物品已经生成的 SID 前缀和用户历史为条件生成四层 SID token。规划器生成 (p_{m+1}) 的同时，SID 解码器已经可以处理第 (m) 个物品，因此形成跨位置流水线：保留 slate 内依赖，又避免完整 slate 按物品串行生成。</p>
+<p>训练同时使用两条监督序列。曝光序列保留原始展示顺序，反馈序列按用户对每个物品的反馈重新排序，联合损失为 (L_{sup}=L_{sid}^{eps}+\alpha L_{sid}^{fb})。前者提供日志结构稳定性，后者把点击、有效观看等反馈转成更接近偏好顺序的学习信号。</p>
 <h3>SPA：奖励引导的保守偏好对齐</h3>
 <p>监督训练仍然是在模仿固定目标，不能直接比较多个生成 slate 的相对质量。SPA 以监督模型为 reference policy，对每个用户通过 beam search 产生去重候选 slate。主奖励聚合有效观看、完成、点赞、分享、立即跳过和不喜欢等反馈；辅助奖励只保留 slate 内多样性与新颖性，其中多样性权重 0.90、新颖性权重 0.10。两类奖励先在同一用户的候选集合内标准化，只有当主辅奖励方向一致时才让辅助奖励按比例参与，减少指标冲突造成的错误偏好。</p>
-<p>策略优化使用 clipped importance-ratio 目标，同时加入 reference/current slate 分布的 KL 惩罚，并重放监督损失：\(L_{SPA}=L_{pol}+\gamma L_{KL}+\eta L_{sup}\)。对齐阶段只更新列表规划器和位置 SID 解码器，TUSID 等底层表示保持冻结。这一设计把探索集中在列表组织和解码策略上，避免奖励优化把 SID 词表和基础语义空间一起推离原模型。</p>
+<p>策略优化使用 clipped importance-ratio 目标，同时加入 reference/current slate 分布的 KL 惩罚，并重放监督损失：(L_{SPA}=L_{pol}+\gamma L_{KL}+\eta L_{sup})。对齐阶段只更新列表规划器和位置 SID 解码器，TUSID 等底层表示保持冻结。这一设计把探索集中在列表组织和解码策略上，避免奖励优化把 SID 词表和基础语义空间一起推离原模型。</p>
 <h2 id="s3">3. 核心技术贡献</h2>
 <ol>
 <li>TUSID 将“内容语义—属性语义—局部协同”统一到同一 SID 构造过程中。与只做语义量化或用 InfoNCE 粗略对齐不同，CountSketch 保留距离加权的局部共现，置信度门控又避免稀疏行为被误当成稳定偏好。</li>
