@@ -1,0 +1,701 @@
+{
+  "date": "2026-11-11",
+  "track": "infra",
+  "scenario": "今天这条赛道的主线是推理栈按新负载的形状重做。生成式推荐和 agent 让老假设失效，RecoGEM 针对短序列和海量候选重写了推理服务，PACE 发现 KV cache 留住 token 还不够，还要让它们离 query 够近。GPU 的启动时间也进了关键路径，Firepool 用热池把等待从循环里拿掉，NVIDIA Snapshot 直接恢复初始化好的状态。Hibana 和 AdaOffload 在内存和带宽受限的机器上调度专家权重，Detent 让同批的其他请求不再影响输出比特。",
+  "scenario_status": "done",
+  "stats": {
+    "papers_scored": 215,
+    "papers_selected": 10,
+    "score_min": 3.65,
+    "score_max": 4.75
+  },
+  "papers": [
+    {
+      "id": "arxiv:2611.12296",
+      "title": "RecoGEM: A Serving System for Production-Scale Generative Recommendation",
+      "authors": "Xiangrui Yang, Yunfeng Zhao, Jiawei Yang, Fangyu Zhang, Enrui Zhao, Liang Zeng, Cheng Peng, Minhui Xie, Jiaqiang Liu, Xiao Liang, Yiming Qiu",
+      "abstract": "Generative recommendation (GR) is moving industrial recommender systems (RecSys) from scoring candidate items to autoregressively generating item identifiers. This shift promises higher recommendation quality, but makes serving substantially harder: each request executes a short sequence of dependent decoding steps that explore a large item space and select promising candidates on the latency-critical path. GR not only creates structural mismatches with conventional RecSys pipelines, but also challenges the architectural and optimization assumptions of LLM serving stacks, making direct adoption of existing systems difficult. We present RecoGEM, our production GR serving system. RecoGEM uses a runtime--engine decoupling architecture to move GR-specific serving responsibilities, such as candidate-state transitions and live artifact updates, to a dedicated runtime. Its execution engine exploits GR's short token sequences, large candidate populations, and predictable step shapes to optimize self-attention, candidate selection, and execution planning. RecoGEM has been deployed for over nine months across our production lines, serving applications with hundreds of millions of users and supporting more than ten GR model families. On our OneModel production workloads, RecoGEM reaches over 1,000 QPS per serving instance with P99 latency below 35 ms and a 2.88$\\times$ throughput improvement over representative baselines.",
+      "url": "https://arxiv.org/abs/2611.12296",
+      "source": "arxiv",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR",
+        "categories": [
+          "cs.DC",
+          "cs.AI",
+          "cs.IR"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-10",
+        "created": "2026-11-10"
+      },
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "base_score": 4.75,
+      "total_score": 4.75,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0.15,
+      "adjusted_score": 4.9,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 1,
+      "company": [],
+      "summary": "生成式推荐和大模型一样逐 token 解码，直接搬 LLM 的推理服务栈却跑不好，快手这篇 RecoGEM 讲清了原因。大模型的注意力开销在长序列上，生成式推荐每条候选只看几个 SID，开销转到 beam 展开后的海量短行上。每一步的词表和张量形状还各不相同，top-k 选择也成了关键路径上的重活。他们把步间的候选状态和线上更新交给独立的运行时，引擎按每一步的形状单独编译。在线上 OneModel 负载上，单实例超过 1000 QPS，P99 低于 35 毫秒，吞吐是换回统一形状和普通 kernel 的同系统版本的 2.88 倍。==生成式推荐的开销集中在短序列和大候选集上，推理服务要按这个形状来设计==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": [],
+      "deep_reading": {
+        "status": "completed",
+        "paper_id": "arxiv:2611.12296",
+        "title": "RecoGEM: A Serving System for Production-Scale Generative Recommendation",
+        "slug": "recogem-serving-system-production-scale-generative",
+        "chars": 4176,
+        "minutes": 11
+      }
+    },
+    {
+      "id": "arxiv:2611.10832",
+      "title": "Firepool: Brokering Warm GPU Capacity for Agentic and RL Workloads at LinkedIn",
+      "authors": "Ankit Goyal, Santosh Jha, Zhuo Zhi, Youmin Han, Cong Gu, Chen Xie, Animesh Singh",
+      "abstract": "AI agents and reinforcement-learning (RL) trainers run thousands of short, isolated GPU jobs: tool calls, verifiers, and rollouts. A job often finishes in seconds, but starting a GPU pod for it takes 20-35 s even when the container image is already on the node, and minutes when it is not. A warm pod removes the wait only if it can serve the next job, and keeping pods warm must neither waste GPUs nor leak state between callers. Firepool, the sandbox and execution broker behind agentic and RL workloads at LinkedIn, meets both requirements. It makes pods interchangeable by building them from a shared base image per hardware profile and binding each job's code, extra dependencies, and cluster topology when the job starts. It keeps them warm cheaply and safely by reusing a pod only for the caller that used it last, staging zero-VRAM standby pods in fractional GPU shares alongside active pods, and capping the GPUs that warm pools may hold via queue-driven budgets. Over a sampled peak period in production, Firepool serves 94.7% of 3,206 pod requests from warm or standby capacity. In paired benchmarks with fixed-duration jobs on production H200 nodes, agent and RL loops finish 13x and 10.8x faster than with a fresh pod per job; against a fresh reuse tag per job, warm reuse cuts p90 start latency from 59.1 s to 3.5 s. When a job cannot reuse the previous pod, standby promotion shortens the handover wait from 51 s to 0.94 s. In local and simulated runs, a keep-alive matched to the loop's pauses keeps the latency benefit while holding about half the capacity of an always-on pool.",
+      "url": "https://arxiv.org/abs/2611.10832",
+      "source": "arxiv",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.DC",
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-10",
+        "created": "2026-11-10"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "base_score": 4.45,
+      "total_score": 4.45,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.5,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 2,
+      "company": [
+        "LinkedIn"
+      ],
+      "summary": "agent 和 RL 训练会发出大量只跑几秒的 GPU 任务，起一个 Pod 却要等二三十秒，LinkedIn 的 Firepool 要把这段等待拿掉。热池的难点是下一个任务得能用上现成的 Pod，所以同一硬件规格的 Pod 共用一个基础镜像，代码和依赖等任务开始时才装进去。Pod 只复用给上次用它的调用者，换调用者或换会话时，由同一张卡上不占显存的备用 Pod 接手，等待不到一秒。线上高峰期 94.7% 的 Pod 请求由热池或备用 Pod 满足。在两张 GPU 的配额下，agent 和 RL 循环的完成速度分别是每个任务新建 Pod 的 13 倍和 10.8 倍。==任务一长这个优势就消失，因为省下的只是启动时间==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": [
+        {
+          "name": "LinkedIn",
+          "logo": "logos/linkedin.png",
+          "hue": 223
+        }
+      ],
+      "deep_reading": {
+        "status": "completed",
+        "paper_id": "arxiv:2611.10832",
+        "title": "Firepool: Brokering Warm GPU Capacity for Agentic and RL Workloads at LinkedIn",
+        "slug": "firepool-brokering-warm-gpu-capacity-agentic-rl-workloads",
+        "chars": 3625,
+        "minutes": 10
+      }
+    },
+    {
+      "id": "blog_rss:meta_research_blog:https://engineering.fb.com/2026/11/10/open-source/tlx-a-hardware-native-gpu-compiler-for-production-ml",
+      "title": "How We Built TLX: A Hardware-Native GPU Compiler for Production ML at Scale",
+      "authors": "",
+      "abstract": "<p>Triton Low-Level Extensions (TLX), is an extension to Triton that helps engineers optimize GPU performance while preserving Triton&#8217;s productive programming model.  TLX introduces explicit warp-group and cluster-level orchestration, letting developers adopt new hardware capabilities without sacrificing velocity.  TLX has demonstrated performance improvements in RecSys training, RecSys inference, and large-scale LLM pretraining. Modern GPU architectures increasingly [...]</p>\n<p><a class=\"btn btn-secondary understrap-read-more-link\" href=\"https://engineering.fb.com/2026/11/10/open-source/tlx-a-hardware-native-gpu-compiler-for-production-ml/\">Read More...</a></p>\n<p>The post <a href=\"https://engineering.fb.com/2026/11/10/open-source/tlx-a-hardware-native-gpu-compiler-for-production-ml/\">How We Built TLX: A Hardware-Native GPU Compiler for Production ML at Scale</a> appeared first on <a href=\"https://engineering.fb.com\">Engineering at Meta</a>.</p>",
+      "url": "https://engineering.fb.com/2026/11/10/open-source/tlx-a-hardware-native-gpu-compiler-for-production-ml/",
+      "source": "blog_rss",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "blog",
+      "source_detail": "meta_research_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "base_score": 4.3,
+      "total_score": 4.3,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 4.3,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 3,
+      "company": [
+        "Meta"
+      ],
+      "summary": "新一代 GPU 的性能越来越取决于几组线程怎么分工，比如一组搬数据、一组算矩阵。CUDA 能写这种分工，但要写大量和架构绑定的调度代码，Triton 又把它藏进了编译器。Meta 在 Triton 上加了一层 TLX，工程师继续写 Python，只在关键处显式写线程组的分工和同步。对做推荐的人，最实在的例子是打分时的用户特征：同一份特征通常要按候选数复制几十次。Meta 把这次复制挪进 kernel 内部，配合模型一起改，计算密集部分的净时延最多降了三分之二。GEM 广告模型的训练在数千张 Blackwell 上做到 20% 到 25% 的端到端 MFU。==kernel 优化正在变成算法工程师的日常手段==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": [
+        {
+          "name": "Meta",
+          "logo": "logos/meta.png",
+          "hue": 50
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.10611",
+      "title": "Detent: Batch-Invariant LLM Serving and RL Rollouts at Near-Stock Speed",
+      "authors": "Peixu Xin, Runchuan Feng, Jiazhen Guo, Kan Wu, Ming Yin",
+      "abstract": "Reproducible evaluation, verifiable inference and on-policy reinforcement learning (RL) need an LLM engine to give a request the same output bits whichever requests share its batch. Batch-invariant kernels exist, but engines still select each kernel and its parameters from the batch. Two kernels that compute the same sum can round it differently. The engines' deterministic modes remove the choice by keeping one conservative kernel per operator and pay for it in latency. Many fast kernels are batch-invariant by themselves, so it is enough to fix the few batch-dependent values that kernel selection reads. Detent expresses kernel selection as a program that the engine executes. It finds the fewest values in this program that must be fixed and tunes them for the workload before deployment. On multi-GPU deployments of Llama-3.1-70B and Qwen3-30B-A3B in vLLM and SGLang, Detent is batch-invariant. Tuned per load, it serves at 1.04-1.17x the latency per output token of Stock (each engine with its standard settings), against 1.67-10.3x for the deterministic modes. In SGLang it matches the GSM8K accuracy of SGLang's deterministic mode. Detent covers multiple deployment combinations, including multiple engines, GPU generations, tensor-parallel degrees, and dense and MoE models. Seeded RL rollouts of models up to Llama-3.1-70B replay bit for bit under other batches and cache splits. A trainer on Detent's kernels and values matches every rollout logprob bit for bit at 1.03x Stock's rollout time per token. BF16 GRPO then stays stable where Stock's run collapses.",
+      "url": "https://arxiv.org/abs/2611.10611",
+      "source": "arxiv",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG",
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-10",
+        "created": "2026-11-10"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0.102,
+      "adjusted_score": 4.202,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 4,
+      "company": [],
+      "summary": "同一个请求，只因为同批的其他请求变了，大模型输出的比特就可能不同。在 GSM8K 上，只改变负载，标准设置的 SGLang 就有 33 道题的答案变了。根源在引擎按批次情况挑 kernel，两个 kernel 算同一个和，舍入可能不一样。Detent 把挑 kernel 的逻辑写成可分析的程序，找出最少要固定哪几个值，上线前再按负载调好这些值，快的 kernel 全部留着。调好之后，每个输出 token 的时延是标准设置的 1.04 到 1.17 倍，引擎自带的确定性模式代价大得多。训练端用同一套 kernel 和固定值，能逐比特对上 rollout。==很多快 kernel 本身就不受批次影响，要固定的只是挑选时读的几个值==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": [],
+      "deep_reading": {
+        "status": "completed",
+        "paper_id": "arxiv:2611.10611",
+        "title": "Detent: Batch-Invariant LLM Serving and RL Rollouts at Near-Stock Speed",
+        "slug": "detent-batch-invariant-llm-serving-rl-rollouts-near-stock",
+        "chars": 5526,
+        "minutes": 14
+      }
+    },
+    {
+      "id": "arxiv:2611.10219",
+      "title": "Multi-GPU MoE Inference with Adaptive Expert Offloading",
+      "authors": "William X. Zheng, Zhongjie Chen, Shuo Yang, Ziming Mao, Xiaoze Fan, Yi Pan, Kunjun Li, Hanfei Yu, Chenfeng Xu, Yang Zhou, Rishabh Iyer, Ion Stoica",
+      "abstract": "Modern Mixture-of-Experts (MoE) inference is constrained by GPU memory. This constraint is mitigated by expert offloading, which stores part of the model's weight in host memory and executes on demand. Though MoE architecture has computation sparsity, more GPUs are needed for serving increasingly larger frontier models. However, existing expert offloading systems overlook this need and fail to scale performance with additional GPUs. We present AdaOffload, a general and efficient multi-GPU hybrid expert execution framework that effectively handles heterogeneous hardware and workloads. We co-design GPU-CPU parallelism and GPU-CPU co-execution for decode and prefill with online workload observation that adapts to different hardware, workload, and batch size heterogeneity. We evaluated AdaOffload on five different platforms with varying GPU capability (L4, Pro6000, B200), number of GPUs, CPU capability, and NUMA topology on three different frontier open-weight models (284B to 753B). AdaOffload achieves $1.9\\times$ to $15.5\\times$ throughput speedups across different models over state-of-the-art systems.",
+      "url": "https://arxiv.org/abs/2611.10219",
+      "source": "arxiv",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.AI",
+        "categories": [
+          "cs.AI"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-10",
+        "created": "2026-11-10"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 5,
+      "company": [],
+      "summary": "MoE 模型每个 token 只激活少数专家，所以大部分专家权重可以放在内存里，用到时再算。已有的专家卸载系统大多针对单 GPU 或离线大批量，有的系统加卡后吞吐反而下降。AdaOffload 把专家均匀切到所有 GPU 上，CPU 这边按 NUMA 结构单独切，再结合离线测出的硬件开销和线上观察到的专家负载，实时决定多大比例的未命中专家拉到 GPU 上算。在三个开源模型和五种机器上，推理题负载的平均 decode 吞吐是最强基线的 1.9 到 15.5 倍。==最优的 CPU 和 GPU 分工随硬件和负载变化，固定策略跟不上==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.10240",
+      "title": "PACE: Keeping the Right Tokens in the KV Cache Is Not Enough for Long-Horizon LLM Agents",
+      "authors": "Suman Chatterjee",
+      "abstract": "Long-horizon LLM agents accumulate sessions of up to millions of tokens, far more key-value (KV) cache than one GPU holds, so serving systems keep a small budget of tokens and evict the rest. Eviction methods differ in which tokens they keep but share one goal: that the tokens a later step needs are still cached. We show this is not enough. In 100K-token coding sessions on Qwen3-8B with a 2,048-token budget, a planner-guided policy that keeps over 99% of the needed tokens resident still fails late steps increasingly often: its accuracy falls from 93% to 64% as the gap between a definition and its use grows from 2K to 90K tokens, at residency 0.996. The needed tokens are resident but unretrievable: what grows is their rotary-position distance to the query. We present PACE (Planner-Aware Context Engine), a KV-cache engine that couples plan-aware retention, in which the agent's planner tells the cache which context future steps will read, with bounded positions, which renumber kept tokens so their rotary distance to the query stays below 8K at any session length. In a pre-registered evaluation on fresh tasks, PACE passes 97% of hidden unit tests at 100K tokens, against 42% for H2O and 3% for SnapKV under the same budget, and needs both components: either alone reaches 63% (the combination beats each, p &lt; 10^-4). The result holds with length: in 1M- and 2M-token sessions on one 24 GB GPU, with definitions written 0.9M and 1.8M tokens before use, PACE passes 99% and 100% of checks and recalls every session fact, while bounded positions without foresight falls from 33% to 13%; PACE holds under 0.7 GB of KV state where the full cache would need 147-295 GB. Renumbering is exact, costs no measurable perplexity, and adds 9% wall time. On Mistral-7B, whose coding ability caps it at 40% even with nothing evicted, PACE stays at that ceiling while retention alone falls below it.",
+      "url": "https://arxiv.org/abs/2611.10240",
+      "source": "arxiv",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "categories": [
+          "cs.LG",
+          "cs.CL",
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-10",
+        "created": "2026-11-10"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 6,
+      "company": [],
+      "summary": "长会话 agent 的 KV cache 一张卡放不下，只能留一小部分 token，大家默认该留的都留住就行。这篇发现这还不够：需要的 token 几乎全留住了，定义离使用点越来越远时，准确率仍从 93% 掉到 64%。token 还在，只是到 query 的旋转位置距离太远，模型用不好了。PACE 让 agent 的规划器告诉 cache 后面的步骤要读什么，再给留下的 token 重新编号，把距离压在小范围内。在新任务上做的预注册实验里，它通过 97% 的隐藏单元测试，两部分单独用都差一大截。这个结果用的是真实依赖图，任务也是合成的编码会话。==KV cache 除了留住 token，还要让它们离 query 够近==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.10469",
+      "title": "Hibana: Fast Agentic Inference on Unified-Memory Devices",
+      "authors": "Yahya Emara, Chi-Chih Chang, Anthony Fei, Ahmed F. AbouElhamayed, Chong-Yan Chen, Hung-Yueh Chiang, Kai-Chiang Wu, Mohamed S. Abdelfattah",
+      "abstract": "Local AI promises capable personal assistants that run on users' own devices, keeping data and computation under their control. Open-weight models that fit on local devices can now handle practical tasks such as coding. Yet current inference engines fall short. Popular engines such as vLLM and SGLang target datacenter GPUs with dedicated host memory, while local engines underuse the memory hierarchy of unified-memory devices. We present Hibana, an inference engine for unified-memory devices that co-optimizes model representation, memory management, and decoding strategy. Model surgery, the process of editing a trained model's architecture to suit its hardware, changes how the model computes, shrinking its memory footprint and data movement. Unified-memory management preserves each agent's state across turns, so long-running agents can resume instantly instead of recomputing their state. Adaptive speculation generates several tokens per step. Hibana codesigns these features around the shared memory capacity and limited bandwidth of unified-memory systems-on-chip to support local multi-agent workloads. On a single DGX Spark serving Qwen and Nemotron models of up to 125B parameters, Hibana completes up to 3.4$\\times$ more agentic tasks per hour and delivers up to 3.9$\\times$ higher decoding throughput than other established frameworks such as vLLM, NVIDIA Flare, llama.cpp, and TensorFold. Code is available at https://github.com/sharar-project/hibana.",
+      "url": "https://arxiv.org/abs/2611.10469",
+      "source": "arxiv",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "categories": [
+          "cs.CL",
+          "cs.AI"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-10",
+        "created": "2026-11-10"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 7,
+      "company": [],
+      "summary": "DGX Spark 这类统一内存设备放得下大模型，但内存带宽有限，decode 常卡在读权重上，agent 的会话状态又和权重抢同一块内存。Hibana 为此改了三处：同一批请求共享一组专家，减少权重读取；不活跃会话的状态存到 SSD；投机解码每步多生成几个 token，按最近的接受率自动调整。在一台 DGX Spark 上回放录制好的 agent 会话，每小时完成的任务数最多是其他框架的 3.4 倍，各自最佳并发下的峰值 decode 吞吐最多是 3.9 倍。快速档是有损的，三比特权重和放宽校验会让部分任务的准确率掉几个点。==本地推理要省的是每个被接受的 token 背后的内存流量==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.10649",
+      "title": "MACaQ: Fast, Model Agnostic Calibrated Quantization for Low-Precision Weights and Activations",
+      "authors": "Lorenz K. Muller, Philippe Bich, Chiara Boretti, Hyun-Min Chang, Jiawei Zhuang, Lukas Cavigelli",
+      "abstract": "Weight-activation quantization can reduce the memory and compute cost of neural-network inference, but recent methods often require expensive optimization and architecture-specific propagation of basis transforms across layers. We introduce MACaQ, an MXFP4 W4A4 post-training quantization method that treats every linear layer independently. MACaQ applies a per-channel scale and a block-Hadamard transform online to each layer's activations, while absorbing the corresponding inverse transforms into its weights. Retaining these transforms online avoids cross-layer dependencies and enables a simple streaming implementation of the quantization process, in which only one layer must reside in memory at a time. To improve over round-to-nearest quantization, we introduce Flip-Refinement, a Hessian-aware coordinate-descent procedure that greedily moves individual FP4 codes to adjacent representable values. Despite executing the activation transforms at inference time, MACaQ adds only 2.3% end-to-end overhead over pure MXFP4 on Qwen3-32B in vLLM. MACaQ reaches lower perplexity than DuQuant++ and MR-GPTQ, and already matches their best perplexity on Llama-3-8B in 11 times less quantization time. We further apply MACaQ without architecture-specific modifications to an image diffusion model, illustrating the generality of its layer-local design and show quantization of a 122B parameter model in 64 minutes, using only 32.5GB GPU RAM.",
+      "url": "https://arxiv.org/abs/2611.10649",
+      "source": "arxiv",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-10",
+        "created": "2026-11-10"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "base_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 8,
+      "company": [],
+      "summary": "W4A4 量化常靠基变换把输入和权重变得好量化，过去的做法是把输入侧的变换吸收进前面的层，推理时省掉开销，代价是层与层耦合，换个架构就要重新适配。MACaQ 反过来，把每层的缩放和小块旋转留在推理时在线执行，每层独立量化，一次只需把一层放在内存里。这笔在线开销很小，在 Qwen3-32B 上端到端只多 2.3%。再用一个贪心的微调步骤把单个 FP4 编码挪到相邻取值，困惑度比 DuQuant++ 和 MR-GPTQ 更低，达到它们最好的质量时量化速度是它们的 11 倍。==在线变换的开销随层变大而摊薄，用它换层间解耦很划算==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": []
+    },
+    {
+      "id": "blog_rss:meituan_tech_blog:https://tech.meituan.com/2026/11/10/meituan-longcat-2.5-open-source.html",
+      "title": "美团 LongCat-2.5 正式开源：从看见，到抵达",
+      "authors": "",
+      "abstract": "美团正式开源 LongCat-2.5，采用MIT协议，支持商用推理部署与二次训练，无需额外授权。",
+      "url": "https://tech.meituan.com/2026/11/10/Meituan-LongCat-2.5-Open-Source.html",
+      "source": "blog_rss",
+      "published": "",
+      "discovered_at": "2026-11-10",
+      "source_type": "blog",
+      "source_detail": "meituan_tech_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "base_score": 3.65,
+      "total_score": 3.65,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.65,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 9,
+      "company": [
+        "Meituan"
+      ],
+      "summary": "万亿参数的 MoE 模型要在国产卡上训练，最现实的约束是单卡显存不足 80GB。美团开源的 LongCat-2.5 总参数 1.6 万亿，这篇博客讲了他们怎么应对。训练时用 FSDP 双重分片和扁平化缓冲区压低显存，把参数、专家 token 和 KV 的交换尽量留在超节点内部的高带宽互联里，并让通信和计算重叠执行。推理用 W4A4，专家权重和激活一起量化，专家间通信和计算全程用同一份 INT4 表示。长序列 SFT 任务上，这套 FSDP 配置的单卡吞吐比 DDP 基线高 86%。==显存和带宽的边界改不了，能改的只有架构、算子和并行策略==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": [
+        {
+          "name": "Meituan",
+          "logo": "logos/meituan.png",
+          "hue": 41
+        }
+      ]
+    },
+    {
+      "id": "blog_rss:nvidia_developer_blog:https://developer.nvidia.com/blog/start-and-restore-gpu-workloads-in-seconds-with-nvidia-snapshot",
+      "title": "Start and Restore GPU Workloads in Seconds with NVIDIA Snapshot",
+      "authors": "",
+      "abstract": "<img alt=\"Green cube with a neural-network diagram, surrounded by circular arrows beneath descending data blocks on a purple background.\" class=\"webfeedsFeaturedVisual wp-post-image\" height=\"432\" src=\"https://developer-blogs.nvidia.com/wp-content/uploads/2026/11/nvidia-snapshot-gpu-checkpoint-restore-768x432.jpg\" style=\"display: block; margin-bottom: 5px; clear: both;\" title=\"NGC - Promo - Day 0 Nemotron Tech Blog Image - 3326282\" width=\"768\" />NVIDIA Snapshot, a new open-source component of the NVIDIA DSX AI Factory Platform, makes initialized GPU workloads reusable across inference...",
+      "url": "https://developer.nvidia.com/blog/start-and-restore-gpu-workloads-in-seconds-with-nvidia-snapshot/",
+      "source": "blog_rss",
+      "published": "2026-11-10",
+      "discovered_at": "2026-11-10",
+      "source_type": "blog",
+      "source_detail": "nvidia_developer_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 2,
+        "timeliness": 5
+      },
+      "base_score": 3.65,
+      "total_score": 3.65,
+      "track_fit": "core",
+      "track_fit_penalty": 0,
+      "preference_bonus": 0,
+      "adjusted_score": 3.65,
+      "age_days": 1,
+      "eligible": true,
+      "rank": 10,
+      "company": [
+        "NVIDIA"
+      ],
+      "summary": "推理流量突增或副本故障时，空闲的 GPU 也接不上活，因为初始化一个大模型要好几分钟。NVIDIA 开源的 Snapshot 把初始化好的工作负载连同 CPU 和 GPU 内存一起存下来，在同型号 GPU、同驱动的节点上直接恢复，跳过权重加载、编译和图捕获。在 vLLM、SGLang 和 TensorRT LLM 上，恢复比冷启动快 8 到 36 倍，所有配置都在 43 秒内回来。在每个测试配置里，做一次 checkpoint 加一次恢复的总时间都短于一次冷启动。这些时间都不含拉镜像和设置容器运行时。==第一个恢复的副本就能把 checkpoint 的成本赚回来==。",
+      "key_insight": "",
+      "card_status": "done",
+      "tags": [],
+      "company_logos": [
+        {
+          "name": "NVIDIA",
+          "logo": "logos/nvidia.png",
+          "hue": 277
+        }
+      ]
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "hf_model:internlm/Sage-SciPerception",
+      "title": "internlm/Sage-SciPerception",
+      "authors": "internlm",
+      "description": "tags: scientific-perception, multimodal, projector, pytorch, chemistry, biology, materials-science, time-series",
+      "abstract": "tags: scientific-perception, multimodal, projector, pytorch, chemistry, biology, materials-science, time-series",
+      "url": "https://huggingface.co/internlm/Sage-SciPerception",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 10,
+      "language": "model",
+      "created_at": "2026-11-06",
+      "updated_at": "2026-11-06",
+      "published": "2026-11-06",
+      "discovered_at": "2026-11-10",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "internlm/Sage-SciPerception",
+        "likes": 10,
+        "downloads": 191,
+        "pipeline_tag": "",
+        "tags": [
+          "scientific-perception",
+          "multimodal",
+          "projector",
+          "pytorch",
+          "chemistry",
+          "biology",
+          "materials-science",
+          "time-series",
+          "en",
+          "zh",
+          "region:us"
+        ],
+        "created_at": "2026-11-06T07:34:30.000Z",
+        "last_modified": "2026-11-06T12:57:46.000Z"
+      },
+      "rank": 1
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3.8-Flash-Next",
+      "title": "Qwen/Qwen3.8-Flash-Next",
+      "authors": "Qwen",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen4_exp, image-text-to-text, conversational, license:other, eval-results, endpoints_compatible",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen4_exp, image-text-to-text, conversational, license:other, eval-results, endpoints_compatible",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 6897,
+      "language": "model",
+      "created_at": "2026-08-24",
+      "updated_at": "2026-11-07",
+      "published": "2026-08-24",
+      "discovered_at": "2026-11-10",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3.8-Flash-Next",
+        "likes": 6897,
+        "downloads": 3408896,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen4_exp",
+          "image-text-to-text",
+          "conversational",
+          "license:other",
+          "eval-results",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-08-24T08:24:59.000Z",
+        "last_modified": "2026-11-07T04:42:40.000Z"
+      },
+      "rank": 2
+    },
+    {
+      "id": "hf_model:deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "title": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "authors": "deepseek-ai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, deepseek_v41, text-generation, image-text-to-text, conversational, license:mit, eval-results",
+      "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 5466,
+      "language": "model",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-11-10",
+      "published": "2026-10-17",
+      "discovered_at": "2026-11-10",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "likes": 5466,
+        "downloads": 329529,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "deepseek_v41",
+          "text-generation",
+          "image-text-to-text",
+          "conversational",
+          "license:mit",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "fp8",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-10-17T02:40:38.000Z",
+        "last_modified": "2026-11-10T02:22:56.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K3.1-Pro",
+      "title": "moonshotai/Kimi-K3.1-Pro",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k31, text-generation, compressed-tensors, conversational, image-text-to-text, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k31, text-generation, compressed-tensors, conversational, image-text-to-text, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K3.1-Pro",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1852,
+      "language": "model",
+      "created_at": "2026-11-02",
+      "updated_at": "2026-11-05",
+      "published": "2026-11-02",
+      "discovered_at": "2026-11-10",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K3.1-Pro",
+        "likes": 1852,
+        "downloads": 30721,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k31",
+          "text-generation",
+          "compressed-tensors",
+          "conversational",
+          "image-text-to-text",
+          "custom_code",
+          "license:other",
+          "eval-results",
+          "endpoints_compatible",
+          "8-bit",
+          "region:us"
+        ],
+        "created_at": "2026-11-02T04:13:51.000Z",
+        "last_modified": "2026-11-05T07:11:43.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3.8-2.4T-A95B",
+      "title": "Qwen/Qwen3.8-2.4T-A95B",
+      "authors": "Qwen",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, qwen3_5_moe_text, text-generation, conversational, license:other, eval-results, endpoints_compatible",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, qwen3_5_moe_text, text-generation, conversational, license:other, eval-results, endpoints_compatible",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 1381,
+      "language": "model",
+      "created_at": "2026-08-08",
+      "updated_at": "2026-11-07",
+      "published": "2026-08-08",
+      "discovered_at": "2026-11-10",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3.8-2.4T-A95B",
+        "likes": 1381,
+        "downloads": 26226,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5_moe_text",
+          "text-generation",
+          "conversational",
+          "license:other",
+          "eval-results",
+          "endpoints_compatible",
+          "region:us"
+        ],
+        "created_at": "2026-08-08T01:50:52.000Z",
+        "last_modified": "2026-11-07T04:46:47.000Z"
+      },
+      "rank": 5
+    }
+  ],
+  "warnings": [
+    "Semantic Scholar unavailable: DNS resolution failed; source contributed 0 items.",
+    "Full arXiv abstracts restored verbatim from read-only listing cache; blog abstracts retain original RSS excerpts.",
+    "Three official blog pages could not be fetched by web tool; scored conservatively using prefetched RSS."
+  ],
+  "scenario_by": "grok-bot"
+}
