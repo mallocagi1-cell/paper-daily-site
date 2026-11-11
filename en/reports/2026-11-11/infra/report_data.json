@@ -1,7 +1,7 @@
 {
   "date": "2026-11-11",
   "track": "infra",
-  "scenario": "The main thread in this track today is that inference stacks are being rebuilt around the shape of new workloads. Generative recommendation and agents break old assumptions: RecoGEM rewrites serving for short sequences and huge candidate sets, and PACE finds that keeping tokens in the KV cache is not enough, since they also have to stay close to the query. GPU startup time has also moved onto the critical path, with Firepool removing the wait from the loop through warm pools and NVIDIA Snapshot directly restoring initialized state. Hibana and AdaOffload schedule expert weights on machines short of memory and bandwidth, and Detent stops the other requests in a batch from affecting output bits.",
+  "scenario": "Today's thread in this track is recalculating inference costs around the real shape of each workload. RecoGEM finds that the cost of generative recommendation concentrates in short sequences over large candidate sets, which calls for a dedicated serving system, while Meta's TLX lets ML engineers write kernels close to the hardware themselves. PACE shows that a long-session agent has to keep tokens close to the query as well as keep them at all. Firepool and NVIDIA Snapshot both shorten the wait for GPU startup, AdaOffload and Hibana schedule expert weights on memory-constrained machines, and Detent stops other requests in a batch from changing a request's output bits.",
   "scenario_status": "done",
   "stats": {
     "papers_scored": 215,
@@ -257,7 +257,7 @@
       "eligible": true,
       "rank": 1,
       "company": [],
-      "summary": "Generative recommendation decodes token by token just like an LLM, yet moving an LLM serving stack over works poorly, and this Kuaishou paper on RecoGEM explains why. LLM attention cost sits in long sequences, while each candidate in generative recommendation reads only a few SID tokens, so the cost moves to a huge number of short rows after beam expansion. Every step also has its own vocabulary and tensor shape, and top-k selection becomes heavy work on the critical path. The team hands candidate state between steps and live updates to a separate runtime, and compiles the engine separately for the shape of each step. On the production OneModel workload, one serving instance exceeds 1000 QPS with P99 below 35 ms, and throughput is 2.88 times that of the same system with a uniform shape and ordinary kernels. ==The cost of generative recommendation concentrates in short sequences over large candidate sets, so serving has to be designed around that shape.==",
+      "summary": "Generative recommendation has the model generate an item's SID token by token like an LLM, so LLM serving stacks look reusable, yet they run poorly because they assume every step has the same shape and attention cost sits in long sequences. This Kuaishou paper on RecoGEM spells out the difference: each candidate reads only a few SID tokens, but beam expansion creates a huge number of independent short sequences, so the fixed overhead of long-sequence kernels cannot be spread out. Every step also has its own vocabulary and tensor shape, and top-k must pick a large set of survivors after each step, which makes it heavy work on the critical path. The team hands candidate state between steps and live updates to a separate runtime, and compiles the engine for the shape of each step. On the production OneModel workload, one serving instance exceeds 1000 QPS with P99 below 35 ms, and throughput is 2.88 times that of the same system with a uniform shape and ordinary kernels. ==To cost out generative recommendation, look at beam width and candidate selection, since sequence length is not the main expense.==",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -267,8 +267,8 @@
         "paper_id": "arxiv:2611.12296",
         "title": "RecoGEM: A Serving System for Production-Scale Generative Recommendation",
         "slug": "recogem-serving-system-production-scale-generative",
-        "chars": 10511,
-        "minutes": 27
+        "chars": 20039,
+        "minutes": 51
       }
     },
     {
@@ -312,7 +312,7 @@
       "company": [
         "LinkedIn"
       ],
-      "summary": "Agents and RL training issue huge numbers of GPU jobs that run for seconds, yet starting a Pod takes twenty to thirty seconds, and LinkedIn built Firepool to remove that wait. The hard part of a warm pool is that the next job must be able to use an existing Pod, so Pods of one hardware profile share a base image, and code and dependencies are installed only when a job starts. A Pod is reused only for the caller that last used it, and when the caller or session changes, a standby Pod on the same card that holds no GPU memory takes over in under a second. During a sampled production peak, 94.7% of Pod requests were served from warm or standby capacity. Under a two-GPU cap, agent and RL loops finished 13 times and 10.8 times faster than with a new Pod per job. ==The advantage disappears once jobs get long, because only startup time is saved.==",
+      "summary": "Agents and RL training issue thousands of GPU jobs that run for seconds, yet starting a Pod takes twenty to thirty seconds even with the image cached, so waiting outweighs the work. Common fixes each miss something: caching images does not remove scheduling and initialization, a persistent Ray cluster holds GPUs idle between steps, and a warm pool of ready Pods often goes unused because the next job needs a different environment. LinkedIn's Firepool has Pods of one hardware profile share a base image and installs code and dependencies only when a job starts, which makes Pods interchangeable. For isolation, a Pod is reused only for the caller that last used it, and when the caller changes, a standby Pod on the same card that holds no GPU memory takes over. During a sampled production peak, 94.7% of Pod requests were served from warm or standby capacity. Under a two-GPU cap, the agent loop finished 13 times faster than with a new Pod per job, and the advantage disappears once jobs get long. ==Before running agent evaluation or RL, measure how much time goes to waiting for Pods.==",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -328,8 +328,8 @@
         "paper_id": "arxiv:2611.10832",
         "title": "Firepool: Brokering Warm GPU Capacity for Agentic and RL Workloads at LinkedIn",
         "slug": "firepool-brokering-warm-gpu-capacity-agentic-rl-workloads",
-        "chars": 8841,
-        "minutes": 23
+        "chars": 21818,
+        "minutes": 55
       }
     },
     {
@@ -364,7 +364,7 @@
       "company": [
         "Meta"
       ],
-      "summary": "The performance of recent GPUs depends more and more on how groups of threads divide the work, for example one group moving data while another multiplies matrices. CUDA can express this division but needs large amounts of architecture-specific orchestration code, and Triton hides it inside the compiler. Meta added a layer called TLX on top of Triton, so engineers keep writing Python and spell out thread-group roles and synchronization only where it matters. For recommendation engineers, the most concrete example is user features at scoring time, since the same features are typically copied dozens of times to match the candidates. Meta moved that copy inside the kernel and changed the model along with it, cutting compute-intensive net latency by up to two thirds. Training of the GEM ads model reached 20% to 25% end-to-end MFU on several thousand Blackwell GPUs. ==Kernel optimization is becoming a routine tool for ML engineers.==",
+      "summary": "The performance of recent GPUs depends more and more on how groups of threads divide the work, for example one group moving data while another multiplies matrices. CUDA can express this division but needs large amounts of architecture-specific orchestration code. Triton is quick to write but hides the division inside the compiler, so with each hardware generation engineers often wait for the compiler. Meta added a layer called TLX on top of Triton, so engineers keep writing Python and spell out thread-group roles and synchronization only where it matters. For recommendation engineers, the most concrete example is user features at scoring time: the same features are typically copied dozens of times to match the candidates, wasting memory bandwidth and compute with a cost that grows linearly in the number of candidates. Meta moved that copy inside the kernel and changed the model and inference runtime along with it, cutting compute-intensive net latency by up to two thirds. ==Kernel optimization is becoming a routine tool for ML engineers,== and the more candidates a model scores, the earlier this kind of change deserves a look.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -415,7 +415,7 @@
       "eligible": true,
       "rank": 4,
       "company": [],
-      "summary": "The same request can produce different output bits just because the other requests in its batch changed. On GSM8K, changing only the load changes the answers of SGLang with standard settings on 33 problems. The root cause is that engines pick kernels from the state of the batch, and two kernels computing the same sum can round it differently. Detent writes the kernel selection logic as a program it can analyze, finds the fewest values that must be fixed, and tunes those values per workload before deployment, keeping all the fast kernels. Once tuned, latency per output token is 1.04 to 1.17 times that of standard settings, while the engines' own deterministic modes cost far more. A trainer using the same kernels and fixed values matches the rollout bit for bit. ==Many fast kernels are unaffected by the batch on their own, so only a few values read during selection need fixing.==",
+      "summary": "The same request can produce different output bits just because the other requests in its batch changed, so evaluations cannot be reproduced and an RL trainer recomputing a rollout cannot match it. The engines' own deterministic modes keep one conservative kernel per operator, with latency reaching 10.3 times the standard settings. The root cause is in the selection step: engines pick kernels and parameters from quantities such as the batch's token count, two kernels computing the same sum can round it differently, and many fast kernels are unaffected by the batch on their own. Detent writes the kernel selection logic as a program it can analyze, finds the fewest values that must be fixed, tunes them per workload before deployment, and keeps all the fast kernels. Once tuned, latency per output token is 1.04 to 1.17 times that of standard settings, and a trainer using the same kernels and fixed values matches the rollout bit for bit. ==Reproducible evaluation and RL training need not give up fast kernels for determinism,== though the fixed values must be tuned again when the traffic pattern changes.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -425,8 +425,8 @@
         "paper_id": "arxiv:2611.10611",
         "title": "Detent: Batch-Invariant LLM Serving and RL Rollouts at Near-Stock Speed",
         "slug": "detent-batch-invariant-llm-serving-rl-rollouts-near-stock",
-        "chars": 12500,
-        "minutes": 32
+        "chars": 24661,
+        "minutes": 62
       }
     },
     {
@@ -467,7 +467,7 @@
       "eligible": true,
       "rank": 5,
       "company": [],
-      "summary": "Each token in an MoE model activates only a few experts, so most expert weights can live in host memory and run on demand. Existing expert offloading systems mostly target a single GPU or large offline batches, and on some of them throughput even falls as GPUs are added. AdaOffload shards experts evenly across all GPUs, shards them separately on the CPU according to NUMA layout, and combines offline hardware profiles with expert loads observed online to decide in real time what share of cache-missed experts to fetch to the GPU. Across three open-weight models and five platforms, average decode throughput on reasoning workloads is 1.9 to 15.5 times that of the strongest baseline. ==The best division of work between CPU and GPU changes with hardware and load, and a fixed policy cannot keep up.==",
+      "summary": "Each token in an MoE model activates only a few experts, so most expert weights can live in CPU memory while the GPU caches a subset, and a missed expert either has its weights fetched to the GPU or runs on the CPU. This is called expert offloading, and existing systems mostly target a single GPU or large offline batches. A fixed division of work between CPU and GPU can even make throughput fall as GPUs are added. AdaOffload shards each expert evenly across all GPUs, shards separately on the CPU according to NUMA layout, and combines offline hardware profiles with expert loads observed online to decide in real time what share of missed experts to fetch to the GPU. Across three open-weight models and five platforms, average decode throughput on reasoning workloads is 1.9 to 15.5 times that of the strongest baseline. ==The best division of work between CPU and GPU changes with hardware and load, and a fixed policy cannot keep up.== Search and recommendation teams hosting their own models can rent fewer GPUs when memory is short.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -513,7 +513,7 @@
       "eligible": true,
       "rank": 6,
       "company": [],
-      "summary": "The KV cache of a long-session agent does not fit on one GPU, so only a small share of tokens can stay, and the usual assumption is that keeping the right ones is enough. This paper finds it is not: with almost all needed tokens kept, accuracy still falls from 93% to 64% as definitions move further from where they are used. The tokens are still there, but their rotary-position distance to the query is so large that the model uses them poorly. PACE has the agent's planner tell the cache what later steps will read, then renumbers the kept tokens so the distance stays small. In a pre-registered evaluation on fresh tasks it passes 97% of hidden unit tests, and each of its two parts alone falls far short. This result uses the true dependency graph, and the tasks are synthetic coding sessions. ==Besides keeping tokens, a KV cache has to keep them close to the query.==",
+      "summary": "The KV cache of a long-session agent does not fit on one GPU, so the system keeps only a small share of tokens and evicts the rest. Eviction methods compete on what to keep, assuming that keeping the needed tokens is enough. This paper finds it is not: in long coding sessions, with almost all needed tokens kept, the pass rate still falls from 93% to 64% as definitions move further from where they are used. The tokens are still there, but their rotary-position distance to the query is so large that the model uses them poorly. PACE has the agent's planner tell the cache what later steps will read, then renumbers the kept tokens so they always stay close to the query. In a pre-registered evaluation it passes 97% of hidden unit tests, and each of its two parts alone falls far short. This result uses the true dependency graph and synthetic coding sessions. ==Besides keeping tokens, a KV cache has to keep them close to the query.== A search or recommendation agent with a task plan can hand it to the cache.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -558,7 +558,7 @@
       "eligible": true,
       "rank": 7,
       "company": [],
-      "summary": "Unified-memory devices such as the DGX Spark can hold large models, but memory bandwidth is limited, so decode is often stuck reading weights, and agent session state competes with those weights for the same memory. Hibana changes three things in response: requests in a batch share one set of experts to cut weight reads, inactive session state moves to SSD, and speculative decoding generates several tokens per step with the number adjusted from recent acceptance rates. Replaying recorded agent sessions on one DGX Spark, it completes up to 3.4 times as many tasks per hour as other frameworks, and peak decode throughput at each system's best concurrency reaches up to 3.9 times. The fast profile is lossy, and three-bit weights and relaxed verification cost a few points of accuracy on some tasks. ==Local inference has to save the memory traffic behind each accepted token.==",
+      "summary": "Unified-memory devices such as the DGX Spark let the CPU and GPU share one memory and can hold large models. Memory bandwidth is limited, so decode is often stuck reading weights, and agent session state competes with those weights for memory. vLLM and SGLang mainly target datacenter GPUs, while local engines underuse this memory layout. Hibana changes three things in response: requests in a batch share one set of experts to cut weight reads, inactive session state moves to SSD, and speculative decoding generates several tokens per step with the length adjusted from acceptance rates. Replaying recorded agent sessions on one DGX Spark, it completes up to 3.4 times as many tasks per hour as other frameworks, and peak decode throughput at each system's best concurrency reaches up to 3.9 times. The fast profile is lossy, and three-bit weights and relaxed verification cost a few points of accuracy on some tasks. ==Local inference has to save the memory traffic behind each accepted token.== When running several agents on a device, choose an engine by concurrency and cache hits together.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -602,7 +602,7 @@
       "eligible": true,
       "rank": 8,
       "company": [],
-      "summary": "W4A4 quantization often relies on basis transforms that make inputs and weights easier to quantize, and prior work absorbs the input-side transform into earlier layers, which saves inference cost but couples layers together and requires new adaptation for each architecture. MACaQ goes the other way and keeps each layer's scaling and small-block rotation online at inference time, so every layer is quantized independently and only one layer needs to be in memory at a time. The online cost is small, adding only 2.3% end to end on Qwen3-32B. A greedy refinement step then moves individual FP4 codes to adjacent values, giving lower perplexity than DuQuant++ and MR-GPTQ, and it matches their best quality with 11 times less quantization time. ==The online cost gets diluted as layers grow, which makes it a good price for decoupling the layers.==",
+      "summary": "Compressing both weights and activations to 4 bits saves memory and compute, and a common trick is a basis transform that makes inputs and weights easier to quantize. Inputs need the same transform at inference, and prior work absorbs it into earlier layers to avoid that cost, which couples layers together, requires new adaptation for each architecture and slows quantization. MACaQ goes the other way and keeps each layer's scaling and small-block rotation online at inference time, so every layer is quantized independently and only one layer needs to be in memory at a time. The online cost is small, adding only 2.3% end to end on Qwen3-32B. A greedy refinement step then moves individual FP4 codes to adjacent values, giving lower perplexity than DuQuant++ and MR-GPTQ, and it matches their best quality with 11 times less quantization time. ==The online cost gets diluted as layers grow, which makes it a good price for decoupling the layers.== Teams deploying new architectures no longer need to adapt quantization for each one.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -640,7 +640,7 @@
       "company": [
         "Meituan"
       ],
-      "summary": "To train a trillion-parameter MoE model on domestic Chinese accelerators, the practical constraint is that each card has under 80GB of memory. Meituan's open-source LongCat-2.5 has 1.6 trillion parameters in total, and this post explains how the team coped. Training uses FSDP double sharding and flattened buffers to lower memory use, keeps parameter, expert token and KV exchanges inside the high-bandwidth interconnect of a supernode where possible, and overlaps communication with computation. Inference uses W4A4, quantizing expert weights and activations together, and one INT4 representation runs through expert communication and computation. On long-sequence SFT tasks, this FSDP configuration raises per-card throughput by 86% over a DDP baseline. ==Memory and bandwidth limits are fixed, so only architecture, operators and parallel strategy can change.==",
+      "summary": "Long-sequence training and fine-tuning of a trillion-parameter MoE model on domestic Chinese accelerators runs into a practical limit of under 80GB of memory per card, with tight bandwidth too, so architecture and parallelism have to be traded off repeatedly. Meituan's open-source LongCat-2.5 has 1.6 trillion parameters in total, and this post explains how the team coped. Training uses FSDP double sharding and flattened buffers to lower memory use, keeps parameter, expert token and KV exchanges inside the high-bandwidth interconnect of a supernode where possible, and overlaps communication with computation. Inference quantizes expert weights and activations together to 4 bits, and one INT4 representation runs through expert communication and computation, which cuts data movement and conversion. On long-sequence SFT tasks, this FSDP configuration raises per-card throughput by 86% over a DDP baseline. ==Memory and bandwidth limits are fixed, so only architecture, operators and parallel strategy can change.== Search and recommendation teams training large models on domestic accelerators can take this configuration as a starting point.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
@@ -684,7 +684,7 @@
       "company": [
         "NVIDIA"
       ],
-      "summary": "When inference traffic spikes or a replica fails, idle GPUs still cannot take the work, because initializing a large model takes minutes. NVIDIA's open-source Snapshot saves a fully initialized workload together with its CPU and GPU memory, and restores it on a node with the same GPU model and driver, skipping weight loading, compilation and graph capture. On vLLM, SGLang and TensorRT LLM, restoring is 8 to 36 times faster than a cold start, and every configuration comes back within 43 seconds. In every tested configuration, one checkpoint plus one restore takes less time than a single cold start. These times exclude pulling the image and setting up the container runtime. ==The first restored replica already pays back the cost of the checkpoint.==",
+      "summary": "When inference traffic spikes or a replica fails, idle GPUs still cannot take the work, because a cold start often takes minutes and holds up both scaling and recovery. NVIDIA's open-source Snapshot saves a fully initialized workload together with its CPU and GPU memory as a checkpoint, and restores it on a node with the same GPU model and driver, skipping weight loading, compilation and graph capture. On vLLM, SGLang and TensorRT LLM, restoring is 8 to 36 times faster than a cold start, every configuration comes back within 43 seconds, and for large MoE models the slowest stage is writing GPU state back to GPU memory. In every tested configuration, one checkpoint plus one restore takes less time than a single cold start. These times exclude pulling the image and setting up the container runtime. ==The first restored replica already pays back the cost of the checkpoint.== Teams serving large models for search or recommendation can cut the scaling wait from minutes to under a minute.",
       "key_insight": "",
       "card_status": "done",
       "tags": [],
