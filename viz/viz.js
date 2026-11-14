@@ -1,11 +1,9 @@
-/* Paper Daily 图解 (2026-10-28). Optional: panels are expanded by default; without JS 收起 (#vzc-id) / the chip (#vz-id) collapse / reopen via CSS.
-   Adds: in-place toggle without a jump, live slider (interpolates precomputed samples, never evaluates a formula),
-   strip arrows + k/N (arrows step from the target step, k/N updates on click). Changes nothing on load (no layout shift); collapse = .shut, reopen = .open. */
+/* Paper Daily Hoot 说 (see src/viz.py): no-jump toggle (.open/.shut), slider, strip arrows. Nothing changes on load. */
 (function(){
 function set(c,p,o){p.classList.toggle('open',o);p.classList.toggle('shut',!o);c.setAttribute('aria-expanded',o?'true':'false')}
 function tidy(c,p){if(location.hash=='#'+p.id||location.hash=='#'+c.id)history.replaceState(null,'',location.pathname+location.search)}
 document.querySelectorAll('[data-vz-chip]').forEach(function(c){var p=document.getElementById(c.getAttribute('aria-controls'));if(!p)return;
- if(getComputedStyle(p).display=='none')c.setAttribute('aria-expanded','false');
+ if(getComputedStyle(p).display!='none')c.setAttribute('aria-expanded','true');
  c.addEventListener('click',function(e){e.preventDefault();var o=getComputedStyle(p).display=='none';tidy(c,p);set(c,p,o)});
  var x=p.querySelector('.vz-close');x&&x.addEventListener('click',function(e){e.preventDefault();tidy(c,p);set(c,p,false);c.focus({preventScroll:true});
   if(c.getBoundingClientRect().top<0)c.scrollIntoView({block:'center'})})});
