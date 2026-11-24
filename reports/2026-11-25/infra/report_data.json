@@ -1,0 +1,670 @@
+{
+  "date": "2026-11-25",
+  "track": "infra",
+  "scenario": "今日基础设施这一侧，争论集中在服务时怎样少占显存、少等计算，又尽量不改答案。有的把语义计数做成秒级近似，查询时不再请昂贵模型当场打标；有的重写 Hopper 上的 4 比特缓存解码，或把索引状态分层暂存。精确最近邻可以在十亿向量上几秒内完成，而所谓精确的服务特性仍可能改写个别请求的对错。结构化输出把语法当成起草器，并行推测则补上块内前缀信息。压缩 KV cache 的工作则分别从训练表示和权重补丁两端入手。",
+  "scenario_status": "done",
+  "stats": {
+    "papers_scored": 214,
+    "papers_selected": 10,
+    "score_min": 3.85,
+    "score_max": 4.5
+  },
+  "papers": [
+    {
+      "id": "arxiv:2611.30779",
+      "title": "SignalCount: Approximate Counts with Structured and Semantic Predicates in Seconds",
+      "authors": "Matteo Agius-D', Zachary Zelner, Harrison Ju, Rushab Munot Arrigo",
+      "abstract": "Many applications store records with structured columns and a text document, and ask how many records in a filtered set meet a criterion that only a reader of the text can judge, such as \"How many patients with type 2 diabetes, aged 40 to 70, stopped metformin because their blood sugar stayed high?\" An interactive application needs this count in seconds, as the user types the criterion, to decide whether the matching set is worth materializing with a batch pipeline in which an LLM judges the records. Prior approximate query processing over such semantic predicates has an expensive model, the oracle, label a sample at query time, so every query waits for the oracle. We present SignalCount, a production system that answers COUNT queries with structured and semantic predicates and calls no oracle at query time, even for ad-hoc criteria. Its oracle is the production LLM judge, and the judge's logged verdicts calibrate, offline, the fast classifier that already runs in front of the judge. At query time, SignalCount counts the filtered set exactly and draws a uniform sample of at most 1,000 records in one columnar scan, scores the sample with the classifier, and multiplies the average calibrated probability by the exact count. Its 90% interval combines a sampling term with one-sided, rate-dependent margins for calibration error, fitted by split conformal prediction across tenants. In a multi-tenant production deployment, latency has a p99 of 3.8 s and stays flat as the filtered set grows beyond the sample. On tenants held out from fitting, the interval covers the count that the production pipeline returns in 92% of estimates, although estimates run about 15% high in aggregate, because a calibration nearly unbiased per record is still biased per criterion.",
+      "url": "https://arxiv.org/abs/2611.30779",
+      "source": "arxiv",
+      "published": "2026-11-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.AI",
+        "categories": [
+          "cs.DB",
+          "cs.AI"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-24",
+        "created": "2026-11-24"
+      },
+      "company": [],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 4.5,
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.58,
+      "summary": "要先判断有多少条记录符合一段只能靠读正文才能判断的标准，比如某类病人为什么停药，应用得在几秒内给出数目，再决定要不要开批处理。以往做法查询时还要让昂贵模型给样本打标，用户只能等。新系统用线上判定器已经留下的日志，离线校准一个快分类器，查询时不再调用那个判定器。它最多抽样一千条记录，用校准后的平均概率乘上过滤后的精确条数。在多租户生产环境里，延迟的 p99 是 3.8 秒；在拟合时未见到的租户上，标称区间能盖住线上回传计数的 92%，不过估计整体大约偏高 15%。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 1,
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.30027",
+      "title": "Fast 4-bit KV-Cache Decoding on Hopper GPUs: Why Existing Kernels Are Slow and How to Fix Them",
+      "authors": "Jian Zhang",
+      "abstract": "A 4-bit KV cache reads about half the bytes of FP8, but Hopper GPUs have no FP4 hardware and little instruction-issue capacity per byte of memory bandwidth, so 4-bit values must be decoded in software. On H200, vLLM's NVFP4 KV path (FlashInfer's decode) reaches 10-20% of memory bandwidth and is up to 1.7x slower than FP8. NVBit instruction counts show two causes: the kernels behind vLLM's 4-bit paths (FlashInfer NVFP4, Triton UltraQuant) execute 2-6x Hopper's issue budget per byte and serialize loading, decoding and matrix multiplies. Our Hopper-native decode kernel overlaps a TMA producer warp with two compute warpgroups, lays the cache out at write time so decoded values feed the tensor cores from registers, and swaps the matrix operands so small query groups need no padding. On H200 it reaches 67-75% of peak bandwidth at batch 32-128 and at all 11 shapes is 1.12-1.49x faster than the faster of XQA and FlashAttention-4's proposed native FP8. Inside vLLM, with an accuracy recipe (K mean removal and rotation, 4 BF16 sink tokens, BF16 layer 0), it decodes 1.12-1.64x faster per step on Llama-3.1-8B than vLLM's FlashInfer FP8 path at batch 8 and above (1.04-1.24x over FlashAttention-4's FP8), is level at batch 1, and holds 1.63x as many tokens. On one H200 under a reasoning-like request stream, the highest rate at which 99% of requests meet the latency targets is 1.23-1.32x FP8's on Llama-3.1-8B and 1.67-2.20x on Qwen2.5-72B, as the cache becomes the limit; prefill-heavy streams are worse (7% slower prefill). On five 7B-32B models, repeated runs show no significant accuracy difference from BF16 KV. In Qwen2-family models, whose reasoning variants collapse under FP8 KV, layer 0's key mean is almost entirely the key-projection bias identified by prior work, seen through RoPE and computable from the weights alone; keeping that layer in BF16 restores FP8 KV and, with K mean removal, 4-bit KV.",
+      "url": "https://arxiv.org/abs/2611.30027",
+      "source": "arxiv",
+      "published": "2026-11-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG",
+          "cs.DC",
+          "cs.PF"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-24",
+        "created": "2026-11-24"
+      },
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 5,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 4.45,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.5,
+      "summary": "把 KV cache 压到四比特，读写量大约只有 FP8 的一半，但 Hopper 没有 FP4 硬件，现有内核还得靠软件解码。在 H200 上，vLLM 的 NVFP4 路径最多比 FP8 慢 1.7 倍，带宽利用率也很低。新的解码内核让取数和计算重叠，并在写入时排好布局，使解码结果能从寄存器进入张量核心。接入 vLLM 后，在中等规模的 Llama 3.1 上，中等批量每步解码可比 FlashInfer 的 FP8 路径快 1.12 到 1.64 倍，同一块缓存也能多放下不少 token。在五个中等规模模型上，反复测试与 BF16 KV 没有显著精度差异。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 2,
+      "company_logos": []
+    },
+    {
+      "id": "web:meta-template-driven-ml-20261118",
+      "title": "Design Once, Deploy at Scale: Building a Template-Driven ML Ecosystem",
+      "url": "https://engineering.fb.com/2026/11/18/ml-applications/design-once-deploy-at-scale-template-driven-ml-ecosystem/",
+      "authors": "Anirudh Agrawal, Djordje Gligorijevic, Yao Xuan, Peggy Yao, Jiang Liu, John Martabano Landy, Rahul Suresh",
+      "source": "web_search",
+      "source_type": "blog",
+      "company": [
+        "Meta"
+      ],
+      "published": "2026-11-18",
+      "discovered_at": "2026-11-25",
+      "abstract": "In practice, we use a small set of templates that cover major ranking and retrieval patterns across different model sizes.",
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 5,
+        "timeliness": 4
+      },
+      "track_fit": "core",
+      "total_score": 4.4,
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.48,
+      "summary": "大型排序和召回舰队里，每个模型都单独试新方法，工程时间会堆在重复劳动上。Meta 用少量覆盖主要排序和召回模式的模板，把成熟改动一次设计后批量套到不同规模的模型上。过去两年，单模型工程时间因此减少了 92%，离线质量在不增加在线容量的前提下平均提高 0.63%，累计线上收益 0.86%。模板也把可复用的改进留给后续模型，而不是让每个模型从零开始。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 3,
+      "company_logos": [
+        {
+          "name": "Meta",
+          "logo": "logos/meta.png",
+          "hue": 50
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.29252",
+      "title": "Zarc: Exact Nearest Neighbors over a Billion Vectors in Seconds",
+      "authors": "Dongfang Zhao",
+      "abstract": "Exact k-nearest-neighbor vector search lies on the critical path of machine learning systems, from sparse attention in the latest large language models (LLMs) to long-context memories and training-data deduplication. Exhaustive GPU search scans the whole dataset for every query, while approximate indexes return inexact neighbors. Recent methods skip almost every vector with a cheap half-precision proof that it lies too far away, but only on one GPU that holds the whole dataset. Our insight is to keep only the short rows of these proofs in GPU memory and to fetch the few remaining full vectors from host memory. Our system, Zarc, answers Euclidean, cosine, inner-product, and filtered queries exactly under updates. On four H100 GPUs, it answers 10,000 exact queries over one billion vectors in 1.1 seconds instead of five minutes. On eleven open LLMs, it retrieves the exact top-10 attention keys 2.2x to 13.1x faster than exhaustive search. In sparse attention over one million tokens, it runs 3.1x faster than bf16 selection with FlashInfer, which misses the exact top-64 for most queries.",
+      "url": "https://arxiv.org/abs/2611.29252",
+      "source": "arxiv",
+      "published": "2026-11-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.IR",
+        "categories": [
+          "cs.DC",
+          "cs.DB",
+          "cs.IR",
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-24",
+        "created": "2026-11-24"
+      },
+      "company": [
+        "University of Washington"
+      ],
+      "scores": {
+        "business_relevance": 5,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 4.4,
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.48,
+      "summary": "精确最近邻往往要么扫完整库，要么退回近似结果；已有的半精度证明又能跳过大部分向量，却通常要求整库都放在一块 GPU 上。新系统只把短证明行放在 GPU 内存，其余完整向量按需从主机内存取回，因而能在更新下回答欧氏、余弦、内积和带过滤的精确查询。四张 H100 上，它在 1.1 秒内完成十亿向量上的一万次精确查询，穷举则要五分钟。在多个开源大模型上，取精确 top-10 注意力键比穷举快 2.2 到 13.1 倍。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 4,
+      "company_logos": [
+        {
+          "name": "University of Washington",
+          "logo": "logos/university-of-washington.png",
+          "hue": 232
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.29663",
+      "title": "Exact on Paper: Which LLM Serving Shortcuts Flip Graded Answers, Measured Against the Noise of Reordering the Same Requests",
+      "authors": "Sharven Rane",
+      "abstract": "Teams enable serving features such as prefix caching, chunked prefill and speculative decoding after checking that benchmark accuracy is unchanged, because the engine documents them as exact. Accuracy is an aggregate, so a feature can hold it while flipping which requests are answered correctly. We serve one 4B instruction model in vLLM under nine single feature configurations and five replicas of a reference configuration, grade 3,380 requests from five benchmarks in every run, and compare each candidate with a restart floor (fresh process) and a scheduling floor (same requests in a different order). With default kernels every configuration keeps accuracy within one point, and the seven exact features flip the graded outcome of 1.47% (95% CI 1.13 to 1.85) to 1.78% (1.39 to 2.20) of requests, none above the scheduling floor of 1.72%, while the FP8 KV cache flips 3.36% (2.80 to 3.96), as many as FP8 weights. With batch invariant kernels all seven exact features, speculative decoding included, reproduce the reference text on every request, while the FP8 KV cache still flips 3.91% (3.28 to 4.53) of graded outcomes. A gate that compares against a single replica pair rejected an unchanged configuration, so we recommend certifying a serving change under batch invariant kernels, where the floor is zero, or against a scheduling floor measured from at least three replicas.",
+      "url": "https://arxiv.org/abs/2611.29663",
+      "source": "arxiv",
+      "published": "2026-11-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-24",
+        "created": "2026-11-24"
+      },
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 4.1,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "summary": "服务端常在确认基准准确率不变后打开前缀缓存、分块预填充或推测解码，因为文档把它们写成精确特性。准确率是汇总指标，特性仍可能改写哪些请求答对。作者用同一个中小指令模型，在约三千条请求上比较九种单特性配置。默认内核下，七个所谓精确特性会改写 1.47% 到 1.78% 请求的对错，都不超过把同样请求换个顺序带来的 1.72% 底线。FP8 KV cache 则会改写 3.36%。换上批不变内核后，这七个特性能逐字复现对照，FP8 KV 仍会改写结果。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 5,
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.28625",
+      "title": "IndexerStage: Staging Indexer-K across Memory Tiers for Sparse-Attention LLM Serving",
+      "authors": "Xin Zhang, Weifeng Zhang, Xianyan Xie, Huijun Shen, Xijin Yin, Zhen He, Yinben Xia, Xiang Li, ZeKun He, Yachen Wang, Xianneng Zou, Guo Chen",
+      "abstract": "Long-context sparse-attention serving can remain limited by graphics processing unit (GPU) memory after attention data is offloaded. DeepSeek Sparse Attention retains Indexer-K state to select the tokens that attention will read. Its indexer scans this growing state in full at every layer and decode step. A full scan requires the current layer's state, however, not simultaneous residency of every layer. We present IndexerStage, a serving runtime that externalizes Indexer-K state while preserving native GPU score, top-k, and attention kernels. It stages completed pages through shared execution buffers and preserves new entries locally. Joint memory-and-transfer admission checks storage and each layer's transfer demand before accepting a growing batch. The backing tier gathers pages; the model-serving GPU controls transfer timing and byte budgets. We implement IndexerStage in SGLang on 16 model-serving and 16 backing H800 GPUs. Across 16K--64K inputs, local streaming storage occupies 0.65--0.70 GiB per model-serving GPU. Relative to host-memory-backed HiSparse, batch size increases by 12.28--23.08% and decode throughput in tokens per second (TPS) reaches 1.08--1.14x. At 64K with the latent-KV backing path fixed, the larger batch achieves 1.10x decode TPS; enabling streaming at batch size 24 adds 2.42% to time per output token. Mixed-length dynamic serving increases mean generating batch size by 12.07% and delivers 1.31x decode TPS.",
+      "url": "https://arxiv.org/abs/2611.28625",
+      "source": "arxiv",
+      "published": "2026-11-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.DC",
+        "categories": [
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-24",
+        "created": "2026-11-24"
+      },
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 4.1,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "summary": "长上下文稀疏注意力把注意力数据卸到别处后，用来选 token 的 Indexer-K 仍可能把 GPU 内存撑满。新运行时把已完成页暂存到共享缓冲区，本层新条目先留在本地，并在扩批前检查存储和传输预算，同时保留原来的打分、top-k 和注意力内核。在十六张模型服务 GPU 和十六张后备 H800 上，相对主机内存版 HiSparse，批量可增加 12.28% 到 23.08%。解码吞吐达到 1.08 到 1.14 倍。混长动态服务里，平均在生成批量和服务吞吐也一并提高。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 6,
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.28349",
+      "title": "Grammar-as-a-Draft: More Tokens per Speculative Decoding Step on Grammar-Constrained Structured Outputs",
+      "authors": "John Zhang, Silky Arora",
+      "abstract": "Under structured outputs (JSON schemas, regexes, tool calls), speculative drafters do not see the grammar constraint and repeatedly propose invalid keys, delimiters, and indentation, while the grammar engine already knows which tokens must come next. We present Grammar-as-a-Draft (GaaD), which treats the grammar as a second drafter. Before each verify step, the scheduler merges the drafter's proposal with grammar-forced tokens into one draft row: matching tokens stay as GRAMMAR, the proposal is cut where it leaves the forced path, and forced tokens fill the rest of a row wider than the drafter's proposal. The verify step accepts GRAMMAR drafts without computing their logits, composing with any drafter with no new kernels or compilation on the critical path. Because grammars fix text rather than tokens, committing canonical forced tokens changes the output distribution relative to grammar-masked target decoding. We implement GaaD in vllm-torchtpu and an independent Rust serving runtime, evaluating on TPU v7x with MTP, DFlash, and n-gram drafters on a JSON character-profile benchmark. GaaD raises average acceptance length from 2.06 to 5.43 (MTP, Qwen3.5-0.8B), 1.99 to 5.31 (MTP, Qwen3.5-35B-A3B), 1.57 to 4.13 (DFlash, Qwen3-4B), and 1.30 to 3.64 (n-gram, Qwen3-4B), decoding 2.66-2.81x faster at batch size 1 and 1.14-1.70x at batch size 64. In Rust, MTP+GaaD is 2.23x faster on Qwen3.5-0.8B, 2.02x on Qwen3.5-397B-A17B-FP8, and 1.22x at 128 concurrent requests. Under mixed traffic (25-50% structured), GaaD finishes the workload 1.03-1.23x sooner (structured requests 2.2-3.2x sooner) while plain-text TPOT rises 7-42%. We also show grammar-masked greedy decoding can pick non-canonical tokenizations, so GaaD can yield different valid outputs that an fp32 reference finds equally likely.",
+      "url": "https://arxiv.org/abs/2611.28349",
+      "source": "arxiv",
+      "published": "2026-11-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "categories": [
+          "cs.CL",
+          "cs.AI"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-24",
+        "created": "2026-11-24"
+      },
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 4.1,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "summary": "结构化输出时，推测解码的起草模型看不见语法约束，会反复提出不合法的键名、分隔符和缩进。新方法把语法当成第二个起草器，在校验前把强制 token 和起草提案并成一行，语法已确定的位置不必再算 logits，也不用在关键路径上加新内核。在 TPU 上的 JSON 角色设定基准里，MTP 搭配较小的 Qwen3.5 时，平均接受长度从 2.06 提到 5.43。单请求时解码快 2.66 到 2.81 倍，大批量时加速会收窄。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 7,
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.31112",
+      "title": "Look Back, Draft Ahead: Corrective Prefix Attention for Parallel Speculative Decoding",
+      "authors": "Mohammad Mahdi Moradi, Ali Pourranjbar, Zongzuo Wang, Mingming Zhu, Ben Feng, Boxing Chen",
+      "abstract": "Parallel speculative decoders propose an entire token block at once, yet one early inconsistency can cause the target to reject its remaining suffix. We introduce Corrective Prefix Attention (CPA), which combines prefix-aware selection with autoregressive supervision to improve these parallel drafts. CPA lets each candidate attend to earlier choices within the block. Fixed candidate shortlists allow all pairwise interactions to be computed before selection, reducing the sequential walk to table lookups, accumulation and lightweight scoring rather than repeated neural evaluations. An auxiliary autoregressive loss trains the shared backbone on clean prefixes without adding an inference pass. Across eight math, code and dialogue benchmarks with Qwen3-4B and Qwen3-8B targets on Ascend NPUs, CPA commits 13--15\\% more tokens per verification round than DSpark and 25--26\\% more than DFlash. Its mean speedups reach $3.35\\times$ and $3.37\\times$ under greedy decoding and $2.86\\times$ under sampling for both targets. Ablations support both components, while capacity sweeps demonstrate that greater acceptance alone does not guarantee faster decoding. These results motivate correcting parallel proposals with causal information while keeping sequential computation inexpensive.",
+      "url": "https://arxiv.org/abs/2611.31112",
+      "source": "arxiv",
+      "published": "2026-11-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.CL",
+        "categories": [
+          "cs.CL"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-24",
+        "created": "2026-11-24"
+      },
+      "company": [
+        "Huawei"
+      ],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 4.1,
+      "preference_bonus": 0.05,
+      "adjusted_score": 4.15,
+      "summary": "并行推测解码会一次提出整块 token，前面一个不一致，后面整段都可能被目标模型否掉。新方法让块内候选项能看到更早的选择，并把交互预计算成查表，推理时不必反复跑网络，训练时再用自回归损失在干净前缀上监督共享主干。在八个数学、代码和对话基准上，用中小规模的 Qwen3 作目标时，每轮确认接受的 token 比 DSpark 多 13% 到 15%。贪心解码的平均加速达到 3.35 倍和 3.37 倍。更多接受并不自动等于更快，还要看这一轮的计算开销。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 8,
+      "company_logos": [
+        {
+          "name": "Huawei",
+          "logo": "logos/huawei.png",
+          "hue": 258
+        }
+      ]
+    },
+    {
+      "id": "openreview:igMG5UgMAj",
+      "title": "Training Transformers for KV-Cache Compressibility",
+      "authors": "Yoav Gelberg, Yam Eitan, Michael M. Bronstein, Yarin Gal, Haggai Maron",
+      "abstract": "Long-context language modeling is increasingly constrained by the Key–Value (KV) cache, whose memory and decode-time access costs scale linearly with the prefix length. This bottleneck has motivated a range of context-compression methods, from token-level summarization to recent optimization-based KV compression methods. These post-hoc methods operate on the KV cache of a fixed pretrained model, so their effectiveness is fundamentally limited by how well the model's internal representations can be compressed. In this work, we formalize the notion of KV compressibility and show that it is a property of the *learned representations*, rather than of the context alone. We prove that almost any sequence-to-vector function admits both highly compressible and inherently non-compressible transformer implementations, highlighting the need to guide transformers toward compressible representations during training. Motivated by this, we propose **KV**-**C**ompression **A**ware **T**raining (KV-CAT), a continued pretraining procedure that incentivizes the emergence of compressible representations. We introduce a train-time KV sparsification policy that masks KV slots during training. This forces the model to use fewer KV slots and encourages it to learn representations amenable to post-hoc compression. Empirically, we show that KV-CAT improves the quality–budget tradeoff of downstream compression methods across retrieval, long-context question answering, and perplexity-based evaluation of compressed-prefix continuation.",
+      "url": "https://arxiv.org/abs/2605.05971",
+      "source": "conference_papers",
+      "published": "2026-09-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "openreview:NeurIPS",
+      "track_hints": [],
+      "retrieval_meta": {
+        "conference_name": "NeurIPS",
+        "conference_year": "2026",
+        "venue": "NeurIPS 2026 poster",
+        "venueid": "NeurIPS.cc/2026/Conference"
+      },
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 3.85,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.9,
+      "summary": "事后压缩 KV cache 的效果，取决于模型内部表示本身好不好压，而不是只取决于这段上下文。理论结果表明，几乎任意的序列到向量函数，都可以既有很好压的 Transformer 实现，也有几乎压不动的实现。新的继续预训练会在训练时遮蔽部分 KV 槽位，逼模型用更少槽位，从而学到更适合事后压缩的表示。用在开源基座模型上之后，同样预算下后缀困惑度保持最多可提高到 3.21 倍，检索准确率最多提高 68%，长上下文问答最多提高 39%。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 9,
+      "source_url": "https://openreview.net/forum?id=igMG5UgMAj",
+      "arxiv_id": "2605.05971",
+      "venue": {
+        "name": "NeurIPS",
+        "year": 2026,
+        "track": "",
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=igMG5UgMAj",
+        "source": "openreview_venue",
+        "evidence": "OpenReview: NeurIPS 2026 poster (venueid NeurIPS.cc/2026/Conference)"
+      },
+      "venue_badge": {
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=igMG5UgMAj",
+        "logo": "venues/neurips.svg",
+        "title": "Accepted at NeurIPS 2026",
+        "name": "NeurIPS"
+      },
+      "company_logos": []
+    },
+    {
+      "id": "openreview:fTgwQmKmJx",
+      "title": "PatchKV: Weight Space Compensation of KV Cache",
+      "authors": "Chanryeol Lee, Chanhyuk Lee, Yeonwoo Choi, Donggyun Kim, Seunghoon Hong",
+      "abstract": "Long-context inference with Large Language Models (LLMs) is bottlenecked by the linearly growing memory of the key-value (KV) cache. Existing compression methods reduce the cache through token eviction or approximation, but degrade sharply at aggressive compression budgets. We propose PatchKV, a training-free framework that compensates KV cache compression methods by carrying part of the context in the model's weights. PatchKV pairs an off-the-shelf compressed KV cache with a context-specific weight patch, which is computed once at context-loading time and served for downstream queries for the context. The weight patch is derived in closed form via ridge regression, by aligning the block-wise activations of context-derived reference query tokens under the full cache and the compressed cache. Once merged into the model, the patch leaves the forward graph and per-query inference cost unchanged in the single-context, multi-query setting. Across long-context QA (SCBench with up to 170k tokens, SQuAD, NIAH) and math (GSM8K) benchmarks on three model architectures, PatchKV consistently improves cache compression methods, suggesting an alternative direction to compensate them at aggressive budgets.",
+      "url": "https://arxiv.org/abs/2609.39329",
+      "source": "conference_papers",
+      "published": "2026-09-24",
+      "discovered_at": "2026-11-24",
+      "source_type": "paper",
+      "source_detail": "openreview:NeurIPS",
+      "track_hints": [],
+      "retrieval_meta": {
+        "conference_name": "NeurIPS",
+        "conference_year": "2026",
+        "venue": "NeurIPS 2026 poster",
+        "venueid": "NeurIPS.cc/2026/Conference"
+      },
+      "company": [],
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 3,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "track_fit": "core",
+      "total_score": 3.85,
+      "preference_bonus": 0.05,
+      "adjusted_score": 3.9,
+      "summary": "长上下文推理时，KV cache 会随前缀线性变长，现有压缩到很狠的预算时效果会明显变差。新方法不必额外训练：在装入上下文时一次性算出一块权重补丁，把被压缩掉的部分上下文补进模型权重，随后同一上下文上的多次查询前向图和单次开销都不变。它在 SCBench、SQuAD、NIAH 和 GSM8K 以及三种模型架构上，都能提升现成的缓存压缩方法，尤其是在缓存预算降到两成以下时，能补回被压掉的相当一部分准确率。",
+      "key_insight": "",
+      "card_status": "done",
+      "rank": 10,
+      "source_url": "https://openreview.net/forum?id=fTgwQmKmJx",
+      "arxiv_id": "2609.39329",
+      "venue": {
+        "name": "NeurIPS",
+        "year": 2026,
+        "track": "",
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=fTgwQmKmJx",
+        "source": "openreview_venue",
+        "evidence": "OpenReview: NeurIPS 2026 poster (venueid NeurIPS.cc/2026/Conference)"
+      },
+      "venue_badge": {
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=fTgwQmKmJx",
+        "logo": "venues/neurips.svg",
+        "title": "Accepted at NeurIPS 2026",
+        "name": "NeurIPS"
+      },
+      "company_logos": []
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "hf_model:Qwen/Qwen2-VL-2B-Instruct",
+      "title": "Qwen/Qwen2-VL-2B-Instruct",
+      "authors": "Qwen",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen2_vl, image-text-to-text, multimodal, conversational, en, arxiv:2409.12191",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen2_vl, image-text-to-text, multimodal, conversational, en, arxiv:2409.12191",
+      "url": "https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 533,
+      "language": "model",
+      "created_at": "2024-08-28",
+      "updated_at": "2026-11-20",
+      "published": "2024-08-28",
+      "discovered_at": "2026-11-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen2-VL-2B-Instruct",
+        "likes": 533,
+        "downloads": 893378,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen2_vl",
+          "image-text-to-text",
+          "multimodal",
+          "conversational",
+          "en",
+          "arxiv:2409.12191",
+          "arxiv:2308.12966",
+          "base_model:Qwen/Qwen2-VL-2B",
+          "base_model:finetune:Qwen/Qwen2-VL-2B",
+          "license:apache-2.0",
+          "text-generation-inference",
+          "endpoints_compatible",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2024-08-28T09:02:15.000Z",
+        "last_modified": "2026-11-20T06:46:42.000Z"
+      },
+      "rank": 1
+    },
+    {
+      "id": "hf_model:Qwen/Qwen2-1.5B-Instruct",
+      "title": "Qwen/Qwen2-1.5B-Instruct",
+      "authors": "Qwen",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, qwen2, text-generation, chat, conversational, en, license:apache-2.0",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, qwen2, text-generation, chat, conversational, en, license:apache-2.0",
+      "url": "https://huggingface.co/Qwen/Qwen2-1.5B-Instruct",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 176,
+      "language": "model",
+      "created_at": "2024-06-03",
+      "updated_at": "2026-11-20",
+      "published": "2024-06-03",
+      "discovered_at": "2026-11-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen2-1.5B-Instruct",
+        "likes": 176,
+        "downloads": 70828,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen2",
+          "text-generation",
+          "chat",
+          "conversational",
+          "en",
+          "license:apache-2.0",
+          "eval-results",
+          "text-generation-inference",
+          "endpoints_compatible",
+          "deploy:sagemaker",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2024-06-03T09:08:12.000Z",
+        "last_modified": "2026-11-20T06:45:50.000Z"
+      },
+      "rank": 2
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K3",
+      "title": "moonshotai/Kimi-K3",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k3, feature-extraction, compressed-tensors, conversational, image-text-to-text, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k3, feature-extraction, compressed-tensors, conversational, image-text-to-text, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K3",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 12025,
+      "language": "model",
+      "created_at": "2026-06-13",
+      "updated_at": "2026-11-24",
+      "published": "2026-06-13",
+      "discovered_at": "2026-11-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K3",
+        "likes": 12025,
+        "downloads": 698175,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k3",
+          "feature-extraction",
+          "compressed-tensors",
+          "conversational",
+          "image-text-to-text",
+          "custom_code",
+          "license:other",
+          "eval-results",
+          "8-bit",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-06-13T06:42:57.000Z",
+        "last_modified": "2026-11-24T08:03:25.000Z"
+      },
+      "rank": 3
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K2.5",
+      "title": "moonshotai/Kimi-K2.5",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.5",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2903,
+      "language": "model",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-11-20",
+      "published": "2026-01-01",
+      "discovered_at": "2026-11-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K2.5",
+        "likes": 2903,
+        "downloads": 325614,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k25",
+          "feature-extraction",
+          "compressed-tensors",
+          "image-text-to-text",
+          "conversational",
+          "custom_code",
+          "arxiv:2602.02276",
+          "license:other",
+          "eval-results",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-01-01T06:06:03.000Z",
+        "last_modified": "2026-11-20T02:36:04.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3.6-27B",
+      "title": "Qwen/Qwen3.6-27B",
+      "authors": "Qwen",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, conversational, license:apache-2.0, eval-results, endpoints_compatible",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, conversational, license:apache-2.0, eval-results, endpoints_compatible",
+      "url": "https://huggingface.co/Qwen/Qwen3.6-27B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2364,
+      "language": "model",
+      "created_at": "2026-04-21",
+      "updated_at": "2026-11-20",
+      "published": "2026-04-21",
+      "discovered_at": "2026-11-24",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3.6-27B",
+        "likes": 2364,
+        "downloads": 2306581,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5",
+          "image-text-to-text",
+          "conversational",
+          "license:apache-2.0",
+          "eval-results",
+          "endpoints_compatible",
+          "deploy:sagemaker",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-04-21T07:50:43.000Z",
+        "last_modified": "2026-11-20T06:46:39.000Z"
+      },
+      "rank": 5
+    }
+  ],
+  "warnings": [],
+  "scenario_by": "grok-bot"
+}
