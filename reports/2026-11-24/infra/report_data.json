@@ -1,0 +1,851 @@
+{
+  "date": "2026-11-24",
+  "track": "infra",
+  "scenario": "今天的基础设施赛道贯穿大模型服务的执行路径：混合推理里专家放在 CPU 还是 GPU 不应改输出，强化学习则尝试让采样和更新在同一张卡上共驻。智能体服务要在 KV cache 压力下丢掉已被后续工具替代的历史，专家并行的大 kernel 也要用运行时的线程束调度去对齐路由变化。投机解码出现两条线，一条先固定采样随机性再起草，一条按请求率和请求特点改投机树。前缀缓存则既要按意图决定留谁，又要在时序上藏掉不该共享的命中。并发 kernel 的重叠不再盲目抢先，分析查询也可以把 DuckDB 的计划交给 GPU。整体上看，今天关心的是在不改正确结果的前提下，把缓存、调度和重叠跑满。",
+  "stats": {
+    "papers_scored": 104,
+    "papers_selected": 10,
+    "score_min": 3.45,
+    "score_max": 4.35
+  },
+  "papers": [
+    {
+      "id": "arxiv:2611.27604",
+      "title": "IsoMoE: Placement-Invariant Hybrid CPU-GPU MoE Inference with Lossless 12-bit Experts",
+      "authors": "Hang Gu, Teng Wang, Zhendong Zheng, Qianyu Cheng, Wenqi Lou, Lei Gong, Xi Li, Xuehai Zhou",
+      "abstract": "Mixture-of-Experts (MoE) models scale model capacity at low computational cost. Hybrid CPU-GPU inference offloads some experts to the CPU, enabling a single GPU to run MoE models larger than its memory. Expert placement changes with free GPU memory and should only affect speed. However, the greedy decoding outputs of existing hybrid engines change with placement. This is because the two devices use different arithmetic to compute experts. In addition, decoding is limited by CPU memory bandwidth. Lossless compression reduces memory traffic, but the CPU decompresses entropy-coded formats too slowly to keep up with memory reads. To address these challenges, we propose IsoMoE, an efficient hybrid MoE inference system that guarantees that its outputs do not change with expert placement. IsoMoE introduces (i) a GPU expert kernel that bitwise replays the arithmetic of the CPU expert kernel, (ii) a memory layout that allows the CPU to efficiently compute lossless 12-bit experts using AVX-512 dot-product instructions, and (iii) a dual micro-batch pipeline that overlaps CPU and GPU computation without changing the outputs. Experimental results on three MoE models show that IsoMoE produces bitwise identical outputs across different expert placements. It is also faster than the fastest baseline in every setting, achieving an average decoding speedup of 1.26$\\times$ and a maximum speedup of 1.54$\\times$. Our source code is publicly available at https://anonymous.4open.science/r/isomoe-artifact-9C21/.",
+      "url": "https://arxiv.org/abs/2611.27604",
+      "source": "arxiv",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.DC",
+        "categories": [
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-23",
+        "created": "2026-11-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 5,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 4.35,
+      "total_score": 4.35,
+      "track_fit": "core",
+      "preference_bonus": 0.08,
+      "adjusted_score": 4.43,
+      "company": [
+        "USTC"
+      ],
+      "rank": 1,
+      "summary": "混合部署把部分专家放到 CPU 上，好让单卡跑下超过显存的 MoE，但专家放在哪块设备、何时换入，现有引擎的贪心解码结果往往会跟着变，因为两端算术并不相同。解码又常被 CPU 内存带宽卡住：无损压缩能少搬数据，可熵编码在 CPU 上解得太慢，跟不上内存读取。把 GPU 专家 kernel 做成对 CPU 算术的按位重放，再用便于 AVX-512 点积的内存布局计算无损的 12 bit 专家，并配上不改变输出的双微批流水线，就能让放置只影响速度。在多个 MoE 模型上，不同专家放置下的输出按位一致，也与全部专家都在 CPU 上时相同，解码吞吐平均比最快基线高 1.26 倍，最高 1.54 倍。==专家放在哪只应改变快慢，不应改变同一条指令的生成结果==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "USTC",
+          "logo": "logos/ustc.png",
+          "hue": 325
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.27119",
+      "title": "CTRL: Concurrent Training and Rollout for LLM Reinforcement Learning via GPU Co-Residency",
+      "authors": "Ruijia Yang, Ruikai Li, Zeyi Wen",
+      "abstract": "Reinforcement learning (RL) post-training of large language models runs two GPU workloads with different hardware demands: rollout decoding, which is dominated by memory access and whose batch shrinks as responses finish, and a dense learner. Current systems either time-share every GPU between them, paying serial phases and switches, or split GPUs into pools whose sizes change only in whole devices. We present CTRL, which makes co-residency a third RL execution layout: every GPU runs a learner rank beside a persistent rollout engine, sharing the device under CUDA MPS. A host-owned learner makes the layout fit: optimizer state stays in host memory, and policy weights stream layer by layer through a bounded GPU window. A publication gate trains each ready batch first and waits only before releasing the next policy, keeping a dropless staleness bound. A step-time bound guides compute-share selection, and a GPU-time ledger explains overlap and sharing costs. On H100, A800, and RTX 4090 GPUs with Qwen3 models, CTRL achieves 1.11-2.24$\\times$ the throughput of the stronger of verl's asynchronous baselines across 24 workload settings with the staleness limit set to two, and 1.23$\\times$ verl's colocate_async on eight H100 GPUs. With the same learner, co-residency is 1.10-1.26$\\times$ faster than time-sharing on all three platforms and 1.10-1.30$\\times$ faster than the best measured whole-GPU split on H100 DAPO-Math workloads at 256-528 trajectories per step, on four and eight GPUs.",
+      "url": "https://arxiv.org/abs/2611.27119",
+      "source": "arxiv",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.LG",
+        "categories": [
+          "cs.DC",
+          "cs.LG"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-23",
+        "created": "2026-11-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "preference_bonus": 0.21,
+      "adjusted_score": 4.31,
+      "company": [
+        "HKUST (Guangzhou)"
+      ],
+      "rank": 2,
+      "summary": "大模型强化学习后训练要同时跑两类负载：访存为主、批次还会随回复结束而缩小的 rollout，以及稠密的学习更新。现有系统要么让每张 GPU 轮流切换两个阶段，要么把卡按整卡切成两组。若让每张 GPU 在 CUDA MPS 下同时驻留一个学习进程和一个常驻 rollout 引擎，把优化器状态留在主机、权重按层流入有限的 GPU 窗口，并用发布门控在无丢弃的滞后约束内重叠更新与采样，就可以在全卡上同时推进。在 H100、A800 等平台的多组负载上，滞后上限为两步时，吞吐达到更强异步基线的 1.11 至 2.24 倍。==把互补的采样和学习放在同一张卡上一起跑，就不必再为整卡切分或串行切换付代价==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "HKUST (Guangzhou)",
+          "logo": "logos/hkust-gz.png",
+          "hue": 119
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.26980",
+      "title": "Contexture: Runtime Context Eviction for High-Throughput Agent Serving",
+      "authors": "Colin Hong, Bryan Shan, Wei Siong Pang, Chengzhi Lu, Xu Guo, Nitin Shivaraman, Tao Luo, Esha Choukse, Kisson Lin, Dmitrii Ustiugov",
+      "abstract": "LLM agents such as Hermes, OpenClaw, and Codex repeatedly resend growing execution histories, increasing shared GPU key-value (KV) cache demand in high-bandwidth memory (HBM). We show that shared KV capacity limits agent-serving throughput. Existing context-reduction methods lack global cache-state visibility, while runtime KV managers lack tool-execution information. Tracing tokens to their originating tool operations reveals that later operations supersede earlier outputs and associated turns, identifying 64% of recorded final-history tokens as removal candidates. We present Contexture, a harness- and model-agnostic architecture for runtime context eviction. Contexture separates the harness's full conversation history from the model's execution context, reducing subsequent requests' KV demand without modifying harness logic or model execution. It combines tool-execution information with global visibility into shared KV pressure and prefix residency: supersession identifies removal candidates, while runtime state determines when removal justifies sacrificing cached computation. This coordination reduces memory demand and decode KV traffic while limiting re-prefill interference with concurrent decoding, without additional model calls or training. Across two models, two harnesses, and two benchmarks, Contexture improves throughput under SLO by 20-73% over the best of no eviction, harness compaction, AgentDiet, and Continuum, and by 7-63% over observation masking in five of eight configurations, and reduces GPU energy per completed session by up to 11%. It also raises throughput under SLO by 23% over LMCache alone on H100. Live-agent experiments show a mean accuracy improvement of 1.4 percentage points over unloaded no eviction, with a worst-case loss of 3.7 points, while observation masking loses 3-28 points.",
+      "url": "https://arxiv.org/abs/2611.26980",
+      "source": "arxiv",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.AI",
+        "categories": [
+          "cs.DC",
+          "cs.AI",
+          "cs.MA",
+          "cs.OS"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-23",
+        "created": "2026-11-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "preference_bonus": 0.06,
+      "adjusted_score": 4.16,
+      "company": [
+        "NTU Singapore",
+        "A*STAR",
+        "Microsoft",
+        "SuperMem"
+      ],
+      "rank": 3,
+      "summary": "智能体服务会把不断变长的执行历史反复送回模型，共享的 KV cache 很快成为吞吐瓶颈。已有的上下文压缩看不到全局缓存状态，运行时的 KV 管理又用不上工具执行信息。沿 token 追溯到产生它的工具操作会发现，后面的操作常常已经替代了更早的输出和相关轮次，记录会话终态历史里有 64% 的 token 可视为删除候选。把完整会话历史和模型执行上下文分开，按这种替代关系选出可删片段，再结合共享 KV 压力和前缀是否仍驻留来决定何时真删。在多种模型、框架和基准组合下，满足 SLO 的吞吐比最强基线高 20% 到 73%。==该删的是已被后续工具结果替代的历史，而不是到了长度再一刀切==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "NTU Singapore",
+          "logo": null,
+          "hue": 280
+        },
+        {
+          "name": "A*STAR",
+          "logo": "logos/a-star.png",
+          "hue": 343
+        },
+        {
+          "name": "Microsoft",
+          "logo": "logos/microsoft.png",
+          "hue": 283
+        },
+        {
+          "name": "SuperMem",
+          "logo": null,
+          "hue": 102
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.27765",
+      "title": "Weave: Routing-Adaptive Runtime Warp Scheduling for MoE Megakernels",
+      "authors": "Ziyu Huang, Yangjie Zhou, Chenhao Zhu, Hongzhe Yan, Tianwei Qiao, Sicheng He, Zihan Liu, Peng Yu, Shulai Zhang, Xingxun Tang, Xinhao Luo, Minyi Guo, Xiu Lin, Yinghao Yu, Guodong Yang, Liping Zhang, Shixuan Sun, Qingyun Chen, Jingwen Leng",
+      "abstract": "The Mixture-of-Experts (MoE) architecture is widely used in mainstream large language models. Under expert parallelism (EP), state-of-the-art systems fuse each MoE layer into a persistent megakernel for high performance. By the nature of EP, each GPU's communication and computation volumes vary with the routing result. However, prior work either fixes how GPU resources are divided between communication and computation at compile time (e.g., MegaMoE), or adapts to runtime dynamism only at coarse-grained SM granularity (e.g., mKernel), dedicating whole SMs to communication and leaving their Tensor Cores idle. At the finer warp granularity within each SM, static warp schedules can neither match routing-dependent loads nor prevent warps from idling while waiting for inputs or after finishing their assigned work. Therefore, we propose Weave, an MoE megakernel with three key designs. First, a spatial schedule allocates resources between communication and computation at both SM and warp granularities to match each GPU's load. Second, a temporal schedule switches warp roles as execution progresses, enlisting all warps at the start and end of a layer and selectively handing output scatter to idle communication warps. Third, a fused cost model jointly selects both schedules per GPU at launch from runtime routing statistics. Across all evaluated platforms, Weave outperforms the strongest baselines: under EP8 over DeepGEMM-MegaMoE, it speeds up the MoE layer by 1.30x geomean and up to 1.97x on SM103, and by 1.24x geomean and up to 1.72x on SM90; under EP16 on CDNA3, it beats the fastest official RCCL+AITER baseline by 1.44x geomean (up to 2.87x; 1.67x over vLLM).",
+      "url": "https://arxiv.org/abs/2611.27765",
+      "source": "arxiv",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.DC",
+        "categories": [
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-23",
+        "created": "2026-11-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "preference_bonus": 0.06,
+      "adjusted_score": 4.16,
+      "company": [
+        "SJTU",
+        "NUS",
+        "Fudan University",
+        "Alibaba",
+        "TokMach"
+      ],
+      "rank": 4,
+      "summary": "专家并行下，主流系统常把一层 MoE 融进常驻的大 kernel，但各卡的通信和计算量会随路由结果变化。先前方案要么在编译期写死通信和计算的资源划分，要么只在整块 SM 粒度上调整，把整块 SM 交给通信后 Tensor Core 就闲着。按每张卡的负载在 SM 和线程束粒度上分配资源，并在一层执行过程中切换线程束角色，开头和收尾把全部线程束都用上，再把输出散布交给已经空闲的通信线程束。启动时用融合代价模型根据路由统计同时选定这两套日程，就能对上这种动态负载。在 SM103 上，MoE 层比最强的 DeepGEMM-MegaMoE 基线几何平均快 1.30 倍，最高 1.97 倍。==路由变了，卡内通信和计算的占用就该一起变，而不是沿用编译期的固定划分==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "SJTU",
+          "logo": "logos/sjtu.png",
+          "hue": 323
+        },
+        {
+          "name": "NUS",
+          "logo": "logos/nus.png",
+          "hue": 21
+        },
+        {
+          "name": "Fudan University",
+          "logo": "logos/fudan.png",
+          "hue": 168
+        },
+        {
+          "name": "Alibaba",
+          "logo": "logos/alibaba.png",
+          "hue": 324
+        },
+        {
+          "name": "TokMach",
+          "logo": null,
+          "hue": 147
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.27891",
+      "title": "Speculative Decoding Is Less Speculative Than You Think",
+      "authors": "Guanning Zeng, Andrea Zanette",
+      "abstract": "Speculative decoding accelerates language-model inference by preparing candidate continuations before the target model generates them. Its efficiency depends on how well limited drafting computation anticipates the path the target will actually follow. Anticipating this path involves two sources of uncertainty: the target model's predictions and the randomness of sampling. Yet the former requires a target-model forward pass, while the latter can be fixed before drafting. Building on this observation, we introduce DICE (Draw-Informed Candidate Selection), which pre-samples and synchronizes verification randomness across drafting and verification. By combining these known draws with predictions from an existing drafter, DICE allocates computation toward continuations more likely to be used in the current sampling run. This principle guides node selection throughout draft-tree construction and extends to asynchronous prefetching, where DICE predicts which next-round drafts to prepare. Without additional drafter training or changes to the target sampling distribution, DICE achieves state-of-the-art decoding throughput across diverse settings, with speedups of up to 24.6pp over strong baselines.",
+      "url": "https://arxiv.org/abs/2611.27891",
+      "source": "arxiv",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.AI",
+        "categories": [
+          "cs.AI"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-23",
+        "created": "2026-11-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "preference_bonus": 0.06,
+      "adjusted_score": 4.16,
+      "company": [
+        "CMU"
+      ],
+      "rank": 5,
+      "summary": "投机解码要先起草候选再交给目标模型验证，效率取决于有限算力能否对上目标真正会走的路径。这条路径有两处不确定：目标模型的预测，以及采样本身的随机性。前者必须等目标模型前向，后者却可以在起草前就抽好并在验证时复用。把这些已知随机数和现有起草模型的预测合在一起选节点，树的构造和异步预取都会偏向当前这次采样真正会用到的续写。无需额外训练起草模型，也不改变目标采样分布，解码吞吐比强基线最高提升 24.6%，异步预取中最高提升 13.7%。==采样随机性不必当成未知数，先把它固定下来，有限的起草预算才能花在这次会用到的候选上==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "CMU",
+          "logo": "logos/cmu.png",
+          "hue": 0
+        }
+      ]
+    },
+    {
+      "id": "arxiv:2611.27596",
+      "title": "Isonomy: Isolating Every Request from Timing Side Channels at Nearly Full-Sharing Throughput in Multi-Instance LLM Prefill",
+      "authors": "Bowen Sun, Chaowei Xiao",
+      "abstract": "Many long prompts share a prefix, and reusing its cached keys and values saves prefill computation. A cache hit, however, makes the first token arrive earlier and can reveal that another request used the same prefix, so providers share the cache only within an account. Under least privilege, even permission to send and pay for requests should not expose other requests' prompts in the same account. This matters because agents send unreviewed requests carrying private data, resellers pool users behind one account, and creden-tials can be stolen. Isonomy therefore isolates each request by default and lets requests opt into explicit sharing groups. Rather than give up reuse, it keeps one cache shared across accounts and hides only hits on prefixes cached outside a request's group. We target deployments where clients cannot observe one another's load, because there it suffices to hide these hits in the request's own timing. On three commercial APIs, our listeners could not distinguish added prefill work from a short request beyond measurement noise. Built on vLLM, Isonomy's gateway applies the deployment's routing rule to load and visible cache entries only, which yields the instance where the request would run if hidden hits missed. On that instance, the prediction mode estimates when the first token would be ready from the queue and the visible prefix, and gates its release. The execution mode instead reserves the work a hidden hit skips and fills it with other requests' prompts where possible. In direct-probe tests on two, four, and eight instances with every request isolated, both modes kept the upper bound on a probe's advantage within measure-ment noise at both prefix lengths. At saturation, the prediction mode retains 0.98 of unprotected sharing's throughput on two workloads with account labels, whereas isolation by account retains 0.95, or 0.80 where more reuse crosses accounts.",
+      "url": "https://arxiv.org/abs/2611.27596",
+      "source": "arxiv",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.DC",
+        "categories": [
+          "cs.DC",
+          "cs.CR"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-23",
+        "created": "2026-11-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "preference_bonus": 0.06,
+      "adjusted_score": 4.16,
+      "company": [
+        "Johns Hopkins University"
+      ],
+      "rank": 6,
+      "summary": "长提示常常共享前缀，复用已缓存的 KV 能省掉预填充计算，但缓存命中会让首 token 更早到达，从而暴露别人用过同一前缀。服务商通常只在同一账号内共享缓存，可在最小权限下，即便同账号、只是获准发请求并付费，也不应看到该账号里其他请求的提示。默认按请求隔离，仍保留跨账号的同一块缓存，只把组外前缀的命中藏进这条请求自己的时序：按可见命中做路由，再按未命中时的孪生进度决定何时放出首 token。在饱和的会话负载上，预测模式仍保有无保护共享吞吐的 0.984，按账号隔离则是 0.945；在更多复用发生在账号之间时，按账号隔离会降到 0.802。==隔离不必以放弃复用为代价，只要把不该被看见的命中从时序里藏掉==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "Johns Hopkins University",
+          "logo": "logos/jhu.png",
+          "hue": 285
+        }
+      ]
+    },
+    {
+      "id": "openreview:NnEEkVzU8t",
+      "title": "AdaTree: Serving-Aware Adaptive Tree Construction for Speculative Decoding",
+      "authors": "Soohyun Cha, Jungi Lee, Jaewoong Sim",
+      "abstract": "Speculative decoding accelerates generative inference of large language models (LLMs) by using a small draft model to propose multiple candidate tokens, which are then verified in parallel with the target model in a single decoding iteration. While the state-of-the-art method of tree-based speculative decoding helps improve generation throughput over non-speculative inference, deploying it in LLM serving systems often yields suboptimal performance due to dynamically changing serving conditions. In particular, our analysis shows that the optimal tree configuration---the one that maximizes performance---varies with two key serving conditions: request rate and per-request characteristics. Based on the analysis, we present AdaTree, a plug-in component for LLM serving systems that dynamically adapts tree configurations to varying serving conditions. AdaTree predicts model execution time and acceptance length across different tree configurations and selects the one that maximizes speculative decoding efficiency. To capture the non-linear relationship between tree configuration and model execution time, AdaTree employs decision trees as its core modeling primitive. Our evaluation shows that AdaTree consistently outperforms both chain-based and static tree-based speculative decoding across diverse serving conditions.",
+      "url": "https://openreview.net/forum?id=NnEEkVzU8t",
+      "source": "conference_papers",
+      "published": "2026-09-24",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "openreview:NeurIPS",
+      "track_hints": [],
+      "retrieval_meta": {
+        "conference_name": "NeurIPS",
+        "conference_year": "2026",
+        "venue": "NeurIPS 2026 poster",
+        "venueid": "NeurIPS.cc/2026/Conference"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 4,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 4.1,
+      "total_score": 4.1,
+      "track_fit": "core",
+      "preference_bonus": 0.06,
+      "adjusted_score": 4.16,
+      "company": [],
+      "rank": 7,
+      "summary": "树状投机解码能提高大模型生成吞吐，但在真实服务里，能使性能最高的树形配置会随请求率和各请求自身特点一起变。如果沿用固定树或链式起草，就会和服务条件错位。把一个可插拔组件接到服务系统里，预测不同树形配置下的模型执行时间和接受长度，再选出投机效率最高的那一种，就能跟着负载调整。为了刻画树形配置和执行时间之间的非线性关系，这一组件用决策树作为核心建模单元。评测显示，它在多样的服务条件下都优于链式投机解码，也优于静态树形方案。==投机树不该在上线前就钉死，树形本身就应该跟着请求率和请求特点一起改==。",
+      "key_insight": "",
+      "card_status": "done",
+      "venue": {
+        "name": "NeurIPS",
+        "year": 2026,
+        "track": "",
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=NnEEkVzU8t",
+        "source": "openreview_venue",
+        "evidence": "OpenReview: NeurIPS 2026 poster (venueid NeurIPS.cc/2026/Conference)"
+      },
+      "venue_badge": {
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=NnEEkVzU8t",
+        "logo": "venues/neurips.svg",
+        "title": "Accepted at NeurIPS 2026",
+        "name": "NeurIPS"
+      },
+      "company_logos": []
+    },
+    {
+      "id": "arxiv:2611.26840",
+      "title": "Contention-Aware Flexible Execution for Machine Learning Workloads",
+      "authors": "Marco Kurzynski, Shaizeen Aga, Di Wu",
+      "abstract": "Concurrent kernel execution is a ubiquitous paradigm in artificial intelligence (AI) and machine learning (ML) across both training and inference. That said, concurrency causes potential slowdown as concurrent kernels contend for limited GPU resources (cores, caches, memory bandwidth), which are shared between these kernels rather than exclusively available to one, as in isolated execution. This raises an important research question: to what extent does concurrency slow down kernel execution and how can it be mitigated. To answer this question, our work presents two studies. First, we characterize concurrent kernel execution extensively for the first time, to our knowledge. We conduct not just performance analysis of concurrent kernels but also memory behavior under concurrency on state-of-the-art AMD Instinct MI300X GPUs designed for datacenter AI, using the AMD-internal millisecond sampler. Based on the observations, we share insights on the slowdown along two dimensions (memory vs. compute bound, large vs. small kernels) to inform future optimizations. Second, we put the derived insights to use, aiming to deliver higher performance via targeted, flexible overlap of ML operators. Frameworks today make the simple decision of early-first for concurrent kernels, which is suboptimal. Noticing the opportunity that ML dataflow has inherent flexibility in which operators can be overlapped and how hardware resources can be allocated, we deduce simple heuristics to tune both overlap anchors and resource allocation for concurrent kernels to improve performance. We evaluate our proposed contention-aware flexible execution (termed CAFEML) across a variety of ML scenarios (inference decode, inference prefill, training) and demonstrate a speedup of up to 13% end-to-end with simple scheduling changes and no kernel rewrites.",
+      "url": "https://arxiv.org/abs/2611.26840",
+      "source": "arxiv",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "",
+      "track_hints": [],
+      "retrieval_meta": {
+        "category": "cs.DC",
+        "categories": [
+          "cs.DC"
+        ],
+        "fetch_method": "arxiv_oai",
+        "announced": "2026-11-23",
+        "created": "2026-11-23"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 3.85,
+      "total_score": 3.85,
+      "track_fit": "core",
+      "preference_bonus": 0.04,
+      "adjusted_score": 3.89,
+      "company": [
+        "University of Central Florida",
+        "AMD"
+      ],
+      "rank": 8,
+      "summary": "训练和推理里，计算和通信 kernel 经常并发，却要争用同一批计算单元、缓存和显存带宽，于是并发往往比单独跑更慢。在面向数据中心的 AMD Instinct MI300X 上刻画后会看到，变慢的程度随计算或访存瓶颈、以及 kernel 大小而不同。现有框架通常一有机会就尽早启动通信，这个选择并不总是最好的。利用数据流里哪些算子可以重叠、资源如何分配的灵活性，用简单启发式调整重叠锚点和资源配比，不必改写 kernel。在推理预填充和解码以及训练等多种场景下，端到端最高可加快 13%，训练中也可加快约 5%。==通信不必见缝就插，选更耐挤的计算算子来隐藏它，往往更划算==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "University of Central Florida",
+          "logo": "logos/university-of-central-florida.png",
+          "hue": 175
+        },
+        {
+          "name": "AMD",
+          "logo": "logos/amd.png",
+          "hue": 249
+        }
+      ]
+    },
+    {
+      "id": "openreview:gebB3q0INK",
+      "title": "Intent-Aware Caching for Efficient LLM Serving",
+      "authors": "Kazi Hasan Ibn Arif, JinYi Yoon, Dimitrios S. Nikolopoulos, Hans Vandierendonck, Deepu John, Bo Ji",
+      "abstract": "Modern LLM serving systems use prefix caching to accelerate multi-turn conversational workloads. They cache the key-value states of previous conversation prefixes and reuse them when subsequent requests share the same prefix, to avoid redundant prefill computation and reduce serving latency. However, achieving a high cache hit rate remains challenging because cache reuse depends on whether a conversation continues and how soon the next turn arrives. Our analysis of real workloads shows that user intent is a useful signal for this behavior, as different intents exhibit different continuation probabilities and inter-turn delays. Based on this key insight, we propose Intent-Aware Caching (IAC), an online eviction policy that classifies requests by intent, learns lightweight reuse statistics from recent serving logs and leverages these statistics to guide an oracle-inspired eviction strategy. Extensive evaluation on real workloads (WildChat and ShareChat) shows that IAC reaches a 34.6% cache hit rate. This substantially outperforms both the previous learning-based approach (18.8%) and traditional methods such as least recently used (LRU, 12.2%), while reducing average serving latency by up to 46.1%. Code is available at https://github.com/hasanar1f/intent-aware-caching.",
+      "url": "https://openreview.net/forum?id=gebB3q0INK",
+      "source": "conference_papers",
+      "published": "2026-09-24",
+      "discovered_at": "2026-11-23",
+      "source_type": "paper",
+      "source_detail": "openreview:NeurIPS",
+      "track_hints": [],
+      "retrieval_meta": {
+        "conference_name": "NeurIPS",
+        "conference_year": "2026",
+        "venue": "NeurIPS 2026 poster",
+        "venueid": "NeurIPS.cc/2026/Conference"
+      },
+      "scores": {
+        "business_relevance": 4,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 4,
+        "timeliness": 5
+      },
+      "weighted_score": 3.85,
+      "total_score": 3.85,
+      "track_fit": "core",
+      "preference_bonus": 0.04,
+      "adjusted_score": 3.89,
+      "company": [],
+      "rank": 9,
+      "summary": "多轮对话的服务系统会缓存历史前缀的 KV，好在下一轮复用、少做预填充，但命中取决于对话会不会继续、以及下一轮何时到来。即便会继续，用户阅读、思考和撰写下一条的间隔也相差很大，而且后面一轮要命中，前面各轮拼成的前缀都得还在。真实日志里，不同意图的继续概率和轮间间隔并不一样。按意图给请求分类，从近期服务日志里学习轻量的复用统计，再用这些统计去做接近最优的淘汰，就能把这个信号用上。在 ShareChat 上，缓存命中率达到 34.6%，高于先前学习方法的 18.8%，也高于 LRU 的 12.2%。TTFT 最多比 LRU 降低 46.1%。==前缀该不该留，要看这类意图通常会不会续上、以及隔多久才续，而不是只看最近用过没有==。",
+      "key_insight": "",
+      "card_status": "done",
+      "venue": {
+        "name": "NeurIPS",
+        "year": 2026,
+        "track": "",
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=gebB3q0INK",
+        "source": "openreview_venue",
+        "evidence": "OpenReview: NeurIPS 2026 poster (venueid NeurIPS.cc/2026/Conference)"
+      },
+      "venue_badge": {
+        "label": "NeurIPS 2026",
+        "url": "https://openreview.net/forum?id=gebB3q0INK",
+        "logo": "venues/neurips.svg",
+        "title": "Accepted at NeurIPS 2026",
+        "name": "NeurIPS"
+      },
+      "company_logos": []
+    },
+    {
+      "id": "blog_rss:nvidia_developer_blog:https://developer.nvidia.com/blog/get-started-with-gpu-accelerated-duckdb-analytics-using-the-sirius-core-extension",
+      "title": "Get Started with GPU-Accelerated DuckDB Analytics Using the Sirius Core Extension",
+      "authors": "",
+      "abstract": "<img alt=\"Animated GPU and SQL database icons connected by moving data signals.\" class=\"webfeedsFeaturedVisual wp-post-image\" height=\"338\" src=\"https://developer-blogs.nvidia.com/wp-content/uploads/2026/11/sirius-duckdb-gpu-analytics.gif\" style=\"display: block; margin-bottom: 5px; clear: both;\" title=\"GPU-powered DuckDB analytics\" width=\"600\" />As datasets grow, analytical queries can take longer to run, slowing down data exploration, pipelines, and applications. For developers using DuckDB, reducing...",
+      "url": "https://developer.nvidia.com/blog/get-started-with-gpu-accelerated-duckdb-analytics-using-the-sirius-core-extension/",
+      "source": "blog_rss",
+      "published": "2026-11-23",
+      "discovered_at": "2026-11-23",
+      "source_type": "blog",
+      "source_detail": "nvidia_developer_blog",
+      "track_hints": [],
+      "retrieval_meta": {},
+      "scores": {
+        "business_relevance": 3,
+        "technical_novelty": 3,
+        "practicality": 4,
+        "evidence_quality": 3,
+        "timeliness": 5
+      },
+      "weighted_score": 3.45,
+      "total_score": 3.45,
+      "track_fit": "core",
+      "preference_bonus": 0.02,
+      "adjusted_score": 3.47,
+      "company": [
+        "NVIDIA"
+      ],
+      "rank": 10,
+      "summary": "分析查询会随着数据变大而变慢，拖累探索、流水线和上层应用。NVIDIA 与 DuckLabs 把 GPU 原生的 SQL 引擎做成 DuckDB 的核心扩展：装好并加载后，受支持的分析查询可以在 NVIDIA GPU 上执行，不必改写 SQL，也不用改表结构。DuckDB 仍负责解析和优化，扩展执行生成的查询计划；遇到还不支持的特性会回退到 CPU 引擎，现有脚本和接口也不用换。用存放在 Amazon S3 上、规模最大到 10 TB 的 TPC-H 派生查询做冷启动对比，调优后的双 GPU 配置比测试中最好的 CPU 版 DuckDB 快 3.25 倍到 5.50 倍。查询期计算成本最高可降低约 79%。小规模时单卡成本更低，到最大规模则是调优后的双卡在时延和成本上都更好。==熟悉的 SQL 工作流可以留在 DuckDB 里，把支持的查询计划交给 GPU 去跑==。",
+      "key_insight": "",
+      "card_status": "done",
+      "company_logos": [
+        {
+          "name": "NVIDIA",
+          "logo": "logos/nvidia.png",
+          "hue": 277
+        }
+      ]
+    }
+  ],
+  "code_projects": [
+    {
+      "id": "github:ykundesu/MinecraftHarness",
+      "title": "MinecraftHarness: Real-time AI Minecraft 1.21.4 building, VFX/SFX, and playable command-block minigame harness powered by OpenClaw and Kimi K3.1 Pro on Cerebras",
+      "authors": "ykundesu",
+      "abstract": "Real-time AI Minecraft 1.21.4 building, VFX/SFX, and playable command-block minigame harness powered by OpenClaw and Kimi K3.1 Pro on Cerebras",
+      "url": "https://github.com/ykundesu/MinecraftHarness",
+      "source": "github",
+      "published": "2026-11-22",
+      "discovered_at": "2026-11-23",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "ykundesu/MinecraftHarness",
+        "owner": "ykundesu",
+        "description": "Real-time AI Minecraft 1.21.4 building, VFX/SFX, and playable command-block minigame harness powered by OpenClaw and Kimi K3.1 Pro on Cerebras",
+        "created_at": "2026-11-22T10:28:35Z",
+        "updated_at": "2026-11-23",
+        "pushed_at": "2026-11-22",
+        "stargazers_count": 14,
+        "language": "Java",
+        "topics": []
+      },
+      "description": "Real-time AI Minecraft 1.21.4 building, VFX/SFX, and playable command-block minigame harness powered by OpenClaw and Kimi K3.1 Pro on Cerebras",
+      "language": "Java",
+      "stars": 14,
+      "created_at": "2026-11-22",
+      "rank": 1
+    },
+    {
+      "id": "github:coderkimix/kimix-android-app",
+      "title": "kimix-android-app: Kimix — видеоплеер для Android TV и телефонов: воспроизводит видео из внешних источников, торрентов и файлов. Без регистрации и подписки.",
+      "authors": "coderkimix",
+      "abstract": "Kimix — видеоплеер для Android TV и телефонов: воспроизводит видео из внешних источников, торрентов и файлов. Без регистрации и подписки.",
+      "url": "https://github.com/coderkimix/kimix-android-app",
+      "source": "github",
+      "published": "2026-11-22",
+      "discovered_at": "2026-11-23",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "coderkimix/kimix-android-app",
+        "owner": "coderkimix",
+        "description": "Kimix — видеоплеер для Android TV и телефонов: воспроизводит видео из внешних источников, торрентов и файлов. Без регистрации и подписки.",
+        "created_at": "2026-11-22T12:06:55Z",
+        "updated_at": "2026-11-23",
+        "pushed_at": "2026-11-23",
+        "stargazers_count": 8,
+        "language": "",
+        "topics": []
+      },
+      "description": "Kimix — видеоплеер для Android TV и телефонов: воспроизводит видео из внешних источников, торрентов и файлов. Без регистрации и подписки.",
+      "language": "",
+      "stars": 8,
+      "created_at": "2026-11-22",
+      "rank": 2
+    },
+    {
+      "id": "github:david1025/deepdesk-android",
+      "title": "deepdesk-android: Native Android client for DeepSeek",
+      "authors": "david1025",
+      "abstract": "Native Android client for DeepSeek",
+      "url": "https://github.com/david1025/deepdesk-android",
+      "source": "github",
+      "published": "2026-11-20",
+      "discovered_at": "2026-11-23",
+      "source_type": "code",
+      "source_detail": "github_trending",
+      "track_hints": [],
+      "retrieval_meta": {
+        "full_name": "david1025/deepdesk-android",
+        "owner": "david1025",
+        "description": "Native Android client for DeepSeek",
+        "created_at": "2026-11-20T05:42:28Z",
+        "updated_at": "2026-11-23",
+        "pushed_at": "2026-11-23",
+        "stargazers_count": 6,
+        "language": "Kotlin",
+        "topics": []
+      },
+      "description": "Native Android client for DeepSeek",
+      "language": "Kotlin",
+      "stars": 6,
+      "created_at": "2026-11-20",
+      "rank": 3
+    },
+    {
+      "id": "hf_model:Qwen/Qwen2-VL-2B-Instruct",
+      "title": "Qwen/Qwen2-VL-2B-Instruct",
+      "authors": "Qwen",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen2_vl, image-text-to-text, multimodal, conversational, en, arxiv:2409.12191",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen2_vl, image-text-to-text, multimodal, conversational, en, arxiv:2409.12191",
+      "url": "https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 533,
+      "language": "model",
+      "created_at": "2024-08-28",
+      "updated_at": "2026-11-20",
+      "published": "2024-08-28",
+      "discovered_at": "2026-11-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen2-VL-2B-Instruct",
+        "likes": 533,
+        "downloads": 890810,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen2_vl",
+          "image-text-to-text",
+          "multimodal",
+          "conversational",
+          "en",
+          "arxiv:2409.12191",
+          "arxiv:2308.12966",
+          "base_model:Qwen/Qwen2-VL-2B",
+          "base_model:finetune:Qwen/Qwen2-VL-2B",
+          "license:apache-2.0",
+          "text-generation-inference",
+          "endpoints_compatible",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2024-08-28T09:02:15.000Z",
+        "last_modified": "2026-11-20T06:46:42.000Z"
+      },
+      "rank": 4
+    },
+    {
+      "id": "hf_model:Qwen/Qwen2-1.5B-Instruct",
+      "title": "Qwen/Qwen2-1.5B-Instruct",
+      "authors": "Qwen",
+      "description": "pipeline: text-generation; tags: transformers, safetensors, qwen2, text-generation, chat, conversational, en, license:apache-2.0",
+      "abstract": "pipeline: text-generation; tags: transformers, safetensors, qwen2, text-generation, chat, conversational, en, license:apache-2.0",
+      "url": "https://huggingface.co/Qwen/Qwen2-1.5B-Instruct",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 176,
+      "language": "model",
+      "created_at": "2024-06-03",
+      "updated_at": "2026-11-20",
+      "published": "2024-06-03",
+      "discovered_at": "2026-11-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen2-1.5B-Instruct",
+        "likes": 176,
+        "downloads": 70528,
+        "pipeline_tag": "text-generation",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen2",
+          "text-generation",
+          "chat",
+          "conversational",
+          "en",
+          "license:apache-2.0",
+          "eval-results",
+          "text-generation-inference",
+          "endpoints_compatible",
+          "deploy:sagemaker",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2024-06-03T09:08:12.000Z",
+        "last_modified": "2026-11-20T06:45:50.000Z"
+      },
+      "rank": 5
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K3",
+      "title": "moonshotai/Kimi-K3",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k3, feature-extraction, compressed-tensors, conversational, image-text-to-text, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k3, feature-extraction, compressed-tensors, conversational, image-text-to-text, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K3",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 12021,
+      "language": "model",
+      "created_at": "2026-06-13",
+      "updated_at": "2026-11-20",
+      "published": "2026-06-13",
+      "discovered_at": "2026-11-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K3",
+        "likes": 12021,
+        "downloads": 708831,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k3",
+          "feature-extraction",
+          "compressed-tensors",
+          "conversational",
+          "image-text-to-text",
+          "custom_code",
+          "license:other",
+          "eval-results",
+          "8-bit",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-06-13T06:42:57.000Z",
+        "last_modified": "2026-11-20T02:36:10.000Z"
+      },
+      "rank": 6
+    },
+    {
+      "id": "hf_model:moonshotai/Kimi-K2.5",
+      "title": "moonshotai/Kimi-K2.5",
+      "authors": "moonshotai",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, kimi_k25, feature-extraction, compressed-tensors, image-text-to-text, conversational, custom_code",
+      "url": "https://huggingface.co/moonshotai/Kimi-K2.5",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2903,
+      "language": "model",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-11-20",
+      "published": "2026-01-01",
+      "discovered_at": "2026-11-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "moonshotai/Kimi-K2.5",
+        "likes": 2903,
+        "downloads": 336923,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "kimi_k25",
+          "feature-extraction",
+          "compressed-tensors",
+          "image-text-to-text",
+          "conversational",
+          "custom_code",
+          "arxiv:2602.02276",
+          "license:other",
+          "eval-results",
+          "deploy:sagemaker",
+          "region:us"
+        ],
+        "created_at": "2026-01-01T06:06:03.000Z",
+        "last_modified": "2026-11-20T02:36:04.000Z"
+      },
+      "rank": 7
+    },
+    {
+      "id": "hf_model:Qwen/Qwen3.6-27B",
+      "title": "Qwen/Qwen3.6-27B",
+      "authors": "Qwen",
+      "description": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, conversational, license:apache-2.0, eval-results, endpoints_compatible",
+      "abstract": "pipeline: image-text-to-text; tags: transformers, safetensors, qwen3_5, image-text-to-text, conversational, license:apache-2.0, eval-results, endpoints_compatible",
+      "url": "https://huggingface.co/Qwen/Qwen3.6-27B",
+      "source": "huggingface",
+      "source_type": "code",
+      "source_detail": "huggingface_model",
+      "stars": 2364,
+      "language": "model",
+      "created_at": "2026-04-21",
+      "updated_at": "2026-11-20",
+      "published": "2026-04-21",
+      "discovered_at": "2026-11-23",
+      "retrieval_meta": {
+        "repo_type": "model",
+        "repo_id": "Qwen/Qwen3.6-27B",
+        "likes": 2364,
+        "downloads": 2324489,
+        "pipeline_tag": "image-text-to-text",
+        "tags": [
+          "transformers",
+          "safetensors",
+          "qwen3_5",
+          "image-text-to-text",
+          "conversational",
+          "license:apache-2.0",
+          "eval-results",
+          "endpoints_compatible",
+          "deploy:sagemaker",
+          "deploy:azure",
+          "region:us"
+        ],
+        "created_at": "2026-04-21T07:50:43.000Z",
+        "last_modified": "2026-11-20T06:46:39.000Z"
+      },
+      "rank": 8
+    }
+  ],
+  "scenario_status": "done",
+  "scenario_by": "grok-bot"
+}
